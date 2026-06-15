@@ -1,8 +1,9 @@
- 'use client'
+'use client'
 
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -11,77 +12,111 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const handleLogin = async () => {
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
     setLoading(true)
     setError('')
-
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
-      setError('メールアドレスまたはパスワードが間違っています')
+      setError('メールアドレスまたはパスワードが正しくありません')
       setLoading(false)
       return
     }
-
-    // ロールに応じてリダイレクト
     const role = data.user?.user_metadata?.role
     if (role === '管理部') router.push('/dashboard/admin')
     else if (role === 'SSC') router.push('/dashboard/ssc')
     else if (role === '担当営業') router.push('/dashboard/sales')
-    else router.push('/dashboard')
+    else router.push('/dashboard/sales')
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-        <h1 className="text-2xl font-bold text-center text-gray-800 mb-2">
-          APパートナーズ
-        </h1>
-        <p className="text-center text-gray-500 mb-8">契約書管理システム</p>
+    <div className="min-h-screen flex" style={{ background: '#F5F7FC' }}>
 
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              メールアドレス
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="example@appart.co.jp"
-            />
+      {/* 左パネル：ログインフォーム */}
+      <div className="flex-1 flex items-center justify-center px-8 py-12">
+        <div className="w-full max-w-sm">
+
+          {/* モバイル用ロゴ */}
+          <div className="lg:hidden flex justify-center mb-8">
+            <Image src="/logo.png" alt="APパートナーズ" width={140} height={82} />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              パスワード
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="パスワードを入力"
-            />
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold mb-2" style={{ color: '#1A2340' }}>ログイン</h2>
+            <p className="text-sm" style={{ color: '#5A6A8A' }}>メールアドレスとパスワードを入力してください</p>
           </div>
 
-          {error && (
-            <p className="text-red-500 text-sm">{error}</p>
-          )}
+          <form onSubmit={handleLogin} className="space-y-5">
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: '#1A2340' }}>
+                メールアドレス
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                className="w-full px-4 py-3 rounded-lg text-sm border focus:outline-none focus:ring-2 transition-all"
+                style={{ borderColor: '#D0DAF0', background: '#FFFFFF', color: '#1A2340' }}
+                placeholder="example@appart.co.jp"
+                required
+              />
+            </div>
 
-          <button
-            onClick={handleLogin}
-            disabled={loading}
-            className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 disabled:opacity-50"
-          >
-            {loading ? 'ログイン中...' : 'ログイン'}
-          </button>
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: '#1A2340' }}>
+                パスワード
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="w-full px-4 py-3 rounded-lg text-sm border focus:outline-none focus:ring-2 transition-all"
+                style={{ borderColor: '#D0DAF0', background: '#FFFFFF', color: '#1A2340' }}
+                placeholder="••••••••"
+                required
+              />
+            </div>
+
+            {error && (
+              <div className="rounded-lg px-4 py-3 text-sm" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3 rounded-lg text-sm font-semibold text-white transition-all mt-2"
+              style={{ background: loading ? '#A8C0E8' : '#1B3A8C' }}>
+              {loading ? 'ログイン中...' : 'ログイン'}
+            </button>
+          </form>
+
+          <p className="text-xs text-center mt-8" style={{ color: '#5A6A8A' }}>
+            © 2026 株式会社APパートナーズ
+          </p>
         </div>
       </div>
+
+      {/* 右パネル：ブランド */}
+      <div className="hidden lg:flex flex-col justify-center items-center w-2/5 px-12 py-10"
+        style={{ background: '#1B3A8C' }}>
+        <div className="text-center">
+          <div className="flex justify-center mb-8">
+            <div className="rounded-2xl p-4" style={{ background: 'white' }}>
+              <Image src="/logo.png" alt="APパートナーズ" width={160} height={94} />
+            </div>
+          </div>
+          <h1 className="text-3xl font-bold text-white leading-snug mb-4">
+            契約書管理システム
+          </h1>
+          <p className="text-sm leading-relaxed" style={{ color: '#A8C0E8' }}>
+            雇用契約書・就業条件明示書の<br />
+            発行・電子署名・保管をオンラインで。
+          </p>
+        </div>
+      </div>
+
     </div>
   )
 }

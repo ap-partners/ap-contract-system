@@ -79,17 +79,16 @@ const CLOSING_PATTERNS = [
   },
 ]
 
-// PENDING①反映：'パターン1（デフォルト）' → 'パターン1'
 const REMARKS_PATTERNS = [
   {
     id: 'pattern1',
-    label: 'パターン1',
+    label: '賞与なし',
     desc: '賞与【無】、退職手当【有】(退職手当前払い制度)、昇給【無】(契約更新時に改定する場合がある。)',
     preview: '賞与【無】、退職手当【有】(退職手当前払い制度)、昇給【無】(契約更新時に改定する場合がある。)\n上記以外の事項については、当社就業規則及び賃金規定による。手当はクライアント規定により支払うものとする。',
   },
   {
     id: 'pattern2',
-    label: 'パターン2',
+    label: '賞与あり',
     desc: '賞与【有】(ただし、業績により支給されない場合がある。その他詳細は、就業規則第5章および賃金規程第3章に従う。)',
     preview: '賞与【有】(ただし、業績により支給されない場合がある。その他詳細は、就業規則第5章および賃金規程第3章に従う。)\n上記以外の事項については、当社就業規則及び賃金規定による。手当はクライアント規定により支払うものとする。',
   },
@@ -541,13 +540,35 @@ export default function ApplyPage() {
   })()
 
   // STEP7：合計金額
-  const salaryTotal =
-    parseAmount(basicSalary) +
+  // 各種手当の合計（0円除外）
+  const allowancesTotal =
     parseAmount(skillPay) +
     parseAmount(rolePay) +
     parseAmount(salesPay) +
     parseAmount(housingPay) +
     parseAmount(overtimePay)
+
+  // 合計支給額（時給の場合は月額換算：時給×160時間＋各種手当）
+  const salaryTotal = (() => {
+    const basic = parseAmount(basicSalary)
+    if (salaryType === '時給') return basic * 160 + allowancesTotal
+    return basic + allowancesTotal
+  })()
+
+  // 時給の場合の月額換算内訳
+  const hourlyMonthlyBreakdown = (() => {
+    if (salaryType !== '時給') return null
+    const basic = parseAmount(basicSalary)
+    if (!basic) return null
+    const lines = [`基本給：${basic.toLocaleString()}円 × 160時間 = ${(basic * 160).toLocaleString()}円`]
+    if (parseAmount(rolePay) > 0) lines.push(`役職手当：${parseAmount(rolePay).toLocaleString()}円`)
+    if (parseAmount(skillPay) > 0) lines.push(`職能給：${parseAmount(skillPay).toLocaleString()}円`)
+    if (parseAmount(salesPay) > 0) lines.push(`営業手当：${parseAmount(salesPay).toLocaleString()}円`)
+    if (parseAmount(overtimePay) > 0) lines.push(`定額残業手当：${parseAmount(overtimePay).toLocaleString()}円`)
+    if (parseAmount(housingPay) > 0) lines.push(`住宅手当：${parseAmount(housingPay).toLocaleString()}円`)
+    return lines
+  })()
+
 
   // STEP7：保険帳票プレビュー
   const insurancePreview = (() => {
@@ -1289,7 +1310,19 @@ export default function ApplyPage() {
                                       setWorkLocationName(r.name)
                                       setWorkLocationAddress(r.address)
                                       setWorkLocationTel(r.tel)
-                                      setCsvBadges({ 'locationName': 'reflected', 'locationAddress': 'reflected', 'locationTel': 'reflected', 'business': 'reflected', 'time': 'reflected', 'breakTime': 'reflected', 'workingHours': 'reflected', 'org': 'reflected', 'conflict': 'reflected' })
+                                      // 値が実際に入った項目にのみバッジをセット
+                                      const newBadges: Record<string, 'none' | 'reflected' | 'modified'> = {}
+                                      if (r.name) newBadges['locationName'] = 'reflected'
+                                      if (r.address) newBadges['locationAddress'] = 'reflected'
+                                      if (r.tel) newBadges['locationTel'] = 'reflected'
+                                      if (r.business) newBadges['business'] = 'reflected'
+                                      if (r.startTime || r.endTime) newBadges['time'] = 'reflected'
+                                      if (r.breakTime) newBadges['breakTime'] = 'reflected'
+                                      if (r.workingHoursH) newBadges['workingHours'] = 'reflected'
+                                      if (r.org) newBadges['org'] = 'reflected'
+                                      if (r.conflictDate) newBadges['conflict'] = 'reflected'
+                                      if (r.responsibility) newBadges['resp'] = 'reflected'
+                                      setCsvBadges(newBadges)
                                     }}
                                     className="w-full text-left px-3.5 py-3 border-b last:border-0 transition-colors"
                                     style={{
@@ -1427,7 +1460,7 @@ export default function ApplyPage() {
                       <CsvBadge name="time" />
                     </div>
                     <div className="border-b px-5 py-4 flex flex-col gap-2" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
-                      <div className="flex items-center gap-3 flex-wrap">
+                      <div className="flex items-center gap-3">
                         <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>始業</span>
                         <input type="time" className={`${inp} w-36`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                           value={startTime}
@@ -2016,9 +2049,23 @@ export default function ApplyPage() {
                 </div>
 
                 {/* 合計金額 */}
+                {/* 時給の場合：月額換算内訳を表示 */}
+                {hourlyMonthlyBreakdown && (
+                  <div className="rounded-lg px-4 py-3 border flex flex-col gap-1"
+                    style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
+                    {hourlyMonthlyBreakdown.map((line, i) => (
+                      <p key={i} className="text-xs" style={{ color: '#1A2340' }}>{line}</p>
+                    ))}
+                    <p className="text-xs mt-1" style={{ color: '#5A6A8A' }}>
+                      ※月所定労働日数20日・1日8時間（160時間）での計算例です。実際の支給額は勤務実績により異なります。
+                    </p>
+                  </div>
+                )}
                 <div className="flex items-center justify-between rounded-lg px-4 py-3 border"
                   style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                  <span className="text-xs font-medium" style={{ color: '#5A6A8A' }}>合計支給額（基本給＋各種手当）</span>
+                  <span className="text-xs font-medium" style={{ color: '#5A6A8A' }}>
+                    {salaryType === '時給' ? '月額換算例（基本給×160時間＋各種手当）' : '合計支給額（基本給＋各種手当）'}
+                  </span>
                   <div className="flex items-baseline gap-1">
                     <span className="text-base font-bold" style={{ color: '#1B3A8C' }}>
                       {salaryTotal.toLocaleString()}

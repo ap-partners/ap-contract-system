@@ -47,7 +47,7 @@ const STEP_SUB: Record<string, string> = {
 const STEP_DESC: Record<string, string> = {
   '基本情報': '契約書を発行するスタッフを検索して選択します。次に雇用の種類（有期・無期・正社員）と、発行する書類の種類を選んでください。',
   '就業先情報': 'スタッフが働く場所の情報と、業務内容・労働時間を入力します。派遣管理システム（e-staffing・HRstation・winworks・Staffia）に該当するスタッフがいる場合は「CSVデータから自動入力」を選ぶと、就業先などの個別契約情報が自動で反映されます。該当しない場合は「手動で入力する」を選んでください。',
-  '派遣先担当者': '派遣先企業の担当者（指揮命令者・派遣先責任者・苦情申出先）の部署・役職・氏名・電話番号を入力します。派遣先に確認してから入力してください。',
+  '派遣先担当者': '派遣先企業の担当者（指揮命令者・派遣先責任者・苦情処理申出先）の部署・役職・氏名・電話番号を入力します。派遣先に確認してから入力してください。',
   '派遣元担当者': '自社（APパートナーズ）の担当者情報がマスタから自動で入力されています。内容を確認し、異なる場合は修正してください。',
   '期間・労働条件': '派遣期間（開始日・終了日）と雇用契約の期間・試用期間を入力します。また、残業の有無と変形労働時間制の有無を選択してください。',
   '契約条件': 'スタッフへの契約書の説明方法（対面・印刷・自動送信）を選択します。また、賞与・退職手当・昇給に関する備考欄の文言を選んでください。',
@@ -208,7 +208,7 @@ const Tooltip = ({ text }: { text: string }) => {
         onMouseEnter={() => setShow(true)}
         onMouseLeave={() => setShow(false)}
         onClick={() => setShow(v => !v)}
-        className="inline-flex items-center justify-center w-4 h-4 rounded-full cursor-pointer shrink-0"
+        className="inline-flex items-center justify-center w-4 h-4 rounded-full cursor-pointer shrink-0" style={{ background: '#F97316', color: 'white' }}
         style={{ background: '#0D9488', color: 'white', fontSize: '10px', fontWeight: 600 }}>
         ?
       </span>
@@ -391,6 +391,8 @@ export default function ApplyPage() {
   const [csvNoResults, setCsvNoResults] = useState(false)
   const [csvSelectedId, setCsvSelectedId] = useState<number | null>(null)
   const [csvRequestSent, setCsvRequestSent] = useState(false)
+  const [csvRequestFormOpen, setCsvRequestFormOpen] = useState(false)
+  const [csvRequestLocationName, setCsvRequestLocationName] = useState('')
   const [workLocationName, setWorkLocationName] = useState('')
   const [workLocationAddress, setWorkLocationAddress] = useState('')
   const [workLocationTel, setWorkLocationTel] = useState('')
@@ -498,8 +500,8 @@ export default function ApplyPage() {
     if (!employEnd) return null
     if (pattern === 'C' && period === '有期' && dispatchEnd && employEnd !== dispatchEnd)
       return '雇用期間の終了日は派遣期間の終了日と同じ日付にしてください'
-    if (employStart && employEnd <= employStart)
-      return '終了日は開始日より後の日付にしてください'
+    if (employStart && employEnd < employStart)
+      return '終了日は開始日以降の日付にしてください'
     return null
   })()
 
@@ -564,7 +566,7 @@ export default function ApplyPage() {
     if (parseAmount(rolePay) > 0) lines.push(`役職手当：${parseAmount(rolePay).toLocaleString()}円`)
     if (parseAmount(skillPay) > 0) lines.push(`職能給：${parseAmount(skillPay).toLocaleString()}円`)
     if (parseAmount(salesPay) > 0) lines.push(`営業手当：${parseAmount(salesPay).toLocaleString()}円`)
-    if (parseAmount(overtimePay) > 0) lines.push(`定額残業手当：${parseAmount(overtimePay).toLocaleString()}円`)
+    if (parseAmount(overtimePay) > 0) lines.push(`定額残業手当：${parseAmount(overtimePay).toLocaleString()}円（${parseAmount(overtimeHours)}時間分）`)
     if (parseAmount(housingPay) > 0) lines.push(`住宅手当：${parseAmount(housingPay).toLocaleString()}円`)
     return lines
   })()
@@ -899,7 +901,7 @@ export default function ApplyPage() {
               <button
                 onClick={e => { e.preventDefault(); setShowStepDesc(v => !v) }}
                 className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition-colors"
-                style={{ background: '#F59E0B', color: '#1A2340', border: 'none' }}
+                style={{ background: '#F97316', color: 'white', border: 'none' }}
                 title="このSTEPの説明を見る">?</button>
             </div>
           </div>
@@ -1219,7 +1221,7 @@ export default function ApplyPage() {
                   {/* 契約情報の入力方法 */}
                   <div style={{ height: '12px', background: '#F5F7FC' }} />
                   <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-                    <div className="border-r border-b px-4 py-4 flex flex-col gap-1"
+                    <div className="border-r border-b px-4 py-4 flex flex-wrap items-start gap-1"
                       style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
                       <span className="text-sm font-medium" style={{ color: '#1A2340' }}>契約情報の入力方法を選んでください</span>
                       <Req />
@@ -1276,8 +1278,10 @@ export default function ApplyPage() {
                                 value={csvDispatchStart} onChange={e => setCsvDispatchStart(e.target.value)} />
                             </div>
                             <button
+                              disabled={!csvDispatchStart}
                               onClick={async e => {
                                 e.preventDefault()
+                                if (!csvDispatchStart) return
                                 // TODO: Supabaseからcsvシステム・派遣開始日・スタッフ社員番号で検索
                                 // ダミーデータで動作確認
                                 setCsvSearched(true)
@@ -1287,8 +1291,8 @@ export default function ApplyPage() {
                                   { id: 1, name: 'ソフトバンク（SB） 量販 ケーズデンキ青梅店', address: '東京都青梅市新町3-5-1', tel: '', start: '2026/07/01', end: '2026/09/30' },
                                 ])
                               }}
-                              className="text-white text-xs px-4 py-1.5 rounded-lg"
-                              style={{ background: '#1B3A8C', height: '32px', whiteSpace: 'nowrap' }}>
+                              className="text-white text-xs px-4 py-1.5 rounded-lg transition-opacity"
+                              style={{ background: '#1B3A8C', height: '32px', whiteSpace: 'nowrap', opacity: csvDispatchStart ? 1 : 0.4, cursor: csvDispatchStart ? 'pointer' : 'not-allowed' }}>
                               検索
                             </button>
                           </div>
@@ -1375,7 +1379,33 @@ export default function ApplyPage() {
                             </div>
                           )}
 
-                          {/* 自動反映済み通知 */}
+                          {/* CSVインポート依頼フォーム */}
+              {csvRequestFormOpen && !csvRequestSent && (
+                <div className="mt-2 rounded-xl border p-4 flex flex-col gap-3" style={{ background: '#FEF2F2', borderColor: '#FECACA' }}>
+                  <p className="text-sm font-medium" style={{ color: '#1A2340' }}>管理部へCSVインポートを依頼する</p>
+                  <p className="text-xs" style={{ color: '#5A6A8A' }}>以下の情報を入力して送信してください。</p>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-medium" style={{ color: '#1A2340' }}>就業場所名 <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>必須</span></span>
+                    <input type="text" className="border rounded-lg px-3 py-2 text-sm focus:outline-none"
+                      style={{ borderColor: '#D0DAF0', color: '#1A2340', maxWidth: '480px' }}
+                      value={csvRequestLocationName}
+                      onChange={e => setCsvRequestLocationName(e.target.value)}
+                      placeholder="例）ソフトバンク（SB） 量販 コジマ×ビックカメラ福生店" />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={e => { e.preventDefault(); if (!csvRequestLocationName) { alert('就業場所名を入力してください'); return } setCsvRequestSent(true); setCsvRequestFormOpen(false) }}
+                      className="text-xs px-4 py-2 rounded-lg text-white"
+                      style={{ background: '#EA6C00' }}>依頼を送信する</button>
+                    <button
+                      onClick={e => { e.preventDefault(); setCsvRequestFormOpen(false) }}
+                      className="text-xs px-4 py-2 rounded-lg border"
+                      style={{ color: '#5A6A8A', borderColor: '#D0DAF0', background: 'white' }}>キャンセル</button>
+                  </div>
+                </div>
+              )}
+
+              {/* 自動反映済み通知 */}
                           {csvSelectedId !== null && (
                             <div className="flex items-center gap-2 px-3 py-2 rounded-lg border text-xs"
                               style={{ background: '#ECFDF5', borderColor: '#A7F3D0', color: '#0D9488' }}>
@@ -1460,19 +1490,19 @@ export default function ApplyPage() {
                       <CsvBadge name="time" />
                     </div>
                     <div className="border-b px-5 py-4 flex flex-col gap-2" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2 flex-nowrap overflow-x-auto">
                         <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>始業</span>
-                        <input type="time" className={`${inp} w-36`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                        <input type="time" className={`${inp} w-32 shrink-0`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                           value={startTime}
                           onChange={e => { setStartTime(e.target.value); if (csvBadges['time'] === 'reflected') setCsvBadge('time', 'modified') }} />
-                        <span className="text-sm" style={{ color: '#5A6A8A' }}>〜</span>
+                        <span className="text-sm shrink-0" style={{ color: '#5A6A8A' }}>〜</span>
                         <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>終業</span>
-                        <input type="time" className={`${inp} w-36`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                        <input type="time" className={`${inp} w-32 shrink-0`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                           value={endTime}
                           onChange={e => { setEndTime(e.target.value); if (csvBadges['time'] === 'reflected') setCsvBadge('time', 'modified') }} />
                         <button
                           onClick={e => { e.preventDefault(); setIsShift(!isShift) }}
-                          className="px-3 py-1.5 border rounded-lg text-xs transition-colors"
+                          className="px-3 py-1.5 border rounded-lg text-xs transition-colors shrink-0"
                           style={{
                             borderColor: isShift ? '#1B3A8C' : '#D0DAF0',
                             background: isShift ? '#EEF2FA' : 'white',
@@ -1795,7 +1825,7 @@ export default function ApplyPage() {
                 <>
                   <SectionHeader label="雇用期間" />
                   <FormRow label="雇用期間" required>
-                    {period === '無期' ? (
+                    {(period === '無期' || contractType === '正社員') ? (
                       <div className="flex flex-col gap-2">
                         {fixedText('期間の定めなし（自動）')}
                         <div className="flex items-center gap-3">
@@ -2022,7 +2052,7 @@ export default function ApplyPage() {
                     {/* 定額残業手当 */}
                     <div className="p-3 border-r flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
                       <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>定額残業手当</span>
-                      <div className="flex items-center gap-1.5 flex-wrap">
+                      <div className="flex items-center gap-1.5 flex-nowrap">
                         <input type="text" value={overtimePay} onChange={e => setOvertimePay(e.target.value)}
                           className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340' }} placeholder="0" />

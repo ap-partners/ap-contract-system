@@ -79,20 +79,54 @@ const CLOSING_PATTERNS = [
   },
 ]
 
-const REMARKS_PATTERNS = [
-  {
-    id: 'pattern1',
-    label: '賞与なし',
-    desc: '賞与【無】、退職手当【有】(退職手当前払い制度)、昇給【無】(契約更新時に改定する場合がある。)',
-    preview: '賞与【無】、退職手当【有】(退職手当前払い制度)、昇給【無】(契約更新時に改定する場合がある。)\n上記以外の事項については、当社就業規則及び賃金規定による。手当はクライアント規定により支払うものとする。',
-  },
-  {
-    id: 'pattern2',
-    label: '賞与あり',
-    desc: '賞与【有】(ただし、業績により支給されない場合がある。その他詳細は、就業規則第5章および賃金規程第3章に従う。)',
-    preview: '賞与【有】(ただし、業績により支給されない場合がある。その他詳細は、就業規則第5章および賃金規程第3章に従う。)\n上記以外の事項については、当社就業規則及び賃金規定による。手当はクライアント規定により支払うものとする。',
-  },
-]
+const FIXED_REMARKS_SUFFIX = '上記以外の事項については、当社就業規則及び賃金規定による。手当はクライアント規定により支払うものとする。'
+
+// 備考文言の自動決定ロジック（法務確認済み）
+// pattern: 'A' | 'B' | 'C'
+// contractType: '有期契約' | '無期契約' | '正社員'
+// bonusType: 'あり' | 'なし'（正社員かつパターンA・Cのみ使用）
+const getRemarksText = (pattern: string, contractType: string, bonusType: string): string => {
+  const suffix = FIXED_REMARKS_SUFFIX
+
+  // パターンB（就業条件明示書のみ）は備考文言なし
+  if (pattern === 'B') return ''
+
+  const isSeishain = contractType === '正社員'
+  const isKeiyaku = contractType === '有期契約' || contractType === '無期契約'
+
+  // パターンC（雇用契約書 兼 就業条件明示書）
+  if (pattern === 'C') {
+    if (isKeiyaku) {
+      return `賞与【無】、退職手当【有】(退職手当前払い制度)、昇給【無】(契約更新時に改定する場合がある。)\n${suffix}`
+    }
+    if (isSeishain && bonusType === 'あり') {
+      return `賞与【有】、退職手当【有】(退職手当前払い制度)、昇給【無】(契約更新時に改定する場合がある。)\n${suffix}`
+    }
+    if (isSeishain && bonusType === 'なし') {
+      return `賞与【無】、退職手当【有】(退職手当前払い制度)、昇給【無】(契約更新時に改定する場合がある。)\n${suffix}`
+    }
+  }
+
+  // パターンA（雇用契約書のみ）
+  if (pattern === 'A') {
+    if (isKeiyaku) {
+      return `賞与【無】、昇給【無】(契約更新時に改定する場合がある。)\n${suffix}`
+    }
+    if (isSeishain && bonusType === 'あり') {
+      return `賞与【有】、昇給【無】(契約更新時に改定する場合がある。)\n${suffix}`
+    }
+    if (isSeishain && bonusType === 'なし') {
+      return `賞与【無】、昇給【無】(契約更新時に改定する場合がある。)\n${suffix}`
+    }
+  }
+
+  return suffix
+}
+
+// 賞与あり/なしのUI表示が必要か（正社員 かつ パターンA or C のみ）
+const needsBonusSelection = (pattern: string, contractType: string): boolean => {
+  return contractType === '正社員' && (pattern === 'A' || pattern === 'C')
+}
 
 // STEP7：交通費区分
 const TRANSPORT_TYPES = [
@@ -457,7 +491,7 @@ export default function ApplyPage() {
 
   // STEP6
   const [closingPattern, setClosingPattern] = useState('auto')
-  const [remarksPattern, setRemarksPattern] = useState('pattern1')
+  const [bonusType, setBonusType] = useState<'あり' | 'なし'>('なし')
 
   // STEP1：スタッフ登録依頼フォーム
   const [showRequestForm, setShowRequestForm] = useState(false)
@@ -801,7 +835,7 @@ export default function ApplyPage() {
     ? `試用期間： 有\n試用期間：${toJpDate(trialStart)}〜${toJpDate(trialEnd)}まで　（試用期間延長の場合は、その2週間前までに通知します）\n試用期間満了後の本採用は次のいずれかにより判断します。\n①試用期間満了時の業務量　②従事している業務の進捗状況　③能力、勤務成績、勤務態度　④健康状態、⑤職務への適正性その他就業規則上の規定基準\n試用期間開始日より14日経過後の本採用拒否の場合は、少なくとも本採用拒否退職の30日前に通知します。`
     : ''
 
-  const selectedRemarks = REMARKS_PATTERNS.find(r => r.id === remarksPattern) || REMARKS_PATTERNS[0]
+  const remarksText = getRemarksText(pattern, contractType, bonusType)
 
   const NavButtons = ({ onNext }: { onNext: () => void }) => (
     <div className="border-t px-5 py-4 flex justify-between" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
@@ -1948,33 +1982,55 @@ export default function ApplyPage() {
                 </div>
               </FormRow>
 
-              <SectionHeader label="備考文言" />
-              <FormRow label="備考パターン" required>
-                <div className="flex flex-col gap-2">
-                  {REMARKS_PATTERNS.map(r => (
-                    <button key={r.id}
-                      onClick={e => { e.preventDefault(); setRemarksPattern(r.id) }}
-                      className="text-left p-3 rounded-lg border-2 transition-all"
-                      style={{
-                        borderColor: remarksPattern === r.id ? '#1B3A8C' : '#D0DAF0',
-                        background: remarksPattern === r.id ? '#EEF2FA' : 'white',
-                      }}>
-                      <p className="text-xs font-bold mb-1" style={{ color: '#1B3A8C' }}>{r.label}</p>
-                      <p className="text-xs leading-snug" style={{ color: '#5A6A8A' }}>{r.desc}</p>
-                    </button>
-                  ))}
-                </div>
-                <div className="rounded-lg p-4 border" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                  <p className="text-xs font-medium mb-2" style={{ color: '#1B3A8C' }}>📄 帳票プレビュー</p>
-                  <p className="text-xs leading-relaxed whitespace-pre-line" style={{ color: '#1A2340' }}>
-                    {selectedRemarks.preview}
-                  </p>
-                </div>
-              </FormRow>
+              {/* 備考文言：パターンBは非表示 */}
+              {pattern !== 'B' && (
+                <>
+                  <SectionHeader label="備考文言" />
+
+                  {/* 正社員 かつ パターンA・C のみ賞与あり/なし選択UIを表示 */}
+                  {needsBonusSelection(pattern, contractType) ? (
+                    <FormRow label="賞与" required>
+                      <div className="flex gap-3">
+                        {(['あり', 'なし'] as const).map(v => (
+                          <button key={v}
+                            onClick={e => { e.preventDefault(); setBonusType(v) }}
+                            className="flex-1 py-3 rounded-lg border-2 text-sm font-medium transition-all"
+                            style={{
+                              borderColor: bonusType === v ? '#1B3A8C' : '#D0DAF0',
+                              background: bonusType === v ? '#EEF2FA' : 'white',
+                              color: bonusType === v ? '#1B3A8C' : '#5A6A8A',
+                            }}>
+                            賞与{v}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-xs mt-1" style={{ color: '#5A6A8A' }}>
+                        賞与（ボーナス）が契約上支給される場合は「賞与あり」。決算賞与のみで契約書上に記載が不要な場合は「賞与なし」を選んでください。
+                      </p>
+                    </FormRow>
+                  ) : (
+                    <FormRow label="賞与">
+                      <p className="text-xs rounded-lg px-3 py-2 inline-block border"
+                        style={{ color: '#5A6A8A', background: '#F5F7FC', borderColor: '#D0DAF0' }}>
+                        自動確定（選択不要）
+                      </p>
+                    </FormRow>
+                  )}
+
+                  {/* 帳票プレビュー */}
+                  <FormRow label="備考欄プレビュー">
+                    <div className="rounded-lg p-4 border" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
+                      <p className="text-xs font-medium mb-2" style={{ color: '#1B3A8C' }}>📄 帳票プレビュー（自動生成）</p>
+                      <p className="text-xs leading-relaxed whitespace-pre-line" style={{ color: '#1A2340' }}>
+                        {remarksText}
+                      </p>
+                    </div>
+                  </FormRow>
+                </>
+              )}
 
               <NavButtons onNext={() => {
                 if (!closingPattern) { alert('締結パターンを選択してください'); return }
-                if (!remarksPattern) { alert('備考パターンを選択してください'); return }
                 handleNext()
               }} />
             </>

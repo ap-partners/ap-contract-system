@@ -1632,14 +1632,16 @@ export default function ApplyPage() {
                       <CsvBadge name="time" />
                     </div>
                     <div className="border-b px-5 py-4 flex flex-col gap-2" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
-                      <div className="flex items-center gap-2 flex-nowrap overflow-x-auto">
+                      <div className="flex items-center gap-2 flex-nowrap">
                         <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>始業</span>
-                        <input type="time" className={`${inp} w-32 shrink-0`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                        <input type="time" className="bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 shrink-0"
+                          style={{ borderColor: '#D0DAF0', color: '#1A2340', width: '130px' }}
                           value={startTime}
                           onChange={e => { setStartTime(e.target.value); if (csvBadges['time'] === 'reflected') setCsvBadge('time', 'modified') }} />
                         <span className="text-sm shrink-0" style={{ color: '#5A6A8A' }}>〜</span>
                         <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>終業</span>
-                        <input type="time" className={`${inp} w-32 shrink-0`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                        <input type="time" className="bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 shrink-0"
+                          style={{ borderColor: '#D0DAF0', color: '#1A2340', width: '130px' }}
                           value={endTime}
                           onChange={e => { setEndTime(e.target.value); if (csvBadges['time'] === 'reflected') setCsvBadge('time', 'modified') }} />
                         <button

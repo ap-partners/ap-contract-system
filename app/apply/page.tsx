@@ -1426,7 +1426,11 @@ export default function ApplyPage() {
                             <div className="flex flex-col gap-1">
                               <span className="text-xs font-medium" style={{ color: '#5A6A8A' }}>派遣開始日</span>
                               <input type="date" className="border rounded-lg px-3 py-1.5 text-xs focus:outline-none"
-                                style={{ borderColor: '#D0DAF0', color: '#1A2340', width: '150px' }}
+                                style={{
+                                  borderColor: csvDispatchStart ? '#D0DAF0' : '#D97706',
+                                  background: csvDispatchStart ? 'white' : '#FFFBEB',
+                                  color: '#1A2340', width: '150px',
+                                }}
                                 value={csvDispatchStart} onChange={e => setCsvDispatchStart(e.target.value)} />
                             </div>
                             <button

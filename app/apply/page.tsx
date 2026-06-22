@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
@@ -82,48 +82,25 @@ const CLOSING_PATTERNS = [
 const FIXED_REMARKS_SUFFIX = '上記以外の事項については、当社就業規則及び賃金規定による。手当はクライアント規定により支払うものとする。'
 
 // 備考文言の自動決定ロジック（法務確認済み）
-// pattern: 'A' | 'B' | 'C'
-// contractType: '有期契約' | '無期契約' | '正社員'
-// bonusType: 'あり' | 'なし'（正社員かつパターンA・Cのみ使用）
 const getRemarksText = (pattern: string, contractType: string, bonusType: string): string => {
   const suffix = FIXED_REMARKS_SUFFIX
-
-  // パターンB（就業条件明示書のみ）は備考文言なし
   if (pattern === 'B') return ''
-
   const isSeishain = contractType === '正社員'
   const isKeiyaku = contractType === '有期契約' || contractType === '無期契約'
 
-  // パターンC（雇用契約書 兼 就業条件明示書）
   if (pattern === 'C') {
-    if (isKeiyaku) {
-      return `賞与【無】、退職手当【有】(退職手当前払い制度)、昇給【無】(契約更新時に改定する場合がある。)\n${suffix}`
-    }
-    if (isSeishain && bonusType === 'あり') {
-      return `賞与【有】、退職手当【有】(退職手当前払い制度)、昇給【無】(契約更新時に改定する場合がある。)\n${suffix}`
-    }
-    if (isSeishain && bonusType === 'なし') {
-      return `賞与【無】、退職手当【有】(退職手当前払い制度)、昇給【無】(契約更新時に改定する場合がある。)\n${suffix}`
-    }
+    if (isKeiyaku) return `賞与【無】、退職手当【有】(退職手当前払い制度)、昇給【無】(契約更新時に改定する場合がある。)\n${suffix}`
+    if (isSeishain && bonusType === 'あり') return `賞与【有】、退職手当【有】(退職手当前払い制度)、昇給【無】(契約更新時に改定する場合がある。)\n${suffix}`
+    if (isSeishain && bonusType === 'なし') return `賞与【無】、退職手当【有】(退職手当前払い制度)、昇給【無】(契約更新時に改定する場合がある。)\n${suffix}`
   }
-
-  // パターンA（雇用契約書のみ）
   if (pattern === 'A') {
-    if (isKeiyaku) {
-      return `賞与【無】、昇給【無】(契約更新時に改定する場合がある。)\n${suffix}`
-    }
-    if (isSeishain && bonusType === 'あり') {
-      return `賞与【有】、昇給【無】(契約更新時に改定する場合がある。)\n${suffix}`
-    }
-    if (isSeishain && bonusType === 'なし') {
-      return `賞与【無】、昇給【無】(契約更新時に改定する場合がある。)\n${suffix}`
-    }
+    if (isKeiyaku) return `賞与【無】、昇給【無】(契約更新時に改定する場合がある。)\n${suffix}`
+    if (isSeishain && bonusType === 'あり') return `賞与【有】、昇給【無】(契約更新時に改定する場合がある。)\n${suffix}`
+    if (isSeishain && bonusType === 'なし') return `賞与【無】、昇給【無】(契約更新時に改定する場合がある。)\n${suffix}`
   }
-
   return suffix
 }
 
-// 賞与あり/なしのUI表示が必要か（正社員 かつ パターンA or C のみ）
 const needsBonusSelection = (pattern: string, contractType: string): boolean => {
   return contractType === '正社員' && (pattern === 'A' || pattern === 'C')
 }
@@ -215,23 +192,34 @@ const toJpDate = (dateStr: string) => {
 
 const isPastDate = (dateStr: string) => {
   if (!dateStr) return false
-  const d = new Date(dateStr)
+  // dateStr は "YYYY-MM-DD" 形式。ローカル日付として解釈し、UTC起点のズレを防ぐ
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const inputDate = new Date(y, m - 1, d)
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  return d < today
+  return inputDate < today
 }
 
+// 全角数字を半角に変換（全角混在の入力ミスを防ぐ）
+const toHalfWidthDigits = (str: string) =>
+  (str || '').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+
 const parseAmount = (str: string) =>
-  parseInt((str || '0').replace(/,/g, ''), 10) || 0
+  parseInt(toHalfWidthDigits(str || '0').replace(/,/g, ''), 10) || 0
 
 const Req = () => (
   <span className="text-xs px-1.5 py-0.5 rounded ml-1 leading-none shrink-0"
     style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>必須</span>
 )
 
-const AutoBadge = () => (
-  <span className="text-xs px-1.5 py-0.5 rounded shrink-0"
-    style={{ background: '#EEF2FA', color: '#1B3A8C', border: '0.5px solid #D0DAF0' }}>自動</span>
+const AutoBadge = ({ modified }: { modified?: boolean } = {}) => (
+  modified ? (
+    <span className="text-xs px-1.5 py-0.5 rounded shrink-0"
+      style={{ background: 'white', color: '#D97706', border: '1px solid #D97706' }}>マスタ情報反映（修正済み）</span>
+  ) : (
+    <span className="text-xs px-1.5 py-0.5 rounded shrink-0"
+      style={{ background: 'white', color: '#1B3A8C', border: '1px solid #1B3A8C' }}>マスタ情報反映</span>
+  )
 )
 
 const Tooltip = ({ text }: { text: string }) => {
@@ -242,8 +230,8 @@ const Tooltip = ({ text }: { text: string }) => {
         onMouseEnter={() => setShow(true)}
         onMouseLeave={() => setShow(false)}
         onClick={() => setShow(v => !v)}
-        className="inline-flex items-center justify-center w-4 h-4 rounded-full cursor-pointer shrink-0" style={{ background: '#F97316', color: 'white' }}
-        style={{ background: '#0D9488', color: 'white', fontSize: '10px', fontWeight: 600 }}>
+        className="inline-flex items-center justify-center w-4 h-4 rounded-full cursor-pointer shrink-0"
+        style={{ background: '#F97316', color: 'white', fontSize: '10px', fontWeight: 600 }}>
         ?
       </span>
       {show && (
@@ -256,8 +244,8 @@ const Tooltip = ({ text }: { text: string }) => {
   )
 }
 
-const FormRow = ({ label, required, tooltip, children }: {
-  label: string; required?: boolean; tooltip?: string; children: React.ReactNode
+const FormRow = ({ label, required, tooltip, badge, children }: {
+  label: string; required?: boolean; tooltip?: string; badge?: React.ReactNode; children: React.ReactNode
 }) => (
   <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
     <div className="border-r border-b px-4 py-4 flex items-center flex-wrap gap-1"
@@ -265,6 +253,7 @@ const FormRow = ({ label, required, tooltip, children }: {
       <span className="text-sm font-medium leading-snug" style={{ color: '#1A2340' }}>{label}</span>
       {required && <Req />}
       {tooltip && <Tooltip text={tooltip} />}
+      {badge}
     </div>
     <div className="border-b px-5 py-4 flex flex-col gap-3"
       style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
@@ -273,16 +262,16 @@ const FormRow = ({ label, required, tooltip, children }: {
   </div>
 )
 
-const FormRowAuto = ({ label, children }: { label: string; children: React.ReactNode }) => (
+const FormRowAuto = ({ label, modified, children }: { label: string; modified?: boolean; children: React.ReactNode }) => (
   <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-    <div className="border-r border-b px-4 py-4 flex items-center"
+    <div className="border-r border-b px-4 py-4 flex flex-col items-start gap-1.5"
       style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
       <span className="text-sm font-medium leading-snug" style={{ color: '#1A2340' }}>{label}</span>
+      <AutoBadge modified={modified} />
     </div>
-    <div className="border-b px-5 py-4 flex items-center gap-3"
+    <div className="border-b px-5 py-4 flex items-center"
       style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
-      <div className="flex-1">{children}</div>
-      <AutoBadge />
+      {children}
     </div>
   </div>
 )
@@ -294,6 +283,59 @@ const SectionHeader = ({ label }: { label: string }) => (
       <p className="text-sm font-medium text-white">▼ {label}</p>
     </div>
   </>
+)
+
+// ===== STEP8：最終確認用コンポーネント =====
+const FinalSection = ({ id, title, sub, collapsed, setCollapsed, onEdit, editLabel, children }: {
+  id: string; title: string; sub: string
+  collapsed: Record<string, boolean>; setCollapsed: (v: Record<string, boolean>) => void
+  onEdit: () => void; editLabel: string; children: React.ReactNode
+}) => {
+  const isCollapsed = !!collapsed[id]
+  return (
+    <div className="bg-white rounded-xl border shadow-sm overflow-hidden mb-3" style={{ borderColor: '#D0DAF0' }}>
+      <div className="px-5 py-2.5 flex items-center justify-between cursor-pointer" style={{ background: '#1B3A8C' }}
+        onClick={() => setCollapsed({ ...collapsed, [id]: !isCollapsed })}>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-sm font-medium text-white">{title}</span>
+          <span className="text-xs" style={{ color: '#A8C0E8' }}>{sub}</span>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={e => { e.stopPropagation(); onEdit() }}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: '#F97316' }}>
+            {editLabel}
+          </button>
+          <span className="text-xs transition-transform" style={{ color: 'rgba(255,255,255,0.6)', transform: isCollapsed ? 'rotate(-90deg)' : 'none' }}>▼</span>
+        </div>
+      </div>
+      {!isCollapsed && <div>{children}</div>}
+    </div>
+  )
+}
+
+const FinalGroupHeader = ({ label }: { label: string }) => (
+  <>
+    <div style={{ height: '10px', background: '#F5F7FC' }} />
+    <div className="px-5 py-2 border-b" style={{ background: '#1B3A8C', borderColor: '#1B3A8C' }}>
+      <p className="text-xs font-medium text-white">▼ {label}</p>
+    </div>
+  </>
+)
+
+const FinalRow = ({ label, value, badge, multiline, preview, highlight }: {
+  label: string; value: string; badge?: React.ReactNode; multiline?: boolean; preview?: boolean; highlight?: string
+}) => (
+  <div className="grid border-b" style={{ gridTemplateColumns: '260px 1fr', borderColor: '#D0DAF0' }}>
+    <div className="border-r px-4 py-3.5 flex flex-col items-start gap-1.5" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
+      <span className="text-sm font-medium leading-snug" style={{ color: '#1A2340' }}>{label}</span>
+      {badge}
+    </div>
+    <div className={`px-5 py-3.5 text-sm ${multiline ? 'whitespace-pre-line' : 'flex items-center'}`}
+      style={{ background: preview ? '#EEF2FA' : 'white', color: '#1A2340', lineHeight: 1.7, borderRadius: preview ? '8px' : 0, margin: preview ? '6px 12px' : 0 }}>
+      {value}
+      {highlight && <p className="text-sm font-bold mt-2" style={{ color: '#0D9488' }}>{highlight}</p>}
+    </div>
+  </div>
 )
 
 const ModeToggle = ({ mode, onChange }: { mode: 'default' | 'new'; onChange: (m: 'default' | 'new') => void }) => (
@@ -412,6 +454,8 @@ export default function ApplyPage() {
 
   const pattern = getPattern(documentType)
   const period = contractType === '有期契約' ? '有期' : contractType === '無期契約' ? '無期' : ''
+  // 抵触日が不要な雇用区分（無期雇用派遣・正社員は「該当しない」扱い）
+  const isConflictDateExempt = contractType === '無期契約' || contractType === '正社員'
   const fullDocumentName = getFullDocumentName(documentType, contractType)
   const steps = pattern === 'A' ? STEPS_A : pattern === 'B' ? STEPS_B : pattern === 'C' ? STEPS_C : STEPS_A
 
@@ -473,6 +517,8 @@ export default function ApplyPage() {
   const [cmp_role, setCmpRole] = useState('')
   const [cmp_name, setCmpName] = useState('')
   const [cmp_tel, setCmpTel] = useState('')
+  // マスタ取得時の初期値スナップショット（修正済みバッジ判定用）
+  const [masterSnapshot, setMasterSnapshot] = useState<Record<string, string>>({})
 
   // STEP5
   const [dispatchStart, setDispatchStart] = useState('')
@@ -491,7 +537,15 @@ export default function ApplyPage() {
 
   // STEP6
   const [closingPattern, setClosingPattern] = useState('auto')
-  const [bonusType, setBonusType] = useState<'あり' | 'なし'>('なし')
+  const [bonusType, setBonusType] = useState<'あり' | 'なし' | ''>('')
+
+  // STEP8：最終確認
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
+  const [isRejected, setIsRejected] = useState(false)
+  const [rejectionReason, setRejectionReason] = useState('業務内容の記載が個別契約書の内容と一致していません。STEP2の業務内容をご確認の上、修正してください。')
+  const [rejectedAt, setRejectedAt] = useState('2026年06月18日 14:32')
+  const [rejectedBy, setRejectedBy] = useState('SSC 高橋')
+  const [submitClickCount, setSubmitClickCount] = useState(0)
 
   // STEP1：スタッフ登録依頼フォーム
   const [showRequestForm, setShowRequestForm] = useState(false)
@@ -640,14 +694,27 @@ export default function ApplyPage() {
       if (!data) return
       const m: Record<string, string> = {}
       data.forEach((row: any) => { m[row.key] = row.value })
-      setMgrDept(m['dispatch_manager_dept'] || '')
-      setMgrRole(m['dispatch_manager_role'] || '')
-      setMgrName(m['dispatch_manager_name'] || '')
-      setMgrTel(m['dispatch_manager_tel'] || '')
-      setCmpDept(m['complaint_dept'] || '')
-      setCmpRole(m['complaint_role'] || '')
-      setCmpName(m['complaint_name'] || '')
-      setCmpTel(m['complaint_tel'] || '')
+      const mgrDeptVal = m['dispatch_manager_dept'] || ''
+      const mgrRoleVal = m['dispatch_manager_role'] || ''
+      const mgrNameVal = m['dispatch_manager_name'] || ''
+      const mgrTelVal = m['dispatch_manager_tel'] || ''
+      const cmpDeptVal = m['complaint_dept'] || ''
+      const cmpRoleVal = m['complaint_role'] || ''
+      const cmpNameVal = m['complaint_name'] || ''
+      const cmpTelVal = m['complaint_tel'] || ''
+      setMgrDept(mgrDeptVal)
+      setMgrRole(mgrRoleVal)
+      setMgrName(mgrNameVal)
+      setMgrTel(mgrTelVal)
+      setCmpDept(cmpDeptVal)
+      setCmpRole(cmpRoleVal)
+      setCmpName(cmpNameVal)
+      setCmpTel(cmpTelVal)
+      // マスタ情報反映（修正済み）バッジ判定用の初期値スナップショット
+      setMasterSnapshot({
+        mgr_dept: mgrDeptVal, mgr_role: mgrRoleVal, mgr_name: mgrNameVal, mgr_tel: mgrTelVal,
+        cmp_dept: cmpDeptVal, cmp_role: cmpRoleVal, cmp_name: cmpNameVal, cmp_tel: cmpTelVal,
+      })
     }
     loadCompanyMaster()
   }, [])
@@ -660,9 +727,9 @@ export default function ApplyPage() {
     const [eh, em] = endTime.split(':').map(Number)
     const totalMin = (eh * 60 + em) - (sh * 60 + sm)
     if (totalMin <= 0) return null
-    const breakMin = parseInt(breakTime) || 0
+    const breakMin = parseAmount(breakTime)
     const actualMin = totalMin - breakMin
-    const inputMin = (parseInt(workingHoursH) || 0) * 60 + (parseInt(workingHoursM) || 0)
+    const inputMin = parseAmount(workingHoursH) * 60 + parseAmount(workingHoursM)
     if (actualMin !== inputMin) {
       const h = Math.floor(actualMin / 60)
       const m = actualMin % 60
@@ -693,6 +760,46 @@ export default function ApplyPage() {
       setDocumentType('雇用契約書')
     }
   }, [workPlace])
+
+  // 書類種別を変更したら、STEP2以降の入力内容をリセットする（前のパターンのデータが残らないように）
+  const prevDocumentTypeRef = useRef(documentType)
+  useEffect(() => {
+    if (prevDocumentTypeRef.current && prevDocumentTypeRef.current !== documentType) {
+      // STEP2：就業先情報
+      setCsvMode('manual'); setCsvSystem('e-staffing'); setCsvDispatchStart('')
+      setCsvSearched(false); setCsvResults([]); setCsvNoResults(false); setCsvSelectedId(null)
+      setWorkLocationName(''); setWorkLocationAddress(''); setWorkLocationTel('')
+      setBusinessContent(''); setStartTime(''); setEndTime(''); setIsShift(false)
+      setBreakTime(''); setWorkingHoursH(''); setWorkingHoursM('')
+      setWorkDays(''); setWorkDaysOther('')
+      setOrganizationUnit(''); setConflictDate(''); setResponsibility('')
+      setCsvBadges({})
+      // STEP3：派遣先担当者
+      setCmdDept(''); setCmdRole(''); setCmdName(''); setCmdTel('')
+      setRespDept(''); setRespRole(''); setRespName(''); setRespTel('')
+      setCompDept(''); setCompRole(''); setCompName(''); setCompTel('')
+      setWelfare(''); setSafetyMode('default'); setSafetyText(DEFAULT_SAFETY)
+      setConflictMode('default'); setConflictText(DEFAULT_CONFLICT)
+      // STEP5：期間・労働条件
+      setDispatchStart(''); setDispatchEnd(''); setConflictDateOrg('')
+      setEmployStart(''); setEmployEnd(''); setContractStartDate('')
+      setTrialPeriod(''); setTrialStart(''); setTrialEnd('')
+      setTrialWarningChecked(false); setNoTrialWarningChecked(false)
+      setFlexTime(''); setOvertime('')
+      // STEP6：契約条件
+      setClosingPattern('auto'); setBonusType('')
+      // STEP7：給与・保険
+      setSalaryType('時給'); setBasicSalary('')
+      setSkillPay('0'); setRolePay('0'); setSalesPay('0'); setHousingPay('0')
+      setOvertimePay('0'); setOvertimeHours('0')
+      setTransportType('default')
+      setHasEmployInsurance(true); setHasSocialInsurance(true)
+      setSalaryWarningChecked(false)
+      // STEP8：最終確認
+      setCollapsedSections({})
+    }
+    prevDocumentTypeRef.current = documentType
+  }, [documentType])
 
   const handleSearch = useCallback(async (query: string) => {
     if (!query.trim()) { setSearchResults([]); setSearched(false); return }
@@ -740,6 +847,7 @@ export default function ApplyPage() {
     if (step === 5 && pattern === 'A') return 'salary'
     if (step === 6 && pattern === 'C') return 'contractCondition'
     if (step === 7 && pattern === 'C') return 'salary'
+    if (step === steps.length) return 'finalCheck'
     return 'tbd'
   }
 
@@ -764,8 +872,8 @@ export default function ApplyPage() {
     if (workDays === 'other' && !workDaysOther) return '所定労働日数（その他）を入力してください'
     if (pattern === 'B' || pattern === 'C') {
       if (!organizationUnit) return '組織単位を入力してください'
-      if (period !== '無期' && !conflictDate) return '抵触日（事業所単位）を入力してください'
-      if (period !== '無期' && isPastDate(conflictDate)) return '抵触日（事業所単位）が過去の日付になっています'
+      if (!isConflictDateExempt && !conflictDate) return '抵触日（事業所単位）を入力してください'
+      if (!isConflictDateExempt && isPastDate(conflictDate)) return '抵触日（事業所単位）が過去の日付になっています'
       if (!responsibility) return '業務に伴う責任の程度を選択してください'
     }
     return null
@@ -774,8 +882,8 @@ export default function ApplyPage() {
   const validatePeriod = () => {
     if (pattern === 'B' || pattern === 'C') {
       if (!dispatchStart || !dispatchEnd) return '派遣期間を入力してください'
-      if (period !== '無期' && !conflictDateOrg) return '抵触日（組織単位）を入力してください'
-      if (period !== '無期' && isPastDate(conflictDateOrg)) return '抵触日（組織単位）が過去の日付になっています'
+      if (!isConflictDateExempt && !conflictDateOrg) return '抵触日（組織単位）を入力してください'
+      if (!isConflictDateExempt && isPastDate(conflictDateOrg)) return '抵触日（組織単位）が過去の日付になっています'
     }
     if (pattern === 'A' || pattern === 'C') {
       if (period === '有期') {
@@ -956,7 +1064,7 @@ export default function ApplyPage() {
                     style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
                     <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium shrink-0"
                       style={{ background: '#1B3A8C', color: 'white' }}>
-                      {selectedStaff.name[0]}
+                      {selectedStaff.name?.[0] || '?'}
                     </div>
                     <div>
                       <p className="text-sm font-medium" style={{ color: '#1A2340' }}>{selectedStaff.name}</p>
@@ -1142,7 +1250,7 @@ export default function ApplyPage() {
                             style={{ borderColor: '#D0DAF0' }}>
                             <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium shrink-0"
                               style={{ background: '#EEF2FA', color: '#1B3A8C' }}>
-                              {s.name[0]}
+                              {s.name?.[0] || '?'}
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium" style={{ color: '#1A2340' }}>{s.name}</p>
@@ -1658,7 +1766,7 @@ export default function ApplyPage() {
                           <CsvBadge name="conflict" />
                         </div>
                         <div className="border-b px-5 py-4" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
-                          {period === '無期' ? fixedText('無期雇用派遣のため該当しない（自動）') : (
+                          {isConflictDateExempt ? fixedText('無期雇用派遣のため該当しない（自動）') : (
                             <div>
                               <input type="date" className={`${inp} max-w-xs`}
                                 style={{ borderColor: isPastDate(conflictDate) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
@@ -1700,64 +1808,70 @@ export default function ApplyPage() {
           {stepType === 'dispatchContact' && (
             <>
               <SectionHeader label="指揮命令者" />
-              <FormRow label="部署名" required>
-                <input className={inp} style={deptInputStyle} value={cmd_dept} onChange={e => setCmdDept(e.target.value)}
+              <FormRow label="部署名" required badge={<CsvBadge name="cmdDept" />}>
+                <input className={inp} style={deptInputStyle} value={cmd_dept} onChange={e => { setCmdDept(e.target.value); if (csvBadges['cmdDept'] === 'reflected') setCsvBadge('cmdDept', 'modified') }}
                   placeholder="例）東日本ｴﾘｱ営業本部 関東営業統括部 第3営業部" />
               </FormRow>
-              <FormRow label="役職" required>
+              <FormRow label="役職" required badge={<CsvBadge name="cmdRole" />}>
                 <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                  value={cmd_role} onChange={e => setCmdRole(e.target.value)} placeholder="例）課長" />
+                  value={cmd_role} onChange={e => { setCmdRole(e.target.value); if (csvBadges['cmdRole'] === 'reflected') setCsvBadge('cmdRole', 'modified') }} placeholder="例）課長" />
               </FormRow>
-              <FormRow label="氏名" required>
+              <FormRow label="氏名" required badge={<CsvBadge name="cmdName" />}>
                 <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                  value={cmd_name} onChange={e => setCmdName(e.target.value)} placeholder="例）山田 太郎" />
+                  value={cmd_name} onChange={e => { setCmdName(e.target.value); if (csvBadges['cmdName'] === 'reflected') setCsvBadge('cmdName', 'modified') }} placeholder="例）山田 太郎" />
               </FormRow>
-              <FormRow label="電話番号" required><TelInput value={cmd_tel} onChange={setCmdTel} /></FormRow>
+              <FormRow label="電話番号" required badge={<CsvBadge name="cmdTel" />}>
+                <TelInput value={cmd_tel} onChange={v => { setCmdTel(v); if (csvBadges['cmdTel'] === 'reflected') setCsvBadge('cmdTel', 'modified') }} />
+              </FormRow>
 
               <SectionHeader label="派遣先責任者" />
-              <FormRow label="部署名" required>
-                <input className={inp} style={deptInputStyle} value={resp_dept} onChange={e => setRespDept(e.target.value)} placeholder="例）人事部" />
+              <FormRow label="部署名" required badge={<CsvBadge name="respDept" />}>
+                <input className={inp} style={deptInputStyle} value={resp_dept} onChange={e => { setRespDept(e.target.value); if (csvBadges['respDept'] === 'reflected') setCsvBadge('respDept', 'modified') }} placeholder="例）人事部" />
               </FormRow>
-              <FormRow label="役職" required>
+              <FormRow label="役職" required badge={<CsvBadge name="respRole" />}>
                 <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                  value={resp_role} onChange={e => setRespRole(e.target.value)} placeholder="例）部長" />
+                  value={resp_role} onChange={e => { setRespRole(e.target.value); if (csvBadges['respRole'] === 'reflected') setCsvBadge('respRole', 'modified') }} placeholder="例）部長" />
               </FormRow>
-              <FormRow label="氏名" required>
+              <FormRow label="氏名" required badge={<CsvBadge name="respName" />}>
                 <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                  value={resp_name} onChange={e => setRespName(e.target.value)} placeholder="例）鈴木 花子" />
+                  value={resp_name} onChange={e => { setRespName(e.target.value); if (csvBadges['respName'] === 'reflected') setCsvBadge('respName', 'modified') }} placeholder="例）鈴木 花子" />
               </FormRow>
-              <FormRow label="電話番号" required><TelInput value={resp_tel} onChange={setRespTel} /></FormRow>
+              <FormRow label="電話番号" required badge={<CsvBadge name="respTel" />}>
+                <TelInput value={resp_tel} onChange={v => { setRespTel(v); if (csvBadges['respTel'] === 'reflected') setCsvBadge('respTel', 'modified') }} />
+              </FormRow>
 
               <SectionHeader label="苦情処理申出先（派遣先）" />
-              <FormRow label="部署名" required>
-                <input className={inp} style={deptInputStyle} value={comp_dept} onChange={e => setCompDept(e.target.value)} placeholder="例）総務部" />
+              <FormRow label="部署名" required badge={<CsvBadge name="compDept" />}>
+                <input className={inp} style={deptInputStyle} value={comp_dept} onChange={e => { setCompDept(e.target.value); if (csvBadges['compDept'] === 'reflected') setCsvBadge('compDept', 'modified') }} placeholder="例）総務部" />
               </FormRow>
-              <FormRow label="役職" required>
+              <FormRow label="役職" required badge={<CsvBadge name="compRole" />}>
                 <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                  value={comp_role} onChange={e => setCompRole(e.target.value)} placeholder="例）担当者" />
+                  value={comp_role} onChange={e => { setCompRole(e.target.value); if (csvBadges['compRole'] === 'reflected') setCsvBadge('compRole', 'modified') }} placeholder="例）担当者" />
               </FormRow>
-              <FormRow label="氏名" required>
+              <FormRow label="氏名" required badge={<CsvBadge name="compName" />}>
                 <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                  value={comp_name} onChange={e => setCompName(e.target.value)} placeholder="例）田中 次郎" />
+                  value={comp_name} onChange={e => { setCompName(e.target.value); if (csvBadges['compName'] === 'reflected') setCsvBadge('compName', 'modified') }} placeholder="例）田中 次郎" />
               </FormRow>
-              <FormRow label="電話番号" required><TelInput value={comp_tel} onChange={setCompTel} /></FormRow>
+              <FormRow label="電話番号" required badge={<CsvBadge name="compTel" />}>
+                <TelInput value={comp_tel} onChange={v => { setCompTel(v); if (csvBadges['compTel'] === 'reflected') setCsvBadge('compTel', 'modified') }} />
+              </FormRow>
 
               <SectionHeader label="追加項目" />
-              <FormRow label="福利厚生施設の利用等" required>
-                <NoBreakTextarea value={welfare} onChange={setWelfare} placeholder="例）社員食堂・更衣室の利用可" minHeight="60px" />
+              <FormRow label="福利厚生施設の利用等" required badge={<CsvBadge name="welfare" />}>
+                <NoBreakTextarea value={welfare} onChange={v => { setWelfare(v); if (csvBadges['welfare'] === 'reflected') setCsvBadge('welfare', 'modified') }} placeholder="例）社員食堂・更衣室の利用可" minHeight="60px" />
               </FormRow>
-              <FormRow label="安全及び衛生" required>
+              <FormRow label="安全及び衛生" required badge={<CsvBadge name="safety" />}>
                 <ModeToggle mode={safetyMode} onChange={m => { setSafetyMode(m); setSafetyText(m === 'default' ? DEFAULT_SAFETY : '') }} />
-                <NoBreakTextarea value={safetyText} onChange={setSafetyText}
+                <NoBreakTextarea value={safetyText} onChange={v => { setSafetyText(v); if (csvBadges['safety'] === 'reflected') setCsvBadge('safety', 'modified') }}
                   placeholder="安全及び衛生に関する内容を入力してください" minHeight="80px"
                   bg={safetyMode === 'default' ? '#F5F7FC' : 'white'} />
                 <p className="text-xs" style={{ color: '#5A6A8A' }}>
                   {safetyMode === 'default' ? '※デフォルト文言を表示しています。必要に応じて編集してください。' : '※自由に入力してください。'}
                 </p>
               </FormRow>
-              <FormRow label="紛争防止措置" required>
+              <FormRow label="紛争防止措置" required badge={<CsvBadge name="conflict2" />}>
                 <ModeToggle mode={conflictMode} onChange={m => { setConflictMode(m); setConflictText(m === 'default' ? DEFAULT_CONFLICT : '') }} />
-                <NoBreakTextarea value={conflictText} onChange={setConflictText}
+                <NoBreakTextarea value={conflictText} onChange={v => { setConflictText(v); if (csvBadges['conflict2'] === 'reflected') setCsvBadge('conflict2', 'modified') }}
                   placeholder="紛争防止措置に関する内容を入力してください" minHeight="80px"
                   bg={conflictMode === 'default' ? '#F5F7FC' : 'white'} />
                 <p className="text-xs" style={{ color: '#5A6A8A' }}>
@@ -1785,29 +1899,29 @@ export default function ApplyPage() {
                 ℹ️ 以下は自社マスタから自動入力されています。内容を確認し、必要であれば修正してください。
               </div>
               <SectionHeader label="派遣元責任者" />
-              <FormRowAuto label="部署名">
+              <FormRowAuto label="部署名" modified={masterSnapshot.mgr_dept !== undefined && mgr_dept !== masterSnapshot.mgr_dept}>
                 <input className={inp} style={{ borderColor: '#D0DAF0', color: '#1A2340' }} value={mgr_dept} onChange={e => setMgrDept(e.target.value)} />
               </FormRowAuto>
-              <FormRowAuto label="役職">
+              <FormRowAuto label="役職" modified={masterSnapshot.mgr_role !== undefined && mgr_role !== masterSnapshot.mgr_role}>
                 <input className={inp} style={{ borderColor: '#D0DAF0', color: '#1A2340' }} value={mgr_role} onChange={e => setMgrRole(e.target.value)} />
               </FormRowAuto>
-              <FormRowAuto label="氏名">
+              <FormRowAuto label="氏名" modified={masterSnapshot.mgr_name !== undefined && mgr_name !== masterSnapshot.mgr_name}>
                 <input className={inp} style={{ borderColor: '#D0DAF0', color: '#1A2340' }} value={mgr_name} onChange={e => setMgrName(e.target.value)} />
               </FormRowAuto>
-              <FormRowAuto label="電話番号">
+              <FormRowAuto label="電話番号" modified={masterSnapshot.mgr_tel !== undefined && mgr_tel !== masterSnapshot.mgr_tel}>
                 <TelInput value={mgr_tel} onChange={setMgrTel} />
               </FormRowAuto>
               <SectionHeader label="苦情処理申出先（派遣元）" />
-              <FormRowAuto label="部署名">
+              <FormRowAuto label="部署名" modified={masterSnapshot.cmp_dept !== undefined && cmp_dept !== masterSnapshot.cmp_dept}>
                 <input className={inp} style={{ borderColor: '#D0DAF0', color: '#1A2340' }} value={cmp_dept} onChange={e => setCmpDept(e.target.value)} />
               </FormRowAuto>
-              <FormRowAuto label="役職">
+              <FormRowAuto label="役職" modified={masterSnapshot.cmp_role !== undefined && cmp_role !== masterSnapshot.cmp_role}>
                 <input className={inp} style={{ borderColor: '#D0DAF0', color: '#1A2340' }} value={cmp_role} onChange={e => setCmpRole(e.target.value)} />
               </FormRowAuto>
-              <FormRowAuto label="氏名">
+              <FormRowAuto label="氏名" modified={masterSnapshot.cmp_name !== undefined && cmp_name !== masterSnapshot.cmp_name}>
                 <input className={inp} style={{ borderColor: '#D0DAF0', color: '#1A2340' }} value={cmp_name} onChange={e => setCmpName(e.target.value)} />
               </FormRowAuto>
-              <FormRowAuto label="電話番号">
+              <FormRowAuto label="電話番号" modified={masterSnapshot.cmp_tel !== undefined && cmp_tel !== masterSnapshot.cmp_tel}>
                 <TelInput value={cmp_tel} onChange={setCmpTel} />
               </FormRowAuto>
               <NavButtons onNext={() => {
@@ -1841,7 +1955,7 @@ export default function ApplyPage() {
                     </div>
                   </FormRow>
                   <FormRow label="抵触日（組織単位）" required tooltip={TOOLTIPS['抵触日（組織単位）']}>
-                    {period === '無期' ? fixedText('無期雇用派遣のため該当しない（自動）') : (
+                    {isConflictDateExempt ? fixedText('無期雇用派遣のため該当しない（自動）') : (
                       <div>
                         <input type="date" className={`${inp} max-w-xs`}
                           style={{ borderColor: isPastDate(conflictDateOrg) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
@@ -1982,55 +2096,51 @@ export default function ApplyPage() {
                 </div>
               </FormRow>
 
-              {/* 備考文言：パターンBは非表示 */}
+              <SectionHeader label="備考文言" />
+
+              {needsBonusSelection(pattern, contractType) ? (
+                <FormRow label="賞与" required>
+                  <div className="flex gap-3">
+                    {(['あり', 'なし'] as const).map(v => (
+                      <button key={v}
+                        onClick={e => { e.preventDefault(); setBonusType(v) }}
+                        className="flex-1 py-3 rounded-lg border-2 text-sm font-medium transition-all"
+                        style={{
+                          borderColor: bonusType === v ? '#1B3A8C' : '#D0DAF0',
+                          background: bonusType === v ? '#EEF2FA' : 'white',
+                          color: bonusType === v ? '#1B3A8C' : '#5A6A8A',
+                        }}>
+                        賞与{v}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs mt-1" style={{ color: '#5A6A8A' }}>
+                    賞与（ボーナス）が契約上支給される場合は「賞与あり」。決算賞与のみで契約書上に記載が不要な場合は「賞与なし」を選んでください。
+                  </p>
+                </FormRow>
+              ) : (
+                <FormRow label="賞与">
+                  <p className="text-xs rounded-lg px-3 py-2 inline-block border"
+                    style={{ color: '#5A6A8A', background: '#F5F7FC', borderColor: '#D0DAF0' }}>
+                    自動確定（選択不要）
+                  </p>
+                </FormRow>
+              )}
+
               {pattern !== 'B' && (
-                <>
-                  <SectionHeader label="備考文言" />
-
-                  {/* 正社員 かつ パターンA・C のみ賞与あり/なし選択UIを表示 */}
-                  {needsBonusSelection(pattern, contractType) ? (
-                    <FormRow label="賞与" required>
-                      <div className="flex gap-3">
-                        {(['あり', 'なし'] as const).map(v => (
-                          <button key={v}
-                            onClick={e => { e.preventDefault(); setBonusType(v) }}
-                            className="flex-1 py-3 rounded-lg border-2 text-sm font-medium transition-all"
-                            style={{
-                              borderColor: bonusType === v ? '#1B3A8C' : '#D0DAF0',
-                              background: bonusType === v ? '#EEF2FA' : 'white',
-                              color: bonusType === v ? '#1B3A8C' : '#5A6A8A',
-                            }}>
-                            賞与{v}
-                          </button>
-                        ))}
-                      </div>
-                      <p className="text-xs mt-1" style={{ color: '#5A6A8A' }}>
-                        賞与（ボーナス）が契約上支給される場合は「賞与あり」。決算賞与のみで契約書上に記載が不要な場合は「賞与なし」を選んでください。
-                      </p>
-                    </FormRow>
-                  ) : (
-                    <FormRow label="賞与">
-                      <p className="text-xs rounded-lg px-3 py-2 inline-block border"
-                        style={{ color: '#5A6A8A', background: '#F5F7FC', borderColor: '#D0DAF0' }}>
-                        自動確定（選択不要）
-                      </p>
-                    </FormRow>
-                  )}
-
-                  {/* 帳票プレビュー */}
-                  <FormRow label="備考欄プレビュー">
-                    <div className="rounded-lg p-4 border" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                      <p className="text-xs font-medium mb-2" style={{ color: '#1B3A8C' }}>📄 帳票プレビュー（自動生成）</p>
-                      <p className="text-xs leading-relaxed whitespace-pre-line" style={{ color: '#1A2340' }}>
-                        {remarksText}
-                      </p>
-                    </div>
-                  </FormRow>
-                </>
+                <FormRow label="備考欄プレビュー">
+                  <div className="rounded-lg p-4 border" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
+                    <p className="text-xs font-medium mb-2" style={{ color: '#1B3A8C' }}>📄 帳票プレビュー（自動生成）</p>
+                    <p className="text-xs leading-relaxed whitespace-pre-line" style={{ color: '#1A2340' }}>
+                      {remarksText}
+                    </p>
+                  </div>
+                </FormRow>
               )}
 
               <NavButtons onNext={() => {
                 if (!closingPattern) { alert('締結パターンを選択してください'); return }
+                if (needsBonusSelection(pattern, contractType) && !bonusType) { alert('賞与の有無を選択してください'); return }
                 handleNext()
               }} />
             </>
@@ -2256,10 +2366,212 @@ export default function ApplyPage() {
             </>
           )}
 
-          {stepType === 'tbd' && (
-            <div className="bg-white px-5 py-10 text-center text-sm" style={{ color: '#5A6A8A' }}>
-              このSTEPは実装中です
-            </div>
+          {stepType === 'finalCheck' && (
+            <>
+              {/* 差し戻しバナー（カード外・上部・独立表示） */}
+              {isRejected && (
+                <div className="rounded-lg p-4 mb-4 border" style={{ background: '#FEF2F2', borderColor: '#DC2626' }}>
+                  <p className="text-sm font-bold flex items-center gap-1.5 mb-1.5" style={{ color: '#DC2626' }}>⚠️ この申請は差し戻されました</p>
+                  <p className="text-sm leading-relaxed" style={{ color: '#1A2340' }}>{rejectionReason}</p>
+                  <p className="text-xs mt-2" style={{ color: '#5A6A8A' }}>差し戻し日時：{rejectedAt}　差し戻し担当：{rejectedBy}</p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 mb-3">
+                <button onClick={() => setCollapsedSections({})}
+                  className="text-xs px-3 py-1.5 rounded-lg border" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>すべて展開</button>
+                <button onClick={() => setCollapsedSections({
+                  s1: true, s2: true, s3: true, s4: true, s5: true, s6: true, s7: true,
+                })}
+                  className="text-xs px-3 py-1.5 rounded-lg border" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>すべて折りたたむ</button>
+              </div>
+
+              {/* ===== STEP1：基本情報 ===== */}
+              <FinalSection id="s1" title="STEP1：基本情報" sub="契約するスタッフと書類の種類を選びます"
+                collapsed={collapsedSections} setCollapsed={setCollapsedSections}
+                onEdit={() => setCurrentStep(1)} editLabel={isRejected ? '確認・修正する' : '修正する'}>
+                <FinalRow label="対象スタッフ" value={selectedStaff ? `${selectedStaff.name}（社員番号：${selectedStaff.employee_number}）` : '―'} />
+                <FinalRow label="雇用区分" value={contractType || '―'} />
+                <FinalRow label="就業場所区分" value={workPlace || '―'} />
+                <FinalRow label="書類種別" value={documentType || '―'} />
+              </FinalSection>
+
+              {/* ===== STEP2：就業先情報 ===== */}
+              <FinalSection id="s2" title="STEP2：就業先情報" sub="就業場所・業務内容・労働時間を入力します"
+                collapsed={collapsedSections} setCollapsed={setCollapsedSections}
+                onEdit={() => setCurrentStep(2)} editLabel={isRejected ? '確認・修正する' : '修正する'}>
+                <FinalRow label="入力方法" value={csvMode === 'csv' ? `CSVデータから自動入力（${csvSystem}）` : '手動で入力する'} />
+                <FinalRow label="就業場所名" value={workLocationName || '―'} badge={<CsvBadge name="locationName" />} />
+                <FinalRow label="就業場所住所" value={workLocationAddress || '―'} badge={<CsvBadge name="locationAddress" />} />
+                <FinalRow label="就業場所電話番号" value={workLocationTel || '―'} badge={<CsvBadge name="locationTel" />} />
+                <FinalRow label="業務内容" value={businessContent || '―'} badge={<CsvBadge name="business" />} />
+                <FinalRow label="始業時刻" value={startTime || '―'} badge={<CsvBadge name="time" />} />
+                <FinalRow label="終業時刻" value={endTime ? `${endTime}${isShift ? '　※シフト制' : ''}` : '―'} badge={<CsvBadge name="time" />} />
+                <FinalRow label="休憩時間" value={breakTime ? `${breakTime}分` : '―'} badge={<CsvBadge name="breakTime" />} />
+                <FinalRow label="所定労働時間" value={(workingHoursH || workingHoursM) ? `${workingHoursH || 0}時間${workingHoursM || 0}分` : '―'} badge={<CsvBadge name="workingHours" />} />
+                <FinalRow label="所定労働日数" value={workDays === 'other' ? (workDaysOther || '―') : (workDays || '―')} />
+                <FinalRow label="組織単位" value={organizationUnit || '―'} badge={<CsvBadge name="org" />} />
+                {!isConflictDateExempt && <FinalRow label="抵触日（事業所単位）" value={conflictDate || '―'} badge={<CsvBadge name="conflict" />} />}
+                <FinalRow label="業務に伴う責任の程度" value={responsibility || '―'} badge={<CsvBadge name="resp" />} />
+              </FinalSection>
+
+              {/* ===== STEP3：派遣先担当者（パターンB・Cのみ） ===== */}
+              {(pattern === 'B' || pattern === 'C') && (
+                <FinalSection id="s3" title="STEP3：派遣先担当者" sub="派遣先の担当者情報を入力します"
+                  collapsed={collapsedSections} setCollapsed={setCollapsedSections}
+                  onEdit={() => setCurrentStep(3)} editLabel={isRejected ? '確認・修正する' : '修正する'}>
+                  <FinalGroupHeader label="指揮命令者" />
+                  <FinalRow label="部署" value={cmd_dept || '―'} badge={<CsvBadge name="cmdDept" />} />
+                  <FinalRow label="役職" value={cmd_role || '―'} badge={<CsvBadge name="cmdRole" />} />
+                  <FinalRow label="氏名" value={cmd_name || '―'} badge={<CsvBadge name="cmdName" />} />
+                  <FinalRow label="電話番号" value={cmd_tel || '―'} badge={<CsvBadge name="cmdTel" />} />
+
+                  <FinalGroupHeader label="派遣先責任者" />
+                  <FinalRow label="部署" value={resp_dept || '―'} badge={<CsvBadge name="respDept" />} />
+                  <FinalRow label="役職" value={resp_role || '―'} badge={<CsvBadge name="respRole" />} />
+                  <FinalRow label="氏名" value={resp_name || '―'} badge={<CsvBadge name="respName" />} />
+                  <FinalRow label="電話番号" value={resp_tel || '―'} badge={<CsvBadge name="respTel" />} />
+
+                  <FinalGroupHeader label="苦情処理申出先（派遣先）" />
+                  <FinalRow label="部署" value={comp_dept || '―'} badge={<CsvBadge name="compDept" />} />
+                  <FinalRow label="役職" value={comp_role || '―'} badge={<CsvBadge name="compRole" />} />
+                  <FinalRow label="氏名" value={comp_name || '―'} badge={<CsvBadge name="compName" />} />
+                  <FinalRow label="電話番号" value={comp_tel || '―'} badge={<CsvBadge name="compTel" />} />
+
+                  <FinalGroupHeader label="追加項目" />
+                  <FinalRow label="福利厚生施設の利用等" value={welfare || '―'} badge={<CsvBadge name="welfare" />} />
+                  <FinalRow label="安全及び衛生" value={safetyText || '―'} badge={<CsvBadge name="safety" />} multiline />
+                  <FinalRow label="紛争防止措置" value={conflictText || '―'} badge={<CsvBadge name="conflict2" />} multiline />
+                </FinalSection>
+              )}
+
+              {/* ===== STEP4：派遣元担当者（パターンB・Cのみ） ===== */}
+              {(pattern === 'B' || pattern === 'C') && (
+                <FinalSection id="s4" title="STEP4：派遣元担当者" sub="自社の担当者情報を確認・修正します"
+                  collapsed={collapsedSections} setCollapsed={setCollapsedSections}
+                  onEdit={() => setCurrentStep(4)} editLabel={isRejected ? '確認・修正する' : '修正する'}>
+                  <FinalGroupHeader label="派遣元責任者" />
+                  <FinalRow label="部署" value={mgr_dept || '―'} badge={<AutoBadge modified={masterSnapshot.mgr_dept !== undefined && mgr_dept !== masterSnapshot.mgr_dept} />} />
+                  <FinalRow label="役職" value={mgr_role || '―'} badge={<AutoBadge modified={masterSnapshot.mgr_role !== undefined && mgr_role !== masterSnapshot.mgr_role} />} />
+                  <FinalRow label="氏名" value={mgr_name || '―'} badge={<AutoBadge modified={masterSnapshot.mgr_name !== undefined && mgr_name !== masterSnapshot.mgr_name} />} />
+                  <FinalRow label="電話番号" value={mgr_tel || '―'} badge={<AutoBadge modified={masterSnapshot.mgr_tel !== undefined && mgr_tel !== masterSnapshot.mgr_tel} />} />
+
+                  <FinalGroupHeader label="苦情処理申出先（派遣元）" />
+                  <FinalRow label="部署" value={cmp_dept || '―'} badge={<AutoBadge modified={masterSnapshot.cmp_dept !== undefined && cmp_dept !== masterSnapshot.cmp_dept} />} />
+                  <FinalRow label="役職" value={cmp_role || '―'} badge={<AutoBadge modified={masterSnapshot.cmp_role !== undefined && cmp_role !== masterSnapshot.cmp_role} />} />
+                  <FinalRow label="氏名" value={cmp_name || '―'} badge={<AutoBadge modified={masterSnapshot.cmp_name !== undefined && cmp_name !== masterSnapshot.cmp_name} />} />
+                  <FinalRow label="電話番号" value={cmp_tel || '―'} badge={<AutoBadge modified={masterSnapshot.cmp_tel !== undefined && cmp_tel !== masterSnapshot.cmp_tel} />} />
+                </FinalSection>
+              )}
+
+              {/* ===== STEP5：期間・労働条件 ===== */}
+              <FinalSection id="s5" title="STEP5：期間・労働条件" sub="雇用期間・派遣期間・残業の有無を入力します"
+                collapsed={collapsedSections} setCollapsed={setCollapsedSections}
+                onEdit={() => setCurrentStep(pattern === 'A' ? 3 : 5)} editLabel={isRejected ? '確認・修正する' : '修正する'}>
+                {(pattern === 'B' || pattern === 'C') && (
+                  <>
+                    <FinalRow label="派遣期間" value={(dispatchStart && dispatchEnd) ? `${dispatchStart} 〜 ${dispatchEnd}` : '―'} />
+                    {!isConflictDateExempt && <FinalRow label="抵触日（組織単位）" value={conflictDateOrg || '―'} />}
+                  </>
+                )}
+                <FinalRow label="雇用期間" value={
+                  employStart
+                    ? (period === '有期' ? `${employStart} 〜 ${employEnd || '―'}` : `${employStart} 〜 期間の定めなし`)
+                    : '―'
+                } />
+                <FinalRow label="試用期間" value={
+                  trialPeriod === '有' ? `有　${trialStart || '―'} 〜 ${trialEnd || '―'}` : trialPeriod === '無' ? '無' : '―'
+                } />
+                <FinalRow label="変形労働時間制" value={flexTime || '―'} />
+                <FinalRow label="所定労働時間外労働" value={overtime || '―'} />
+              </FinalSection>
+
+              {/* ===== STEP6：契約条件（パターンA・Cのみ） ===== */}
+              {(pattern === 'A' || pattern === 'C') && (
+                <FinalSection id="s6" title="STEP6：契約条件" sub="契約書の締結方法と備考欄の内容を選びます"
+                  collapsed={collapsedSections} setCollapsed={setCollapsedSections}
+                  onEdit={() => setCurrentStep(pattern === 'A' ? 4 : 6)} editLabel={isRejected ? '確認・修正する' : '修正する'}>
+                  <FinalRow label="締結パターン" value={
+                    `${CLOSING_PATTERNS.find(p => p.id === closingPattern)?.label || '―'}\n${CLOSING_PATTERNS.find(p => p.id === closingPattern)?.desc || ''}`
+                  } multiline />
+                  <FinalRow label="備考欄" value={remarksText || '―'} multiline />
+                </FinalSection>
+              )}
+
+              {/* ===== STEP7：給与・保険（パターンA・Cのみ） ===== */}
+              {(pattern === 'A' || pattern === 'C') && (
+                <FinalSection id="s7" title="STEP7：給与・保険" sub="給与の金額と加入する保険を入力します"
+                  collapsed={collapsedSections} setCollapsed={setCollapsedSections}
+                  onEdit={() => setCurrentStep(pattern === 'A' ? 5 : 7)} editLabel={isRejected ? '確認・修正する' : '修正する'}>
+                  <FinalGroupHeader label="賃金" />
+                  <FinalRow label="給与の種類" value={salaryType || '―'} />
+                  <FinalRow label="基本給" value={basicSalary ? `${parseAmount(basicSalary).toLocaleString()}円` : '―'} />
+                  <FinalRow label="役職手当" value={parseAmount(rolePay) > 0 ? `${parseAmount(rolePay).toLocaleString()}円` : '―'} />
+                  <FinalRow label="職能給" value={parseAmount(skillPay) > 0 ? `${parseAmount(skillPay).toLocaleString()}円` : '―'} />
+                  <FinalRow label="営業手当" value={parseAmount(salesPay) > 0 ? `${parseAmount(salesPay).toLocaleString()}円` : '―'} />
+                  <FinalRow label="定額残業手当" value={parseAmount(overtimePay) > 0 ? `${parseAmount(overtimePay).toLocaleString()}円（${parseAmount(overtimeHours)}時間分）` : '―'} />
+                  <FinalRow label="住宅手当" value={parseAmount(housingPay) > 0 ? `${parseAmount(housingPay).toLocaleString()}円` : '―'} />
+                  {salaryType === '時給' && hourlyMonthlyBreakdown && (
+                    <FinalRow label="月額換算（概算）" value={
+                      `${hourlyMonthlyBreakdown.join('\n')}\n※月所定労働日数20日・1日8時間（160時間）での計算例です。実際の支給額は勤務実績により異なります。`
+                    } multiline highlight={`月額換算例（基本給×160時間＋各種手当）：${salaryTotal.toLocaleString()}円`} />
+                  )}
+
+                  <FinalGroupHeader label="交通費" />
+                  <FinalRow label="交通費区分" value={selectedTransport.label} />
+                  <FinalRow label="帳票プレビュー" value={selectedTransport.preview} multiline preview />
+
+                  <FinalGroupHeader label="各種保険" />
+                  <FinalRow label="労災保険" value="全員加入（自動）" badge={<AutoBadge />} />
+                  <FinalRow label="加入保険" value={
+                    [hasEmployInsurance && '雇用保険に加入する', hasSocialInsurance && '健康保険・厚生年金に加入する'].filter(Boolean).join(' / ') || '―'
+                  } />
+                  <FinalRow label="帳票プレビュー" value={insurancePreview} preview />
+                  <FinalRow label="賃金支払時の控除" value={deductionText} />
+                </FinalSection>
+              )}
+
+              {/* ===== 申請エリア ===== */}
+              <div className="bg-white rounded-xl border shadow-sm p-6 mt-4" style={{ borderColor: '#D0DAF0' }}>
+                <div className="rounded-lg px-4 py-3 mb-4 text-sm leading-relaxed border-l-4" style={{ background: '#EEF2FA', color: '#5A6A8A', borderColor: '#1B3A8C' }}>
+                  {closingPattern === 'auto'
+                    ? '申請後はSSCの承認をお待ちください。承認後、スタッフへ署名依頼が自動送信されます。'
+                    : '申請後はSSCの承認をお待ちください。承認後、ダッシュボードから説明手続きを行ってください。'}
+                </div>
+
+                {isRejected && submitClickCount === 1 && (
+                  <div className="rounded-lg px-4 py-3 mb-3 border" style={{ background: '#FFFBEB', borderColor: '#D97706' }}>
+                    <p className="text-xs leading-relaxed" style={{ color: '#92400E' }}>
+                      ⚠️ 差し戻し前と入力内容が変わっていません。内容に問題がないか今一度ご確認ください。問題なければ、もう一度ボタンを押して申請してください。
+                    </p>
+                  </div>
+                )}
+
+                <button
+                  onClick={() => {
+                    if (isRejected) {
+                      if (submitClickCount === 0) { setSubmitClickCount(1); return }
+                      alert('申請が完了しました。ダッシュボードへ移動します。')
+                      router.push('/dashboard/sales')
+                      return
+                    }
+                    alert('申請が完了しました。ダッシュボードへ移動します。')
+                    router.push('/dashboard/sales')
+                  }}
+                  className="w-full py-3.5 rounded-lg text-white font-bold text-sm mb-2" style={{ background: '#1B3A8C' }}>
+                  {isRejected && submitClickCount === 1 ? 'このまま申請する' : '申請する'}
+                </button>
+                <button onClick={handleCancel} className="w-full text-center text-xs underline py-1" style={{ color: '#5A6A8A' }}>
+                  この申請をやめる
+                </button>
+              </div>
+
+              <div className="flex justify-start mt-3">
+                <button onClick={handleBack}
+                  className="bg-white border px-5 py-2.5 rounded-lg text-sm transition-all"
+                  style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>← 前へ</button>
+              </div>
+            </>
           )}
         </div>
       </main>

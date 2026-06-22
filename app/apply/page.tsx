@@ -207,6 +207,13 @@ const isDateBefore = (dateA: string, dateB: string) => {
   return dateA < dateB // YYYY-MM-DD形式は文字列比較でも日付の前後関係が正しく出る
 }
 
+// 数値を2桁ゼロ埋めにする（時間・分の入力統一用）。空欄はそのまま空欄にする
+const padTwoDigits = (str: string) => {
+  if (!str) return str
+  const n = parseAmount(str)
+  return String(n).padStart(2, '0')
+}
+
 // 全角数字を半角に変換（全角混在の入力ミスを防ぐ）
 const toHalfWidthDigits = (str: string) =>
   (str || '').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
@@ -887,10 +894,8 @@ export default function ApplyPage() {
     if (pattern === 'B' || pattern === 'C') {
       if (!dispatchStart || !dispatchEnd) return '派遣期間を入力してください'
       if (!isConflictDateExempt && !conflictDate) return '抵触日（事業所単位）を入力してください'
-      if (!isConflictDateExempt && isPastDate(conflictDate)) return '抵触日（事業所単位）が過去の日付になっています'
       if (!isConflictDateExempt && isDateBefore(conflictDate, dispatchEnd)) return '抵触日（事業所単位）は派遣期間の終了日以降の日付にしてください'
       if (!isConflictDateExempt && !conflictDateOrg) return '抵触日（組織単位）を入力してください'
-      if (!isConflictDateExempt && isPastDate(conflictDateOrg)) return '抵触日（組織単位）が過去の日付になっています'
       if (!isConflictDateExempt && isDateBefore(conflictDateOrg, dispatchEnd)) return '抵触日（組織単位）は派遣期間の終了日以降の日付にしてください'
       if (!organizationUnit) return '組織単位を入力してください'
     }
@@ -1706,12 +1711,14 @@ export default function ApplyPage() {
                           style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                           value={workingHoursH}
                           onChange={e => { setWorkingHoursH(toHalfWidthDigits(e.target.value)); if (csvBadges['workingHours'] === 'reflected') setCsvBadge('workingHours', 'modified') }}
+                          onBlur={() => setWorkingHoursH(prev => padTwoDigits(prev))}
                           placeholder="8" />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>時間</span>
                         <input type="text" className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                           value={workingHoursM}
                           onChange={e => { setWorkingHoursM(toHalfWidthDigits(e.target.value)); if (csvBadges['workingHours'] === 'reflected') setCsvBadge('workingHours', 'modified') }}
+                          onBlur={() => setWorkingHoursM(prev => padTwoDigits(prev))}
                           placeholder="00" />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>分</span>
                       </div>
@@ -1938,13 +1945,10 @@ export default function ApplyPage() {
                     {isConflictDateExempt ? fixedText('無期雇用派遣のため該当しない（自動）') : (
                       <div>
                         <input type="date" className={`${inp} max-w-xs`}
-                          style={{ borderColor: (isPastDate(conflictDate) || isDateBefore(conflictDate, dispatchEnd)) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
+                          style={{ borderColor: isDateBefore(conflictDate, dispatchEnd) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
                           value={conflictDate}
                           onChange={e => { setConflictDate(e.target.value); if (csvBadges['conflict'] === 'reflected') setCsvBadge('conflict', 'modified') }} />
-                        {isPastDate(conflictDate) && (
-                          <p className="text-xs mt-1" style={{ color: '#DC2626' }}>過去の日付は入力できません</p>
-                        )}
-                        {!isPastDate(conflictDate) && isDateBefore(conflictDate, dispatchEnd) && (
+                        {isDateBefore(conflictDate, dispatchEnd) && (
                           <p className="text-xs mt-1" style={{ color: '#DC2626' }}>抵触日は派遣期間の終了日以降の日付にしてください</p>
                         )}
                       </div>
@@ -1954,12 +1958,9 @@ export default function ApplyPage() {
                     {isConflictDateExempt ? fixedText('無期雇用派遣のため該当しない（自動）') : (
                       <div>
                         <input type="date" className={`${inp} max-w-xs`}
-                          style={{ borderColor: (isPastDate(conflictDateOrg) || isDateBefore(conflictDateOrg, dispatchEnd)) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
+                          style={{ borderColor: isDateBefore(conflictDateOrg, dispatchEnd) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
                           value={conflictDateOrg} onChange={e => setConflictDateOrg(e.target.value)} />
-                        {isPastDate(conflictDateOrg) && (
-                          <p className="text-xs mt-1" style={{ color: '#DC2626' }}>過去の日付は入力できません</p>
-                        )}
-                        {!isPastDate(conflictDateOrg) && isDateBefore(conflictDateOrg, dispatchEnd) && (
+                        {isDateBefore(conflictDateOrg, dispatchEnd) && (
                           <p className="text-xs mt-1" style={{ color: '#DC2626' }}>抵触日は派遣期間の終了日以降の日付にしてください</p>
                         )}
                       </div>

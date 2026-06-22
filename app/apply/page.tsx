@@ -200,6 +200,13 @@ const isPastDate = (dateStr: string) => {
   return inputDate < today
 }
 
+// 2つの日付文字列（YYYY-MM-DD）を比較する。dateA < dateB なら true
+// どちらか未入力の場合は比較不能のため false（エラーにしない）
+const isDateBefore = (dateA: string, dateB: string) => {
+  if (!dateA || !dateB) return false
+  return dateA < dateB // YYYY-MM-DD形式は文字列比較でも日付の前後関係が正しく出る
+}
+
 // 全角数字を半角に変換（全角混在の入力ミスを防ぐ）
 const toHalfWidthDigits = (str: string) =>
   (str || '').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
@@ -871,9 +878,6 @@ export default function ApplyPage() {
     if (!workDays) return '所定労働日数を選択してください'
     if (workDays === 'other' && !workDaysOther) return '所定労働日数（その他）を入力してください'
     if (pattern === 'B' || pattern === 'C') {
-      if (!organizationUnit) return '組織単位を入力してください'
-      if (!isConflictDateExempt && !conflictDate) return '抵触日（事業所単位）を入力してください'
-      if (!isConflictDateExempt && isPastDate(conflictDate)) return '抵触日（事業所単位）が過去の日付になっています'
       if (!responsibility) return '業務に伴う責任の程度を選択してください'
     }
     return null
@@ -882,8 +886,13 @@ export default function ApplyPage() {
   const validatePeriod = () => {
     if (pattern === 'B' || pattern === 'C') {
       if (!dispatchStart || !dispatchEnd) return '派遣期間を入力してください'
+      if (!isConflictDateExempt && !conflictDate) return '抵触日（事業所単位）を入力してください'
+      if (!isConflictDateExempt && isPastDate(conflictDate)) return '抵触日（事業所単位）が過去の日付になっています'
+      if (!isConflictDateExempt && isDateBefore(conflictDate, dispatchEnd)) return '抵触日（事業所単位）は派遣期間の終了日以降の日付にしてください'
       if (!isConflictDateExempt && !conflictDateOrg) return '抵触日（組織単位）を入力してください'
       if (!isConflictDateExempt && isPastDate(conflictDateOrg)) return '抵触日（組織単位）が過去の日付になっています'
+      if (!isConflictDateExempt && isDateBefore(conflictDateOrg, dispatchEnd)) return '抵触日（組織単位）は派遣期間の終了日以降の日付にしてください'
+      if (!organizationUnit) return '組織単位を入力してください'
     }
     if (pattern === 'A' || pattern === 'C') {
       if (period === '有期') {
@@ -891,7 +900,8 @@ export default function ApplyPage() {
         if (employStartError) return employStartError
         if (employEndError) return employEndError
       }
-      if (period === '無期' && !contractStartDate) return '契約条件適用開始日を入力してください'
+      if ((period === '無期' || contractType === '正社員') && !contractStartDate) return '契約条件適用開始日を入力してください'
+      if ((period === '無期' || contractType === '正社員') && isDateBefore(contractStartDate, dispatchStart)) return '契約条件適用開始日は派遣期間の開始日以降の日付にしてください'
       if (!trialPeriod) return '試用期間を選択してください'
       if (trialPeriod === '有') {
         if (!trialStart || !trialEnd) return '試用期間の開始日・終了日を入力してください'
@@ -1670,7 +1680,7 @@ export default function ApplyPage() {
                         <input type="text" className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                           value={breakTime}
-                          onChange={e => { setBreakTime(e.target.value); if (csvBadges['breakTime'] === 'reflected') setCsvBadge('breakTime', 'modified') }}
+                          onChange={e => { setBreakTime(toHalfWidthDigits(e.target.value)); if (csvBadges['breakTime'] === 'reflected') setCsvBadge('breakTime', 'modified') }}
                           placeholder="60" />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>分</span>
                       </div>
@@ -1691,13 +1701,13 @@ export default function ApplyPage() {
                         <input type="text" className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                           value={workingHoursH}
-                          onChange={e => { setWorkingHoursH(e.target.value); if (csvBadges['workingHours'] === 'reflected') setCsvBadge('workingHours', 'modified') }}
+                          onChange={e => { setWorkingHoursH(toHalfWidthDigits(e.target.value)); if (csvBadges['workingHours'] === 'reflected') setCsvBadge('workingHours', 'modified') }}
                           placeholder="8" />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>時間</span>
                         <input type="text" className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                           value={workingHoursM}
-                          onChange={e => { setWorkingHoursM(e.target.value); if (csvBadges['workingHours'] === 'reflected') setCsvBadge('workingHours', 'modified') }}
+                          onChange={e => { setWorkingHoursM(toHalfWidthDigits(e.target.value)); if (csvBadges['workingHours'] === 'reflected') setCsvBadge('workingHours', 'modified') }}
                           placeholder="00" />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>分</span>
                       </div>
@@ -1745,42 +1755,6 @@ export default function ApplyPage() {
                   {(pattern === 'B' || pattern === 'C') && (
                     <>
                       <SectionHeader label="就業条件明示書の追加項目" />
-                      <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-                        <div className="border-r border-b px-4 py-4 flex flex-wrap items-center gap-1"
-                          style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                          <span className="text-sm font-medium" style={{ color: '#1A2340' }}>組織単位</span>
-                          <Req />
-                          <CsvBadge name="org" />
-                        </div>
-                        <div className="border-b px-5 py-4" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
-                          <input className={`${inp} max-w-lg`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                            value={organizationUnit}
-                            onChange={e => { setOrganizationUnit(e.target.value); if (csvBadges['org'] === 'reflected') setCsvBadge('org', 'modified') }}
-                            placeholder="例）第一営業部" />
-                        </div>
-                      </div>
-                      <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-                        <div className="border-r border-b px-4 py-4 flex flex-wrap items-center gap-1"
-                          style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                          <span className="text-sm font-medium" style={{ color: '#1A2340' }}>抵触日（事業所単位）</span>
-                          <Req />
-                          <Tooltip text={TOOLTIPS['抵触日（事業所単位）']} />
-                          <CsvBadge name="conflict" />
-                        </div>
-                        <div className="border-b px-5 py-4" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
-                          {isConflictDateExempt ? fixedText('無期雇用派遣のため該当しない（自動）') : (
-                            <div>
-                              <input type="date" className={`${inp} max-w-xs`}
-                                style={{ borderColor: isPastDate(conflictDate) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
-                                value={conflictDate}
-                                onChange={e => { setConflictDate(e.target.value); if (csvBadges['conflict'] === 'reflected') setCsvBadge('conflict', 'modified') }} />
-                              {isPastDate(conflictDate) && (
-                                <p className="text-xs mt-1" style={{ color: '#DC2626' }}>過去の日付は入力できません</p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
                       <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
                         <div className="border-r border-b px-4 py-4 flex flex-wrap items-center gap-1"
                           style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
@@ -1956,17 +1930,42 @@ export default function ApplyPage() {
                       </div>
                     </div>
                   </FormRow>
+                  <FormRow label="抵触日（事業所単位）" required tooltip={TOOLTIPS['抵触日（事業所単位）']} badge={<CsvBadge name="conflict" />}>
+                    {isConflictDateExempt ? fixedText('無期雇用派遣のため該当しない（自動）') : (
+                      <div>
+                        <input type="date" className={`${inp} max-w-xs`}
+                          style={{ borderColor: (isPastDate(conflictDate) || isDateBefore(conflictDate, dispatchEnd)) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
+                          value={conflictDate}
+                          onChange={e => { setConflictDate(e.target.value); if (csvBadges['conflict'] === 'reflected') setCsvBadge('conflict', 'modified') }} />
+                        {isPastDate(conflictDate) && (
+                          <p className="text-xs mt-1" style={{ color: '#DC2626' }}>過去の日付は入力できません</p>
+                        )}
+                        {!isPastDate(conflictDate) && isDateBefore(conflictDate, dispatchEnd) && (
+                          <p className="text-xs mt-1" style={{ color: '#DC2626' }}>抵触日は派遣期間の終了日以降の日付にしてください</p>
+                        )}
+                      </div>
+                    )}
+                  </FormRow>
                   <FormRow label="抵触日（組織単位）" required tooltip={TOOLTIPS['抵触日（組織単位）']}>
                     {isConflictDateExempt ? fixedText('無期雇用派遣のため該当しない（自動）') : (
                       <div>
                         <input type="date" className={`${inp} max-w-xs`}
-                          style={{ borderColor: isPastDate(conflictDateOrg) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
+                          style={{ borderColor: (isPastDate(conflictDateOrg) || isDateBefore(conflictDateOrg, dispatchEnd)) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
                           value={conflictDateOrg} onChange={e => setConflictDateOrg(e.target.value)} />
                         {isPastDate(conflictDateOrg) && (
                           <p className="text-xs mt-1" style={{ color: '#DC2626' }}>過去の日付は入力できません</p>
                         )}
+                        {!isPastDate(conflictDateOrg) && isDateBefore(conflictDateOrg, dispatchEnd) && (
+                          <p className="text-xs mt-1" style={{ color: '#DC2626' }}>抵触日は派遣期間の終了日以降の日付にしてください</p>
+                        )}
                       </div>
                     )}
+                  </FormRow>
+                  <FormRow label="組織単位" required badge={<CsvBadge name="org" />}>
+                    <input className={`${inp} max-w-lg`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                      value={organizationUnit}
+                      onChange={e => { setOrganizationUnit(e.target.value); if (csvBadges['org'] === 'reflected') setCsvBadge('org', 'modified') }}
+                      placeholder="例）第一営業部" />
                   </FormRow>
                 </>
               )}
@@ -1980,9 +1979,13 @@ export default function ApplyPage() {
                         {fixedText('期間の定めなし（自動）')}
                         <div className="flex items-center gap-3">
                           <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>契約条件適用開始日</span>
-                          <input type="date" className={`${inp} w-40`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                          <input type="date" className={`${inp} w-40`}
+                            style={{ borderColor: isDateBefore(contractStartDate, dispatchStart) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
                             value={contractStartDate} onChange={e => setContractStartDate(e.target.value)} />
                         </div>
+                        {isDateBefore(contractStartDate, dispatchStart) && (
+                          <p className="text-xs" style={{ color: '#DC2626' }}>契約条件適用開始日は派遣期間の開始日以降の日付にしてください</p>
+                        )}
                         <p className="text-xs" style={{ color: '#5A6A8A' }}>※無期契約のため雇用期間は固定文言になります</p>
                       </div>
                     ) : (
@@ -2179,7 +2182,7 @@ export default function ApplyPage() {
                     <div className="p-3 border-r border-b flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
                       <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>基本給</span>
                       <div className="flex items-center gap-1.5">
-                        <input type="text" value={basicSalary} onChange={e => setBasicSalary(e.target.value)}
+                        <input type="text" value={basicSalary} onChange={e => setBasicSalary(toHalfWidthDigits(e.target.value))}
                           className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28"
                           style={{ borderColor: basicSalaryError ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
                           placeholder="0" />
@@ -2191,7 +2194,7 @@ export default function ApplyPage() {
                     <div className="p-3 border-b flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
                       <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>役職手当</span>
                       <div className="flex items-center gap-1.5">
-                        <input type="text" value={rolePay} onChange={e => setRolePay(e.target.value)}
+                        <input type="text" value={rolePay} onChange={e => setRolePay(toHalfWidthDigits(e.target.value))}
                           className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340' }} placeholder="0" />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
@@ -2201,7 +2204,7 @@ export default function ApplyPage() {
                     <div className="p-3 border-r border-b flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
                       <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>職能給</span>
                       <div className="flex items-center gap-1.5">
-                        <input type="text" value={skillPay} onChange={e => setSkillPay(e.target.value)}
+                        <input type="text" value={skillPay} onChange={e => setSkillPay(toHalfWidthDigits(e.target.value))}
                           className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340' }} placeholder="0" />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
@@ -2211,7 +2214,7 @@ export default function ApplyPage() {
                     <div className="p-3 border-b flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
                       <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>営業手当</span>
                       <div className="flex items-center gap-1.5">
-                        <input type="text" value={salesPay} onChange={e => setSalesPay(e.target.value)}
+                        <input type="text" value={salesPay} onChange={e => setSalesPay(toHalfWidthDigits(e.target.value))}
                           className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340' }} placeholder="0" />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
@@ -2221,12 +2224,12 @@ export default function ApplyPage() {
                     <div className="p-3 border-r flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
                       <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>定額残業手当</span>
                       <div className="flex items-center gap-1.5 flex-nowrap">
-                        <input type="text" value={overtimePay} onChange={e => setOvertimePay(e.target.value)}
+                        <input type="text" value={overtimePay} onChange={e => setOvertimePay(toHalfWidthDigits(e.target.value))}
                           className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340' }} placeholder="0" />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
                         <span className="text-xs" style={{ color: '#D0DAF0' }}>/</span>
-                        <input type="text" value={overtimeHours} onChange={e => setOvertimeHours(e.target.value)}
+                        <input type="text" value={overtimeHours} onChange={e => setOvertimeHours(toHalfWidthDigits(e.target.value))}
                           className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-16"
                           style={{ borderColor: overtimeHoursError ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} placeholder="0" />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>時間分</span>
@@ -2237,7 +2240,7 @@ export default function ApplyPage() {
                     <div className="p-3 flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
                       <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>住宅手当</span>
                       <div className="flex items-center gap-1.5">
-                        <input type="text" value={housingPay} onChange={e => setHousingPay(e.target.value)}
+                        <input type="text" value={housingPay} onChange={e => setHousingPay(toHalfWidthDigits(e.target.value))}
                           className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340' }} placeholder="0" />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
@@ -2409,11 +2412,9 @@ export default function ApplyPage() {
                 <FinalRow label="業務内容" value={businessContent || '―'} badge={<CsvBadge name="business" />} />
                 <FinalRow label="始業時刻" value={startTime || '―'} badge={<CsvBadge name="time" />} />
                 <FinalRow label="終業時刻" value={endTime ? `${endTime}${isShift ? '　※シフト制' : ''}` : '―'} badge={<CsvBadge name="time" />} />
-                <FinalRow label="休憩時間" value={breakTime ? `${breakTime}分` : '―'} badge={<CsvBadge name="breakTime" />} />
-                <FinalRow label="所定労働時間" value={(workingHoursH || workingHoursM) ? `${workingHoursH || 0}時間${workingHoursM || 0}分` : '―'} badge={<CsvBadge name="workingHours" />} />
+                <FinalRow label="休憩時間" value={breakTime ? `${parseAmount(breakTime)}分` : '―'} badge={<CsvBadge name="breakTime" />} />
+                <FinalRow label="所定労働時間" value={(workingHoursH || workingHoursM) ? `${parseAmount(workingHoursH)}時間${parseAmount(workingHoursM)}分` : '―'} badge={<CsvBadge name="workingHours" />} />
                 <FinalRow label="所定労働日数" value={workDays === 'other' ? (workDaysOther || '―') : (workDays || '―')} />
-                <FinalRow label="組織単位" value={organizationUnit || '―'} badge={<CsvBadge name="org" />} />
-                {!isConflictDateExempt && <FinalRow label="抵触日（事業所単位）" value={conflictDate || '―'} badge={<CsvBadge name="conflict" />} />}
                 <FinalRow label="業務に伴う責任の程度" value={responsibility || '―'} badge={<CsvBadge name="resp" />} />
               </FinalSection>
 
@@ -2473,7 +2474,9 @@ export default function ApplyPage() {
                 {(pattern === 'B' || pattern === 'C') && (
                   <>
                     <FinalRow label="派遣期間" value={(dispatchStart && dispatchEnd) ? `${dispatchStart} 〜 ${dispatchEnd}` : '―'} />
+                    {!isConflictDateExempt && <FinalRow label="抵触日（事業所単位）" value={conflictDate || '―'} badge={<CsvBadge name="conflict" />} />}
                     {!isConflictDateExempt && <FinalRow label="抵触日（組織単位）" value={conflictDateOrg || '―'} />}
+                    <FinalRow label="組織単位" value={organizationUnit || '―'} badge={<CsvBadge name="org" />} />
                   </>
                 )}
                 <FinalRow label="雇用期間" value={

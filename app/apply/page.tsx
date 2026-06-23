@@ -818,9 +818,26 @@ export default function ApplyPage() {
   const handleSearch = useCallback(async (query: string) => {
     if (!query.trim()) { setSearchResults([]); setSearched(false); return }
     const normalized = query.replace(/[\s　]+/g, '')
-    const { data } = await supabase.from('staff').select('*')
-      .or(`employee_number.ilike.%${query}%,name.ilike.%${normalized}%`).limit(10)
-    setSearchResults(data || [])
+    const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD（検索した瞬間の日付）
+    const { data } = await supabase.from('staff')
+      .select('*, department_master(dept_name)')
+      .or(`employee_number.ilike.%${query}%,name.ilike.%${normalized}%`)
+      .limit(20) // 退職者をクライアント側で除外する分、少し多めに取得する
+    // department_master(dept_name) は { department_master: { dept_name: '...' } } の形で返るため、
+    // page.tsx側の表示コード（selectedStaff.department）と互換性を持たせるためフラットな形に変換する
+    // 同時に、退職年月日・退職予定日が今日より前のスタッフは検索結果から除外する（リアルタイム判定）
+    const flattened = (data || [])
+      .filter((s: any) => {
+        if (s.retired_at && s.retired_at < today) return false
+        if (s.retirement_scheduled_at && s.retirement_scheduled_at < today) return false
+        return true
+      })
+      .slice(0, 10)
+      .map((s: any) => ({
+        ...s,
+        department: s.department_master?.dept_name || null,
+      }))
+    setSearchResults(flattened)
     setSearched(true)
     // 新たに検索したら依頼フォームをリセット
     setShowRequestForm(false)
@@ -1443,14 +1460,49 @@ export default function ApplyPage() {
                               onClick={async e => {
                                 e.preventDefault()
                                 if (!csvDispatchStart) return
-                                // TODO: Supabaseからcsvシステム・派遣開始日・スタッフ社員番号で検索
-                                // ダミーデータで動作確認
                                 setCsvSearched(true)
                                 setCsvNoResults(false)
-                                setCsvResults([
-                                  { id: 0, name: 'ソフトバンク（SB） 量販 コジマ×ビックカメラ福生店', address: '東京都福生市本町36番地1', tel: '042-539-3711', start: '2026/07/01', end: '2026/09/30' },
-                                  { id: 1, name: 'ソフトバンク（SB） 量販 ケーズデンキ青梅店', address: '東京都青梅市新町3-5-1', tel: '', start: '2026/07/01', end: '2026/09/30' },
-                                ])
+                                setCsvResults([])
+
+                                // システムごとの検索キー対応（確定仕様）
+                                // - e-staffing：staff_code そのまま
+                                // - HRstation：staff_code（先頭の「F3810」を除いた数字部分）。CSV側の値にF3810が付くため、
+                                //   ここでは社員番号の前に「F3810」を付けて比較する
+                                // - winworks：CSVのstaff_codeではなく、staff.crew_code の値で検索
+                                // - Staffia：staff_code（雇用元管理コード）そのまま
+                                let staffCodeForSearch = selectedStaff?.employee_number || ''
+                                if (csvSystem === 'HRstation') {
+                                  staffCodeForSearch = `F3810${selectedStaff?.employee_number || ''}`
+                                } else if (csvSystem === 'winworks') {
+                                  staffCodeForSearch = selectedStaff?.crew_code || ''
+                                }
+
+                                if (!staffCodeForSearch) {
+                                  setCsvNoResults(true)
+                                  return
+                                }
+
+                                const { data, error } = await supabase
+                                  .from('csv_raw_data')
+                                  .select('*')
+                                  .eq('system_type', csvSystem)
+                                  .eq('staff_code', staffCodeForSearch)
+                                  .eq('dispatch_start', csvDispatchStart)
+
+                                if (error || !data || data.length === 0) {
+                                  setCsvNoResults(true)
+                                  return
+                                }
+
+                                setCsvResults(data.map((r: any) => ({
+                                  id: r.id,
+                                  name: r.work_location,
+                                  address: r.work_address,
+                                  tel: r.work_tel,
+                                  start: r.dispatch_start,
+                                  end: r.dispatch_end,
+                                  raw: r.raw_data, // STEP2〜5の詳細項目反映時にここから取り出す
+                                })))
                               }}
                               className="text-white text-xs px-4 py-1.5 rounded-lg transition-opacity"
                               style={{ background: '#1B3A8C', height: '32px', whiteSpace: 'nowrap', opacity: csvDispatchStart ? 1 : 0.4, cursor: csvDispatchStart ? 'pointer' : 'not-allowed' }}>

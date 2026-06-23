@@ -51,7 +51,8 @@ const COLUMN_MAP = {
   'e-staffing': {
     staff_code: 'スタッフコード',
     client_name: '就業先企業名',
-    work_location: '就業先事業所',
+    // 就業先名は「就業先企業名」＋「就業先事業所」の結合（業務的に確定済み）
+    work_location: ['就業先企業名', '就業先事業所'],
     work_address: '就業先住所',
     work_tel: null, // 列なし
     dispatch_start: '契約開始日',

@@ -221,6 +221,153 @@ const toHalfWidthDigits = (str: string) =>
 const parseAmount = (str: string) =>
   parseInt(toHalfWidthDigits(str || '0').replace(/,/g, ''), 10) || 0
 
+// ===== CSV連携：raw_dataから各項目を抽出するヘルパー =====
+
+// 時刻文字列をHH:MM形式に統一する（システムごとに形式が異なるため）
+// - "09:00" "8:45" のようなコロン区切り → そのままHH:MMにゼロ埋め
+// - "945" "1800" のような4桁数値（コロンなし） → 前2桁:後2桁に変換
+const normalizeTimeStr = (raw: string): string | null => {
+  if (!raw) return null
+  const str = String(raw).trim()
+  if (!str) return null
+  if (str.includes(':')) {
+    const [h, m] = str.split(':')
+    if (h === undefined || m === undefined) return null
+    return `${h.padStart(2, '0')}:${m.padStart(2, '0')}`
+  }
+  // コロンなしの数値（HRstation形式）
+  const digits = str.replace(/[^\d]/g, '')
+  if (digits.length === 3) {
+    // 3桁（例:945 → 9:45）
+    return `0${digits[0]}:${digits.slice(1)}`
+  }
+  if (digits.length === 4) {
+    return `${digits.slice(0, 2)}:${digits.slice(2)}`
+  }
+  return null
+}
+
+// 複数の始業・終業時刻パターンから、最早の始業・最遅の終業を計算する
+// 戻り値: { start, end, isMultiple }
+const calcEarliestLatest = (pairs: Array<{ start: string | null; end: string | null }>) => {
+  const valid = pairs.filter(p => p.start && p.end)
+  if (valid.length === 0) return { start: null, end: null, isMultiple: false }
+  const starts = valid.map(p => p.start as string).sort()
+  const ends = valid.map(p => p.end as string).sort()
+  return {
+    start: starts[0],
+    end: ends[ends.length - 1],
+    isMultiple: valid.length > 1,
+  }
+}
+
+// winworksの「諸措置」列から「業務に伴う責任の程度」を抽出する
+// 文末の「責任の程度：◯◯」パターンを正規表現で抽出。「役職無し」は「無」に変換する
+const extractResponsibilityFromWinworks = (shochi: string | null): string | null => {
+  if (!shochi) return null
+  const m = shochi.match(/責任の程度[：:](.+?)$/)
+  if (!m) return null
+  const value = m[1].trim()
+  return value === '役職無し' ? '無' : value
+}
+
+// CSVの検索結果（raw_data）から、システムごとに必要な項目を抽出して統一フォーマットで返す
+const extractCsvFields = (system: string, raw: any) => {
+  if (!raw) return {}
+
+  if (system === 'e-staffing') {
+    const { start, end, isMultiple } = calcEarliestLatest([
+      { start: normalizeTimeStr(raw['勤務開始時間']), end: normalizeTimeStr(raw['勤務終了時間']) },
+    ])
+    return {
+      business: raw['業務内容'] || null,
+      startTime: start,
+      endTime: end,
+      isShift: isMultiple,
+      breakTime: raw['休憩時間1'] || null,
+      org: raw['組織単位'] || null,
+      conflictDate: raw['事業所抵触日'] ? normalizeDateSlash(raw['事業所抵触日']) : null,
+      conflictDateOrg: raw['個人抵触日'] ? normalizeDateSlash(raw['個人抵触日']) : null,
+      responsibility: null, // e-staffingは列なし
+      workDays: raw['勤務日'] || null,
+    }
+  }
+
+  if (system === 'HRstation') {
+    const pairs = [1, 2, 3, 4].map(i => ({
+      start: normalizeTimeStr(raw[`勤務時間${i}_勤務開始時間`]),
+      end: normalizeTimeStr(raw[`勤務時間${i}_勤務終了時間`]),
+    }))
+    const { start, end, isMultiple } = calcEarliestLatest(pairs)
+    return {
+      business: raw['業務内容'] || null,
+      startTime: start,
+      endTime: end,
+      isShift: isMultiple,
+      breakTime: raw['勤務時間1_休憩時間1'] || null,
+      org: raw['組織単位'] || null,
+      conflictDate: raw['事業所単位抵触日'] ? normalizeDateSlash(raw['事業所単位抵触日']) : null,
+      conflictDateOrg: raw['個人単位抵触日'] ? normalizeDateSlash(raw['個人単位抵触日']) : null,
+      responsibility: null, // HRstationは列なし
+      workDays: null,
+    }
+  }
+
+  if (system === 'winworks') {
+    // 就業時間は既存仕様で正規表現抽出（テキスト埋め込み）。今回は簡易抽出のみ対応
+    const shugyoText = raw['就業時間'] || ''
+    const timeMatches = [...String(shugyoText).matchAll(/(\d{1,2}:\d{2})[～~〜](\d{1,2}:\d{2})/g)]
+    const pairs = timeMatches.map(m => ({ start: normalizeTimeStr(m[1]), end: normalizeTimeStr(m[2]) }))
+    const { start, end, isMultiple } = calcEarliestLatest(pairs)
+    return {
+      business: raw['業務内容'] || null,
+      startTime: start,
+      endTime: end,
+      isShift: isMultiple,
+      breakTime: null, // 就業時間に内包。今回は個別抽出なし
+      org: raw['派遣先情報（就業場所） 部署名（組織単位）'] || null,
+      conflictDate: raw['事業所単位の期間抵触日'] ? normalizeDateSlash(raw['事業所単位の期間抵触日']) : null,
+      conflictDateOrg: raw['個人単位の期間抵触日'] ? normalizeDateSlash(raw['個人単位の期間抵触日']) : null,
+      responsibility: extractResponsibilityFromWinworks(raw['諸措置']),
+      workDays: raw['就業日'] || null,
+    }
+  }
+
+  if (system === 'Staffia') {
+    const pairs = [1, 2, 3, 4, 5, 6, 7].map(i => ({
+      start: normalizeTimeStr(raw[`就業開始時間${i}`]),
+      end: normalizeTimeStr(raw[`就業終了時間${i}`]),
+    }))
+    const { start, end, isMultiple } = calcEarliestLatest(pairs)
+    // 業務内容1〜21を半角スペースで連結
+    const businessParts = Array.from({ length: 21 }, (_, i) => raw[`業務内容${i + 1}`]).filter(Boolean)
+    return {
+      business: businessParts.length > 0 ? businessParts.join(' ') : null,
+      startTime: start,
+      endTime: end,
+      isShift: isMultiple,
+      breakTime: null, // 開始・終了時刻から差分計算が必要（今回は未対応）
+      org: raw['就業先組織単位名'] || null,
+      conflictDate: raw['事業所の抵触日'] ? normalizeDateSlash(raw['事業所の抵触日']) : null,
+      conflictDateOrg: raw['抵触日'] ? normalizeDateSlash(raw['抵触日']) : null,
+      responsibility: raw['責任の程度'] || null,
+      workDays: null,
+    }
+  }
+
+  return {}
+}
+
+// "2026/03/01" 等のスラッシュ区切り日付をYYYY-MM-DD形式に変換
+const normalizeDateSlash = (value: string): string | null => {
+  if (!value) return null
+  const str = String(value).trim()
+  const m = str.match(/(\d{4})[\/\-年](\d{1,2})[\/\-月](\d{1,2})/)
+  if (!m) return null
+  const [, y, mo, d] = m
+  return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`
+}
+
 const Req = () => (
   <span className="text-xs px-1.5 py-0.5 rounded ml-1 leading-none shrink-0"
     style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>必須</span>
@@ -1491,7 +1638,8 @@ export default function ApplyPage() {
                                   .select('*')
                                   .eq('system_type', csvSystem)
                                   .eq('staff_code', staffCodeForSearch)
-                                  .eq('dispatch_start', csvDispatchStart)
+                                  .lte('dispatch_start', csvDispatchStart) // 派遣期間の開始日 ≦ 検索日
+                                  .gte('dispatch_end', csvDispatchStart)   // 派遣期間の終了日 ≧ 検索日（つまり検索日が期間内に含まれる）
 
                                 if (error || !data || data.length === 0) {
                                   setCsvNoResults(true)
@@ -1535,18 +1683,30 @@ export default function ApplyPage() {
                                       setWorkLocationName(r.name)
                                       setWorkLocationAddress(r.address)
                                       setWorkLocationTel(r.tel)
+
+                                      // raw_data（CSVの生データ）からシステムごとに項目を抽出
+                                      const fields = extractCsvFields(csvSystem, r.raw)
+                                      if (fields.business) setBusinessContent(fields.business)
+                                      if (fields.startTime) setStartTime(fields.startTime)
+                                      if (fields.endTime) setEndTime(fields.endTime)
+                                      if (fields.isShift) setIsShift(true)
+                                      if (fields.breakTime) setBreakTime(String(fields.breakTime))
+                                      if (fields.org) setOrganizationUnit(fields.org)
+                                      if (fields.conflictDate) setConflictDate(fields.conflictDate)
+                                      if (fields.conflictDateOrg) setConflictDateOrg(fields.conflictDateOrg)
+                                      if (fields.responsibility) setResponsibility(fields.responsibility)
+
                                       // 値が実際に入った項目にのみバッジをセット
                                       const newBadges: Record<string, 'none' | 'reflected' | 'modified'> = {}
                                       if (r.name) newBadges['locationName'] = 'reflected'
                                       if (r.address) newBadges['locationAddress'] = 'reflected'
                                       if (r.tel) newBadges['locationTel'] = 'reflected'
-                                      if (r.business) newBadges['business'] = 'reflected'
-                                      if (r.startTime || r.endTime) newBadges['time'] = 'reflected'
-                                      if (r.breakTime) newBadges['breakTime'] = 'reflected'
-                                      if (r.workingHoursH) newBadges['workingHours'] = 'reflected'
-                                      if (r.org) newBadges['org'] = 'reflected'
-                                      if (r.conflictDate) newBadges['conflict'] = 'reflected'
-                                      if (r.responsibility) newBadges['resp'] = 'reflected'
+                                      if (fields.business) newBadges['business'] = 'reflected'
+                                      if (fields.startTime || fields.endTime) newBadges['time'] = 'reflected'
+                                      if (fields.breakTime) newBadges['breakTime'] = 'reflected'
+                                      if (fields.org) newBadges['org'] = 'reflected'
+                                      if (fields.conflictDate) newBadges['conflict'] = 'reflected'
+                                      if (fields.responsibility) newBadges['resp'] = 'reflected'
                                       setCsvBadges(newBadges)
                                     }}
                                     className="w-full text-left px-3.5 py-3 border-b last:border-0 transition-colors"

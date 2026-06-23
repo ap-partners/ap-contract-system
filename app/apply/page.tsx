@@ -481,6 +481,7 @@ export default function ApplyPage() {
   const [csvSearched, setCsvSearched] = useState(false)
   const [csvResults, setCsvResults] = useState<any[]>([])
   const [csvNoResults, setCsvNoResults] = useState(false)
+  const [csvLoading, setCsvLoading] = useState(false)
   const [csvSelectedId, setCsvSelectedId] = useState<number | null>(null)
   const [csvRequestSent, setCsvRequestSent] = useState(false)
   const [csvRequestFormOpen, setCsvRequestFormOpen] = useState(false)
@@ -1456,11 +1457,12 @@ export default function ApplyPage() {
                                 value={csvDispatchStart} onChange={e => setCsvDispatchStart(e.target.value)} />
                             </div>
                             <button
-                              disabled={!csvDispatchStart}
+                              disabled={!csvDispatchStart || csvLoading}
                               onClick={async e => {
                                 e.preventDefault()
                                 if (!csvDispatchStart) return
-                                setCsvSearched(true)
+                                setCsvLoading(true)
+                                setCsvSearched(false)
                                 setCsvNoResults(false)
                                 setCsvResults([])
 
@@ -1479,6 +1481,8 @@ export default function ApplyPage() {
 
                                 if (!staffCodeForSearch) {
                                   setCsvNoResults(true)
+                                  setCsvSearched(true)
+                                  setCsvLoading(false)
                                   return
                                 }
 
@@ -1491,6 +1495,8 @@ export default function ApplyPage() {
 
                                 if (error || !data || data.length === 0) {
                                   setCsvNoResults(true)
+                                  setCsvSearched(true)
+                                  setCsvLoading(false)
                                   return
                                 }
 
@@ -1503,14 +1509,16 @@ export default function ApplyPage() {
                                   end: r.dispatch_end,
                                   raw: r.raw_data, // STEP2〜5の詳細項目反映時にここから取り出す
                                 })))
+                                setCsvSearched(true)
+                                setCsvLoading(false)
                               }}
                               className="text-white text-xs px-4 py-1.5 rounded-lg transition-opacity"
-                              style={{ background: '#1B3A8C', height: '32px', whiteSpace: 'nowrap', opacity: csvDispatchStart ? 1 : 0.4, cursor: csvDispatchStart ? 'pointer' : 'not-allowed' }}>
-                              検索
+                              style={{ background: '#1B3A8C', height: '32px', whiteSpace: 'nowrap', opacity: (csvDispatchStart && !csvLoading) ? 1 : 0.4, cursor: (csvDispatchStart && !csvLoading) ? 'pointer' : 'not-allowed' }}>
+                              {csvLoading ? '検索中...' : '検索'}
                             </button>
                           </div>
 
-                          {!csvSearched && (
+                          {!csvSearched && !csvLoading && (
                             <p className="text-xs" style={{ color: '#5A6A8A' }}>使用システムと派遣開始日を入力して検索してください。</p>
                           )}
 

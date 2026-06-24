@@ -271,6 +271,38 @@ const extractResponsibilityFromWinworks = (shochi: string | null): string | null
   return value === '役職無し' ? '無' : value
 }
 
+// e-staffingの便宜供与（0/1のフラグ＋その他自由記述）を、福利厚生の説明文に組み立てる
+const buildWelfareTextFromEstaffing = (raw: any): string | null => {
+  const parts: string[] = []
+  if (String(raw['便宜供与：診療施設']) === '1') parts.push('診療施設')
+  if (String(raw['便宜供与：給食施設']) === '1') parts.push('給食施設')
+  if (String(raw['便宜供与：休憩室']) === '1') parts.push('休憩室')
+  if (String(raw['便宜供与：更衣室']) === '1') parts.push('更衣室')
+  const others = [raw['便宜供与：その他1'], raw['便宜供与：その他2'], raw['便宜供与：その他3']].filter(Boolean)
+  const all = [...parts, ...others]
+  return all.length > 0 ? all.join(' ') : null
+}
+
+// HRstationの福利厚生（給食施設/休憩室/更衣室の0/1フラグ＋その他自由記述）を組み立てる
+const buildWelfareTextFromHRstation = (raw: any): string | null => {
+  const parts: string[] = []
+  if (String(raw['給食施設']) === '1') parts.push('給食施設')
+  if (String(raw['休憩室']) === '1') parts.push('休憩室')
+  if (String(raw['更衣室']) === '1') parts.push('更衣室')
+  const others = [raw['その他福利厚生施設等']].filter(Boolean)
+  const all = [...parts, ...others]
+  return all.length > 0 ? all.join(' ') : null
+}
+
+// 数値（0/1や1/0）の文字列を「無」「有」に変換する（1=有、0または未入力=無扱いはしない＝nullを返す）
+const numToYesNo = (value: any): string | null => {
+  if (value === null || value === undefined || value === '') return null
+  const str = String(value).trim()
+  if (str === '1') return '有'
+  if (str === '0') return '無'
+  return null
+}
+
 // CSVの検索結果（raw_data）から、システムごとに必要な項目を抽出して統一フォーマットで返す
 const extractCsvFields = (system: string, raw: any) => {
   if (!raw) return {}
@@ -290,6 +322,27 @@ const extractCsvFields = (system: string, raw: any) => {
       conflictDateOrg: raw['個人抵触日'] ? normalizeDateSlash(raw['個人抵触日']) : null,
       responsibility: null, // e-staffingは列なし
       workDays: raw['勤務日'] || null,
+      cmdName: raw['指揮命令者氏名'] || null,
+      cmdDept: raw['指揮命令者部署'] || null,
+      cmdRole: raw['指揮命令者役職'] || null,
+      cmdTel: raw['指揮命令者TEL'] || null,
+      respName: raw['派遣先責任者氏名'] || null,
+      respDept: raw['派遣先責任者部署'] || null,
+      respRole: raw['派遣先責任者役職'] || null,
+      respTel: raw['派遣先責任者TEL'] || null,
+      compName: raw['苦情申出先氏名'] || null,
+      compDept: raw['苦情申出先部署'] || null,
+      compRole: raw['苦情申出先役職'] || null,
+      compTel: raw['苦情申出先TEL'] || null,
+      cmpName: raw['派遣元苦情申出先氏名'] || null,
+      cmpDept: raw['派遣元苦情申出先部署'] || null,
+      cmpRole: raw['派遣元苦情申出先役職'] || null,
+      cmpTel: raw['派遣元苦情申出先TEL'] || null,
+      welfare: buildWelfareTextFromEstaffing(raw),
+      flexTime: null, // e-staffingは列なし
+      overtime: numToYesNo(raw['時間外労働']),
+      dispatchStart: raw['契約開始日'] ? normalizeDateSlash(raw['契約開始日']) : null,
+      dispatchEnd: raw['契約終了日'] ? normalizeDateSlash(raw['契約終了日']) : null,
     }
   }
 
@@ -310,6 +363,27 @@ const extractCsvFields = (system: string, raw: any) => {
       conflictDateOrg: raw['個人単位抵触日'] ? normalizeDateSlash(raw['個人単位抵触日']) : null,
       responsibility: null, // HRstationは列なし
       workDays: null,
+      cmdName: raw['指揮命令者_氏名'] || null,
+      cmdDept: raw['指揮命令者_部署'] || null,
+      cmdRole: raw['指揮命令者_役職'] || null,
+      cmdTel: raw['指揮命令者_TEL'] || null,
+      respName: raw['派遣先責任者_氏名'] || null,
+      respDept: raw['派遣先責任者_部署'] || null,
+      respRole: raw['派遣先責任者_役職'] || null,
+      respTel: raw['派遣先責任者_TEL'] || null,
+      compName: raw['派遣先苦情処理受付者_氏名'] || null,
+      compDept: raw['派遣先苦情処理受付者_部署'] || null,
+      compRole: raw['派遣先苦情処理受付者_役職'] || null,
+      compTel: raw['派遣先苦情処理受付者_TEL'] || null,
+      cmpName: raw['派遣元苦情処理受付者_氏名'] || null,
+      cmpDept: raw['派遣元苦情処理受付者_部署'] || null,
+      cmpRole: raw['派遣元苦情処理受付者_役職'] || null,
+      cmpTel: raw['派遣元苦情処理受付者_TEL'] || null,
+      welfare: buildWelfareTextFromHRstation(raw),
+      flexTime: null, // HRstationは列なし
+      overtime: null, // HRstationは列なし
+      dispatchStart: raw['契約開始日'] ? normalizeDateSlash(raw['契約開始日']) : null,
+      dispatchEnd: raw['契約終了日'] ? normalizeDateSlash(raw['契約終了日']) : null,
     }
   }
 
@@ -330,6 +404,28 @@ const extractCsvFields = (system: string, raw: any) => {
       conflictDateOrg: raw['個人単位の期間抵触日'] ? normalizeDateSlash(raw['個人単位の期間抵触日']) : null,
       responsibility: extractResponsibilityFromWinworks(raw['諸措置']),
       workDays: raw['就業日'] || null,
+      // 指揮命令者：氏名・役職は専用列、部署・電話番号は就業場所の情報を代用（確定仕様）
+      cmdName: raw['派遣先情報（就業場所） 指揮命令者'] || null,
+      cmdDept: raw['派遣先情報（就業場所） 部署名（組織単位）'] || null,
+      cmdRole: raw['派遣先情報（就業場所） 役職'] || null,
+      cmdTel: raw['派遣先情報（就業場所） 電話番号'] || null,
+      respName: raw['派遣責任者　派遣先 氏名'] || null,
+      respDept: raw['派遣責任者　派遣先 部署名'] || null,
+      respRole: raw['派遣責任者　派遣先 役職'] || null,
+      respTel: raw['派遣責任者　派遣先 電話番号'] || null,
+      compName: raw['苦情申出先　派遣先 氏名'] || null,
+      compDept: raw['苦情申出先　派遣先 部署名'] || null,
+      compRole: raw['苦情申出先　派遣先 役職'] || null,
+      compTel: raw['苦情申出先　派遣先 電話番号'] || null,
+      cmpName: raw['苦情申出先　派遣元 氏名'] || null,
+      cmpDept: raw['苦情申出先　派遣元 部署名'] || null,
+      cmpRole: raw['苦情申出先　派遣元 役職'] || null,
+      cmpTel: raw['苦情申出先　派遣元 電話番号'] || null,
+      welfare: raw['福利厚生等の便宜供与 条件'] || null,
+      flexTime: null, // winworksは列なし
+      overtime: null, // winworksは「時間外労働の制限」が長文のため、無/有には変換しない（反映しない）
+      dispatchStart: raw['派遣期間 開始日'] ? normalizeDateSlash(raw['派遣期間 開始日']) : null,
+      dispatchEnd: raw['派遣期間 終了日'] ? normalizeDateSlash(raw['派遣期間 終了日']) : null,
     }
   }
 
@@ -352,6 +448,28 @@ const extractCsvFields = (system: string, raw: any) => {
       conflictDateOrg: raw['抵触日'] ? normalizeDateSlash(raw['抵触日']) : null,
       responsibility: raw['責任の程度'] || null,
       workDays: null,
+      // 指揮命令者・派遣先責任者は1セット目（末尾が1の列）のみ使用（確定仕様）
+      cmdName: raw['指揮命令者氏名1'] || null,
+      cmdDept: raw['指揮命令者事業部名1'] || null,
+      cmdRole: raw['指揮命令者役職名1'] || null,
+      cmdTel: raw['指揮命令者電話番号1'] || null,
+      respName: raw['派遣先責任者氏名1'] || null,
+      respDept: raw['派遣先責任者事業部名1'] || null,
+      respRole: raw['派遣先責任者役職名1'] || null,
+      respTel: raw['派遣先責任者電話番号1'] || null,
+      compName: raw['派遣先苦情処理申出先氏名'] || null,
+      compDept: raw['派遣先苦情処理申出先事業部名'] || null,
+      compRole: raw['派遣先苦情処理申出先役職名'] || null,
+      compTel: raw['派遣先苦情処理申出先電話番号'] || null,
+      cmpName: raw['派遣元苦情処理申出先氏名'] || null,
+      cmpDept: raw['派遣元苦情処理申出先事業部名'] || null,
+      cmpRole: raw['派遣元苦情処理申出先役職名'] || null,
+      cmpTel: raw['派遣元苦情処理申出先電話番号'] || null,
+      welfare: raw['その他福利厚生等'] || null,
+      flexTime: raw['変形労働時間制適用有無'] || null, // Staffiaのみ「無」「有」がそのまま入っている
+      overtime: raw['時間外労働有無'] || null,
+      dispatchStart: raw['派遣開始日'] ? normalizeDateSlash(raw['派遣開始日']) : null,
+      dispatchEnd: raw['派遣終了日'] ? normalizeDateSlash(raw['派遣終了日']) : null,
     }
   }
 
@@ -409,11 +527,13 @@ const FormRow = ({ label, required, tooltip, badge, children }: {
   label: string; required?: boolean; tooltip?: string; badge?: React.ReactNode; children: React.ReactNode
 }) => (
   <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-    <div className="border-r border-b px-4 py-4 flex items-center flex-wrap gap-1"
+    <div className="border-r border-b px-4 py-4 flex flex-col items-start gap-1.5"
       style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-      <span className="text-sm font-medium leading-snug" style={{ color: '#1A2340' }}>{label}</span>
-      {required && <Req />}
-      {tooltip && <Tooltip text={tooltip} />}
+      <div className="flex items-center flex-wrap gap-1">
+        <span className="text-sm font-medium leading-snug" style={{ color: '#1A2340' }}>{label}</span>
+        {required && <Req />}
+        {tooltip && <Tooltip text={tooltip} />}
+      </div>
       {badge}
     </div>
     <div className="border-b px-5 py-4 flex flex-col gap-3"
@@ -1545,7 +1665,7 @@ export default function ApplyPage() {
                   <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
                     <div className="border-r border-b px-4 py-4 flex flex-wrap items-start gap-1"
                       style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                      <span className="text-sm font-medium" style={{ color: '#1A2340' }}>契約情報の入力方法を選んでください</span>
+                      <span className="text-sm font-medium" style={{ color: '#1A2340' }}>入力方法</span>
                       <Req />
                     </div>
                     <div className="border-b px-5 py-4 flex flex-col gap-3"
@@ -1648,7 +1768,35 @@ export default function ApplyPage() {
                                   return
                                 }
 
-                                setCsvResults(data.map((r: any) => ({
+                                let finalRows = data
+
+                                // Staffiaは KEF00104（スタッフ個人・派遣期間）と KEF00103（契約全体の詳細・業務内容等）の
+                                // 2つのファイルに分かれているため、KEF00104側のヒット結果から「個別契約書番号」を取り出し、
+                                // それをキーにKEF00103側のデータも取得して、raw_dataを合成する
+                                if (csvSystem === 'Staffia') {
+                                  const merged = await Promise.all(data.map(async (r: any) => {
+                                    const contractNo = r.raw_data?.['個別契約書番号']
+                                    if (!contractNo) return r
+                                    const { data: detailData } = await supabase
+                                      .from('csv_raw_data')
+                                      .select('*')
+                                      .eq('system_type', 'Staffia')
+                                      .eq('unique_key', contractNo) // KEF00103側はunique_key = 個別契約書番号のみ
+                                      .maybeSingle()
+                                    if (!detailData) return r
+                                    return {
+                                      ...r,
+                                      // KEF00103側の詳細情報（就業場所名・住所・業務内容等）を合成する
+                                      work_location: detailData.work_location || r.work_location,
+                                      work_address: detailData.work_address || r.work_address,
+                                      work_tel: detailData.work_tel || r.work_tel,
+                                      raw_data: { ...detailData.raw_data, ...r.raw_data }, // 個人情報(104)を優先しつつ詳細情報(103)も統合
+                                    }
+                                  }))
+                                  finalRows = merged
+                                }
+
+                                setCsvResults(finalRows.map((r: any) => ({
                                   id: r.id,
                                   name: r.work_location,
                                   address: r.work_address,
@@ -1695,6 +1843,28 @@ export default function ApplyPage() {
                                       if (fields.conflictDate) setConflictDate(fields.conflictDate)
                                       if (fields.conflictDateOrg) setConflictDateOrg(fields.conflictDateOrg)
                                       if (fields.responsibility) setResponsibility(fields.responsibility)
+                                      // 指揮命令者（派遣先）
+                                      if (fields.cmdDept) setCmdDept(fields.cmdDept)
+                                      if (fields.cmdRole) setCmdRole(fields.cmdRole)
+                                      if (fields.cmdName) setCmdName(fields.cmdName)
+                                      if (fields.cmdTel) setCmdTel(fields.cmdTel)
+                                      // 派遣先責任者
+                                      if (fields.respDept) setRespDept(fields.respDept)
+                                      if (fields.respRole) setRespRole(fields.respRole)
+                                      if (fields.respName) setRespName(fields.respName)
+                                      if (fields.respTel) setRespTel(fields.respTel)
+                                      // 苦情処理申出先（派遣先）
+                                      if (fields.compDept) setCompDept(fields.compDept)
+                                      if (fields.compRole) setCompRole(fields.compRole)
+                                      if (fields.compName) setCompName(fields.compName)
+                                      if (fields.compTel) setCompTel(fields.compTel)
+                                      // 福利厚生・変形労働時間制・所定労働時間外労働
+                                      if (fields.welfare) setWelfare(fields.welfare)
+                                      if (fields.flexTime) setFlexTime(fields.flexTime)
+                                      if (fields.overtime) setOvertime(fields.overtime)
+                                      // 派遣期間
+                                      if (fields.dispatchStart) setDispatchStart(fields.dispatchStart)
+                                      if (fields.dispatchEnd) setDispatchEnd(fields.dispatchEnd)
 
                                       // 値が実際に入った項目にのみバッジをセット
                                       const newBadges: Record<string, 'none' | 'reflected' | 'modified'> = {}
@@ -1707,6 +1877,21 @@ export default function ApplyPage() {
                                       if (fields.org) newBadges['org'] = 'reflected'
                                       if (fields.conflictDate) newBadges['conflict'] = 'reflected'
                                       if (fields.responsibility) newBadges['resp'] = 'reflected'
+                                      if (fields.cmdDept) newBadges['cmdDept'] = 'reflected'
+                                      if (fields.cmdRole) newBadges['cmdRole'] = 'reflected'
+                                      if (fields.cmdName) newBadges['cmdName'] = 'reflected'
+                                      if (fields.cmdTel) newBadges['cmdTel'] = 'reflected'
+                                      if (fields.respDept) newBadges['respDept'] = 'reflected'
+                                      if (fields.respRole) newBadges['respRole'] = 'reflected'
+                                      if (fields.respName) newBadges['respName'] = 'reflected'
+                                      if (fields.respTel) newBadges['respTel'] = 'reflected'
+                                      if (fields.compDept) newBadges['compDept'] = 'reflected'
+                                      if (fields.compRole) newBadges['compRole'] = 'reflected'
+                                      if (fields.compName) newBadges['compName'] = 'reflected'
+                                      if (fields.compTel) newBadges['compTel'] = 'reflected'
+                                      if (fields.welfare) newBadges['welfare'] = 'reflected'
+                                      if (fields.flexTime) newBadges['flexTime'] = 'reflected'
+                                      if (fields.overtime) newBadges['overtime'] = 'reflected'
                                       setCsvBadges(newBadges)
                                     }}
                                     className="w-full text-left px-3.5 py-3 border-b last:border-0 transition-colors"
@@ -1801,10 +1986,12 @@ export default function ApplyPage() {
                   {/* 就業先情報 */}
                   <SectionHeader label="就業先情報" />
                   <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-                    <div className="border-r border-b px-4 py-4 flex flex-wrap items-center gap-1"
+                    <div className="border-r border-b px-4 py-4 flex flex-col items-start gap-1.5"
                       style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                      <span className="text-sm font-medium" style={{ color: '#1A2340' }}>就業場所名</span>
-                      <Req />
+                      <div className="flex items-center flex-wrap gap-1">
+                        <span className="text-sm font-medium" style={{ color: '#1A2340' }}>就業場所名</span>
+                        <Req />
+                      </div>
                       <CsvBadge name="locationName" />
                     </div>
                     <div className="border-b px-5 py-4" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
@@ -1815,10 +2002,12 @@ export default function ApplyPage() {
                     </div>
                   </div>
                   <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-                    <div className="border-r border-b px-4 py-4 flex flex-wrap items-center gap-1"
+                    <div className="border-r border-b px-4 py-4 flex flex-col items-start gap-1.5"
                       style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                      <span className="text-sm font-medium" style={{ color: '#1A2340' }}>就業場所住所</span>
-                      <Req />
+                      <div className="flex items-center flex-wrap gap-1">
+                        <span className="text-sm font-medium" style={{ color: '#1A2340' }}>就業場所住所</span>
+                        <Req />
+                      </div>
                       <CsvBadge name="locationAddress" />
                     </div>
                     <div className="border-b px-5 py-4" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
@@ -1829,10 +2018,12 @@ export default function ApplyPage() {
                     </div>
                   </div>
                   <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-                    <div className="border-r border-b px-4 py-4 flex flex-wrap items-center gap-1"
+                    <div className="border-r border-b px-4 py-4 flex flex-col items-start gap-1.5"
                       style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                      <span className="text-sm font-medium" style={{ color: '#1A2340' }}>就業場所電話番号</span>
-                      <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#F5F7FC', color: '#5A6A8A', border: '1px solid #D0DAF0' }}>任意</span>
+                      <div className="flex items-center flex-wrap gap-1">
+                        <span className="text-sm font-medium" style={{ color: '#1A2340' }}>就業場所電話番号</span>
+                        <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#F5F7FC', color: '#5A6A8A', border: '1px solid #D0DAF0' }}>任意</span>
+                      </div>
                       <CsvBadge name="locationTel" />
                     </div>
                     <div className="border-b px-5 py-4 flex flex-col gap-1.5" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
@@ -1844,10 +2035,12 @@ export default function ApplyPage() {
                     </div>
                   </div>
                   <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-                    <div className="border-r border-b px-4 py-4 flex flex-wrap items-center gap-1"
+                    <div className="border-r border-b px-4 py-4 flex flex-col items-start gap-1.5"
                       style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                      <span className="text-sm font-medium" style={{ color: '#1A2340' }}>業務内容</span>
-                      <Req />
+                      <div className="flex items-center flex-wrap gap-1">
+                        <span className="text-sm font-medium" style={{ color: '#1A2340' }}>業務内容</span>
+                        <Req />
+                      </div>
                       <CsvBadge name="business" />
                     </div>
                     <div className="border-b px-5 py-4 flex flex-col gap-1.5" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
@@ -1864,10 +2057,12 @@ export default function ApplyPage() {
 
                   {/* 始業・終業時刻 */}
                   <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-                    <div className="border-r border-b px-4 py-4 flex flex-wrap items-center gap-1"
+                    <div className="border-r border-b px-4 py-4 flex flex-col items-start gap-1.5"
                       style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                      <span className="text-sm font-medium" style={{ color: '#1A2340' }}>始業・終業時刻</span>
-                      <Req />
+                      <div className="flex items-center flex-wrap gap-1">
+                        <span className="text-sm font-medium" style={{ color: '#1A2340' }}>始業・終業時刻</span>
+                        <Req />
+                      </div>
                       <CsvBadge name="time" />
                     </div>
                     <div className="border-b px-5 py-4 flex flex-col gap-2" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
@@ -1898,10 +2093,12 @@ export default function ApplyPage() {
 
                   {/* 休憩時間 */}
                   <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-                    <div className="border-r border-b px-4 py-4 flex flex-wrap items-center gap-1"
+                    <div className="border-r border-b px-4 py-4 flex flex-col items-start gap-1.5"
                       style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                      <span className="text-sm font-medium" style={{ color: '#1A2340' }}>休憩時間</span>
-                      <Req />
+                      <div className="flex items-center flex-wrap gap-1">
+                        <span className="text-sm font-medium" style={{ color: '#1A2340' }}>休憩時間</span>
+                        <Req />
+                      </div>
                       <CsvBadge name="breakTime" />
                     </div>
                     <div className="border-b px-5 py-4 flex flex-col gap-1.5" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
@@ -1919,10 +2116,12 @@ export default function ApplyPage() {
 
                   {/* 所定労働時間 */}
                   <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-                    <div className="border-r border-b px-4 py-4 flex flex-wrap items-center gap-1"
+                    <div className="border-r border-b px-4 py-4 flex flex-col items-start gap-1.5"
                       style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                      <span className="text-sm font-medium" style={{ color: '#1A2340' }}>所定労働時間</span>
-                      <Req />
+                      <div className="flex items-center flex-wrap gap-1">
+                        <span className="text-sm font-medium" style={{ color: '#1A2340' }}>所定労働時間</span>
+                        <Req />
+                      </div>
                       <CsvBadge name="workingHours" />
                     </div>
                     <div className="border-b px-5 py-4 flex flex-col gap-2" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
@@ -1987,11 +2186,13 @@ export default function ApplyPage() {
                     <>
                       <SectionHeader label="就業条件明示書の追加項目" />
                       <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-                        <div className="border-r border-b px-4 py-4 flex flex-wrap items-center gap-1"
+                        <div className="border-r border-b px-4 py-4 flex flex-col items-start gap-1.5"
                           style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                          <span className="text-sm font-medium" style={{ color: '#1A2340' }}>業務に伴う責任の程度</span>
-                          <Req />
-                          <Tooltip text={TOOLTIPS['業務に伴う責任の程度']} />
+                          <div className="flex items-center flex-wrap gap-1">
+                            <span className="text-sm font-medium" style={{ color: '#1A2340' }}>業務に伴う責任の程度</span>
+                            <Req />
+                            <Tooltip text={TOOLTIPS['業務に伴う責任の程度']} />
+                          </div>
                           <CsvBadge name="resp" />
                         </div>
                         <div className="border-b px-5 py-4" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
@@ -2289,11 +2490,13 @@ export default function ApplyPage() {
               )}
 
               <SectionHeader label="労働条件" />
-              <FormRow label="変形労働時間制" required tooltip={TOOLTIPS['変形労働時間制']}>
-                <RadioGroup name="flextime" value={flexTime} onChange={setFlexTime} />
+              <FormRow label="変形労働時間制" required tooltip={TOOLTIPS['変形労働時間制']} badge={<CsvBadge name="flexTime" />}>
+                <RadioGroup name="flextime" value={flexTime}
+                  onChange={v => { setFlexTime(v); if (csvBadges['flexTime'] === 'reflected') setCsvBadge('flexTime', 'modified') }} />
               </FormRow>
-              <FormRow label="所定労働時間外労働" required tooltip={TOOLTIPS['所定労働時間外労働']}>
-                <RadioGroup name="overtime" value={overtime} onChange={setOvertime} />
+              <FormRow label="所定労働時間外労働" required tooltip={TOOLTIPS['所定労働時間外労働']} badge={<CsvBadge name="overtime" />}>
+                <RadioGroup name="overtime" value={overtime}
+                  onChange={v => { setOvertime(v); if (csvBadges['overtime'] === 'reflected') setCsvBadge('overtime', 'modified') }} />
               </FormRow>
 
               <NavButtons onNext={() => {

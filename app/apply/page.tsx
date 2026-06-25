@@ -1942,32 +1942,34 @@ export default function ApplyPage() {
 
                                       // CSV反映バッジ（修正済み）判定用：反映した時点の値をスナップショットとして保存
                                       // 以後、現在値とこのスナップショットを比較して「修正済み」かどうかを動的に判定する
-                                      setCsvSnapshot({
-                                        locationName: r.name || '',
-                                        locationAddress: r.address || '',
-                                        locationTel: r.tel || '',
-                                        business: fields.business || '',
-                                        time: `${fields.startTime || ''}-${fields.endTime || ''}`,
-                                        breakTime: fields.breakTime ? String(fields.breakTime) : '',
-                                        org: fields.org || '',
-                                        conflict: fields.conflictDate || '',
-                                        resp: fields.responsibility || '',
-                                        cmdDept: fields.cmdDept || '',
-                                        cmdRole: fields.cmdRole || '',
-                                        cmdName: fields.cmdName || '',
-                                        cmdTel: fields.cmdTel || '',
-                                        respDept: fields.respDept || '',
-                                        respRole: fields.respRole || '',
-                                        respName: fields.respName || '',
-                                        respTel: fields.respTel || '',
-                                        compDept: fields.compDept || '',
-                                        compRole: fields.compRole || '',
-                                        compName: fields.compName || '',
-                                        compTel: fields.compTel || '',
-                                        welfare: fields.welfare || '',
-                                        flexTime: fields.flexTime || '',
-                                        overtime: fields.overtime || '',
-                                      })
+                                      // ※値が実際に存在した項目のみ登録する（CSVに列がなく空のままの項目は登録しない。
+                                      //   登録してしまうと、元々ヒットしない項目に「修正済み」が誤表示されるため）
+                                      const newSnapshot: Record<string, string> = {}
+                                      if (r.name) newSnapshot.locationName = r.name
+                                      if (r.address) newSnapshot.locationAddress = r.address
+                                      if (r.tel) newSnapshot.locationTel = r.tel
+                                      if (fields.business) newSnapshot.business = fields.business
+                                      if (fields.startTime || fields.endTime) newSnapshot.time = `${fields.startTime || ''}-${fields.endTime || ''}`
+                                      if (fields.breakTime) newSnapshot.breakTime = String(fields.breakTime)
+                                      if (fields.org) newSnapshot.org = fields.org
+                                      if (fields.conflictDate) newSnapshot.conflict = fields.conflictDate
+                                      if (fields.responsibility) newSnapshot.resp = fields.responsibility
+                                      if (fields.cmdDept) newSnapshot.cmdDept = fields.cmdDept
+                                      if (fields.cmdRole) newSnapshot.cmdRole = fields.cmdRole
+                                      if (fields.cmdName) newSnapshot.cmdName = fields.cmdName
+                                      if (fields.cmdTel) newSnapshot.cmdTel = fields.cmdTel
+                                      if (fields.respDept) newSnapshot.respDept = fields.respDept
+                                      if (fields.respRole) newSnapshot.respRole = fields.respRole
+                                      if (fields.respName) newSnapshot.respName = fields.respName
+                                      if (fields.respTel) newSnapshot.respTel = fields.respTel
+                                      if (fields.compDept) newSnapshot.compDept = fields.compDept
+                                      if (fields.compRole) newSnapshot.compRole = fields.compRole
+                                      if (fields.compName) newSnapshot.compName = fields.compName
+                                      if (fields.compTel) newSnapshot.compTel = fields.compTel
+                                      if (fields.welfare) newSnapshot.welfare = fields.welfare
+                                      if (fields.flexTime) newSnapshot.flexTime = fields.flexTime
+                                      if (fields.overtime) newSnapshot.overtime = fields.overtime
+                                      setCsvSnapshot(newSnapshot)
                                     }}
                                     className="w-full text-left px-3.5 py-3 border-b last:border-0 transition-colors"
                                     style={{

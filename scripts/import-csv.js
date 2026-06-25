@@ -61,7 +61,8 @@ const COLUMN_MAP = {
   'HRstation': {
     staff_code: 'スタッフコード',
     client_name: '派遣先会社名',
-    work_location: '就業先事業所名',
+    // 就業場所名は「派遣先会社名」＋「就業先部署名」の結合（業務的に確定済み）
+    work_location: ['派遣先会社名', '就業先部署名'],
     work_address: '就業先住所1', // 住所2は raw_data 側で参照
     work_tel: null, // 列なし
     dispatch_start: '契約開始日',
@@ -88,7 +89,7 @@ const COLUMN_MAP = {
     dispatch_end: null,
   },
   'Staffia104': {
-    staff_code: '氏名コード',
+    staff_code: '雇用元管理コード', // 社員番号として使用（氏名コードではない。確定仕様）
     client_name: null,
     work_location: null, // 就業場所情報はStaffia103側にある（個別契約書番号で紐付け）
     work_address: null,

@@ -770,6 +770,10 @@ export default function ApplyPage() {
   const [responsibility, setResponsibility] = useState('')
   // CSV反映バッジ管理
   const [csvBadges, setCsvBadges] = useState<Record<string, 'none' | 'reflected' | 'modified'>>({})
+  // CSV反映バッジ（修正済み）判定用：CSVから反映された時点の値のスナップショット
+  // 現在値とこのスナップショットを比較し、一致していれば「CSV反映」、異なれば「CSV反映（修正済み）」と判定する
+  // （元に戻せば自動的に「CSV反映」表示に戻る。派遣元側のmasterSnapshotと同じ仕組み）
+  const [csvSnapshot, setCsvSnapshot] = useState<Record<string, string>>({})
 
   // STEP3
   const [cmd_dept, setCmdDept] = useState('')
@@ -1021,11 +1025,52 @@ export default function ApplyPage() {
   })()
 
   // STEP2：CSVバッジのヘルパー
+  // 「就業場所名」などCSV由来の項目は、現在値とCSV反映時のスナップショットを比較して
+  // reflected/modifiedを動的に判定する（手入力でも元の値に戻せば自動的に「CSV反映」に戻る）。
+  // ※「所定労働時間」「安全及び衛生」「紛争防止措置」はCSVから自動反映されない項目のため、
+  //   従来通りcsvBadgesの固定状態をそのまま使う。
   const setCsvBadge = (key: string, state: 'reflected' | 'modified') => {
     setCsvBadges(prev => ({ ...prev, [key]: state }))
   }
   const CsvBadge = ({ name }: { name: string }) => {
-    const state = csvBadges[name]
+    // CSVスナップショットの対象キーと、現在値の対応表
+    const currentValueMap: Record<string, string> = {
+      locationName: workLocationName,
+      locationAddress: workLocationAddress,
+      locationTel: workLocationTel,
+      business: businessContent,
+      time: `${startTime}-${endTime}`,
+      breakTime: breakTime,
+      org: organizationUnit,
+      conflict: conflictDate,
+      resp: responsibility,
+      cmdDept: cmd_dept,
+      cmdRole: cmd_role,
+      cmdName: cmd_name,
+      cmdTel: cmd_tel,
+      respDept: resp_dept,
+      respRole: resp_role,
+      respName: resp_name,
+      respTel: resp_tel,
+      compDept: comp_dept,
+      compRole: comp_role,
+      compName: comp_name,
+      compTel: comp_tel,
+      welfare: welfare,
+      flexTime: flexTime,
+      overtime: overtime,
+    }
+
+    const hasSnapshot = name in csvSnapshot
+    let state: 'none' | 'reflected' | 'modified'
+    if (hasSnapshot) {
+      // スナップショットがある項目（CSVから自動反映される項目）は、現在値と比較して動的に判定
+      state = currentValueMap[name] === csvSnapshot[name] ? 'reflected' : 'modified'
+    } else {
+      // スナップショット対象外の項目（所定労働時間・安全及び衛生・紛争防止措置等）は従来通り固定状態を使う
+      state = csvBadges[name] || 'none'
+    }
+
     if (!state || state === 'none') return null
     if (state === 'reflected') return (
       <span className="text-xs px-1.5 py-0.5 rounded shrink-0"
@@ -1036,6 +1081,7 @@ export default function ApplyPage() {
         style={{ background: '#FFFBEB', color: '#D97706', border: '1px solid #FDE68A' }}>CSV反映（修正済み）</span>
     )
   }
+
 
   useEffect(() => {
     if (workPlace === '社内' && documentType !== '雇用契約書' && documentType !== '') {
@@ -1893,6 +1939,35 @@ export default function ApplyPage() {
                                       if (fields.flexTime) newBadges['flexTime'] = 'reflected'
                                       if (fields.overtime) newBadges['overtime'] = 'reflected'
                                       setCsvBadges(newBadges)
+
+                                      // CSV反映バッジ（修正済み）判定用：反映した時点の値をスナップショットとして保存
+                                      // 以後、現在値とこのスナップショットを比較して「修正済み」かどうかを動的に判定する
+                                      setCsvSnapshot({
+                                        locationName: r.name || '',
+                                        locationAddress: r.address || '',
+                                        locationTel: r.tel || '',
+                                        business: fields.business || '',
+                                        time: `${fields.startTime || ''}-${fields.endTime || ''}`,
+                                        breakTime: fields.breakTime ? String(fields.breakTime) : '',
+                                        org: fields.org || '',
+                                        conflict: fields.conflictDate || '',
+                                        resp: fields.responsibility || '',
+                                        cmdDept: fields.cmdDept || '',
+                                        cmdRole: fields.cmdRole || '',
+                                        cmdName: fields.cmdName || '',
+                                        cmdTel: fields.cmdTel || '',
+                                        respDept: fields.respDept || '',
+                                        respRole: fields.respRole || '',
+                                        respName: fields.respName || '',
+                                        respTel: fields.respTel || '',
+                                        compDept: fields.compDept || '',
+                                        compRole: fields.compRole || '',
+                                        compName: fields.compName || '',
+                                        compTel: fields.compTel || '',
+                                        welfare: fields.welfare || '',
+                                        flexTime: fields.flexTime || '',
+                                        overtime: fields.overtime || '',
+                                      })
                                     }}
                                     className="w-full text-left px-3.5 py-3 border-b last:border-0 transition-colors"
                                     style={{
@@ -1900,10 +1975,8 @@ export default function ApplyPage() {
                                       background: csvSelectedId === idx ? '#EEF2FA' : 'white',
                                       borderLeft: csvSelectedId === idx ? '3px solid #1B3A8C' : 'none',
                                     }}>
-                                    <div className="flex justify-between items-start gap-2 mb-1">
-                                      <span className="text-sm font-medium" style={{ color: '#1A2340' }}>{r.name}</span>
-                                      <span className="text-xs font-medium shrink-0" style={{ color: '#1B3A8C' }}>{r.start} 〜 {r.end}</span>
-                                    </div>
+                                    <p className="text-xs font-medium mb-0.5" style={{ color: '#1B3A8C' }}>{r.start} 〜 {r.end}</p>
+                                    <p className="text-[13px] font-medium mb-1" style={{ color: '#1A2340' }}>{r.name}</p>
                                     <p className="text-xs" style={{ color: '#5A6A8A' }}>{r.address}</p>
                                     {r.tel && <p className="text-xs mt-0.5" style={{ color: '#5A6A8A' }}>TEL：{r.tel}</p>}
                                   </button>
@@ -1997,7 +2070,7 @@ export default function ApplyPage() {
                     <div className="border-b px-5 py-4" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
                       <input className={`${inp} max-w-lg`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                         value={workLocationName}
-                        onChange={e => { setWorkLocationName(e.target.value); if (csvBadges['locationName'] === 'reflected') setCsvBadge('locationName', 'modified') }}
+                        onChange={e => { setWorkLocationName(e.target.value) }}
                         placeholder="例）ソフトバンク（SB） 量販 コジマ×ビックカメラ福生店" />
                     </div>
                   </div>
@@ -2013,7 +2086,7 @@ export default function ApplyPage() {
                     <div className="border-b px-5 py-4" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
                       <input className={`${inp} max-w-lg`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                         value={workLocationAddress}
-                        onChange={e => { setWorkLocationAddress(e.target.value); if (csvBadges['locationAddress'] === 'reflected') setCsvBadge('locationAddress', 'modified') }}
+                        onChange={e => { setWorkLocationAddress(e.target.value) }}
                         placeholder="例）東京都福生市本町36番地1" />
                     </div>
                   </div>
@@ -2029,7 +2102,7 @@ export default function ApplyPage() {
                     <div className="border-b px-5 py-4 flex flex-col gap-1.5" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
                       <input className={`${inp}`} style={{ borderColor: '#D0DAF0', color: '#1A2340', maxWidth: '200px' }}
                         value={workLocationTel} type="tel"
-                        onChange={e => { setWorkLocationTel(e.target.value); if (csvBadges['locationTel'] === 'reflected') setCsvBadge('locationTel', 'modified') }}
+                        onChange={e => { setWorkLocationTel(e.target.value) }}
                         placeholder="例）042-539-3711" />
                       <p className="text-xs" style={{ color: '#5A6A8A' }}>未入力の場合、帳票の「TEL:」以降は表示されません</p>
                     </div>
@@ -2048,7 +2121,7 @@ export default function ApplyPage() {
                         className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1"
                         style={{ borderColor: '#D0DAF0', color: '#1A2340', maxWidth: '480px', minHeight: '60px', resize: 'vertical', fontFamily: 'inherit', lineHeight: '1.6' }}
                         value={businessContent}
-                        onChange={e => { setBusinessContent(e.target.value); if (csvBadges['business'] === 'reflected') setCsvBadge('business', 'modified') }}
+                        onChange={e => { setBusinessContent(e.target.value) }}
                         onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }}
                         placeholder="例）携帯電話販売促進業務" />
                       <p className="text-xs" style={{ color: '#5A6A8A' }}>Enterキーでの改行はできません</p>
@@ -2071,13 +2144,13 @@ export default function ApplyPage() {
                         <input type="time" className="bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 shrink-0"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340', width: '130px' }}
                           value={startTime}
-                          onChange={e => { setStartTime(e.target.value); if (csvBadges['time'] === 'reflected') setCsvBadge('time', 'modified') }} />
+                          onChange={e => { setStartTime(e.target.value) }} />
                         <span className="text-sm shrink-0" style={{ color: '#5A6A8A' }}>〜</span>
                         <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>終業</span>
                         <input type="time" className="bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 shrink-0"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340', width: '130px' }}
                           value={endTime}
-                          onChange={e => { setEndTime(e.target.value); if (csvBadges['time'] === 'reflected') setCsvBadge('time', 'modified') }} />
+                          onChange={e => { setEndTime(e.target.value) }} />
                         <button
                           onClick={e => { e.preventDefault(); setIsShift(!isShift) }}
                           className="px-3 py-1.5 border rounded-lg text-xs transition-colors shrink-0"
@@ -2106,7 +2179,7 @@ export default function ApplyPage() {
                         <input type="text" className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                           value={breakTime}
-                          onChange={e => { setBreakTime(toHalfWidthDigits(e.target.value)); if (csvBadges['breakTime'] === 'reflected') setCsvBadge('breakTime', 'modified') }}
+                          onChange={e => { setBreakTime(toHalfWidthDigits(e.target.value)) }}
                           placeholder="60" />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>分</span>
                       </div>
@@ -2197,7 +2270,7 @@ export default function ApplyPage() {
                         </div>
                         <div className="border-b px-5 py-4" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
                           <RadioGroup name="responsibility" value={responsibility}
-                            onChange={v => { setResponsibility(v); if (csvBadges['resp'] === 'reflected') setCsvBadge('resp', 'modified') }} />
+                            onChange={v => { setResponsibility(v) }} />
                         </div>
                       </div>
                     </>
@@ -2217,56 +2290,56 @@ export default function ApplyPage() {
             <>
               <SectionHeader label="指揮命令者" />
               <FormRow label="部署名" required badge={<CsvBadge name="cmdDept" />}>
-                <input className={inp} style={deptInputStyle} value={cmd_dept} onChange={e => { setCmdDept(e.target.value); if (csvBadges['cmdDept'] === 'reflected') setCsvBadge('cmdDept', 'modified') }}
+                <input className={inp} style={deptInputStyle} value={cmd_dept} onChange={e => { setCmdDept(e.target.value) }}
                   placeholder="例）東日本ｴﾘｱ営業本部 関東営業統括部 第3営業部" />
               </FormRow>
               <FormRow label="役職" required badge={<CsvBadge name="cmdRole" />}>
                 <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                  value={cmd_role} onChange={e => { setCmdRole(e.target.value); if (csvBadges['cmdRole'] === 'reflected') setCsvBadge('cmdRole', 'modified') }} placeholder="例）課長" />
+                  value={cmd_role} onChange={e => { setCmdRole(e.target.value) }} placeholder="例）課長" />
               </FormRow>
               <FormRow label="氏名" required badge={<CsvBadge name="cmdName" />}>
                 <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                  value={cmd_name} onChange={e => { setCmdName(e.target.value); if (csvBadges['cmdName'] === 'reflected') setCsvBadge('cmdName', 'modified') }} placeholder="例）山田 太郎" />
+                  value={cmd_name} onChange={e => { setCmdName(e.target.value) }} placeholder="例）山田 太郎" />
               </FormRow>
               <FormRow label="電話番号" required badge={<CsvBadge name="cmdTel" />}>
-                <TelInput value={cmd_tel} onChange={v => { setCmdTel(v); if (csvBadges['cmdTel'] === 'reflected') setCsvBadge('cmdTel', 'modified') }} />
+                <TelInput value={cmd_tel} onChange={v => { setCmdTel(v) }} />
               </FormRow>
 
               <SectionHeader label="派遣先責任者" />
               <FormRow label="部署名" required badge={<CsvBadge name="respDept" />}>
-                <input className={inp} style={deptInputStyle} value={resp_dept} onChange={e => { setRespDept(e.target.value); if (csvBadges['respDept'] === 'reflected') setCsvBadge('respDept', 'modified') }} placeholder="例）人事部" />
+                <input className={inp} style={deptInputStyle} value={resp_dept} onChange={e => { setRespDept(e.target.value) }} placeholder="例）人事部" />
               </FormRow>
               <FormRow label="役職" required badge={<CsvBadge name="respRole" />}>
                 <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                  value={resp_role} onChange={e => { setRespRole(e.target.value); if (csvBadges['respRole'] === 'reflected') setCsvBadge('respRole', 'modified') }} placeholder="例）部長" />
+                  value={resp_role} onChange={e => { setRespRole(e.target.value) }} placeholder="例）部長" />
               </FormRow>
               <FormRow label="氏名" required badge={<CsvBadge name="respName" />}>
                 <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                  value={resp_name} onChange={e => { setRespName(e.target.value); if (csvBadges['respName'] === 'reflected') setCsvBadge('respName', 'modified') }} placeholder="例）鈴木 花子" />
+                  value={resp_name} onChange={e => { setRespName(e.target.value) }} placeholder="例）鈴木 花子" />
               </FormRow>
               <FormRow label="電話番号" required badge={<CsvBadge name="respTel" />}>
-                <TelInput value={resp_tel} onChange={v => { setRespTel(v); if (csvBadges['respTel'] === 'reflected') setCsvBadge('respTel', 'modified') }} />
+                <TelInput value={resp_tel} onChange={v => { setRespTel(v) }} />
               </FormRow>
 
               <SectionHeader label="苦情処理申出先（派遣先）" />
               <FormRow label="部署名" required badge={<CsvBadge name="compDept" />}>
-                <input className={inp} style={deptInputStyle} value={comp_dept} onChange={e => { setCompDept(e.target.value); if (csvBadges['compDept'] === 'reflected') setCsvBadge('compDept', 'modified') }} placeholder="例）総務部" />
+                <input className={inp} style={deptInputStyle} value={comp_dept} onChange={e => { setCompDept(e.target.value) }} placeholder="例）総務部" />
               </FormRow>
               <FormRow label="役職" required badge={<CsvBadge name="compRole" />}>
                 <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                  value={comp_role} onChange={e => { setCompRole(e.target.value); if (csvBadges['compRole'] === 'reflected') setCsvBadge('compRole', 'modified') }} placeholder="例）担当者" />
+                  value={comp_role} onChange={e => { setCompRole(e.target.value) }} placeholder="例）担当者" />
               </FormRow>
               <FormRow label="氏名" required badge={<CsvBadge name="compName" />}>
                 <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                  value={comp_name} onChange={e => { setCompName(e.target.value); if (csvBadges['compName'] === 'reflected') setCsvBadge('compName', 'modified') }} placeholder="例）田中 次郎" />
+                  value={comp_name} onChange={e => { setCompName(e.target.value) }} placeholder="例）田中 次郎" />
               </FormRow>
               <FormRow label="電話番号" required badge={<CsvBadge name="compTel" />}>
-                <TelInput value={comp_tel} onChange={v => { setCompTel(v); if (csvBadges['compTel'] === 'reflected') setCsvBadge('compTel', 'modified') }} />
+                <TelInput value={comp_tel} onChange={v => { setCompTel(v) }} />
               </FormRow>
 
               <SectionHeader label="追加項目" />
               <FormRow label="福利厚生施設の利用等" required badge={<CsvBadge name="welfare" />}>
-                <NoBreakTextarea value={welfare} onChange={v => { setWelfare(v); if (csvBadges['welfare'] === 'reflected') setCsvBadge('welfare', 'modified') }} placeholder="例）社員食堂・更衣室の利用可" minHeight="60px" />
+                <NoBreakTextarea value={welfare} onChange={v => { setWelfare(v) }} placeholder="例）社員食堂・更衣室の利用可" minHeight="60px" />
               </FormRow>
               <FormRow label="安全及び衛生" required badge={<CsvBadge name="safety" />}>
                 <ModeToggle mode={safetyMode} onChange={m => { setSafetyMode(m); setSafetyText(m === 'default' ? DEFAULT_SAFETY : '') }} />
@@ -2368,7 +2441,7 @@ export default function ApplyPage() {
                         <input type="date" className={`${inp} max-w-xs`}
                           style={{ borderColor: isDateBefore(conflictDate, dispatchEnd) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
                           value={conflictDate}
-                          onChange={e => { setConflictDate(e.target.value); if (csvBadges['conflict'] === 'reflected') setCsvBadge('conflict', 'modified') }} />
+                          onChange={e => { setConflictDate(e.target.value) }} />
                         {isDateBefore(conflictDate, dispatchEnd) && (
                           <p className="text-xs mt-1" style={{ color: '#DC2626' }}>抵触日は派遣期間の終了日以降の日付にしてください</p>
                         )}
@@ -2390,7 +2463,7 @@ export default function ApplyPage() {
                   <FormRow label="組織単位" required badge={<CsvBadge name="org" />}>
                     <input className={`${inp} max-w-lg`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                       value={organizationUnit}
-                      onChange={e => { setOrganizationUnit(e.target.value); if (csvBadges['org'] === 'reflected') setCsvBadge('org', 'modified') }}
+                      onChange={e => { setOrganizationUnit(e.target.value) }}
                       placeholder="例）第一営業部" />
                   </FormRow>
                 </>
@@ -2492,11 +2565,11 @@ export default function ApplyPage() {
               <SectionHeader label="労働条件" />
               <FormRow label="変形労働時間制" required tooltip={TOOLTIPS['変形労働時間制']} badge={<CsvBadge name="flexTime" />}>
                 <RadioGroup name="flextime" value={flexTime}
-                  onChange={v => { setFlexTime(v); if (csvBadges['flexTime'] === 'reflected') setCsvBadge('flexTime', 'modified') }} />
+                  onChange={v => { setFlexTime(v) }} />
               </FormRow>
               <FormRow label="所定労働時間外労働" required tooltip={TOOLTIPS['所定労働時間外労働']} badge={<CsvBadge name="overtime" />}>
                 <RadioGroup name="overtime" value={overtime}
-                  onChange={v => { setOvertime(v); if (csvBadges['overtime'] === 'reflected') setCsvBadge('overtime', 'modified') }} />
+                  onChange={v => { setOvertime(v) }} />
               </FormRow>
 
               <NavButtons onNext={() => {

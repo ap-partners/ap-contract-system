@@ -147,7 +147,7 @@ const TOOLTIPS: Record<string, string> = {
   '業務に伴う責任の程度': 'このスタッフが他のスタッフへの指示・管理などリーダー的な役割を担うかどうかです。派遣先との個別契約の内容を確認の上、選択してください。',
 }
 
-const inp = "bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 w-full"
+const inp = "bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 w-full placeholder:text-gray-400"
 
 const deptInputStyle = {
   borderColor: '#D0DAF0',
@@ -675,7 +675,7 @@ const NoBreakTextarea = ({ value, onChange, placeholder, minHeight = '60px', bg 
   value: string; onChange: (v: string) => void; placeholder?: string; minHeight?: string; bg?: string
 }) => (
   <textarea
-    className="w-full text-sm rounded-lg px-3 py-2 border focus:outline-none"
+    className="w-full text-sm rounded-lg px-3 py-2 border focus:outline-none placeholder:text-gray-400"
     style={{ borderColor: '#D0DAF0', color: '#1A2340', background: bg, minHeight, lineHeight: '1.6', resize: 'vertical' }}
     value={value}
     onChange={e => onChange(e.target.value)}
@@ -1388,15 +1388,15 @@ export default function ApplyPage() {
           type="text"
           value={value}
           onChange={e => onChange(e.target.value)}
-          className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 w-28"
+          className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 w-28 placeholder:text-gray-400"
           style={{
             borderColor: (id === 'basic' && basicSalaryError) ? '#DC2626' : '#D0DAF0',
             color: '#1A2340',
           }}
-          placeholder="0"
         />
         <span className="text-sm shrink-0" style={{ color: '#5A6A8A' }}>円</span>
       </div>
+      <p className="text-xs" style={{ color: '#5A6A8A' }}>例）250000</p>
       {id === 'basic' && basicSalaryError && (
         <p className="text-xs" style={{ color: '#DC2626' }}>{basicSalaryError}</p>
       )}
@@ -1536,7 +1536,7 @@ export default function ApplyPage() {
                                   type="text" inputMode="numeric" maxLength={6}
                                   value={reqEmployeeNumber}
                                   onChange={e => setReqEmployeeNumber(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
-                                  className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-xs"
+                                  className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-xs placeholder:text-gray-400"
                                   style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                                   placeholder="例）100001（半角数字6桁）" />
                                 {reqEmployeeNumber && !/^\d{6}$/.test(reqEmployeeNumber) && (
@@ -1552,7 +1552,7 @@ export default function ApplyPage() {
                                 <input
                                   type="text" value={reqName}
                                   onChange={e => setReqName(e.target.value)}
-                                  className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-xs"
+                                  className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-xs placeholder:text-gray-400"
                                   style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                                   placeholder="例）山田 太郎" />
                               </div>
@@ -1565,7 +1565,7 @@ export default function ApplyPage() {
                                 <input
                                   type="text" value={reqDept}
                                   onChange={e => setReqDept(e.target.value)}
-                                  className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-xs"
+                                  className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-xs placeholder:text-gray-400"
                                   style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                                   placeholder="例）関西支社" />
                               </div>
@@ -1578,7 +1578,7 @@ export default function ApplyPage() {
                                 <input
                                   type="date" value={reqHireDate}
                                   onChange={e => setReqHireDate(e.target.value)}
-                                  className="border rounded-lg px-3 py-2 text-sm focus:outline-none w-40"
+                                  className="border rounded-lg px-3 py-2 text-sm focus:outline-none w-40 placeholder:text-gray-400"
                                   style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                               </div>
                               {/* 就業場所名 */}
@@ -1590,7 +1590,7 @@ export default function ApplyPage() {
                                 <input
                                   type="text" value={reqWorkLocation}
                                   onChange={e => setReqWorkLocation(e.target.value)}
-                                  className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-sm"
+                                  className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-sm placeholder:text-gray-400"
                                   style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                                   placeholder="例）ソフトバンク（SB） 量販 コジマ×ビックカメラ福生店" />
                               </div>
@@ -1632,7 +1632,7 @@ export default function ApplyPage() {
                                       <input
                                         type="date" value={reqDispatchStart}
                                         onChange={e => setReqDispatchStart(e.target.value)}
-                                        className="border rounded-lg px-3 py-2 text-sm focus:outline-none w-40"
+                                        className="border rounded-lg px-3 py-2 text-sm focus:outline-none w-40 placeholder:text-gray-400"
                                         style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                                     </div>
                                   </div>
@@ -1841,7 +1841,7 @@ export default function ApplyPage() {
                             </div>
                             <div className="flex flex-col gap-1">
                               <span className="text-xs font-medium" style={{ color: '#5A6A8A' }}>派遣開始日</span>
-                              <input type="date" className="border rounded-lg px-3 py-1.5 text-xs focus:outline-none"
+                              <input type="date" className="border rounded-lg px-3 py-1.5 text-xs focus:outline-none placeholder:text-gray-400"
                                 style={{
                                   borderColor: csvDispatchStart ? '#D0DAF0' : '#D97706',
                                   background: csvDispatchStart ? 'white' : '#FFFBEB',
@@ -2134,7 +2134,7 @@ export default function ApplyPage() {
                   <p className="text-xs" style={{ color: '#5A6A8A' }}>以下の情報を入力して送信してください。</p>
                   <div className="flex flex-col gap-1">
                     <span className="text-xs font-medium" style={{ color: '#1A2340' }}>就業場所名 <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>必須</span></span>
-                    <input type="text" className="border rounded-lg px-3 py-2 text-sm focus:outline-none"
+                    <input type="text" className="border rounded-lg px-3 py-2 text-sm focus:outline-none placeholder:text-gray-400"
                       style={{ borderColor: '#D0DAF0', color: '#1A2340', maxWidth: '480px' }}
                       value={csvRequestLocationName}
                       onChange={e => setCsvRequestLocationName(e.target.value)}
@@ -2224,7 +2224,7 @@ export default function ApplyPage() {
                     </div>
                     <div className="border-b px-5 py-4 flex flex-col gap-1.5" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
                       <textarea
-                        className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1"
+                        className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 placeholder:text-gray-400"
                         style={{ borderColor: '#D0DAF0', color: '#1A2340', maxWidth: '480px', minHeight: '60px', resize: 'vertical', fontFamily: 'inherit', lineHeight: '1.6' }}
                         value={businessContent}
                         onChange={e => { setBusinessContent(e.target.value) }}
@@ -2282,11 +2282,10 @@ export default function ApplyPage() {
                     </div>
                     <div className="border-b px-5 py-4 flex flex-col gap-1.5" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
                       <div className="flex items-center gap-2">
-                        <input type="text" className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20"
+                        <input type="text" className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20 placeholder:text-gray-400"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                           value={breakTime}
-                          onChange={e => { setBreakTime(toHalfWidthDigits(e.target.value)) }}
-                          placeholder="60" />
+                          onChange={e => { setBreakTime(toHalfWidthDigits(e.target.value)) }} />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>分</span>
                       </div>
                       <p className="text-xs" style={{ color: '#5A6A8A' }}>例）60、75、90</p>
@@ -2305,21 +2304,20 @@ export default function ApplyPage() {
                     </div>
                     <div className="border-b px-5 py-4 flex flex-col gap-2" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
                       <div className="flex items-center gap-2">
-                        <input type="text" className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20"
+                        <input type="text" className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20 placeholder:text-gray-400"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                           value={workingHoursH}
                           onChange={e => { setWorkingHoursH(toHalfWidthDigits(e.target.value)); if (csvBadges['workingHours'] === 'reflected') setCsvBadge('workingHours', 'modified') }}
-                          onBlur={() => setWorkingHoursH(prev => padTwoDigits(prev))}
-                          placeholder="8" />
+                          onBlur={() => setWorkingHoursH(prev => padTwoDigits(prev))} />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>時間</span>
-                        <input type="text" className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20"
+                        <input type="text" className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20 placeholder:text-gray-400"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                           value={workingHoursM}
                           onChange={e => { setWorkingHoursM(toHalfWidthDigits(e.target.value)); if (csvBadges['workingHours'] === 'reflected') setCsvBadge('workingHours', 'modified') }}
-                          onBlur={() => setWorkingHoursM(prev => padTwoDigits(prev))}
-                          placeholder="00" />
+                          onBlur={() => setWorkingHoursM(prev => padTwoDigits(prev))} />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>分</span>
                       </div>
+                      <p className="text-xs" style={{ color: '#5A6A8A' }}>例）8時間00分</p>
                       {workingHoursWarn && (
                         <div className="flex items-start gap-2 rounded-lg px-4 py-3 text-xs"
                           style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E' }}>
@@ -2790,11 +2788,11 @@ export default function ApplyPage() {
                       <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>基本給</span>
                       <div className="flex items-center gap-1.5">
                         <input type="text" value={basicSalary} onChange={e => setBasicSalary(toHalfWidthDigits(e.target.value))}
-                          className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28"
-                          style={{ borderColor: basicSalaryError ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
-                          placeholder="0" />
+                          className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
+                          style={{ borderColor: basicSalaryError ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
                       </div>
+                      <p className="text-xs" style={{ color: '#5A6A8A' }}>例）250000</p>
                       {basicSalaryError && <p className="text-xs" style={{ color: '#DC2626' }}>{basicSalaryError}</p>}
                     </div>
                     {/* 役職手当 */}
@@ -2802,45 +2800,49 @@ export default function ApplyPage() {
                       <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>役職手当</span>
                       <div className="flex items-center gap-1.5">
                         <input type="text" value={rolePay} onChange={e => setRolePay(toHalfWidthDigits(e.target.value))}
-                          className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28"
-                          style={{ borderColor: '#D0DAF0', color: '#1A2340' }} placeholder="0" />
+                          className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
+                          style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
                       </div>
+                      <p className="text-xs" style={{ color: '#5A6A8A' }}>例）10000</p>
                     </div>
                     {/* 職能給 */}
                     <div className="p-3 border-r border-b flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
                       <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>職能給</span>
                       <div className="flex items-center gap-1.5">
                         <input type="text" value={skillPay} onChange={e => setSkillPay(toHalfWidthDigits(e.target.value))}
-                          className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28"
-                          style={{ borderColor: '#D0DAF0', color: '#1A2340' }} placeholder="0" />
+                          className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
+                          style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
                       </div>
+                      <p className="text-xs" style={{ color: '#5A6A8A' }}>例）10000</p>
                     </div>
                     {/* 営業手当 */}
                     <div className="p-3 border-b flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
                       <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>営業手当</span>
                       <div className="flex items-center gap-1.5">
                         <input type="text" value={salesPay} onChange={e => setSalesPay(toHalfWidthDigits(e.target.value))}
-                          className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28"
-                          style={{ borderColor: '#D0DAF0', color: '#1A2340' }} placeholder="0" />
+                          className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
+                          style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
                       </div>
+                      <p className="text-xs" style={{ color: '#5A6A8A' }}>例）10000</p>
                     </div>
                     {/* 定額残業手当 */}
                     <div className="p-3 border-r flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
                       <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>定額残業手当</span>
                       <div className="flex items-center gap-1.5 flex-nowrap">
                         <input type="text" value={overtimePay} onChange={e => setOvertimePay(toHalfWidthDigits(e.target.value))}
-                          className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28"
-                          style={{ borderColor: '#D0DAF0', color: '#1A2340' }} placeholder="0" />
+                          className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
+                          style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
                         <span className="text-xs" style={{ color: '#D0DAF0' }}>/</span>
                         <input type="text" value={overtimeHours} onChange={e => setOvertimeHours(toHalfWidthDigits(e.target.value))}
-                          className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-16"
-                          style={{ borderColor: overtimeHoursError ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} placeholder="0" />
+                          className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-16 placeholder:text-gray-400"
+                          style={{ borderColor: overtimeHoursError ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>時間分</span>
                       </div>
+                      <p className="text-xs" style={{ color: '#5A6A8A' }}>例）30000 / 20時間分</p>
                       {overtimeHoursError && <p className="text-xs" style={{ color: '#DC2626' }}>{overtimeHoursError}</p>}
                     </div>
                     {/* 住宅手当 */}
@@ -2848,10 +2850,11 @@ export default function ApplyPage() {
                       <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>住宅手当</span>
                       <div className="flex items-center gap-1.5">
                         <input type="text" value={housingPay} onChange={e => setHousingPay(toHalfWidthDigits(e.target.value))}
-                          className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28"
-                          style={{ borderColor: '#D0DAF0', color: '#1A2340' }} placeholder="0" />
+                          className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
+                          style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
                       </div>
+                      <p className="text-xs" style={{ color: '#5A6A8A' }}>例）10000</p>
                     </div>
                   </div>
                 </div>

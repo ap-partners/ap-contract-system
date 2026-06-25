@@ -517,6 +517,17 @@ const Req = () => (
 
 const AutoBadge = ({ modified, source = 'master' }: { modified?: boolean; source?: 'master' | 'csv' }) => {
   const label = source === 'csv' ? 'CSV反映' : 'マスタ情報反映'
+  // CSV反映の場合は、STEP2・STEP3のCsvBadgeと同じ配色（緑系）に統一する
+  // マスタ情報反映の場合は、元々の配色（紺・オレンジ系）のまま
+  if (source === 'csv') {
+    return modified ? (
+      <span className="text-xs px-1.5 py-0.5 rounded shrink-0"
+        style={{ background: '#FFFBEB', color: '#D97706', border: '1px solid #FDE68A' }}>{label}（修正済み）</span>
+    ) : (
+      <span className="text-xs px-1.5 py-0.5 rounded shrink-0"
+        style={{ background: '#ECFDF5', color: '#0D9488', border: '1px solid #A7F3D0' }}>{label}</span>
+    )
+  }
   return modified ? (
     <span className="text-xs px-1.5 py-0.5 rounded shrink-0"
       style={{ background: 'white', color: '#D97706', border: '1px solid #D97706' }}>{label}（修正済み）</span>

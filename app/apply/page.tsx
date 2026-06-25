@@ -312,7 +312,7 @@ const extractCsvFields = (system: string, raw: any) => {
       { start: normalizeTimeStr(raw['勤務開始時間']), end: normalizeTimeStr(raw['勤務終了時間']) },
     ])
     return {
-      business: raw['業務内容'] || null,
+      business: newlineToSpace(raw['業務内容']),
       startTime: start,
       endTime: end,
       isShift: isMultiple,
@@ -359,7 +359,7 @@ const extractCsvFields = (system: string, raw: any) => {
     }))
     const { start, end, isMultiple } = calcEarliestLatest(pairs)
     return {
-      business: raw['業務内容'] || null,
+      business: newlineToSpace(raw['業務内容']),
       startTime: start,
       endTime: end,
       isShift: isMultiple,
@@ -400,19 +400,20 @@ const extractCsvFields = (system: string, raw: any) => {
   }
 
   if (system === 'winworks') {
-    // 就業時間は既存仕様で正規表現抽出（テキスト埋め込み）。今回は簡易抽出のみ対応
-    const shugyoText = raw['就業時間'] || ''
-    const timeMatches = [...String(shugyoText).matchAll(/(\d{1,2}:\d{2})[～~〜](\d{1,2}:\d{2})/g)]
-    const pairs = timeMatches.map(m => ({ start: normalizeTimeStr(m[1]), end: normalizeTimeStr(m[2]) }))
-    const { start, end, isMultiple } = calcEarliestLatest(pairs)
+    // 就業時間：CSVの「就業時間」列は契約によらず同じ固定文言が入る（確定仕様）。
+    // 「9時00分　～　23時00分」「6時間を超える場合は1時間」という文言を含む場合、
+    // 始業9:00・終業23:00・シフト制・休憩60分として反映する。
+    const shugyoText = String(raw['就業時間'] || '')
+    const hasFixedShiftText = shugyoText.includes('9時00分') && shugyoText.includes('23時00分')
+    const hasFixedBreakText = shugyoText.includes('6時間を超える場合')
     return {
-      business: raw['業務内容'] || null,
-      startTime: start,
-      endTime: end,
-      isShift: isMultiple,
-      breakTime: null, // 就業時間に内包。今回は個別抽出なし
+      business: newlineToSpace(raw['業務内容']),
+      startTime: hasFixedShiftText ? '09:00' : null,
+      endTime: hasFixedShiftText ? '23:00' : null,
+      isShift: hasFixedShiftText,
+      breakTime: hasFixedBreakText ? 60 : null,
       org: raw['派遣先情報（就業場所） 部署名（組織単位）'] || null,
-      conflictDate: raw['事業所単位の期間抵触日'] ? normalizeDateSlash(raw['事業所単位の期間抵触日']) : null,
+      conflictDate: raw['派遣先情報（就業場所） 事業所単位の期間抵触日'] ? normalizeDateSlash(raw['派遣先情報（就業場所） 事業所単位の期間抵触日']) : null,
       conflictDateOrg: raw['個人単位の期間抵触日'] ? normalizeDateSlash(raw['個人単位の期間抵触日']) : null,
       responsibility: extractResponsibilityFromWinworks(raw['諸措置']),
       workDays: raw['就業日'] || null,
@@ -456,7 +457,7 @@ const extractCsvFields = (system: string, raw: any) => {
     // 業務内容1〜21を半角スペースで連結
     const businessParts = Array.from({ length: 21 }, (_, i) => raw[`業務内容${i + 1}`]).filter(Boolean)
     return {
-      business: businessParts.length > 0 ? businessParts.join(' ') : null,
+      business: businessParts.length > 0 ? newlineToSpace(businessParts.join(' ')) : null,
       startTime: start,
       endTime: end,
       isShift: isMultiple,
@@ -508,6 +509,14 @@ const normalizeDateSlash = (value: string): string | null => {
   if (!m) return null
   const [, y, mo, d] = m
   return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`
+}
+
+// 改行コード（連続する改行・空行も含む）を1つの半角スペースに変換する
+// （帳票レイアウトに反映する際、改行が残るとレイアウト崩れが起きるため。確定仕様）
+const newlineToSpace = (value: string | null | undefined): string | null => {
+  if (!value) return null
+  const result = String(value).replace(/[\r\n]+/g, ' ').trim()
+  return result || null
 }
 
 const Req = () => (
@@ -1117,6 +1126,7 @@ export default function ApplyPage() {
       breakTime: breakTime,
       org: organizationUnit,
       conflict: conflictDate,
+      conflictOrg: conflictDateOrg,
       resp: responsibility,
       cmdDept: cmd_dept,
       cmdRole: cmd_role,
@@ -2029,6 +2039,7 @@ export default function ApplyPage() {
                                       if (fields.breakTime) newBadges['breakTime'] = 'reflected'
                                       if (fields.org) newBadges['org'] = 'reflected'
                                       if (fields.conflictDate) newBadges['conflict'] = 'reflected'
+                                      if (fields.conflictDateOrg) newBadges['conflictOrg'] = 'reflected'
                                       if (fields.responsibility) newBadges['resp'] = 'reflected'
                                       if (fields.cmdDept) newBadges['cmdDept'] = 'reflected'
                                       if (fields.cmdRole) newBadges['cmdRole'] = 'reflected'
@@ -2060,6 +2071,7 @@ export default function ApplyPage() {
                                       if (fields.breakTime) newSnapshot.breakTime = String(fields.breakTime)
                                       if (fields.org) newSnapshot.org = fields.org
                                       if (fields.conflictDate) newSnapshot.conflict = fields.conflictDate
+                                      if (fields.conflictDateOrg) newSnapshot.conflictOrg = fields.conflictDateOrg
                                       if (fields.responsibility) newSnapshot.resp = fields.responsibility
                                       if (fields.cmdDept) newSnapshot.cmdDept = fields.cmdDept
                                       if (fields.cmdRole) newSnapshot.cmdRole = fields.cmdRole
@@ -2552,12 +2564,12 @@ export default function ApplyPage() {
                       </div>
                     )}
                   </FormRow>
-                  <FormRow label="抵触日（組織単位）" required tooltip={TOOLTIPS['抵触日（組織単位）']}>
+                  <FormRow label="抵触日（組織単位）" required tooltip={TOOLTIPS['抵触日（組織単位）']} badge={<CsvBadge name="conflictOrg" />}>
                     {isConflictDateExempt ? fixedText('無期雇用派遣のため該当しない（自動）') : (
                       <div>
                         <input type="date" className={`${inp} max-w-xs`}
                           style={{ borderColor: isDateBefore(conflictDateOrg, dispatchEnd) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
-                          value={conflictDateOrg} onChange={e => setConflictDateOrg(e.target.value)} />
+                          value={conflictDateOrg} onChange={e => { setConflictDateOrg(e.target.value) }} />
                         {isDateBefore(conflictDateOrg, dispatchEnd) && (
                           <p className="text-xs mt-1" style={{ color: '#DC2626' }}>抵触日は派遣期間の終了日以降の日付にしてください</p>
                         )}
@@ -3085,7 +3097,7 @@ export default function ApplyPage() {
                   <>
                     <FinalRow label="派遣期間" value={(dispatchStart && dispatchEnd) ? `${dispatchStart} 〜 ${dispatchEnd}` : '―'} />
                     {!isConflictDateExempt && <FinalRow label="抵触日（事業所単位）" value={conflictDate || '―'} badge={<CsvBadge name="conflict" />} />}
-                    {!isConflictDateExempt && <FinalRow label="抵触日（組織単位）" value={conflictDateOrg || '―'} />}
+                    {!isConflictDateExempt && <FinalRow label="抵触日（組織単位）" value={conflictDateOrg || '―'} badge={<CsvBadge name="conflictOrg" />} />}
                     <FinalRow label="組織単位" value={organizationUnit || '―'} badge={<CsvBadge name="org" />} />
                   </>
                 )}

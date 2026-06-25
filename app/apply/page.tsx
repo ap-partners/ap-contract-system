@@ -334,8 +334,14 @@ const extractCsvFields = (system: string, raw: any) => {
       compDept: raw['苦情申出先部署'] || null,
       compRole: raw['苦情申出先役職'] || null,
       compTel: raw['苦情申出先TEL'] || null,
+      // 派遣元責任者（確定仕様：部署は「正式部署」を使用）
+      mgrName: raw['派遣元責任者氏名'] || null,
+      mgrDept: raw['派遣元責任者正式部署'] || null,
+      mgrRole: raw['派遣元責任者役職'] || null,
+      mgrTel: raw['派遣元責任者TEL'] || null,
+      // 苦情処理申出先（派遣元）（確定仕様：部署は「正式部署」を使用）
       cmpName: raw['派遣元苦情申出先氏名'] || null,
-      cmpDept: raw['派遣元苦情申出先部署'] || null,
+      cmpDept: raw['派遣元苦情申出先正式部署'] || null,
       cmpRole: raw['派遣元苦情申出先役職'] || null,
       cmpTel: raw['派遣元苦情申出先TEL'] || null,
       welfare: buildWelfareTextFromEstaffing(raw),
@@ -375,6 +381,12 @@ const extractCsvFields = (system: string, raw: any) => {
       compDept: raw['派遣先苦情処理受付者_部署'] || null,
       compRole: raw['派遣先苦情処理受付者_役職'] || null,
       compTel: raw['派遣先苦情処理受付者_TEL'] || null,
+      // 派遣元責任者
+      mgrName: raw['派遣元責任者_氏名'] || null,
+      mgrDept: raw['派遣元責任者_部署'] || null,
+      mgrRole: raw['派遣元責任者_役職'] || null,
+      mgrTel: raw['派遣元責任者_TEL'] || null,
+      // 苦情処理申出先（派遣元）
       cmpName: raw['派遣元苦情処理受付者_氏名'] || null,
       cmpDept: raw['派遣元苦情処理受付者_部署'] || null,
       cmpRole: raw['派遣元苦情処理受付者_役職'] || null,
@@ -417,6 +429,12 @@ const extractCsvFields = (system: string, raw: any) => {
       compDept: raw['苦情申出先　派遣先 部署名'] || null,
       compRole: raw['苦情申出先　派遣先 役職'] || null,
       compTel: raw['苦情申出先　派遣先 電話番号'] || null,
+      // 派遣元責任者
+      mgrName: raw['派遣責任者　派遣元 氏名'] || null,
+      mgrDept: raw['派遣責任者　派遣元 部署名'] || null,
+      mgrRole: raw['派遣責任者　派遣元 役職'] || null,
+      mgrTel: raw['派遣責任者　派遣元 電話番号'] || null,
+      // 苦情処理申出先（派遣元）
       cmpName: raw['苦情申出先　派遣元 氏名'] || null,
       cmpDept: raw['苦情申出先　派遣元 部署名'] || null,
       cmpRole: raw['苦情申出先　派遣元 役職'] || null,
@@ -461,8 +479,14 @@ const extractCsvFields = (system: string, raw: any) => {
       compDept: raw['派遣先苦情処理申出先事業部名'] || null,
       compRole: raw['派遣先苦情処理申出先役職名'] || null,
       compTel: raw['派遣先苦情処理申出先電話番号'] || null,
+      // 派遣元責任者（確定仕様：1セット目のみ使用。部署は「担当名1」を使用）
+      mgrName: raw['派遣元責任者氏名1'] || null,
+      mgrDept: raw['派遣元責任者担当名1'] || null,
+      mgrRole: raw['派遣元責任者役職名1'] || null,
+      mgrTel: raw['派遣元責任者電話番号1'] || null,
+      // 苦情処理申出先（派遣元）（確定仕様：部署は「担当名」を使用）
       cmpName: raw['派遣元苦情処理申出先氏名'] || null,
-      cmpDept: raw['派遣元苦情処理申出先事業部名'] || null,
+      cmpDept: raw['派遣元苦情処理申出先担当名'] || null,
       cmpRole: raw['派遣元苦情処理申出先役職名'] || null,
       cmpTel: raw['派遣元苦情処理申出先電話番号'] || null,
       welfare: raw['その他福利厚生等'] || null,
@@ -491,15 +515,16 @@ const Req = () => (
     style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>必須</span>
 )
 
-const AutoBadge = ({ modified }: { modified?: boolean } = {}) => (
-  modified ? (
+const AutoBadge = ({ modified, source = 'master' }: { modified?: boolean; source?: 'master' | 'csv' }) => {
+  const label = source === 'csv' ? 'CSV反映' : 'マスタ情報反映'
+  return modified ? (
     <span className="text-xs px-1.5 py-0.5 rounded shrink-0"
-      style={{ background: 'white', color: '#D97706', border: '1px solid #D97706' }}>マスタ情報反映（修正済み）</span>
+      style={{ background: 'white', color: '#D97706', border: '1px solid #D97706' }}>{label}（修正済み）</span>
   ) : (
     <span className="text-xs px-1.5 py-0.5 rounded shrink-0"
-      style={{ background: 'white', color: '#1B3A8C', border: '1px solid #1B3A8C' }}>マスタ情報反映</span>
+      style={{ background: 'white', color: '#1B3A8C', border: '1px solid #1B3A8C' }}>{label}</span>
   )
-)
+}
 
 const Tooltip = ({ text }: { text: string }) => {
   const [show, setShow] = useState(false)
@@ -543,12 +568,12 @@ const FormRow = ({ label, required, tooltip, badge, children }: {
   </div>
 )
 
-const FormRowAuto = ({ label, modified, children }: { label: string; modified?: boolean; children: React.ReactNode }) => (
+const FormRowAuto = ({ label, modified, source, children }: { label: string; modified?: boolean; source?: 'master' | 'csv'; children: React.ReactNode }) => (
   <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
     <div className="border-r border-b px-4 py-4 flex flex-col items-start gap-1.5"
       style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
       <span className="text-sm font-medium leading-snug" style={{ color: '#1A2340' }}>{label}</span>
-      <AutoBadge modified={modified} />
+      <AutoBadge modified={modified} source={source} />
     </div>
     <div className="border-b px-5 py-4 flex items-center"
       style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
@@ -806,6 +831,9 @@ export default function ApplyPage() {
   const [cmp_tel, setCmpTel] = useState('')
   // マスタ取得時の初期値スナップショット（修正済みバッジ判定用）
   const [masterSnapshot, setMasterSnapshot] = useState<Record<string, string>>({})
+  // 派遣元責任者・苦情処理申出先（派遣元）の反映元。'master'＝company_masterから反映、'csv'＝CSV検索結果から反映
+  // CSV検索を行った場合は'csv'、CSV検索を行わず手入力で進める場合は'master'のままになる
+  const [mgrCmpSource, setMgrCmpSource] = useState<'master' | 'csv'>('master')
 
   // STEP5
   const [dispatchStart, setDispatchStart] = useState('')
@@ -975,36 +1003,70 @@ export default function ApplyPage() {
     checkUser()
   }, [])
 
+  // company_masterから派遣元責任者・苦情処理申出先（派遣元）を読み込む処理。
+  // 初回ページ読み込み時と、入力方法を「手動」に切り替えてリセットする時の両方で使う
+  const loadCompanyMaster = async () => {
+    const { data } = await supabase.from('company_master').select('key, value')
+    if (!data) return
+    const m: Record<string, string> = {}
+    data.forEach((row: any) => { m[row.key] = row.value })
+    const mgrDeptVal = m['dispatch_manager_dept'] || ''
+    const mgrRoleVal = m['dispatch_manager_role'] || ''
+    const mgrNameVal = m['dispatch_manager_name'] || ''
+    const mgrTelVal = m['dispatch_manager_tel'] || ''
+    const cmpDeptVal = m['complaint_dept'] || ''
+    const cmpRoleVal = m['complaint_role'] || ''
+    const cmpNameVal = m['complaint_name'] || ''
+    const cmpTelVal = m['complaint_tel'] || ''
+    setMgrDept(mgrDeptVal)
+    setMgrRole(mgrRoleVal)
+    setMgrName(mgrNameVal)
+    setMgrTel(mgrTelVal)
+    setCmpDept(cmpDeptVal)
+    setCmpRole(cmpRoleVal)
+    setCmpName(cmpNameVal)
+    setCmpTel(cmpTelVal)
+    setMgrCmpSource('master')
+    // マスタ情報反映（修正済み）バッジ判定用の初期値スナップショット
+    setMasterSnapshot({
+      mgr_dept: mgrDeptVal, mgr_role: mgrRoleVal, mgr_name: mgrNameVal, mgr_tel: mgrTelVal,
+      cmp_dept: cmpDeptVal, cmp_role: cmpRoleVal, cmp_name: cmpNameVal, cmp_tel: cmpTelVal,
+    })
+  }
+
   useEffect(() => {
-    const loadCompanyMaster = async () => {
-      const { data } = await supabase.from('company_master').select('key, value')
-      if (!data) return
-      const m: Record<string, string> = {}
-      data.forEach((row: any) => { m[row.key] = row.value })
-      const mgrDeptVal = m['dispatch_manager_dept'] || ''
-      const mgrRoleVal = m['dispatch_manager_role'] || ''
-      const mgrNameVal = m['dispatch_manager_name'] || ''
-      const mgrTelVal = m['dispatch_manager_tel'] || ''
-      const cmpDeptVal = m['complaint_dept'] || ''
-      const cmpRoleVal = m['complaint_role'] || ''
-      const cmpNameVal = m['complaint_name'] || ''
-      const cmpTelVal = m['complaint_tel'] || ''
-      setMgrDept(mgrDeptVal)
-      setMgrRole(mgrRoleVal)
-      setMgrName(mgrNameVal)
-      setMgrTel(mgrTelVal)
-      setCmpDept(cmpDeptVal)
-      setCmpRole(cmpRoleVal)
-      setCmpName(cmpNameVal)
-      setCmpTel(cmpTelVal)
-      // マスタ情報反映（修正済み）バッジ判定用の初期値スナップショット
-      setMasterSnapshot({
-        mgr_dept: mgrDeptVal, mgr_role: mgrRoleVal, mgr_name: mgrNameVal, mgr_tel: mgrTelVal,
-        cmp_dept: cmpDeptVal, cmp_role: cmpRoleVal, cmp_name: cmpNameVal, cmp_tel: cmpTelVal,
-      })
-    }
     loadCompanyMaster()
   }, [])
+
+  // STEP2の「入力方法」（CSV検索／手動入力）を切り替えた時、新規作成時と同じ状態に完全にリセットする処理
+  // ※CSV→手動、手動→CSVどちらの切り替えでもリセットする（確定仕様）
+  const resetStep2Step3ForModeChange = () => {
+    // STEP2：就業場所・業務内容・時間関連
+    setWorkLocationName(''); setWorkLocationAddress(''); setWorkLocationTel('')
+    setBusinessContent('')
+    setStartTime(''); setEndTime(''); setIsShift(false)
+    setBreakTime('')
+    setWorkingHoursH(''); setWorkingHoursM('')
+    setWorkDays(''); setWorkDaysOther('')
+    setOrganizationUnit('')
+    setConflictDate(''); setConflictDateOrg('')
+    setResponsibility('')
+    setCsvBadges({})
+    setCsvSnapshot({})
+    // STEP3：指揮命令者・派遣先責任者・苦情処理申出先（派遣先）・福利厚生等
+    setCmdDept(''); setCmdRole(''); setCmdName(''); setCmdTel('')
+    setRespDept(''); setRespRole(''); setRespName(''); setRespTel('')
+    setCompDept(''); setCompRole(''); setCompName(''); setCompTel('')
+    setWelfare('')
+    setSafetyMode('default'); setSafetyText(DEFAULT_SAFETY)
+    setConflictMode('default'); setConflictText(DEFAULT_CONFLICT)
+    setFlexTime(''); setOvertime('')
+    // 派遣期間
+    setDispatchStart(''); setDispatchEnd('')
+    // 派遣元責任者・苦情処理申出先（派遣元）：company_masterの値に戻す（新規作成時と同じ状態）
+    loadCompanyMaster()
+  }
+
 
   // STEP2：所定労働時間の整合性チェック（シフト制以外・黄色警告）
   const workingHoursWarn = (() => {
@@ -1724,7 +1786,13 @@ export default function ApplyPage() {
                           { mode: 'manual' as const, icon: '/icons/step2-manual.png', label: '手動で入力する', desc: '派遣管理システムを使わず直接入力します' },
                         ].map(({ mode, icon, label, desc }) => (
                           <button key={mode}
-                            onClick={e => { e.preventDefault(); setCsvMode(mode); setCsvSearched(false); setCsvResults([]); setCsvNoResults(false) }}
+                            onClick={e => {
+                              e.preventDefault()
+                              const isModeChanging = csvMode !== mode
+                              setCsvMode(mode); setCsvSearched(false); setCsvResults([]); setCsvNoResults(false)
+                              // 入力方法が実際に切り替わった時だけ、新規作成時と同じ状態に完全にリセットする（確定仕様）
+                              if (isModeChanging) resetStep2Step3ForModeChange()
+                            }}
                             className="flex items-center gap-3 rounded-xl border p-3.5 text-left transition-all"
                             style={{
                               borderColor: csvMode === mode ? '#1B3A8C' : '#D0DAF0',
@@ -1905,6 +1973,33 @@ export default function ApplyPage() {
                                       if (fields.compRole) setCompRole(fields.compRole)
                                       if (fields.compName) setCompName(fields.compName)
                                       if (fields.compTel) setCompTel(fields.compTel)
+                                      // 派遣元責任者・苦情処理申出先（派遣元）：CSVに値があれば反映し、反映元をCSVに切り替える
+                                      // （CSVに値がなければmgr_*/cmp_*は変更せず、これまでの値＝company_master由来の値のまま残す）
+                                      if (fields.mgrDept || fields.mgrRole || fields.mgrName || fields.mgrTel ||
+                                          fields.cmpDept || fields.cmpRole || fields.cmpName || fields.cmpTel) {
+                                        if (fields.mgrDept) setMgrDept(fields.mgrDept)
+                                        if (fields.mgrRole) setMgrRole(fields.mgrRole)
+                                        if (fields.mgrName) setMgrName(fields.mgrName)
+                                        if (fields.mgrTel) setMgrTel(fields.mgrTel)
+                                        if (fields.cmpDept) setCmpDept(fields.cmpDept)
+                                        if (fields.cmpRole) setCmpRole(fields.cmpRole)
+                                        if (fields.cmpName) setCmpName(fields.cmpName)
+                                        if (fields.cmpTel) setCmpTel(fields.cmpTel)
+                                        setMgrCmpSource('csv')
+                                        // 「修正済み」判定用のスナップショットも、CSVから反映された値に更新する
+                                        // （既存のmasterSnapshot方式と同じ比較ロジックをそのまま使う）
+                                        setMasterSnapshot(prev => ({
+                                          ...prev,
+                                          ...(fields.mgrDept ? { mgr_dept: fields.mgrDept } : {}),
+                                          ...(fields.mgrRole ? { mgr_role: fields.mgrRole } : {}),
+                                          ...(fields.mgrName ? { mgr_name: fields.mgrName } : {}),
+                                          ...(fields.mgrTel ? { mgr_tel: fields.mgrTel } : {}),
+                                          ...(fields.cmpDept ? { cmp_dept: fields.cmpDept } : {}),
+                                          ...(fields.cmpRole ? { cmp_role: fields.cmpRole } : {}),
+                                          ...(fields.cmpName ? { cmp_name: fields.cmpName } : {}),
+                                          ...(fields.cmpTel ? { cmp_tel: fields.cmpTel } : {}),
+                                        }))
+                                      }
                                       // 福利厚生・変形労働時間制・所定労働時間外労働
                                       if (fields.welfare) setWelfare(fields.welfare)
                                       if (fields.flexTime) setFlexTime(fields.flexTime)
@@ -2380,29 +2475,29 @@ export default function ApplyPage() {
                 ℹ️ 以下は自社マスタから自動入力されています。内容を確認し、必要であれば修正してください。
               </div>
               <SectionHeader label="派遣元責任者" />
-              <FormRowAuto label="部署名" modified={masterSnapshot.mgr_dept !== undefined && mgr_dept !== masterSnapshot.mgr_dept}>
+              <FormRowAuto label="部署名" modified={masterSnapshot.mgr_dept !== undefined && mgr_dept !== masterSnapshot.mgr_dept} source={mgrCmpSource}>
                 <input className={inp} style={{ borderColor: '#D0DAF0', color: '#1A2340' }} value={mgr_dept} onChange={e => setMgrDept(e.target.value)} />
               </FormRowAuto>
-              <FormRowAuto label="役職" modified={masterSnapshot.mgr_role !== undefined && mgr_role !== masterSnapshot.mgr_role}>
+              <FormRowAuto label="役職" modified={masterSnapshot.mgr_role !== undefined && mgr_role !== masterSnapshot.mgr_role} source={mgrCmpSource}>
                 <input className={inp} style={{ borderColor: '#D0DAF0', color: '#1A2340' }} value={mgr_role} onChange={e => setMgrRole(e.target.value)} />
               </FormRowAuto>
-              <FormRowAuto label="氏名" modified={masterSnapshot.mgr_name !== undefined && mgr_name !== masterSnapshot.mgr_name}>
+              <FormRowAuto label="氏名" modified={masterSnapshot.mgr_name !== undefined && mgr_name !== masterSnapshot.mgr_name} source={mgrCmpSource}>
                 <input className={inp} style={{ borderColor: '#D0DAF0', color: '#1A2340' }} value={mgr_name} onChange={e => setMgrName(e.target.value)} />
               </FormRowAuto>
-              <FormRowAuto label="電話番号" modified={masterSnapshot.mgr_tel !== undefined && mgr_tel !== masterSnapshot.mgr_tel}>
+              <FormRowAuto label="電話番号" modified={masterSnapshot.mgr_tel !== undefined && mgr_tel !== masterSnapshot.mgr_tel} source={mgrCmpSource}>
                 <TelInput value={mgr_tel} onChange={setMgrTel} />
               </FormRowAuto>
               <SectionHeader label="苦情処理申出先（派遣元）" />
-              <FormRowAuto label="部署名" modified={masterSnapshot.cmp_dept !== undefined && cmp_dept !== masterSnapshot.cmp_dept}>
+              <FormRowAuto label="部署名" modified={masterSnapshot.cmp_dept !== undefined && cmp_dept !== masterSnapshot.cmp_dept} source={mgrCmpSource}>
                 <input className={inp} style={{ borderColor: '#D0DAF0', color: '#1A2340' }} value={cmp_dept} onChange={e => setCmpDept(e.target.value)} />
               </FormRowAuto>
-              <FormRowAuto label="役職" modified={masterSnapshot.cmp_role !== undefined && cmp_role !== masterSnapshot.cmp_role}>
+              <FormRowAuto label="役職" modified={masterSnapshot.cmp_role !== undefined && cmp_role !== masterSnapshot.cmp_role} source={mgrCmpSource}>
                 <input className={inp} style={{ borderColor: '#D0DAF0', color: '#1A2340' }} value={cmp_role} onChange={e => setCmpRole(e.target.value)} />
               </FormRowAuto>
-              <FormRowAuto label="氏名" modified={masterSnapshot.cmp_name !== undefined && cmp_name !== masterSnapshot.cmp_name}>
+              <FormRowAuto label="氏名" modified={masterSnapshot.cmp_name !== undefined && cmp_name !== masterSnapshot.cmp_name} source={mgrCmpSource}>
                 <input className={inp} style={{ borderColor: '#D0DAF0', color: '#1A2340' }} value={cmp_name} onChange={e => setCmpName(e.target.value)} />
               </FormRowAuto>
-              <FormRowAuto label="電話番号" modified={masterSnapshot.cmp_tel !== undefined && cmp_tel !== masterSnapshot.cmp_tel}>
+              <FormRowAuto label="電話番号" modified={masterSnapshot.cmp_tel !== undefined && cmp_tel !== masterSnapshot.cmp_tel} source={mgrCmpSource}>
                 <TelInput value={cmp_tel} onChange={setCmpTel} />
               </FormRowAuto>
               <NavButtons onNext={() => {
@@ -2955,16 +3050,16 @@ export default function ApplyPage() {
                   collapsed={collapsedSections} setCollapsed={setCollapsedSections}
                   onEdit={() => setCurrentStep(4)} editLabel={isRejected ? '確認・修正する' : '修正する'}>
                   <FinalGroupHeader label="派遣元責任者" />
-                  <FinalRow label="部署" value={mgr_dept || '―'} badge={<AutoBadge modified={masterSnapshot.mgr_dept !== undefined && mgr_dept !== masterSnapshot.mgr_dept} />} />
-                  <FinalRow label="役職" value={mgr_role || '―'} badge={<AutoBadge modified={masterSnapshot.mgr_role !== undefined && mgr_role !== masterSnapshot.mgr_role} />} />
-                  <FinalRow label="氏名" value={mgr_name || '―'} badge={<AutoBadge modified={masterSnapshot.mgr_name !== undefined && mgr_name !== masterSnapshot.mgr_name} />} />
-                  <FinalRow label="電話番号" value={mgr_tel || '―'} badge={<AutoBadge modified={masterSnapshot.mgr_tel !== undefined && mgr_tel !== masterSnapshot.mgr_tel} />} />
+                  <FinalRow label="部署" value={mgr_dept || '―'} badge={<AutoBadge modified={masterSnapshot.mgr_dept !== undefined && mgr_dept !== masterSnapshot.mgr_dept} source={mgrCmpSource} />} />
+                  <FinalRow label="役職" value={mgr_role || '―'} badge={<AutoBadge modified={masterSnapshot.mgr_role !== undefined && mgr_role !== masterSnapshot.mgr_role} source={mgrCmpSource} />} />
+                  <FinalRow label="氏名" value={mgr_name || '―'} badge={<AutoBadge modified={masterSnapshot.mgr_name !== undefined && mgr_name !== masterSnapshot.mgr_name} source={mgrCmpSource} />} />
+                  <FinalRow label="電話番号" value={mgr_tel || '―'} badge={<AutoBadge modified={masterSnapshot.mgr_tel !== undefined && mgr_tel !== masterSnapshot.mgr_tel} source={mgrCmpSource} />} />
 
                   <FinalGroupHeader label="苦情処理申出先（派遣元）" />
-                  <FinalRow label="部署" value={cmp_dept || '―'} badge={<AutoBadge modified={masterSnapshot.cmp_dept !== undefined && cmp_dept !== masterSnapshot.cmp_dept} />} />
-                  <FinalRow label="役職" value={cmp_role || '―'} badge={<AutoBadge modified={masterSnapshot.cmp_role !== undefined && cmp_role !== masterSnapshot.cmp_role} />} />
-                  <FinalRow label="氏名" value={cmp_name || '―'} badge={<AutoBadge modified={masterSnapshot.cmp_name !== undefined && cmp_name !== masterSnapshot.cmp_name} />} />
-                  <FinalRow label="電話番号" value={cmp_tel || '―'} badge={<AutoBadge modified={masterSnapshot.cmp_tel !== undefined && cmp_tel !== masterSnapshot.cmp_tel} />} />
+                  <FinalRow label="部署" value={cmp_dept || '―'} badge={<AutoBadge modified={masterSnapshot.cmp_dept !== undefined && cmp_dept !== masterSnapshot.cmp_dept} source={mgrCmpSource} />} />
+                  <FinalRow label="役職" value={cmp_role || '―'} badge={<AutoBadge modified={masterSnapshot.cmp_role !== undefined && cmp_role !== masterSnapshot.cmp_role} source={mgrCmpSource} />} />
+                  <FinalRow label="氏名" value={cmp_name || '―'} badge={<AutoBadge modified={masterSnapshot.cmp_name !== undefined && cmp_name !== masterSnapshot.cmp_name} source={mgrCmpSource} />} />
+                  <FinalRow label="電話番号" value={cmp_tel || '―'} badge={<AutoBadge modified={masterSnapshot.cmp_tel !== undefined && cmp_tel !== masterSnapshot.cmp_tel} source={mgrCmpSource} />} />
                 </FinalSection>
               )}
 

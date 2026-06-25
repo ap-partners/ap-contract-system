@@ -648,7 +648,7 @@ const NoBreakTextarea = ({ value, onChange, placeholder, minHeight = '60px', bg 
   />
 )
 
-const TelInput = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => {
+const TelInput = ({ value, onChange, note }: { value: string; onChange: (v: string) => void; note?: string }) => {
   const [touched, setTouched] = useState(false)
   const error = touched ? validateTel(value) : null
   return (
@@ -660,6 +660,7 @@ const TelInput = ({ value, onChange }: { value: string; onChange: (v: string) =>
         onBlur={() => setTouched(true)}
         placeholder="例）03-1234-5678" />
       {error && <p className="text-xs mt-1" style={{ color: '#DC2626' }}>{error}</p>}
+      {note && !error && <p className="text-xs mt-1" style={{ color: '#5A6A8A' }}>{note}</p>}
     </div>
   )
 }
@@ -2102,11 +2103,8 @@ export default function ApplyPage() {
                       <CsvBadge name="locationTel" />
                     </div>
                     <div className="border-b px-5 py-4 flex flex-col gap-1.5" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
-                      <input className={`${inp}`} style={{ borderColor: '#D0DAF0', color: '#1A2340', maxWidth: '200px' }}
-                        value={workLocationTel} type="tel"
-                        onChange={e => { setWorkLocationTel(e.target.value) }}
-                        placeholder="例）042-539-3711" />
-                      <p className="text-xs" style={{ color: '#5A6A8A' }}>未入力の場合、帳票の「TEL:」以降は表示されません</p>
+                      <TelInput value={workLocationTel} onChange={setWorkLocationTel}
+                        note="未入力の場合、帳票の「TEL:」以降は表示されません" />
                     </div>
                   </div>
                   <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>

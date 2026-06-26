@@ -1423,6 +1423,90 @@ export default function ApplyPage() {
     router.push('/dashboard/sales')
   }
 
+  // ===== 申請データの保存処理 =====
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+  const [isSubmitted, setIsSubmitted] = useState(false)
+
+  const handleSubmitContract = async () => {
+    if (isSubmitting) return // 二重送信防止
+    setIsSubmitting(true)
+    setSubmitError('')
+    try {
+      // STEP1〜8で入力したすべての値（再申請時の復元・SSC確認・将来の帳票生成にそのまま使う）
+      const fields = {
+        contractType, workPlace, documentType,
+        workLocationName, workLocationAddress, workLocationTel,
+        businessContent, startTime, endTime, isShift, breakTime,
+        workingHoursH, workingHoursM, workDays, workDaysOther,
+        organizationUnit, conflictDate, conflictDateOrg, responsibility,
+        cmd_dept, cmd_role, cmd_name, cmd_tel,
+        resp_dept, resp_role, resp_name, resp_tel,
+        comp_dept, comp_role, comp_name, comp_tel,
+        welfare, safetyMode, safetyText, conflictMode, conflictText,
+        mgr_dept, mgr_role, mgr_name, mgr_tel,
+        cmp_dept, cmp_role, cmp_name, cmp_tel,
+        dispatchStart, dispatchEnd,
+        employStart, employEnd, contractStartDate,
+        trialPeriod, trialStart, trialEnd,
+        flexTime, overtime,
+        closingPattern, bonusType,
+        salaryType, basicSalary, skillPay, rolePay, salesPay, housingPay,
+        overtimePay, overtimeHours, transportType,
+        hasEmployInsurance, hasSocialInsurance,
+      }
+
+      // CSV関連の記録（SSC確認画面での差分表示・将来の振り返り用）
+      const csvMeta = {
+        csvMode, csvSystem, csvDispatchStart,
+        csvSnapshot, masterSnapshot, mgrCmpSource,
+      }
+
+      // 申請対象スタッフのスナップショット（後でstaffマスタの情報が変わっても、申請時点の記録が残る）
+      const staffSnapshot = selectedStaff ? {
+        employee_number: selectedStaff.employee_number,
+        name: selectedStaff.name,
+        department: selectedStaff.department,
+        crew_code: selectedStaff.crew_code,
+      } : null
+
+      // 上長承認が必要だった警告のうち、実際にチェックされたものだけを記録
+      const warningConfirmations: { type: string; confirmed_at: string }[] = []
+      if (trialPeriod === '有' && trialCalc?.over6 && trialWarningChecked) {
+        warningConfirmations.push({ type: 'trial_over6months', confirmed_at: new Date().toISOString() })
+      }
+      if (trialPeriod === '無' && contractType === '正社員' && noTrialWarningChecked) {
+        warningConfirmations.push({ type: 'no_trial_period', confirmed_at: new Date().toISOString() })
+      }
+      if (salaryTotal > 1000000 && salaryWarningChecked) {
+        warningConfirmations.push({ type: 'salary_over_1000000', confirmed_at: new Date().toISOString() })
+      }
+
+      const { error } = await supabase.from('contracts').insert({
+        staff_id: selectedStaff?.id,
+        pattern,
+        contract_type: contractType,
+        document_type: documentType,
+        work_place: workPlace,
+        status: '申請中',
+        closing_pattern: (pattern === 'A' || pattern === 'C') ? closingPattern : null,
+        input_data: { staff: staffSnapshot, fields, csvMeta },
+        warning_confirmations: warningConfirmations,
+        created_by: user.id,
+      })
+
+      if (error) {
+        setSubmitError('申請の保存に失敗しました。お手数ですが、もう一度お試しください。（' + error.message + '）')
+        setIsSubmitting(false)
+        return
+      }
+      setIsSubmitted(true)
+    } catch (e: any) {
+      setSubmitError('申請の保存中に問題が発生しました。お手数ですが、もう一度お試しください。')
+      setIsSubmitting(false)
+    }
+  }
+
   const handleNext = () => { setCurrentStep(s => s + 1); window.scrollTo(0, 0) }
   const handleBack = () => { setCurrentStep(s => s - 1); window.scrollTo(0, 0) }
   const getStepLabel = (step: number) => steps[step - 1] || ''
@@ -3399,6 +3483,22 @@ export default function ApplyPage() {
               )}
 
               {/* ===== 申請エリア ===== */}
+              {isSubmitted ? (
+                <div className="bg-white rounded-xl border shadow-sm p-8 mt-4 text-center" style={{ borderColor: '#D0DAF0' }}>
+                  <div className="text-5xl mb-4">✅</div>
+                  <h2 className="text-lg font-bold mb-2" style={{ color: '#1A2340' }}>申請が完了しました</h2>
+                  <p className="text-sm leading-relaxed mb-6" style={{ color: '#5A6A8A' }}>
+                    {closingPattern === 'auto'
+                      ? 'SSCの承認をお待ちください。承認後、スタッフへ署名依頼が自動送信されます。'
+                      : 'SSCの承認をお待ちください。承認後、ダッシュボードから説明手続きを行ってください。'}
+                  </p>
+                  <button
+                    onClick={() => router.push('/dashboard/sales')}
+                    className="px-8 py-3 rounded-lg text-white font-bold text-sm" style={{ background: '#1B3A8C' }}>
+                    ダッシュボードに戻る
+                  </button>
+                </div>
+              ) : (
               <div className="bg-white rounded-xl border shadow-sm p-6 mt-4" style={{ borderColor: '#D0DAF0' }}>
                 <div className="rounded-lg px-4 py-3 mb-4 text-sm leading-relaxed border-l-4" style={{ background: '#EEF2FA', color: '#5A6A8A', borderColor: '#1B3A8C' }}>
                   {closingPattern === 'auto'
@@ -3414,24 +3514,31 @@ export default function ApplyPage() {
                   </div>
                 )}
 
+                {submitError && (
+                  <div className="rounded-lg px-4 py-3 mb-3 border" style={{ background: '#FEF2F2', borderColor: '#DC2626' }}>
+                    <p className="text-xs leading-relaxed" style={{ color: '#DC2626' }}>{submitError}</p>
+                  </div>
+                )}
+
                 <button
+                  disabled={isSubmitting}
                   onClick={() => {
                     if (isRejected) {
                       if (submitClickCount === 0) { setSubmitClickCount(1); return }
-                      alert('申請が完了しました。ダッシュボードへ移動します。')
-                      router.push('/dashboard/sales')
+                      handleSubmitContract()
                       return
                     }
-                    alert('申請が完了しました。ダッシュボードへ移動します。')
-                    router.push('/dashboard/sales')
+                    handleSubmitContract()
                   }}
-                  className="w-full py-3.5 rounded-lg text-white font-bold text-sm mb-2" style={{ background: '#1B3A8C' }}>
-                  {isRejected && submitClickCount === 1 ? 'このまま申請する' : '申請する'}
+                  className="w-full py-3.5 rounded-lg text-white font-bold text-sm mb-2"
+                  style={{ background: isSubmitting ? '#A8C0E8' : '#1B3A8C' }}>
+                  {isSubmitting ? '送信中...' : (isRejected && submitClickCount === 1 ? 'このまま申請する' : '申請する')}
                 </button>
                 <button onClick={handleCancel} className="w-full text-center text-xs underline py-1" style={{ color: '#5A6A8A' }}>
                   この申請をやめる
                 </button>
               </div>
+              )}
 
               <div className="flex justify-start mt-3">
                 <button onClick={handleBack}

@@ -317,7 +317,7 @@ const computeCharDiff = (oldText: string, newText: string): DiffPart[] => {
 // oldTextとnewTextが完全に同じ場合は newText をそのまま表示する（差分なし）
 const DiffText = ({ oldText, newText, multiline, suffix }: { oldText: string; newText: string; multiline?: boolean; suffix?: string }) => {
   if (oldText === newText) {
-    return <span className={multiline ? 'whitespace-pre-line' : ''}>{newText}{suffix && <span className="text-xs ml-1.5" style={{ color: '#5A6A8A' }}>{suffix}</span>}</span>
+    return <span className={multiline ? 'whitespace-pre-line' : ''}>{newText}{suffix && <span className="text-xs ml-1.5" style={{ color: '#1A2340' }}>{suffix}</span>}</span>
   }
   const parts = computeCharDiff(oldText, newText)
   return (
@@ -340,7 +340,7 @@ const DiffText = ({ oldText, newText, multiline, suffix }: { oldText: string; ne
               ? <span key={`new-${idx}`} style={{ color: '#15803D', fontWeight: 600, textDecoration: 'underline' }}>{p.text}</span>
               : <span key={`new-${idx}`}>{p.text}</span>
           )}
-          {suffix && <span className="text-xs ml-1.5" style={{ color: '#5A6A8A' }}>{suffix}</span>}
+          {suffix && <span className="text-xs ml-1.5" style={{ color: '#1A2340' }}>{suffix}</span>}
         </span>
       </div>
     </div>
@@ -809,7 +809,7 @@ const FinalRow = ({ label, value, badge, multiline, preview, highlight, oldValue
         style={{ background: preview ? '#EEF2FA' : 'white', color: '#1A2340', lineHeight: 1.7, borderRadius: preview ? '8px' : 0, margin: preview ? '6px 12px' : 0 }}>
         {showDiff
           ? <DiffText oldText={oldValue} newText={value} multiline={multiline} suffix={suffix} />
-          : <>{value}{suffix && <span className="text-xs ml-1.5" style={{ color: '#5A6A8A' }}>{suffix}</span>}</>}
+          : <>{value}{suffix && <span className="text-xs ml-1.5" style={{ color: '#1A2340' }}>{suffix}</span>}</>}
         {highlight && <p className="text-sm mt-2" style={{ color: '#1A2340' }}>{highlight}</p>}
       </div>
     </div>
@@ -2777,6 +2777,18 @@ export default function ApplyPage() {
                           <input type="date" className={`${inp} w-40`}
                             style={{ borderColor: isDateBefore(contractStartDate, dispatchStart) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
                             value={contractStartDate} onChange={e => setContractStartDate(e.target.value)} />
+                          {pattern === 'C' && (
+                            <button type="button"
+                              onClick={e => { e.preventDefault(); if (dispatchStart) setContractStartDate(dispatchStart) }}
+                              disabled={!dispatchStart}
+                              className="text-xs px-3 py-2 rounded-lg border font-medium transition-colors shrink-0"
+                              style={{
+                                background: dispatchStart ? '#1B3A8C' : '#EEF2FA',
+                                color: dispatchStart ? 'white' : '#9AA5BD',
+                                borderColor: dispatchStart ? '#1B3A8C' : '#D0DAF0',
+                                cursor: dispatchStart ? 'pointer' : 'not-allowed',
+                              }}>📋 派遣期間をコピー</button>
+                          )}
                         </div>
                         {isDateBefore(contractStartDate, dispatchStart) && (
                           <p className="text-xs" style={{ color: '#DC2626' }}>契約条件適用開始日は派遣期間の開始日以降の日付にしてください</p>
@@ -2799,6 +2811,18 @@ export default function ApplyPage() {
                               style={{ borderColor: employEndError ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
                               value={employEnd} onChange={e => setEmployEnd(e.target.value)} />
                           </div>
+                          {pattern === 'C' && (
+                            <button type="button"
+                              onClick={e => { e.preventDefault(); if (dispatchStart && dispatchEnd) { setEmployStart(dispatchStart); setEmployEnd(dispatchEnd) } }}
+                              disabled={!dispatchStart || !dispatchEnd}
+                              className="text-xs px-3 py-2 rounded-lg border font-medium transition-colors shrink-0"
+                              style={{
+                                background: (dispatchStart && dispatchEnd) ? '#1B3A8C' : '#EEF2FA',
+                                color: (dispatchStart && dispatchEnd) ? 'white' : '#9AA5BD',
+                                borderColor: (dispatchStart && dispatchEnd) ? '#1B3A8C' : '#D0DAF0',
+                                cursor: (dispatchStart && dispatchEnd) ? 'pointer' : 'not-allowed',
+                              }}>📋 派遣期間をコピー</button>
+                          )}
                         </div>
                         {employStartError && <p className="text-xs" style={{ color: '#DC2626' }}>{employStartError}</p>}
                         {employEndError && <p className="text-xs" style={{ color: '#DC2626' }}>{employEndError}</p>}

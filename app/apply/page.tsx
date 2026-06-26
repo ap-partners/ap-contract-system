@@ -261,6 +261,16 @@ const calcEarliestLatest = (pairs: Array<{ start: string | null; end: string | n
   }
 }
 
+// "HH:MM" 形式の時刻を、指定した時間（hours）だけ前後にずらす（日付をまたぐ場合は24時間で折り返す）
+const shiftTimeByHours = (time: string, hours: number): string => {
+  const [h, m] = time.split(':').map(Number)
+  let totalMin = h * 60 + m + hours * 60
+  totalMin = ((totalMin % 1440) + 1440) % 1440
+  const newH = Math.floor(totalMin / 60)
+  const newM = totalMin % 60
+  return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`
+}
+
 // winworksの「諸措置」列から「業務に伴う責任の程度」を抽出する
 // 文末の「責任の程度：◯◯」パターンを正規表現で抽出。「役職無し」は「無」に変換する
 const extractResponsibilityFromWinworks = (shochi: string | null): string | null => {
@@ -304,7 +314,7 @@ const numToYesNo = (value: any): string | null => {
 }
 
 // CSVの検索結果（raw_data）から、システムごとに必要な項目を抽出して統一フォーマットで返す
-const extractCsvFields = (system: string, raw: any) => {
+const extractCsvFieldsRaw = (system: string, raw: any) => {
   if (!raw) return {}
 
   if (system === 'e-staffing') {
@@ -325,25 +335,25 @@ const extractCsvFields = (system: string, raw: any) => {
       cmdName: raw['指揮命令者氏名'] || null,
       cmdDept: raw['指揮命令者部署'] || null,
       cmdRole: raw['指揮命令者役職'] || null,
-      cmdTel: raw['指揮命令者TEL'] || null,
+      cmdTel: formatTelHyphen(raw['指揮命令者TEL']),
       respName: raw['派遣先責任者氏名'] || null,
       respDept: raw['派遣先責任者部署'] || null,
       respRole: raw['派遣先責任者役職'] || null,
-      respTel: raw['派遣先責任者TEL'] || null,
+      respTel: formatTelHyphen(raw['派遣先責任者TEL']),
       compName: raw['苦情申出先氏名'] || null,
       compDept: raw['苦情申出先部署'] || null,
       compRole: raw['苦情申出先役職'] || null,
-      compTel: raw['苦情申出先TEL'] || null,
+      compTel: formatTelHyphen(raw['苦情申出先TEL']),
       // 派遣元責任者（確定仕様：部署は「正式部署」を使用）
       mgrName: raw['派遣元責任者氏名'] || null,
       mgrDept: raw['派遣元責任者正式部署'] || null,
       mgrRole: raw['派遣元責任者役職'] || null,
-      mgrTel: raw['派遣元責任者TEL'] || null,
+      mgrTel: formatTelHyphen(raw['派遣元責任者TEL']),
       // 苦情処理申出先（派遣元）（確定仕様：部署は「正式部署」を使用）
       cmpName: raw['派遣元苦情申出先氏名'] || null,
       cmpDept: raw['派遣元苦情申出先正式部署'] || null,
       cmpRole: raw['派遣元苦情申出先役職'] || null,
-      cmpTel: raw['派遣元苦情申出先TEL'] || null,
+      cmpTel: formatTelHyphen(raw['派遣元苦情申出先TEL']),
       welfare: buildWelfareTextFromEstaffing(raw),
       // 変形労働時間制：「備考1」または「契約書備考」に「変形労働」の記載があれば「有」、なければ「無」（確定仕様）
       flexTime: (String(raw['備考1'] || '').includes('変形労働') || String(raw['契約書備考'] || '').includes('変形労働')) ? '有' : '無',
@@ -374,25 +384,25 @@ const extractCsvFields = (system: string, raw: any) => {
       cmdName: raw['指揮命令者_氏名'] || null,
       cmdDept: raw['指揮命令者_部署'] || null,
       cmdRole: raw['指揮命令者_役職'] || null,
-      cmdTel: raw['指揮命令者_TEL'] || null,
+      cmdTel: formatTelHyphen(raw['指揮命令者_TEL']),
       respName: raw['派遣先責任者_氏名'] || null,
       respDept: raw['派遣先責任者_部署'] || null,
       respRole: raw['派遣先責任者_役職'] || null,
-      respTel: raw['派遣先責任者_TEL'] || null,
+      respTel: formatTelHyphen(raw['派遣先責任者_TEL']),
       compName: raw['派遣先苦情処理受付者_氏名'] || null,
       compDept: raw['派遣先苦情処理受付者_部署'] || null,
       compRole: raw['派遣先苦情処理受付者_役職'] || null,
-      compTel: raw['派遣先苦情処理受付者_TEL'] || null,
+      compTel: formatTelHyphen(raw['派遣先苦情処理受付者_TEL']),
       // 派遣元責任者
       mgrName: raw['派遣元責任者_氏名'] || null,
       mgrDept: raw['派遣元責任者_部署'] || null,
       mgrRole: raw['派遣元責任者_役職'] || null,
-      mgrTel: raw['派遣元責任者_TEL'] || null,
+      mgrTel: formatTelHyphen(raw['派遣元責任者_TEL']),
       // 苦情処理申出先（派遣元）
       cmpName: raw['派遣元苦情処理受付者_氏名'] || null,
       cmpDept: raw['派遣元苦情処理受付者_部署'] || null,
       cmpRole: raw['派遣元苦情処理受付者_役職'] || null,
-      cmpTel: raw['派遣元苦情処理受付者_TEL'] || null,
+      cmpTel: formatTelHyphen(raw['派遣元苦情処理受付者_TEL']),
       welfare: buildWelfareTextFromHRstation(raw),
       flexTime: null, // HRstationは列なし
       // 所定労働時間外労働：「個別契約書_契約書備考」に特定の文言があれば「有」、記載がなければ未反映（確定仕様）
@@ -424,25 +434,25 @@ const extractCsvFields = (system: string, raw: any) => {
       cmdName: raw['派遣先情報（就業場所） 指揮命令者'] || null,
       cmdDept: raw['派遣先情報（就業場所） 部署名（組織単位）'] || null,
       cmdRole: raw['派遣先情報（就業場所） 役職'] || null,
-      cmdTel: raw['派遣先情報（就業場所） 電話番号'] || null,
+      cmdTel: formatTelHyphen(raw['派遣先情報（就業場所） 電話番号']),
       respName: raw['派遣責任者　派遣先 氏名'] || null,
       respDept: raw['派遣責任者　派遣先 部署名'] || null,
       respRole: raw['派遣責任者　派遣先 役職'] || null,
-      respTel: raw['派遣責任者　派遣先 電話番号'] || null,
+      respTel: formatTelHyphen(raw['派遣責任者　派遣先 電話番号']),
       compName: raw['苦情申出先　派遣先 氏名'] || null,
       compDept: raw['苦情申出先　派遣先 部署名'] || null,
       compRole: raw['苦情申出先　派遣先 役職'] || null,
-      compTel: raw['苦情申出先　派遣先 電話番号'] || null,
+      compTel: formatTelHyphen(raw['苦情申出先　派遣先 電話番号']),
       // 派遣元責任者
       mgrName: raw['派遣責任者　派遣元 氏名'] || null,
       mgrDept: raw['派遣責任者　派遣元 部署名'] || null,
       mgrRole: raw['派遣責任者　派遣元 役職'] || null,
-      mgrTel: raw['派遣責任者　派遣元 電話番号'] || null,
+      mgrTel: formatTelHyphen(raw['派遣責任者　派遣元 電話番号']),
       // 苦情処理申出先（派遣元）
       cmpName: raw['苦情申出先　派遣元 氏名'] || null,
       cmpDept: raw['苦情申出先　派遣元 部署名'] || null,
       cmpRole: raw['苦情申出先　派遣元 役職'] || null,
-      cmpTel: raw['苦情申出先　派遣元 電話番号'] || null,
+      cmpTel: formatTelHyphen(raw['苦情申出先　派遣元 電話番号']),
       welfare: raw['福利厚生等の便宜供与 条件'] || null,
       // 変形労働時間制：「就業時間」列に「変形労働時間制」という記載があるため「有」と判定する（確定仕様）
       flexTime: shugyoText.includes('変形労働時間制') ? '有' : null,
@@ -458,43 +468,58 @@ const extractCsvFields = (system: string, raw: any) => {
       start: normalizeTimeStr(raw[`就業開始時間${i}`]),
       end: normalizeTimeStr(raw[`就業終了時間${i}`]),
     }))
-    const { start, end, isMultiple } = calcEarliestLatest(pairs)
+    const calcResult = calcEarliestLatest(pairs)
+    // Staffia専用：勤務時間パターンが1つだけの場合、始業を1時間早め・終業を1時間遅らせて、
+    // シフト制チェックを入れる（確定仕様）。パターンが2つ以上の場合（既に最早・最遅を計算済み）は対象外。
+    let start = calcResult.start
+    let end = calcResult.end
+    let isShiftFlag = calcResult.isMultiple
+    if (!calcResult.isMultiple && start && end) {
+      start = shiftTimeByHours(start, -1)
+      end = shiftTimeByHours(end, 1)
+      isShiftFlag = true
+    }
     // 業務内容1〜21を半角スペースで連結
     const businessParts = Array.from({ length: 21 }, (_, i) => raw[`業務内容${i + 1}`]).filter(Boolean)
     return {
       business: businessParts.length > 0 ? newlineToSpace(businessParts.join(' ')) : null,
       startTime: start,
       endTime: end,
-      isShift: isMultiple,
-      breakTime: null, // 開始・終了時刻から差分計算が必要（今回は未対応）
+      isShift: isShiftFlag,
+      // 休憩時間：「休憩時間数」列（時間単位の小数）を分に変換して反映（確定仕様）
+      breakTime: (raw['休憩時間数'] !== null && raw['休憩時間数'] !== undefined && raw['休憩時間数'] !== '') ? Math.round(Number(raw['休憩時間数']) * 60) : null,
       org: raw['就業先組織単位名'] || null,
       conflictDate: raw['事業所の抵触日'] ? normalizeDateSlash(raw['事業所の抵触日']) : null,
       conflictDateOrg: raw['抵触日'] ? normalizeDateSlash(raw['抵触日']) : null,
       responsibility: raw['責任の程度'] || null,
+      // 所定労働時間：「所定労働時間数」列（時間単位の小数）を時間・分に変換して反映（確定仕様）
+      workingHoursH: (raw['所定労働時間数'] !== null && raw['所定労働時間数'] !== undefined && raw['所定労働時間数'] !== '') ? String(Math.floor(Number(raw['所定労働時間数']))) : null,
+      workingHoursM: (raw['所定労働時間数'] !== null && raw['所定労働時間数'] !== undefined && raw['所定労働時間数'] !== '') ? String(Math.round((Number(raw['所定労働時間数']) % 1) * 60)).padStart(2, '0') : null,
       workDays: null,
       // 指揮命令者・派遣先責任者は1セット目（末尾が1の列）のみ使用（確定仕様）
+      // 部署は「事業部名＋担当名」の結合（確定仕様）
       cmdName: raw['指揮命令者氏名1'] || null,
-      cmdDept: raw['指揮命令者事業部名1'] || null,
+      cmdDept: joinDeptAndPerson(raw['指揮命令者事業部名1'], raw['指揮命令者担当名1']),
       cmdRole: raw['指揮命令者役職名1'] || null,
-      cmdTel: raw['指揮命令者電話番号1'] || null,
+      cmdTel: formatTelHyphen(raw['指揮命令者電話番号1']),
       respName: raw['派遣先責任者氏名1'] || null,
-      respDept: raw['派遣先責任者事業部名1'] || null,
+      respDept: joinDeptAndPerson(raw['派遣先責任者事業部名1'], raw['派遣先責任者担当名1']),
       respRole: raw['派遣先責任者役職名1'] || null,
-      respTel: raw['派遣先責任者電話番号1'] || null,
+      respTel: formatTelHyphen(raw['派遣先責任者電話番号1']),
       compName: raw['派遣先苦情処理申出先氏名'] || null,
-      compDept: raw['派遣先苦情処理申出先事業部名'] || null,
+      compDept: joinDeptAndPerson(raw['派遣先苦情処理申出先事業部名'], raw['派遣先苦情処理申出先担当名']),
       compRole: raw['派遣先苦情処理申出先役職名'] || null,
-      compTel: raw['派遣先苦情処理申出先電話番号'] || null,
+      compTel: formatTelHyphen(raw['派遣先苦情処理申出先電話番号']),
       // 派遣元責任者（確定仕様：1セット目のみ使用。部署は「担当名1」を使用）
       mgrName: raw['派遣元責任者氏名1'] || null,
       mgrDept: raw['派遣元責任者担当名1'] || null,
       mgrRole: raw['派遣元責任者役職名1'] || null,
-      mgrTel: raw['派遣元責任者電話番号1'] || null,
+      mgrTel: formatTelHyphen(raw['派遣元責任者電話番号1']),
       // 苦情処理申出先（派遣元）（確定仕様：部署は「担当名」を使用）
       cmpName: raw['派遣元苦情処理申出先氏名'] || null,
       cmpDept: raw['派遣元苦情処理申出先担当名'] || null,
       cmpRole: raw['派遣元苦情処理申出先役職名'] || null,
-      cmpTel: raw['派遣元苦情処理申出先電話番号'] || null,
+      cmpTel: formatTelHyphen(raw['派遣元苦情処理申出先電話番号']),
       welfare: raw['その他福利厚生等'] || null,
       flexTime: raw['変形労働時間制適用有無'] || null, // Staffiaのみ「無」「有」がそのまま入っている
       overtime: raw['時間外労働有無'] || null,
@@ -504,6 +529,24 @@ const extractCsvFields = (system: string, raw: any) => {
   }
 
   return {}
+}
+
+// extractCsvFieldsRawの結果に対し、共通の後処理を行うラッパー
+// 「役職」が空欄で、対応する氏名に値がある場合は「担当」を補完する（確定仕様：CSV反映に限る）
+const extractCsvFields = (system: string, raw: any) => {
+  const fields = extractCsvFieldsRaw(system, raw) as Record<string, any>
+  // [役職キー, 対応する氏名キー] のペア。氏名があるのに役職が空欄だと必須チェックで進めなくなるため、
+  // その場合は「担当」をセットする（派遣先・派遣元の指揮命令者・責任者・苦情処理申出先すべてが対象）
+  const roleNamePairs: Array<[string, string]> = [
+    ['cmdRole', 'cmdName'], ['respRole', 'respName'], ['compRole', 'compName'],
+    ['mgrRole', 'mgrName'], ['cmpRole', 'cmpName'],
+  ]
+  roleNamePairs.forEach(([roleKey, nameKey]) => {
+    if (fields[nameKey] && !fields[roleKey]) {
+      fields[roleKey] = '担当'
+    }
+  })
+  return fields
 }
 
 // "2026/03/01" 等のスラッシュ区切り日付をYYYY-MM-DD形式に変換
@@ -522,6 +565,27 @@ const newlineToSpace = (value: string | null | undefined): string | null => {
   if (!value) return null
   const result = String(value).replace(/[\r\n]+/g, ' ').trim()
   return result || null
+}
+
+// CSVから反映された電話番号にハイフンを自動で挿入する（簡易ルール。確定仕様：完全な市外局番判定は行わない）
+// 11桁（070/080/090等の携帯電話）→ 3-4-4、10桁で03/06（東京・大阪）→ 2-4-4、10桁のその他→ 3-3-4
+const formatTelHyphen = (value: string | null | undefined): string | null => {
+  if (!value) return null
+  const digits = String(value).replace(/[^\d]/g, '')
+  if (digits.length === 11) return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`
+  if (digits.length === 10) {
+    if (digits.startsWith('03') || digits.startsWith('06')) {
+      return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6)}`
+    }
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`
+  }
+  return String(value) // 想定外の桁数はそのまま返す（手入力で修正できる）
+}
+
+// Staffiaの「部署」表記：事業部名＋半角スペース＋担当名の結合（確定仕様）
+const joinDeptAndPerson = (dept: string | null | undefined, person: string | null | undefined): string | null => {
+  const parts = [dept, person].map(v => (v || '').toString().trim()).filter(Boolean)
+  return parts.length > 0 ? parts.join(' ') : null
 }
 
 const Req = () => (
@@ -1941,7 +2005,7 @@ export default function ApplyPage() {
                                   id: r.id,
                                   name: r.work_location,
                                   address: r.work_address,
-                                  tel: r.work_tel,
+                                  tel: formatTelHyphen(r.work_tel),
                                   start: r.dispatch_start,
                                   end: r.dispatch_end,
                                   raw: r.raw_data, // STEP2〜5の詳細項目反映時にここから取り出す
@@ -1980,6 +2044,8 @@ export default function ApplyPage() {
                                       if (fields.endTime) setEndTime(fields.endTime)
                                       if (fields.isShift) setIsShift(true)
                                       if (fields.breakTime) setBreakTime(String(fields.breakTime))
+                                      if (fields.workingHoursH) setWorkingHoursH(fields.workingHoursH)
+                                      if (fields.workingHoursM) setWorkingHoursM(fields.workingHoursM)
                                       if (fields.org) setOrganizationUnit(fields.org)
                                       if (fields.conflictDate) setConflictDate(fields.conflictDate)
                                       if (fields.conflictDateOrg) setConflictDateOrg(fields.conflictDateOrg)
@@ -2042,6 +2108,7 @@ export default function ApplyPage() {
                                       if (fields.business) newBadges['business'] = 'reflected'
                                       if (fields.startTime || fields.endTime) newBadges['time'] = 'reflected'
                                       if (fields.breakTime) newBadges['breakTime'] = 'reflected'
+                                      if (fields.workingHoursH) newBadges['workingHours'] = 'reflected'
                                       if (fields.org) newBadges['org'] = 'reflected'
                                       if (fields.conflictDate) newBadges['conflict'] = 'reflected'
                                       if (fields.conflictDateOrg) newBadges['conflictOrg'] = 'reflected'

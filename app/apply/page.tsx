@@ -290,7 +290,7 @@ const computeCharDiff = (oldText: string, newText: string): DiffPart[] => {
     if (i > 0 && j > 0 && oldArr[i - 1] === newArr[j - 1]) {
       rawParts.push({ type: 'same', char: oldArr[i - 1] })
       i--; j--
-    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] > dp[i - 1][j])) {
       rawParts.push({ type: 'added', char: newArr[j - 1] })
       j--
     } else {
@@ -315,29 +315,35 @@ const computeCharDiff = (oldText: string, newText: string): DiffPart[] => {
 
 // 差分（DiffPart配列）を、削除部分は取り消し線、追加部分は色付けで表示するコンポーネント
 // oldTextとnewTextが完全に同じ場合は newText をそのまま表示する（差分なし）
-const DiffText = ({ oldText, newText, multiline }: { oldText: string; newText: string; multiline?: boolean }) => {
+const DiffText = ({ oldText, newText, multiline, suffix }: { oldText: string; newText: string; multiline?: boolean; suffix?: string }) => {
   if (oldText === newText) {
-    return <span className={multiline ? 'whitespace-pre-line' : ''}>{newText}</span>
+    return <span className={multiline ? 'whitespace-pre-line' : ''}>{newText}{suffix && <span className="text-xs ml-1.5" style={{ color: '#5A6A8A' }}>{suffix}</span>}</span>
   }
   const parts = computeCharDiff(oldText, newText)
   return (
-    <span className={multiline ? 'whitespace-pre-line' : ''}>
-      <span>
-        {parts.filter(p => p.type !== 'added').map((p, idx) =>
-          p.type === 'removed'
-            ? <span key={`old-${idx}`} style={{ color: '#B91C1C', textDecoration: 'line-through', opacity: 0.75 }}>{p.text}</span>
-            : <span key={`old-${idx}`}>{p.text}</span>
-        )}
-      </span>
-      <br />
-      <span>
-        {parts.filter(p => p.type !== 'removed').map((p, idx) =>
-          p.type === 'added'
-            ? <span key={`new-${idx}`} style={{ color: '#15803D', fontWeight: 600, textDecoration: 'underline' }}>{p.text}</span>
-            : <span key={`new-${idx}`}>{p.text}</span>
-        )}
-      </span>
-    </span>
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-start gap-1.5">
+        <span className="text-xs font-bold shrink-0 px-1 py-0.5 rounded mt-0.5" style={{ color: '#B91C1C', background: '#FEF2F2' }}>変更前</span>
+        <span className={multiline ? 'whitespace-pre-line' : ''}>
+          {parts.filter(p => p.type !== 'added').map((p, idx) =>
+            p.type === 'removed'
+              ? <span key={`old-${idx}`} style={{ color: '#B91C1C', textDecoration: 'line-through', opacity: 0.75 }}>{p.text}</span>
+              : <span key={`old-${idx}`}>{p.text}</span>
+          )}
+        </span>
+      </div>
+      <div className="flex items-start gap-1.5">
+        <span className="text-xs font-bold shrink-0 px-1 py-0.5 rounded mt-0.5" style={{ color: '#15803D', background: '#ECFDF5' }}>変更後</span>
+        <span className={multiline ? 'whitespace-pre-line' : ''}>
+          {parts.filter(p => p.type !== 'removed').map((p, idx) =>
+            p.type === 'added'
+              ? <span key={`new-${idx}`} style={{ color: '#15803D', fontWeight: 600, textDecoration: 'underline' }}>{p.text}</span>
+              : <span key={`new-${idx}`}>{p.text}</span>
+          )}
+          {suffix && <span className="text-xs ml-1.5" style={{ color: '#5A6A8A' }}>{suffix}</span>}
+        </span>
+      </div>
+    </div>
   )
 }
 
@@ -788,8 +794,8 @@ const FinalGroupHeader = ({ label }: { label: string }) => (
   </>
 )
 
-const FinalRow = ({ label, value, badge, multiline, preview, highlight, oldValue }: {
-  label: string; value: string; badge?: React.ReactNode; multiline?: boolean; preview?: boolean; highlight?: string; oldValue?: string
+const FinalRow = ({ label, value, badge, multiline, preview, highlight, oldValue, suffix }: {
+  label: string; value: string; badge?: React.ReactNode; multiline?: boolean; preview?: boolean; highlight?: string; oldValue?: string; suffix?: string
 }) => {
   // oldValueが渡されていて、かつ現在値と異なる場合だけ、差分表示（CSV反映項目を手で修正したケース）
   const showDiff = oldValue !== undefined && oldValue !== '' && oldValue !== value
@@ -801,8 +807,10 @@ const FinalRow = ({ label, value, badge, multiline, preview, highlight, oldValue
       </div>
       <div className={`px-5 py-3.5 text-sm ${multiline ? 'whitespace-pre-line' : (showDiff ? '' : 'flex items-center')}`}
         style={{ background: preview ? '#EEF2FA' : 'white', color: '#1A2340', lineHeight: 1.7, borderRadius: preview ? '8px' : 0, margin: preview ? '6px 12px' : 0 }}>
-        {showDiff ? <DiffText oldText={oldValue} newText={value} multiline={multiline} /> : value}
-        {highlight && <p className="text-sm font-bold mt-2" style={{ color: '#0D9488' }}>{highlight}</p>}
+        {showDiff
+          ? <DiffText oldText={oldValue} newText={value} multiline={multiline} suffix={suffix} />
+          : <>{value}{suffix && <span className="text-xs ml-1.5" style={{ color: '#5A6A8A' }}>{suffix}</span>}</>}
+        {highlight && <p className="text-sm mt-2" style={{ color: '#1A2340' }}>{highlight}</p>}
       </div>
     </div>
   )
@@ -3205,7 +3213,7 @@ export default function ApplyPage() {
                 <FinalRow label="就業場所電話番号" value={workLocationTel || '―'} badge={<CsvBadge name="locationTel" />} oldValue={csvSnapshot.locationTel} />
                 <FinalRow label="業務内容" value={businessContent || '―'} badge={<CsvBadge name="business" />} multiline oldValue={csvSnapshot.business} />
                 <FinalRow label="始業時刻" value={startTime || '―'} badge={<CsvBadge name="startTime" />} oldValue={csvSnapshot.startTime} />
-                <FinalRow label="終業時刻" value={endTime || '―'} badge={<CsvBadge name="endTime" />} oldValue={csvSnapshot.endTime} highlight={isShift ? '※シフト制' : undefined} />
+                <FinalRow label="終業時刻" value={endTime || '―'} badge={<CsvBadge name="endTime" />} oldValue={csvSnapshot.endTime} suffix={isShift ? '※シフト制' : undefined} />
                 <FinalRow label="休憩時間" value={breakTime ? `${parseAmount(breakTime)}分` : '―'} badge={<CsvBadge name="breakTime" />} oldValue={csvSnapshot.breakTime ? `${parseAmount(csvSnapshot.breakTime)}分` : undefined} />
                 <FinalRow label="所定労働時間" value={(workingHoursH || workingHoursM) ? `${parseAmount(workingHoursH)}時間${parseAmount(workingHoursM)}分` : '―'} badge={<CsvBadge name="workingHours" />} oldValue={csvSnapshot.workingHours ? `${parseAmount(csvSnapshot.workingHours.split('-')[0])}時間${parseAmount(csvSnapshot.workingHours.split('-')[1])}分` : undefined} />
                 <FinalRow label="所定労働日数" value={workDays === 'other' ? (workDaysOther || '―') : (workDays || '―')} />
@@ -3282,21 +3290,27 @@ export default function ApplyPage() {
                   trialPeriod === '有' ? `有　${trialStart || '―'} 〜 ${trialEnd || '―'}` : trialPeriod === '無' ? '無' : '―'
                 } />
                 {trialPeriod === '有' && trialCalc?.over6 && (
-                  <div className="px-5 py-3.5" style={{ borderBottom: '1px solid #D0DAF0' }}>
-                    <CriticalWarning
-                      message={`就業規則第13条では試用期間は原則6ヶ月以内と定められています。\n入力された試用期間（${trialCalc.months}ヶ月${trialCalc.days > 0 ? trialCalc.days + '日' : ''}）は6ヶ月を超えています。\n延長が必要な場合は就業規則第13条第2項に基づき、本人への2週間前通知が必要です。\n本当にこのまま申請してよろしいですか？`}
-                      checked={trialWarningChecked}
-                      onCheck={setTrialWarningChecked}
-                    />
+                  <div className="grid border-b" style={{ gridTemplateColumns: '260px 1fr', borderColor: '#D0DAF0' }}>
+                    <div className="border-r" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }} />
+                    <div className="px-5 py-3.5">
+                      <CriticalWarning
+                        message={`就業規則第13条では試用期間は原則6ヶ月以内と定められています。\n入力された試用期間（${trialCalc.months}ヶ月${trialCalc.days > 0 ? trialCalc.days + '日' : ''}）は6ヶ月を超えています。\n延長が必要な場合は就業規則第13条第2項に基づき、本人への2週間前通知が必要です。\n本当にこのまま申請してよろしいですか？`}
+                        checked={trialWarningChecked}
+                        onCheck={setTrialWarningChecked}
+                      />
+                    </div>
                   </div>
                 )}
                 {trialPeriod === '無' && contractType === '正社員' && (
-                  <div className="px-5 py-3.5" style={{ borderBottom: '1px solid #D0DAF0' }}>
-                    <CriticalWarning
-                      message={`正社員の雇用では原則として試用期間（6ヶ月）が設けられます（就業規則第13条）。\n試用期間「無し」で申請する場合は、会社が適当と認めた特別なケースに限られます。\n本当にこのまま申請してよろしいですか？`}
-                      checked={noTrialWarningChecked}
-                      onCheck={setNoTrialWarningChecked}
-                    />
+                  <div className="grid border-b" style={{ gridTemplateColumns: '260px 1fr', borderColor: '#D0DAF0' }}>
+                    <div className="border-r" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }} />
+                    <div className="px-5 py-3.5">
+                      <CriticalWarning
+                        message={`正社員の雇用では原則として試用期間（6ヶ月）が設けられます（就業規則第13条）。\n試用期間「無し」で申請する場合は、会社が適当と認めた特別なケースに限られます。\n本当にこのまま申請してよろしいですか？`}
+                        checked={noTrialWarningChecked}
+                        onCheck={setNoTrialWarningChecked}
+                      />
+                    </div>
                   </div>
                 )}
                 <FinalRow label="変形労働時間制" value={flexTime || '―'} badge={<CsvBadge name="flexTime" />} oldValue={csvSnapshot.flexTime} />
@@ -3329,12 +3343,15 @@ export default function ApplyPage() {
                   <FinalRow label="定額残業手当" value={parseAmount(overtimePay) > 0 ? `${parseAmount(overtimePay).toLocaleString()}円（${parseAmount(overtimeHours)}時間分）` : '―'} />
                   <FinalRow label="住宅手当" value={parseAmount(housingPay) > 0 ? `${parseAmount(housingPay).toLocaleString()}円` : '―'} />
                   {salaryTotal > 1000000 && (
-                    <div className="px-5 py-3.5" style={{ borderBottom: '1px solid #D0DAF0' }}>
-                      <CriticalWarning
-                        message={`合計支給額が1,000,000円を超えています。\n入力内容に誤りがないか、今一度ご確認ください。\n本当にこのまま申請してよろしいですか？`}
-                        checked={salaryWarningChecked}
-                        onCheck={setSalaryWarningChecked}
-                      />
+                    <div className="grid border-b" style={{ gridTemplateColumns: '260px 1fr', borderColor: '#D0DAF0' }}>
+                      <div className="border-r" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }} />
+                      <div className="px-5 py-3.5">
+                        <CriticalWarning
+                          message={`合計支給額が1,000,000円を超えています。\n入力内容に誤りがないか、今一度ご確認ください。\n本当にこのまま申請してよろしいですか？`}
+                          checked={salaryWarningChecked}
+                          onCheck={setSalaryWarningChecked}
+                        />
+                      </div>
                     </div>
                   )}
                   {salaryType === '時給' && hourlyMonthlyBreakdown && (

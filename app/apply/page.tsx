@@ -3306,9 +3306,9 @@ export default function ApplyPage() {
                   </>
                 )}
                 <FinalRow label="雇用期間" value={
-                  employStart
-                    ? (period === '有期' ? `${employStart} 〜 ${employEnd || '―'}` : `${employStart} 〜 期間の定めなし`)
-                    : '―'
+                  (period === '無期' || contractType === '正社員')
+                    ? (contractStartDate ? `${contractStartDate} 〜 期間の定めなし` : '―')
+                    : (employStart ? `${employStart} 〜 ${employEnd || '―'}` : '―')
                 } />
                 <FinalRow label="試用期間" value={
                   trialPeriod === '有' ? `有　${trialStart || '―'} 〜 ${trialEnd || '―'}` : trialPeriod === '無' ? '無' : '―'

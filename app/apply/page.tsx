@@ -846,6 +846,9 @@ export default function ApplyPage() {
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [selectedStaff, setSelectedStaff] = useState<any>(null)
   const [contractType, setContractType] = useState('')
+  // スタッフマスタの雇用区分が自動反映されている場合、変更不可にする（確定仕様）
+  const isContractTypeLocked = !!(selectedStaff && ['有期契約', '無期契約', '正社員'].includes(selectedStaff.contract_type))
+  const [showContractTypeLockedMsg, setShowContractTypeLockedMsg] = useState(false)
   const [workPlace, setWorkPlace] = useState('現場')
   const [documentType, setDocumentType] = useState('')
 
@@ -1572,7 +1575,7 @@ export default function ApplyPage() {
                         {selectedStaff.department && `${selectedStaff.department}　`}社員番号：{selectedStaff.employee_number}
                       </p>
                     </div>
-                    <button onClick={e => { e.preventDefault(); setSelectedStaff(null); setSearched(false); setSearchResults([]) }}
+                    <button onClick={e => { e.preventDefault(); setSelectedStaff(null); setSearched(false); setSearchResults([]); setContractType(''); setShowContractTypeLockedMsg(false) }}
                       className="ml-auto text-xs rounded-md px-2 py-1 border bg-white shrink-0"
                       style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>変更</button>
                   </div>
@@ -1745,7 +1748,19 @@ export default function ApplyPage() {
                       <div className="border rounded-lg mt-1.5 overflow-hidden bg-white shadow-sm" style={{ borderColor: '#D0DAF0' }}>
                         {searchResults.map(s => (
                           <button key={s.id}
-                            onClick={e => { e.preventDefault(); setSelectedStaff(s); setSearchResults([]) }}
+                            onClick={e => {
+                              e.preventDefault()
+                              setSelectedStaff(s)
+                              setSearchResults([])
+                              setShowContractTypeLockedMsg(false)
+                              // 雇用区分の自動反映：スタッフマスタの契約形態が有期契約/無期契約/正社員のいずれかであれば自動選択する
+                              // （null=雇用形態不明、アルバイトの場合は自動選択せず、これまで通り手動選択可能のままにする）
+                              if (['有期契約', '無期契約', '正社員'].includes(s.contract_type)) {
+                                setContractType(s.contract_type)
+                              } else {
+                                setContractType('')
+                              }
+                            }}
                             className="w-full text-left px-4 py-2.5 border-b last:border-0 flex items-center gap-3 hover:bg-blue-50 transition-colors"
                             style={{ borderColor: '#D0DAF0' }}>
                             <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium shrink-0"
@@ -1766,29 +1781,54 @@ export default function ApplyPage() {
               </FormRow>
 
               <FormRow label="雇用区分" required>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <div className="flex border rounded-lg overflow-hidden bg-white" style={{ borderColor: '#D0DAF0' }}>
-                    {['有期契約', '無期契約', '正社員'].map(v => (
-                      <button key={v} onClick={e => { e.preventDefault(); setContractType(v) }}
-                        className="px-4 py-2 text-sm border-r last:border-0 transition-colors whitespace-nowrap"
-                        style={{
-                          borderColor: '#D0DAF0',
-                          background: contractType === v ? '#1B3A8C' : 'white',
-                          color: contractType === v ? 'white' : '#1A2340',
-                          fontWeight: contractType === v ? 600 : 400
-                        }}>{v}</button>
-                    ))}
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex border rounded-lg overflow-hidden bg-white" style={{ borderColor: '#D0DAF0' }}>
+                      {['有期契約', '無期契約', '正社員'].map(v => (
+                        <button key={v}
+                          onClick={e => {
+                            e.preventDefault()
+                            if (isContractTypeLocked) {
+                              // ロック中はスタッフマスタの値以外への変更を禁止し、案内メッセージを表示する
+                              if (v !== contractType) setShowContractTypeLockedMsg(true)
+                              return
+                            }
+                            setContractType(v)
+                          }}
+                          className="px-4 py-2 text-sm border-r last:border-0 transition-colors whitespace-nowrap"
+                          style={{
+                            borderColor: '#D0DAF0',
+                            background: contractType === v ? '#1B3A8C' : 'white',
+                            color: contractType === v ? 'white' : (isContractTypeLocked ? '#A8B3C9' : '#1A2340'),
+                            fontWeight: contractType === v ? 600 : 400,
+                            cursor: isContractTypeLocked ? 'not-allowed' : 'pointer',
+                          }}>{v}</button>
+                      ))}
+                    </div>
+                    <div className="w-px h-7 shrink-0" style={{ background: '#D0DAF0' }} />
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm shrink-0" style={{ color: '#5A6A8A' }}>勤務地</span>
+                      <select value={workPlace} onChange={e => setWorkPlace(e.target.value)}
+                        className="bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none"
+                        style={{ borderColor: '#D0DAF0', color: '#1A2340' }}>
+                        <option value="現場">現場</option>
+                        <option value="社内">社内</option>
+                      </select>
+                    </div>
                   </div>
-                  <div className="w-px h-7 shrink-0" style={{ background: '#D0DAF0' }} />
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm shrink-0" style={{ color: '#5A6A8A' }}>勤務地</span>
-                    <select value={workPlace} onChange={e => setWorkPlace(e.target.value)}
-                      className="bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none"
-                      style={{ borderColor: '#D0DAF0', color: '#1A2340' }}>
-                      <option value="現場">現場</option>
-                      <option value="社内">社内</option>
-                    </select>
-                  </div>
+                  {isContractTypeLocked && (
+                    <p className="text-xs" style={{ color: '#5A6A8A' }}>
+                      スタッフマスタの雇用区分が自動反映されています（変更不可）
+                    </p>
+                  )}
+                  {showContractTypeLockedMsg && (
+                    <div className="rounded-lg px-3 py-2 text-xs flex items-center justify-between gap-3"
+                      style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FCA5A5' }}>
+                      <span>先にスタッフ情報申請にて雇用区分変更の手続きを行ってください。</span>
+                      <button onClick={e => { e.preventDefault(); setShowContractTypeLockedMsg(false) }}
+                        className="shrink-0 underline">閉じる</button>
+                    </div>
+                  )}
                 </div>
               </FormRow>
 

@@ -491,7 +491,8 @@ const extractCsvFieldsRaw = (system: string, raw: any) => {
       org: raw['就業先組織単位名'] || null,
       conflictDate: raw['事業所の抵触日'] ? normalizeDateSlash(raw['事業所の抵触日']) : null,
       conflictDateOrg: raw['抵触日'] ? normalizeDateSlash(raw['抵触日']) : null,
-      responsibility: raw['責任の程度'] || null,
+      // 業務に伴う責任の程度：CSVの「責任の程度」列は文章のため「無」「有」に判定できない。自動反映しない（確定仕様）
+      responsibility: null,
       // 所定労働時間：「所定労働時間数」列（時間単位の小数）を時間・分に変換して反映（確定仕様）
       workingHoursH: (raw['所定労働時間数'] !== null && raw['所定労働時間数'] !== undefined && raw['所定労働時間数'] !== '') ? String(Math.floor(Number(raw['所定労働時間数']))) : null,
       workingHoursM: (raw['所定労働時間数'] !== null && raw['所定労働時間数'] !== undefined && raw['所定労働時間数'] !== '') ? String(Math.round((Number(raw['所定労働時間数']) % 1) * 60)).padStart(2, '0') : null,

@@ -190,16 +190,6 @@ const toJpDate = (dateStr: string) => {
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
 }
 
-const isPastDate = (dateStr: string) => {
-  if (!dateStr) return false
-  // dateStr は "YYYY-MM-DD" 形式。ローカル日付として解釈し、UTC起点のズレを防ぐ
-  const [y, m, d] = dateStr.split('-').map(Number)
-  const inputDate = new Date(y, m - 1, d)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return inputDate < today
-}
-
 // 2つの日付文字列（YYYY-MM-DD）を比較する。dateA < dateB なら true
 // どちらか未入力の場合は比較不能のため false（エラーにしない）
 const isDateBefore = (dateA: string, dateB: string) => {
@@ -332,8 +322,12 @@ const DiffText = ({ oldText, newText, multiline }: { oldText: string; newText: s
   const parts = computeCharDiff(oldText, newText)
   return (
     <span className={multiline ? 'whitespace-pre-line' : ''}>
-      <span style={{ color: '#B91C1C', textDecoration: 'line-through', opacity: 0.75 }}>
-        {parts.filter(p => p.type !== 'added').map((p, idx) => <span key={`old-${idx}`}>{p.text}</span>)}
+      <span>
+        {parts.filter(p => p.type !== 'added').map((p, idx) =>
+          p.type === 'removed'
+            ? <span key={`old-${idx}`} style={{ color: '#B91C1C', textDecoration: 'line-through', opacity: 0.75 }}>{p.text}</span>
+            : <span key={`old-${idx}`}>{p.text}</span>
+        )}
       </span>
       <br />
       <span>
@@ -1275,8 +1269,10 @@ export default function ApplyPage() {
       locationAddress: workLocationAddress,
       locationTel: workLocationTel,
       business: businessContent,
-      time: `${startTime}-${endTime}`,
+      startTime: startTime,
+      endTime: endTime,
       breakTime: breakTime,
+      workingHours: `${workingHoursH}-${workingHoursM}`,
       org: organizationUnit,
       conflict: conflictDate,
       conflictOrg: conflictDateOrg,
@@ -1370,10 +1366,15 @@ export default function ApplyPage() {
     if (!query.trim()) { setSearchResults([]); setSearched(false); return }
     const normalized = query.replace(/[\s　]+/g, '')
     const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD（検索した瞬間の日付）
-    const { data } = await supabase.from('staff')
-      .select('*, department_master(dept_name)')
-      .or(`employee_number.ilike.%${query}%,name.ilike.%${normalized}%`)
-      .limit(20) // 退職者をクライアント側で除外する分、少し多めに取得する
+    // 社員番号での検索と氏名での検索を別クエリに分け、結果をマージする。
+    // （.or()にqueryを直接埋め込むと、入力に「,」や「(」「)」が含まれた場合にフィルタ構文が壊れたり、
+    //   意図しない条件が注入される可能性があるため、.ilike()の値として安全に渡せる形に分離している）
+    const [byNumber, byName] = await Promise.all([
+      supabase.from('staff').select('*, department_master(dept_name)').ilike('employee_number', `%${query}%`).limit(20),
+      supabase.from('staff').select('*, department_master(dept_name)').ilike('name', `%${normalized}%`).limit(20),
+    ])
+    const merged = [...(byNumber.data || []), ...(byName.data || [])]
+    const data = Array.from(new Map(merged.map((s: any) => [s.employee_number, s])).values()) // employee_number/nameの両方に一致した場合の重複を除去
     // department_master(dept_name) は { department_master: { dept_name: '...' } } の形で返るため、
     // page.tsx側の表示コード（selectedStaff.department）と互換性を持たせるためフラットな形に変換する
     // 同時に、退職年月日・退職予定日が今日より前のスタッフは検索結果から除外する（リアルタイム判定）
@@ -1449,7 +1450,7 @@ export default function ApplyPage() {
     if (!startTime) return '始業時刻を入力してください'
     if (!endTime) return '終業時刻を入力してください'
     if (!breakTime) return '休憩時間を入力してください'
-    if (!workingHoursH) return '所定労働時間を入力してください'
+    if (!workingHoursH || parseAmount(workingHoursH) <= 0) return '所定労働時間を入力してください（時間が0の入力はできません）'
     if (!workDays) return '所定労働日数を選択してください'
     if (workDays === 'other' && !workDaysOther) return '所定労働日数（その他）を入力してください'
     if (pattern === 'B' || pattern === 'C') {
@@ -1536,33 +1537,6 @@ export default function ApplyPage() {
       <button onClick={e => { e.preventDefault(); onNext() }}
         className="text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-all"
         style={{ background: '#1B3A8C' }}>次へ進む →</button>
-    </div>
-  )
-
-  // STEP7：給与入力セル
-  const SalaryCell = ({ label, id, value, onChange, isRequired = false }: {
-    label: string; id: string; value: string; onChange: (v: string) => void; isRequired?: boolean
-  }) => (
-    <div className="flex flex-col gap-1.5 p-3 border-r border-b last:border-r-0"
-      style={{ borderColor: '#D0DAF0' }}>
-      <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>{label}</span>
-      <div className="flex items-center gap-1.5">
-        <input
-          type="text"
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 w-28 placeholder:text-gray-400"
-          style={{
-            borderColor: (id === 'basic' && basicSalaryError) ? '#DC2626' : '#D0DAF0',
-            color: '#1A2340',
-          }}
-        />
-        <span className="text-sm shrink-0" style={{ color: '#5A6A8A' }}>円</span>
-      </div>
-      <p className="text-xs" style={{ color: '#5A6A8A' }}>例）250000</p>
-      {id === 'basic' && basicSalaryError && (
-        <p className="text-xs" style={{ color: '#DC2626' }}>{basicSalaryError}</p>
-      )}
     </div>
   )
 
@@ -2227,9 +2201,9 @@ export default function ApplyPage() {
                                       if (r.address) newBadges['locationAddress'] = 'reflected'
                                       if (r.tel) newBadges['locationTel'] = 'reflected'
                                       if (fields.business) newBadges['business'] = 'reflected'
-                                      if (fields.startTime || fields.endTime) newBadges['time'] = 'reflected'
+                                      if (fields.startTime) newBadges['startTime'] = 'reflected'
+                                      if (fields.endTime) newBadges['endTime'] = 'reflected'
                                       if (fields.breakTime) newBadges['breakTime'] = 'reflected'
-                                      if (fields.workingHoursH) newBadges['workingHours'] = 'reflected'
                                       if (fields.org) newBadges['org'] = 'reflected'
                                       if (fields.conflictDate) newBadges['conflict'] = 'reflected'
                                       if (fields.conflictDateOrg) newBadges['conflictOrg'] = 'reflected'
@@ -2260,8 +2234,10 @@ export default function ApplyPage() {
                                       if (r.address) newSnapshot.locationAddress = r.address
                                       if (r.tel) newSnapshot.locationTel = r.tel
                                       if (fields.business) newSnapshot.business = fields.business
-                                      if (fields.startTime || fields.endTime) newSnapshot.time = `${fields.startTime || ''}-${fields.endTime || ''}`
+                                      if (fields.startTime) newSnapshot.startTime = fields.startTime
+                                      if (fields.endTime) newSnapshot.endTime = fields.endTime
                                       if (fields.breakTime) newSnapshot.breakTime = String(fields.breakTime)
+                                      if (fields.workingHoursH) newSnapshot.workingHours = `${fields.workingHoursH}-${fields.workingHoursM || ''}`
                                       if (fields.org) newSnapshot.org = fields.org
                                       if (fields.conflictDate) newSnapshot.conflict = fields.conflictDate
                                       if (fields.conflictDateOrg) newSnapshot.conflictOrg = fields.conflictDateOrg
@@ -2447,7 +2423,10 @@ export default function ApplyPage() {
                         <span className="text-sm font-medium" style={{ color: '#1A2340' }}>始業・終業時刻</span>
                         <Req />
                       </div>
-                      <CsvBadge name="time" />
+                      <div className="flex flex-col gap-0.5">
+                        <CsvBadge name="startTime" />
+                        <CsvBadge name="endTime" />
+                      </div>
                     </div>
                     <div className="border-b px-5 py-4 flex flex-col gap-2" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
                       <div className="flex items-center gap-2 flex-nowrap">
@@ -2512,13 +2491,13 @@ export default function ApplyPage() {
                         <input type="text" className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20 placeholder:text-gray-400"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                           value={workingHoursH}
-                          onChange={e => { setWorkingHoursH(toHalfWidthDigits(e.target.value)); if (csvBadges['workingHours'] === 'reflected') setCsvBadge('workingHours', 'modified') }}
+                          onChange={e => { setWorkingHoursH(toHalfWidthDigits(e.target.value)) }}
                           onBlur={() => setWorkingHoursH(prev => padTwoDigits(prev))} />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>時間</span>
                         <input type="text" className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20 placeholder:text-gray-400"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                           value={workingHoursM}
-                          onChange={e => { setWorkingHoursM(toHalfWidthDigits(e.target.value)); if (csvBadges['workingHours'] === 'reflected') setCsvBadge('workingHours', 'modified') }}
+                          onChange={e => { setWorkingHoursM(toHalfWidthDigits(e.target.value)) }}
                           onBlur={() => setWorkingHoursM(prev => padTwoDigits(prev))} />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>分</span>
                       </div>
@@ -3225,10 +3204,10 @@ export default function ApplyPage() {
                 <FinalRow label="就業場所住所" value={workLocationAddress || '―'} badge={<CsvBadge name="locationAddress" />} oldValue={csvSnapshot.locationAddress} />
                 <FinalRow label="就業場所電話番号" value={workLocationTel || '―'} badge={<CsvBadge name="locationTel" />} oldValue={csvSnapshot.locationTel} />
                 <FinalRow label="業務内容" value={businessContent || '―'} badge={<CsvBadge name="business" />} multiline oldValue={csvSnapshot.business} />
-                <FinalRow label="始業時刻" value={startTime || '―'} badge={<CsvBadge name="time" />} oldValue={csvSnapshot.time ? csvSnapshot.time.split('-')[0] : undefined} />
-                <FinalRow label="終業時刻" value={endTime ? `${endTime}${isShift ? '　※シフト制' : ''}` : '―'} badge={<CsvBadge name="time" />} oldValue={csvSnapshot.time ? csvSnapshot.time.split('-')[1] : undefined} />
+                <FinalRow label="始業時刻" value={startTime || '―'} badge={<CsvBadge name="startTime" />} oldValue={csvSnapshot.startTime} />
+                <FinalRow label="終業時刻" value={endTime || '―'} badge={<CsvBadge name="endTime" />} oldValue={csvSnapshot.endTime} highlight={isShift ? '※シフト制' : undefined} />
                 <FinalRow label="休憩時間" value={breakTime ? `${parseAmount(breakTime)}分` : '―'} badge={<CsvBadge name="breakTime" />} oldValue={csvSnapshot.breakTime ? `${parseAmount(csvSnapshot.breakTime)}分` : undefined} />
-                <FinalRow label="所定労働時間" value={(workingHoursH || workingHoursM) ? `${parseAmount(workingHoursH)}時間${parseAmount(workingHoursM)}分` : '―'} badge={<CsvBadge name="workingHours" />} />
+                <FinalRow label="所定労働時間" value={(workingHoursH || workingHoursM) ? `${parseAmount(workingHoursH)}時間${parseAmount(workingHoursM)}分` : '―'} badge={<CsvBadge name="workingHours" />} oldValue={csvSnapshot.workingHours ? `${parseAmount(csvSnapshot.workingHours.split('-')[0])}時間${parseAmount(csvSnapshot.workingHours.split('-')[1])}分` : undefined} />
                 <FinalRow label="所定労働日数" value={workDays === 'other' ? (workDaysOther || '―') : (workDays || '―')} />
                 <FinalRow label="業務に伴う責任の程度" value={responsibility || '―'} badge={<CsvBadge name="resp" />} oldValue={csvSnapshot.resp} />
               </FinalSection>
@@ -3302,8 +3281,26 @@ export default function ApplyPage() {
                 <FinalRow label="試用期間" value={
                   trialPeriod === '有' ? `有　${trialStart || '―'} 〜 ${trialEnd || '―'}` : trialPeriod === '無' ? '無' : '―'
                 } />
-                <FinalRow label="変形労働時間制" value={flexTime || '―'} />
-                <FinalRow label="所定労働時間外労働" value={overtime || '―'} />
+                {trialPeriod === '有' && trialCalc?.over6 && (
+                  <div className="px-5 py-3.5" style={{ borderBottom: '1px solid #D0DAF0' }}>
+                    <CriticalWarning
+                      message={`就業規則第13条では試用期間は原則6ヶ月以内と定められています。\n入力された試用期間（${trialCalc.months}ヶ月${trialCalc.days > 0 ? trialCalc.days + '日' : ''}）は6ヶ月を超えています。\n延長が必要な場合は就業規則第13条第2項に基づき、本人への2週間前通知が必要です。\n本当にこのまま申請してよろしいですか？`}
+                      checked={trialWarningChecked}
+                      onCheck={setTrialWarningChecked}
+                    />
+                  </div>
+                )}
+                {trialPeriod === '無' && contractType === '正社員' && (
+                  <div className="px-5 py-3.5" style={{ borderBottom: '1px solid #D0DAF0' }}>
+                    <CriticalWarning
+                      message={`正社員の雇用では原則として試用期間（6ヶ月）が設けられます（就業規則第13条）。\n試用期間「無し」で申請する場合は、会社が適当と認めた特別なケースに限られます。\n本当にこのまま申請してよろしいですか？`}
+                      checked={noTrialWarningChecked}
+                      onCheck={setNoTrialWarningChecked}
+                    />
+                  </div>
+                )}
+                <FinalRow label="変形労働時間制" value={flexTime || '―'} badge={<CsvBadge name="flexTime" />} oldValue={csvSnapshot.flexTime} />
+                <FinalRow label="所定労働時間外労働" value={overtime || '―'} badge={<CsvBadge name="overtime" />} oldValue={csvSnapshot.overtime} />
               </FinalSection>
 
               {/* ===== STEP6：契約条件（パターンA・Cのみ） ===== */}
@@ -3331,6 +3328,15 @@ export default function ApplyPage() {
                   <FinalRow label="営業手当" value={parseAmount(salesPay) > 0 ? `${parseAmount(salesPay).toLocaleString()}円` : '―'} />
                   <FinalRow label="定額残業手当" value={parseAmount(overtimePay) > 0 ? `${parseAmount(overtimePay).toLocaleString()}円（${parseAmount(overtimeHours)}時間分）` : '―'} />
                   <FinalRow label="住宅手当" value={parseAmount(housingPay) > 0 ? `${parseAmount(housingPay).toLocaleString()}円` : '―'} />
+                  {salaryTotal > 1000000 && (
+                    <div className="px-5 py-3.5" style={{ borderBottom: '1px solid #D0DAF0' }}>
+                      <CriticalWarning
+                        message={`合計支給額が1,000,000円を超えています。\n入力内容に誤りがないか、今一度ご確認ください。\n本当にこのまま申請してよろしいですか？`}
+                        checked={salaryWarningChecked}
+                        onCheck={setSalaryWarningChecked}
+                      />
+                    </div>
+                  )}
                   {salaryType === '時給' && hourlyMonthlyBreakdown && (
                     <FinalRow label="月額換算（概算）" value={
                       `${hourlyMonthlyBreakdown.join('\n')}\n※月所定労働日数20日・1日8時間（160時間）での計算例です。実際の支給額は勤務実績により異なります。`

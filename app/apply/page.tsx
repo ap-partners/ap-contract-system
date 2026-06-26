@@ -345,8 +345,10 @@ const extractCsvFields = (system: string, raw: any) => {
       cmpRole: raw['派遣元苦情申出先役職'] || null,
       cmpTel: raw['派遣元苦情申出先TEL'] || null,
       welfare: buildWelfareTextFromEstaffing(raw),
-      flexTime: null, // e-staffingは列なし
-      overtime: numToYesNo(raw['時間外労働']),
+      // 変形労働時間制：「備考1」または「契約書備考」に「変形労働」の記載があれば「有」、なければ「無」（確定仕様）
+      flexTime: (String(raw['備考1'] || '').includes('変形労働') || String(raw['契約書備考'] || '').includes('変形労働')) ? '有' : '無',
+      // 所定労働時間外労働：「時間外労働」列が1なら「有」、それ以外（0・空欄等）は「無」（確定仕様）
+      overtime: String(raw['時間外労働'] ?? '') === '1' ? '有' : '無',
       dispatchStart: raw['契約開始日'] ? normalizeDateSlash(raw['契約開始日']) : null,
       dispatchEnd: raw['契約終了日'] ? normalizeDateSlash(raw['契約終了日']) : null,
     }
@@ -393,7 +395,8 @@ const extractCsvFields = (system: string, raw: any) => {
       cmpTel: raw['派遣元苦情処理受付者_TEL'] || null,
       welfare: buildWelfareTextFromHRstation(raw),
       flexTime: null, // HRstationは列なし
-      overtime: null, // HRstationは列なし
+      // 所定労働時間外労働：「個別契約書_契約書備考」に特定の文言があれば「有」、記載がなければ未反映（確定仕様）
+      overtime: String(raw['個別契約書_契約書備考'] || '').includes('時間外（8時間/日超過分）') ? '有' : null,
       dispatchStart: raw['契約開始日'] ? normalizeDateSlash(raw['契約開始日']) : null,
       dispatchEnd: raw['契約終了日'] ? normalizeDateSlash(raw['契約終了日']) : null,
     }
@@ -441,8 +444,10 @@ const extractCsvFields = (system: string, raw: any) => {
       cmpRole: raw['苦情申出先　派遣元 役職'] || null,
       cmpTel: raw['苦情申出先　派遣元 電話番号'] || null,
       welfare: raw['福利厚生等の便宜供与 条件'] || null,
-      flexTime: null, // winworksは列なし
-      overtime: null, // winworksは「時間外労働の制限」が長文のため、無/有には変換しない（反映しない）
+      // 変形労働時間制：「就業時間」列に「変形労働時間制」という記載があるため「有」と判定する（確定仕様）
+      flexTime: shugyoText.includes('変形労働時間制') ? '有' : null,
+      // 所定労働時間外労働：「時間外及び休日労働」列に「時間外扱いとする」旨の記載があるため「有」と判定する（確定仕様）
+      overtime: raw['時間外及び休日労働'] ? '有' : null,
       dispatchStart: raw['派遣期間 開始日'] ? normalizeDateSlash(raw['派遣期間 開始日']) : null,
       dispatchEnd: raw['派遣期間 終了日'] ? normalizeDateSlash(raw['派遣期間 終了日']) : null,
     }

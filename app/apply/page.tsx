@@ -271,6 +271,82 @@ const shiftTimeByHours = (time: string, hours: number): string => {
   return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`
 }
 
+// 文字単位のLCS（最長共通部分列）ベースで差分を計算する
+// 戻り値は { type: 'same' | 'removed' | 'added', text: string } の配列
+// 'same'＝変化なし、'removed'＝旧テキストにあったが新テキストにない（削除）、'added'＝新テキストに追加された部分
+type DiffPart = { type: 'same' | 'removed' | 'added'; text: string }
+const computeCharDiff = (oldText: string, newText: string): DiffPart[] => {
+  const oldArr = Array.from(oldText)
+  const newArr = Array.from(newText)
+  const m = oldArr.length
+  const n = newArr.length
+
+  // LCSの長さテーブルを計算（dp[i][j] = oldArr[0..i) と newArr[0..j) のLCSの長さ）
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0))
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (oldArr[i - 1] === newArr[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1])
+      }
+    }
+  }
+
+  // テーブルを後ろからたどり、same/removed/addedの並び（逆順）を作る
+  const rawParts: { type: 'same' | 'removed' | 'added'; char: string }[] = []
+  let i = m, j = n
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && oldArr[i - 1] === newArr[j - 1]) {
+      rawParts.push({ type: 'same', char: oldArr[i - 1] })
+      i--; j--
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      rawParts.push({ type: 'added', char: newArr[j - 1] })
+      j--
+    } else {
+      rawParts.push({ type: 'removed', char: oldArr[i - 1] })
+      i--
+    }
+  }
+  rawParts.reverse()
+
+  // 同じtypeが連続する文字をまとめて、読みやすいブロックにする
+  const parts: DiffPart[] = []
+  for (const p of rawParts) {
+    const last = parts[parts.length - 1]
+    if (last && last.type === p.type) {
+      last.text += p.char
+    } else {
+      parts.push({ type: p.type, text: p.char })
+    }
+  }
+  return parts
+}
+
+// 差分（DiffPart配列）を、削除部分は取り消し線、追加部分は色付けで表示するコンポーネント
+// oldTextとnewTextが完全に同じ場合は newText をそのまま表示する（差分なし）
+const DiffText = ({ oldText, newText, multiline }: { oldText: string; newText: string; multiline?: boolean }) => {
+  if (oldText === newText) {
+    return <span className={multiline ? 'whitespace-pre-line' : ''}>{newText}</span>
+  }
+  const parts = computeCharDiff(oldText, newText)
+  return (
+    <span className={multiline ? 'whitespace-pre-line' : ''}>
+      <span style={{ color: '#B91C1C', textDecoration: 'line-through', opacity: 0.75 }}>
+        {parts.filter(p => p.type !== 'added').map((p, idx) => <span key={`old-${idx}`}>{p.text}</span>)}
+      </span>
+      <br />
+      <span>
+        {parts.filter(p => p.type !== 'removed').map((p, idx) =>
+          p.type === 'added'
+            ? <span key={`new-${idx}`} style={{ color: '#15803D', fontWeight: 600, textDecoration: 'underline' }}>{p.text}</span>
+            : <span key={`new-${idx}`}>{p.text}</span>
+        )}
+      </span>
+    </span>
+  )
+}
+
 // winworksの「諸措置」列から「業務に伴う責任の程度」を抽出する
 // 文末の「責任の程度：◯◯」パターンを正規表現で抽出。「役職無し」は「無」に変換する
 const extractResponsibilityFromWinworks = (shochi: string | null): string | null => {
@@ -718,21 +794,25 @@ const FinalGroupHeader = ({ label }: { label: string }) => (
   </>
 )
 
-const FinalRow = ({ label, value, badge, multiline, preview, highlight }: {
-  label: string; value: string; badge?: React.ReactNode; multiline?: boolean; preview?: boolean; highlight?: string
-}) => (
-  <div className="grid border-b" style={{ gridTemplateColumns: '260px 1fr', borderColor: '#D0DAF0' }}>
-    <div className="border-r px-4 py-3.5 flex flex-col items-start gap-1.5" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-      <span className="text-sm font-medium leading-snug" style={{ color: '#1A2340' }}>{label}</span>
-      {badge}
+const FinalRow = ({ label, value, badge, multiline, preview, highlight, oldValue }: {
+  label: string; value: string; badge?: React.ReactNode; multiline?: boolean; preview?: boolean; highlight?: string; oldValue?: string
+}) => {
+  // oldValueが渡されていて、かつ現在値と異なる場合だけ、差分表示（CSV反映項目を手で修正したケース）
+  const showDiff = oldValue !== undefined && oldValue !== '' && oldValue !== value
+  return (
+    <div className="grid border-b" style={{ gridTemplateColumns: '260px 1fr', borderColor: '#D0DAF0' }}>
+      <div className="border-r px-4 py-3.5 flex flex-col items-start gap-1.5" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
+        <span className="text-sm font-medium leading-snug" style={{ color: '#1A2340' }}>{label}</span>
+        {badge}
+      </div>
+      <div className={`px-5 py-3.5 text-sm ${multiline ? 'whitespace-pre-line' : (showDiff ? '' : 'flex items-center')}`}
+        style={{ background: preview ? '#EEF2FA' : 'white', color: '#1A2340', lineHeight: 1.7, borderRadius: preview ? '8px' : 0, margin: preview ? '6px 12px' : 0 }}>
+        {showDiff ? <DiffText oldText={oldValue} newText={value} multiline={multiline} /> : value}
+        {highlight && <p className="text-sm font-bold mt-2" style={{ color: '#0D9488' }}>{highlight}</p>}
+      </div>
     </div>
-    <div className={`px-5 py-3.5 text-sm ${multiline ? 'whitespace-pre-line' : 'flex items-center'}`}
-      style={{ background: preview ? '#EEF2FA' : 'white', color: '#1A2340', lineHeight: 1.7, borderRadius: preview ? '8px' : 0, margin: preview ? '6px 12px' : 0 }}>
-      {value}
-      {highlight && <p className="text-sm font-bold mt-2" style={{ color: '#0D9488' }}>{highlight}</p>}
-    </div>
-  </div>
-)
+  )
+}
 
 const ModeToggle = ({ mode, onChange }: { mode: 'default' | 'new'; onChange: (m: 'default' | 'new') => void }) => (
   <div className="flex gap-2">
@@ -3141,16 +3221,16 @@ export default function ApplyPage() {
                 collapsed={collapsedSections} setCollapsed={setCollapsedSections}
                 onEdit={() => setCurrentStep(2)} editLabel={isRejected ? '確認・修正する' : '修正する'}>
                 <FinalRow label="入力方法" value={csvMode === 'csv' ? `CSVデータから自動入力（${csvSystem}）` : '手動で入力する'} />
-                <FinalRow label="就業場所名" value={workLocationName || '―'} badge={<CsvBadge name="locationName" />} />
-                <FinalRow label="就業場所住所" value={workLocationAddress || '―'} badge={<CsvBadge name="locationAddress" />} />
-                <FinalRow label="就業場所電話番号" value={workLocationTel || '―'} badge={<CsvBadge name="locationTel" />} />
-                <FinalRow label="業務内容" value={businessContent || '―'} badge={<CsvBadge name="business" />} />
-                <FinalRow label="始業時刻" value={startTime || '―'} badge={<CsvBadge name="time" />} />
-                <FinalRow label="終業時刻" value={endTime ? `${endTime}${isShift ? '　※シフト制' : ''}` : '―'} badge={<CsvBadge name="time" />} />
-                <FinalRow label="休憩時間" value={breakTime ? `${parseAmount(breakTime)}分` : '―'} badge={<CsvBadge name="breakTime" />} />
+                <FinalRow label="就業場所名" value={workLocationName || '―'} badge={<CsvBadge name="locationName" />} oldValue={csvSnapshot.locationName} />
+                <FinalRow label="就業場所住所" value={workLocationAddress || '―'} badge={<CsvBadge name="locationAddress" />} oldValue={csvSnapshot.locationAddress} />
+                <FinalRow label="就業場所電話番号" value={workLocationTel || '―'} badge={<CsvBadge name="locationTel" />} oldValue={csvSnapshot.locationTel} />
+                <FinalRow label="業務内容" value={businessContent || '―'} badge={<CsvBadge name="business" />} multiline oldValue={csvSnapshot.business} />
+                <FinalRow label="始業時刻" value={startTime || '―'} badge={<CsvBadge name="time" />} oldValue={csvSnapshot.time ? csvSnapshot.time.split('-')[0] : undefined} />
+                <FinalRow label="終業時刻" value={endTime ? `${endTime}${isShift ? '　※シフト制' : ''}` : '―'} badge={<CsvBadge name="time" />} oldValue={csvSnapshot.time ? csvSnapshot.time.split('-')[1] : undefined} />
+                <FinalRow label="休憩時間" value={breakTime ? `${parseAmount(breakTime)}分` : '―'} badge={<CsvBadge name="breakTime" />} oldValue={csvSnapshot.breakTime ? `${parseAmount(csvSnapshot.breakTime)}分` : undefined} />
                 <FinalRow label="所定労働時間" value={(workingHoursH || workingHoursM) ? `${parseAmount(workingHoursH)}時間${parseAmount(workingHoursM)}分` : '―'} badge={<CsvBadge name="workingHours" />} />
                 <FinalRow label="所定労働日数" value={workDays === 'other' ? (workDaysOther || '―') : (workDays || '―')} />
-                <FinalRow label="業務に伴う責任の程度" value={responsibility || '―'} badge={<CsvBadge name="resp" />} />
+                <FinalRow label="業務に伴う責任の程度" value={responsibility || '―'} badge={<CsvBadge name="resp" />} oldValue={csvSnapshot.resp} />
               </FinalSection>
 
               {/* ===== STEP3：派遣先担当者（パターンB・Cのみ） ===== */}
@@ -3159,25 +3239,25 @@ export default function ApplyPage() {
                   collapsed={collapsedSections} setCollapsed={setCollapsedSections}
                   onEdit={() => setCurrentStep(3)} editLabel={isRejected ? '確認・修正する' : '修正する'}>
                   <FinalGroupHeader label="指揮命令者" />
-                  <FinalRow label="部署" value={cmd_dept || '―'} badge={<CsvBadge name="cmdDept" />} />
-                  <FinalRow label="役職" value={cmd_role || '―'} badge={<CsvBadge name="cmdRole" />} />
-                  <FinalRow label="氏名" value={cmd_name || '―'} badge={<CsvBadge name="cmdName" />} />
-                  <FinalRow label="電話番号" value={cmd_tel || '―'} badge={<CsvBadge name="cmdTel" />} />
+                  <FinalRow label="部署" value={cmd_dept || '―'} badge={<CsvBadge name="cmdDept" />} oldValue={csvSnapshot.cmdDept} />
+                  <FinalRow label="役職" value={cmd_role || '―'} badge={<CsvBadge name="cmdRole" />} oldValue={csvSnapshot.cmdRole} />
+                  <FinalRow label="氏名" value={cmd_name || '―'} badge={<CsvBadge name="cmdName" />} oldValue={csvSnapshot.cmdName} />
+                  <FinalRow label="電話番号" value={cmd_tel || '―'} badge={<CsvBadge name="cmdTel" />} oldValue={csvSnapshot.cmdTel} />
 
                   <FinalGroupHeader label="派遣先責任者" />
-                  <FinalRow label="部署" value={resp_dept || '―'} badge={<CsvBadge name="respDept" />} />
-                  <FinalRow label="役職" value={resp_role || '―'} badge={<CsvBadge name="respRole" />} />
-                  <FinalRow label="氏名" value={resp_name || '―'} badge={<CsvBadge name="respName" />} />
-                  <FinalRow label="電話番号" value={resp_tel || '―'} badge={<CsvBadge name="respTel" />} />
+                  <FinalRow label="部署" value={resp_dept || '―'} badge={<CsvBadge name="respDept" />} oldValue={csvSnapshot.respDept} />
+                  <FinalRow label="役職" value={resp_role || '―'} badge={<CsvBadge name="respRole" />} oldValue={csvSnapshot.respRole} />
+                  <FinalRow label="氏名" value={resp_name || '―'} badge={<CsvBadge name="respName" />} oldValue={csvSnapshot.respName} />
+                  <FinalRow label="電話番号" value={resp_tel || '―'} badge={<CsvBadge name="respTel" />} oldValue={csvSnapshot.respTel} />
 
                   <FinalGroupHeader label="苦情処理申出先（派遣先）" />
-                  <FinalRow label="部署" value={comp_dept || '―'} badge={<CsvBadge name="compDept" />} />
-                  <FinalRow label="役職" value={comp_role || '―'} badge={<CsvBadge name="compRole" />} />
-                  <FinalRow label="氏名" value={comp_name || '―'} badge={<CsvBadge name="compName" />} />
-                  <FinalRow label="電話番号" value={comp_tel || '―'} badge={<CsvBadge name="compTel" />} />
+                  <FinalRow label="部署" value={comp_dept || '―'} badge={<CsvBadge name="compDept" />} oldValue={csvSnapshot.compDept} />
+                  <FinalRow label="役職" value={comp_role || '―'} badge={<CsvBadge name="compRole" />} oldValue={csvSnapshot.compRole} />
+                  <FinalRow label="氏名" value={comp_name || '―'} badge={<CsvBadge name="compName" />} oldValue={csvSnapshot.compName} />
+                  <FinalRow label="電話番号" value={comp_tel || '―'} badge={<CsvBadge name="compTel" />} oldValue={csvSnapshot.compTel} />
 
                   <FinalGroupHeader label="追加項目" />
-                  <FinalRow label="福利厚生施設の利用等" value={welfare || '―'} badge={<CsvBadge name="welfare" />} />
+                  <FinalRow label="福利厚生施設の利用等" value={welfare || '―'} badge={<CsvBadge name="welfare" />} multiline oldValue={csvSnapshot.welfare} />
                   <FinalRow label="安全及び衛生" value={safetyText || '―'} badge={<CsvBadge name="safety" />} multiline />
                   <FinalRow label="紛争防止措置" value={conflictText || '―'} badge={<CsvBadge name="conflict2" />} multiline />
                 </FinalSection>
@@ -3189,16 +3269,16 @@ export default function ApplyPage() {
                   collapsed={collapsedSections} setCollapsed={setCollapsedSections}
                   onEdit={() => setCurrentStep(4)} editLabel={isRejected ? '確認・修正する' : '修正する'}>
                   <FinalGroupHeader label="派遣元責任者" />
-                  <FinalRow label="部署" value={mgr_dept || '―'} badge={<AutoBadge modified={masterSnapshot.mgr_dept !== undefined && mgr_dept !== masterSnapshot.mgr_dept} source={mgrCmpSource} />} />
-                  <FinalRow label="役職" value={mgr_role || '―'} badge={<AutoBadge modified={masterSnapshot.mgr_role !== undefined && mgr_role !== masterSnapshot.mgr_role} source={mgrCmpSource} />} />
-                  <FinalRow label="氏名" value={mgr_name || '―'} badge={<AutoBadge modified={masterSnapshot.mgr_name !== undefined && mgr_name !== masterSnapshot.mgr_name} source={mgrCmpSource} />} />
-                  <FinalRow label="電話番号" value={mgr_tel || '―'} badge={<AutoBadge modified={masterSnapshot.mgr_tel !== undefined && mgr_tel !== masterSnapshot.mgr_tel} source={mgrCmpSource} />} />
+                  <FinalRow label="部署" value={mgr_dept || '―'} badge={<AutoBadge modified={masterSnapshot.mgr_dept !== undefined && mgr_dept !== masterSnapshot.mgr_dept} source={mgrCmpSource} />} oldValue={mgrCmpSource === 'csv' ? masterSnapshot.mgr_dept : undefined} />
+                  <FinalRow label="役職" value={mgr_role || '―'} badge={<AutoBadge modified={masterSnapshot.mgr_role !== undefined && mgr_role !== masterSnapshot.mgr_role} source={mgrCmpSource} />} oldValue={mgrCmpSource === 'csv' ? masterSnapshot.mgr_role : undefined} />
+                  <FinalRow label="氏名" value={mgr_name || '―'} badge={<AutoBadge modified={masterSnapshot.mgr_name !== undefined && mgr_name !== masterSnapshot.mgr_name} source={mgrCmpSource} />} oldValue={mgrCmpSource === 'csv' ? masterSnapshot.mgr_name : undefined} />
+                  <FinalRow label="電話番号" value={mgr_tel || '―'} badge={<AutoBadge modified={masterSnapshot.mgr_tel !== undefined && mgr_tel !== masterSnapshot.mgr_tel} source={mgrCmpSource} />} oldValue={mgrCmpSource === 'csv' ? masterSnapshot.mgr_tel : undefined} />
 
                   <FinalGroupHeader label="苦情処理申出先（派遣元）" />
-                  <FinalRow label="部署" value={cmp_dept || '―'} badge={<AutoBadge modified={masterSnapshot.cmp_dept !== undefined && cmp_dept !== masterSnapshot.cmp_dept} source={mgrCmpSource} />} />
-                  <FinalRow label="役職" value={cmp_role || '―'} badge={<AutoBadge modified={masterSnapshot.cmp_role !== undefined && cmp_role !== masterSnapshot.cmp_role} source={mgrCmpSource} />} />
-                  <FinalRow label="氏名" value={cmp_name || '―'} badge={<AutoBadge modified={masterSnapshot.cmp_name !== undefined && cmp_name !== masterSnapshot.cmp_name} source={mgrCmpSource} />} />
-                  <FinalRow label="電話番号" value={cmp_tel || '―'} badge={<AutoBadge modified={masterSnapshot.cmp_tel !== undefined && cmp_tel !== masterSnapshot.cmp_tel} source={mgrCmpSource} />} />
+                  <FinalRow label="部署" value={cmp_dept || '―'} badge={<AutoBadge modified={masterSnapshot.cmp_dept !== undefined && cmp_dept !== masterSnapshot.cmp_dept} source={mgrCmpSource} />} oldValue={mgrCmpSource === 'csv' ? masterSnapshot.cmp_dept : undefined} />
+                  <FinalRow label="役職" value={cmp_role || '―'} badge={<AutoBadge modified={masterSnapshot.cmp_role !== undefined && cmp_role !== masterSnapshot.cmp_role} source={mgrCmpSource} />} oldValue={mgrCmpSource === 'csv' ? masterSnapshot.cmp_role : undefined} />
+                  <FinalRow label="氏名" value={cmp_name || '―'} badge={<AutoBadge modified={masterSnapshot.cmp_name !== undefined && cmp_name !== masterSnapshot.cmp_name} source={mgrCmpSource} />} oldValue={mgrCmpSource === 'csv' ? masterSnapshot.cmp_name : undefined} />
+                  <FinalRow label="電話番号" value={cmp_tel || '―'} badge={<AutoBadge modified={masterSnapshot.cmp_tel !== undefined && cmp_tel !== masterSnapshot.cmp_tel} source={mgrCmpSource} />} oldValue={mgrCmpSource === 'csv' ? masterSnapshot.cmp_tel : undefined} />
                 </FinalSection>
               )}
 
@@ -3209,9 +3289,9 @@ export default function ApplyPage() {
                 {(pattern === 'B' || pattern === 'C') && (
                   <>
                     <FinalRow label="派遣期間" value={(dispatchStart && dispatchEnd) ? `${dispatchStart} 〜 ${dispatchEnd}` : '―'} />
-                    {!isConflictDateExempt && <FinalRow label="抵触日（事業所単位）" value={conflictDate || '―'} badge={<CsvBadge name="conflict" />} />}
-                    {!isConflictDateExempt && <FinalRow label="抵触日（組織単位）" value={conflictDateOrg || '―'} badge={<CsvBadge name="conflictOrg" />} />}
-                    <FinalRow label="組織単位" value={organizationUnit || '―'} badge={<CsvBadge name="org" />} />
+                    {!isConflictDateExempt && <FinalRow label="抵触日（事業所単位）" value={conflictDate || '―'} badge={<CsvBadge name="conflict" />} oldValue={csvSnapshot.conflict} />}
+                    {!isConflictDateExempt && <FinalRow label="抵触日（組織単位）" value={conflictDateOrg || '―'} badge={<CsvBadge name="conflictOrg" />} oldValue={csvSnapshot.conflictOrg} />}
+                    <FinalRow label="組織単位" value={organizationUnit || '―'} badge={<CsvBadge name="org" />} oldValue={csvSnapshot.org} />
                   </>
                 )}
                 <FinalRow label="雇用期間" value={

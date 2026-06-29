@@ -714,9 +714,9 @@ const Tooltip = ({ text }: { text: string }) => {
   )
 }
 
-const FormRow = ({ label, required, tooltip, badge, children, isEmpty, emptyHint, wide }: {
+const FormRow = ({ label, required, tooltip, badge, children, isEmpty, emptyHint, wide, hintInline }: {
   label: string; required?: boolean; tooltip?: string; badge?: React.ReactNode; children: React.ReactNode
-  isEmpty?: boolean; emptyHint?: string; wide?: boolean
+  isEmpty?: boolean; emptyHint?: string; wide?: boolean; hintInline?: boolean
 }) => {
   // isEmpty（未入力強調）が立っている時だけ、赤系の配色に切り替える
   const highlight = !!isEmpty
@@ -739,8 +739,8 @@ const FormRow = ({ label, required, tooltip, badge, children, isEmpty, emptyHint
       </div>
       <div className="border-b px-5 py-4 flex flex-col gap-3"
         style={{ background: highlight ? '#FEF2F2' : '#FFFFFF', borderColor: highlight ? '#FECACA' : '#D0DAF0' }}>
-        {highlight && emptyHint && wide && <EmptyHintBubble text={emptyHint} direction="down" />}
-        {wide ? children : (
+        {highlight && emptyHint && wide && !hintInline && <EmptyHintBubble text={emptyHint} direction="down" />}
+        {wide || hintInline ? children : (
           <div className="flex items-center gap-3 flex-wrap">
             {children}
             {highlight && emptyHint && <EmptyHintBubble text={emptyHint} direction="left" />}
@@ -2551,7 +2551,7 @@ export default function ApplyPage() {
                     </div>
                   </FormRow>
 
-                  <FormRow label="休憩時間" required badge={<CsvBadge name="breakTime" />}
+                  <FormRow label="休憩時間" required badge={<CsvBadge name="breakTime" />} hintInline
                     isEmpty={showEmptyHint && !breakTime} emptyHint="入力してください">
                     <div className="flex flex-col gap-1.5">
                       <div className="flex items-center gap-2">
@@ -2560,12 +2560,13 @@ export default function ApplyPage() {
                           value={breakTime}
                           onChange={e => { setBreakTime(toHalfWidthDigits(e.target.value)) }} />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>分</span>
+                        {showEmptyHint && !breakTime && <EmptyHintBubble text="入力してください" direction="left" />}
                       </div>
                       <p className="text-xs" style={{ color: '#5A6A8A' }}>例）60、75、90</p>
                     </div>
                   </FormRow>
 
-                  <FormRow label="所定労働時間" required badge={<CsvBadge name="workingHours" />}
+                  <FormRow label="所定労働時間" required badge={<CsvBadge name="workingHours" />} hintInline
                     isEmpty={showEmptyHint && !workingHoursH} emptyHint="入力してください">
                     <div className="flex flex-col gap-2">
                       <div className="flex items-center gap-2">
@@ -2581,6 +2582,7 @@ export default function ApplyPage() {
                           onChange={e => { setWorkingHoursM(toHalfWidthDigits(e.target.value)) }}
                           onBlur={() => setWorkingHoursM(prev => padTwoDigits(prev))} />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>分</span>
+                        {showEmptyHint && !workingHoursH && <EmptyHintBubble text="入力してください" direction="left" />}
                       </div>
                       <p className="text-xs" style={{ color: '#5A6A8A' }}>例）8時間00分</p>
                       {workingHoursWarn && (
@@ -2593,32 +2595,37 @@ export default function ApplyPage() {
                   </FormRow>
 
                   {/* 所定労働日数 */}
-                  <FormRow label="所定労働日数" required>
-                    <div className="flex gap-2 flex-wrap">
-                      {[
-                        { value: '週5日（月〜金）', label: '週5日（月〜金）' },
-                        { value: '週4日', label: '週4日' },
-                        { value: '週3日', label: '週3日' },
-                        { value: 'other', label: 'その他' },
-                      ].map(({ value, label }) => (
-                        <button key={value}
-                          onClick={e => { e.preventDefault(); setWorkDays(value) }}
-                          className="px-4 py-2 border rounded-lg text-sm transition-colors"
-                          style={{
-                            borderColor: workDays === value ? '#1B3A8C' : '#D0DAF0',
-                            background: workDays === value ? '#EEF2FA' : 'white',
-                            color: workDays === value ? '#1B3A8C' : '#1A2340',
-                            fontWeight: workDays === value ? 600 : 400,
-                          }}>{label}</button>
-                      ))}
+                  <FormRow label="所定労働日数" required hintInline
+                    isEmpty={showEmptyHint && (!workDays || (workDays === 'other' && !workDaysOther))} emptyHint="選択してください">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex gap-2 flex-wrap">
+                        {[
+                          { value: '週5日（月〜金）', label: '週5日（月〜金）' },
+                          { value: '週4日', label: '週4日' },
+                          { value: '週3日', label: '週3日' },
+                          { value: 'other', label: 'その他' },
+                        ].map(({ value, label }) => (
+                          <button key={value}
+                            onClick={e => { e.preventDefault(); setWorkDays(value) }}
+                            className="px-4 py-2 border rounded-lg text-sm transition-colors"
+                            style={{
+                              borderColor: workDays === value ? '#1B3A8C' : '#D0DAF0',
+                              background: workDays === value ? '#EEF2FA' : 'white',
+                              color: workDays === value ? '#1B3A8C' : '#1A2340',
+                              fontWeight: workDays === value ? 600 : 400,
+                            }}>{label}</button>
+                        ))}
+                      </div>
+                      {showEmptyHint && !workDays && <EmptyHintBubble text="選択してください" direction="left" />}
                     </div>
                     {workDays === 'other' && (
                       <div className="flex items-center gap-2 mt-1">
                         <input type="text" className={`${inp}`}
-                          style={{ borderColor: '#D0DAF0', color: '#1A2340', maxWidth: '280px' }}
+                          style={{ borderColor: (showEmptyHint && !workDaysOther) ? '#DC2626' : '#D0DAF0', color: '#1A2340', maxWidth: '280px' }}
                           value={workDaysOther} onChange={e => setWorkDaysOther(e.target.value)}
                           placeholder="例）18日、カレンダー暦通り" />
                         <p className="text-xs" style={{ color: '#5A6A8A' }}>帳票にそのまま表示されます</p>
+                        {showEmptyHint && !workDaysOther && <EmptyHintBubble text="入力してください" direction="left" />}
                       </div>
                     )}
                   </FormRow>
@@ -2847,14 +2854,15 @@ export default function ApplyPage() {
               {(pattern === 'A' || pattern === 'C') && (
                 <>
                   <SectionHeader label="雇用期間" />
-                  <FormRow label="雇用期間" required>
+                  <FormRow label="雇用期間" required hintInline
+                    isEmpty={showEmptyHint && ((period === '無期' || contractType === '正社員') ? !contractStartDate : (!employStart || !employEnd))}>
                     {(period === '無期' || contractType === '正社員') ? (
                       <div className="flex flex-col gap-2">
                         {fixedText('期間の定めなし（自動）')}
                         <div className="flex items-center gap-3">
                           <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>契約条件適用開始日</span>
                           <input type="date" className={`${inp} w-40`}
-                            style={{ borderColor: isDateBefore(contractStartDate, dispatchStart) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
+                            style={{ borderColor: (showEmptyHint && !contractStartDate) ? '#DC2626' : (isDateBefore(contractStartDate, dispatchStart) ? '#DC2626' : '#D0DAF0'), color: '#1A2340' }}
                             value={contractStartDate} onChange={e => setContractStartDate(e.target.value)} />
                           {pattern === 'C' && (
                             <button type="button"
@@ -2868,6 +2876,7 @@ export default function ApplyPage() {
                                 cursor: dispatchStart ? 'pointer' : 'not-allowed',
                               }}>📋 派遣期間をコピー</button>
                           )}
+                          {showEmptyHint && !contractStartDate && <EmptyHintBubble text="入力してください" direction="left" />}
                         </div>
                         {isDateBefore(contractStartDate, dispatchStart) && (
                           <p className="text-xs" style={{ color: '#DC2626' }}>契約条件適用開始日は派遣期間の開始日以降の日付にしてください</p>
@@ -2880,14 +2889,14 @@ export default function ApplyPage() {
                           <div className="flex items-center gap-2">
                             <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>自</span>
                             <input type="date" className={`${inp} w-40`}
-                              style={{ borderColor: employStartError ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
+                              style={{ borderColor: (showEmptyHint && !employStart) ? '#DC2626' : (employStartError ? '#DC2626' : '#D0DAF0'), color: '#1A2340' }}
                               value={employStart} onChange={e => setEmployStart(e.target.value)} />
                           </div>
                           <span className="text-sm" style={{ color: '#5A6A8A' }}>〜</span>
                           <div className="flex items-center gap-2">
                             <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>至</span>
                             <input type="date" className={`${inp} w-40`}
-                              style={{ borderColor: employEndError ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
+                              style={{ borderColor: (showEmptyHint && !employEnd) ? '#DC2626' : (employEndError ? '#DC2626' : '#D0DAF0'), color: '#1A2340' }}
                               value={employEnd} onChange={e => setEmployEnd(e.target.value)} />
                           </div>
                           {pattern === 'C' && (
@@ -2902,6 +2911,7 @@ export default function ApplyPage() {
                                 cursor: (dispatchStart && dispatchEnd) ? 'pointer' : 'not-allowed',
                               }}>📋 派遣期間をコピー</button>
                           )}
+                          {showEmptyHint && (!employStart || !employEnd) && <EmptyHintBubble text="入力してください" direction="left" />}
                         </div>
                         {employStartError && <p className="text-xs" style={{ color: '#DC2626' }}>{employStartError}</p>}
                         {employEndError && <p className="text-xs" style={{ color: '#DC2626' }}>{employEndError}</p>}

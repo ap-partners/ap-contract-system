@@ -1427,11 +1427,13 @@ export default function ApplyPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [isSubmitted, setIsSubmitted] = useState(false)
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
 
   const handleSubmitContract = async () => {
     if (isSubmitting) return // 二重送信防止
     setIsSubmitting(true)
     setSubmitError('')
+    console.log('【デバッグ】csvMode:', csvMode, ' csvSelectedId:', csvSelectedId, ' csvResults:', csvResults)
     try {
       // STEP1〜8で入力したすべての値（再申請時の復元・SSC確認・将来の帳票生成にそのまま使う）
       const fields = {
@@ -1490,8 +1492,12 @@ export default function ApplyPage() {
         work_place: workPlace,
         status: '申請中',
         closing_pattern: (pattern === 'A' || pattern === 'C') ? closingPattern : null,
+        // csvSelectedIdは配列のインデックス（何番目を選んだか）であり、CSV行の実IDではない。
+        // 実IDはcsvResults[csvSelectedId].idに入っているため、ここで変換してから保存する
+        csv_raw_data_id: (csvMode === 'csv' && csvSelectedId !== null && csvResults[csvSelectedId]) ? csvResults[csvSelectedId].id : null,
         input_data: { staff: staffSnapshot, fields, csvMeta },
         warning_confirmations: warningConfirmations,
+        auto_check_results: [], // 自動チェック結果は別タスクで実装予定。現時点では空配列で初期化
         created_by: user.id,
       })
 
@@ -3525,10 +3531,10 @@ export default function ApplyPage() {
                   onClick={() => {
                     if (isRejected) {
                       if (submitClickCount === 0) { setSubmitClickCount(1); return }
-                      handleSubmitContract()
+                      setShowConfirmModal(true)
                       return
                     }
-                    handleSubmitContract()
+                    setShowConfirmModal(true)
                   }}
                   className="w-full py-3.5 rounded-lg text-white font-bold text-sm mb-2"
                   style={{ background: isSubmitting ? '#A8C0E8' : '#1B3A8C' }}>
@@ -3538,6 +3544,47 @@ export default function ApplyPage() {
                   この申請をやめる
                 </button>
               </div>
+              )}
+
+              {/* ===== 申請確認モーダル ===== */}
+              {showConfirmModal && (
+                <div className="fixed inset-0 flex items-center justify-center p-4 z-50" style={{ background: 'rgba(26, 35, 64, 0.5)' }}>
+                  <div className="bg-white rounded-xl shadow-lg w-full max-w-md p-6">
+                    <h3 className="text-base font-bold mb-4" style={{ color: '#1A2340' }}>この内容で申請しますか？</h3>
+                    <div className="rounded-lg p-4 mb-5 flex flex-col gap-2" style={{ background: '#EEF2FA' }}>
+                      <div className="flex justify-between text-sm">
+                        <span style={{ color: '#5A6A8A' }}>対象スタッフ</span>
+                        <span className="font-medium" style={{ color: '#1A2340' }}>
+                          {selectedStaff ? `${selectedStaff.name}（社員番号：${selectedStaff.employee_number}）` : '―'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span style={{ color: '#5A6A8A' }}>帳票の種類</span>
+                        <span className="font-medium text-right" style={{ color: '#1A2340' }}>{documentType || '―'}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span style={{ color: '#5A6A8A' }}>雇用区分</span>
+                        <span className="font-medium" style={{ color: '#1A2340' }}>{contractType || '―'}</span>
+                      </div>
+                    </div>
+                    <p className="text-xs leading-relaxed mb-5" style={{ color: '#5A6A8A' }}>
+                      申請後はSSCの承認が必要となり、申請内容の変更はできません。内容に誤りがないか今一度ご確認ください。
+                    </p>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setShowConfirmModal(false)}
+                        className="flex-1 py-2.5 rounded-lg text-sm font-medium border" style={{ borderColor: '#D0DAF0', color: '#5A6A8A' }}>
+                        キャンセル
+                      </button>
+                      <button
+                        disabled={isSubmitting}
+                        onClick={() => { setShowConfirmModal(false); handleSubmitContract() }}
+                        className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white" style={{ background: isSubmitting ? '#A8C0E8' : '#1B3A8C' }}>
+                        {isSubmitting ? '送信中...' : 'OK・申請する'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
 
               <div className="flex justify-start mt-3">

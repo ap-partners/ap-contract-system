@@ -755,8 +755,8 @@ const FormRow = ({ label, required, tooltip, badge, children, isEmpty, emptyHint
 const EmptyHintBubble = ({ text, direction }: { text: string; direction: 'left' | 'down' }) => {
   if (direction === 'down') {
     return (
-      <div className="text-xs font-medium px-2.5 py-1 rounded-md self-start relative"
-        style={{ background: '#DC2626', color: 'white', marginLeft: '12px', whiteSpace: 'nowrap' }}>
+      <div className="text-xs font-medium px-2.5 py-1 rounded-md relative"
+        style={{ background: '#DC2626', color: 'white', marginLeft: '12px', whiteSpace: 'nowrap', display: 'inline-block', width: 'fit-content' }}>
         {text}
         <div className="absolute" style={{ bottom: '-5px', left: '16px', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid #DC2626' }} />
       </div>
@@ -771,7 +771,7 @@ const EmptyHintBubble = ({ text, direction }: { text: string; direction: 'left' 
   )
 }
 
-const FormRowAuto = ({ label, modified, source, children, isEmpty, emptyHint }: { label: string; modified?: boolean; source?: 'master' | 'csv'; children: React.ReactNode; isEmpty?: boolean; emptyHint?: string }) => {
+const FormRowAuto = ({ label, modified, source, children, isEmpty, emptyHint, wide }: { label: string; modified?: boolean; source?: 'master' | 'csv'; children: React.ReactNode; isEmpty?: boolean; emptyHint?: string; wide?: boolean }) => {
   const highlight = !!isEmpty
   return (
     <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
@@ -786,10 +786,19 @@ const FormRowAuto = ({ label, modified, source, children, isEmpty, emptyHint }: 
           </span>
         ) : <AutoBadge modified={modified} source={source} />}
       </div>
-      <div className="border-b px-5 py-4 flex items-center gap-3 flex-wrap"
+      <div className="border-b px-5 py-4 flex flex-col gap-2"
         style={{ background: highlight ? '#FEF2F2' : '#FFFFFF', borderColor: highlight ? '#FECACA' : '#D0DAF0' }}>
-        {children}
-        {highlight && emptyHint && <EmptyHintBubble text={emptyHint} direction="left" />}
+        {wide ? (
+          <>
+            {highlight && emptyHint && <EmptyHintBubble text={emptyHint} direction="down" />}
+            {children}
+          </>
+        ) : (
+          <div className="flex items-center gap-3 flex-wrap">
+            {children}
+            {highlight && emptyHint && <EmptyHintBubble text={emptyHint} direction="left" />}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -2769,34 +2778,34 @@ export default function ApplyPage() {
                 ℹ️ 以下は自社マスタから自動入力されています。内容を確認し、必要であれば修正してください。
               </div>
               <SectionHeader label="派遣元責任者" />
-              <FormRowAuto label="部署名" modified={masterSnapshot.mgr_dept !== undefined && mgr_dept !== masterSnapshot.mgr_dept} source={mgrCmpSource}
+              <FormRowAuto label="部署名" modified={masterSnapshot.mgr_dept !== undefined && mgr_dept !== masterSnapshot.mgr_dept} source={mgrCmpSource} wide
                 isEmpty={!mgr_dept} emptyHint="入力してください">
                 <input className={inp} style={{ borderColor: !mgr_dept ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={mgr_dept} onChange={e => setMgrDept(e.target.value)} />
               </FormRowAuto>
               <FormRowAuto label="役職" modified={masterSnapshot.mgr_role !== undefined && mgr_role !== masterSnapshot.mgr_role} source={mgrCmpSource}
                 isEmpty={!mgr_role} emptyHint="入力してください">
-                <input className={inp} style={{ borderColor: !mgr_role ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={mgr_role} onChange={e => setMgrRole(e.target.value)} />
+                <input className={`${inp} max-w-xs`} style={{ borderColor: !mgr_role ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={mgr_role} onChange={e => setMgrRole(e.target.value)} />
               </FormRowAuto>
               <FormRowAuto label="氏名" modified={masterSnapshot.mgr_name !== undefined && mgr_name !== masterSnapshot.mgr_name} source={mgrCmpSource}
                 isEmpty={!mgr_name} emptyHint="入力してください">
-                <input className={inp} style={{ borderColor: !mgr_name ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={mgr_name} onChange={e => setMgrName(e.target.value)} />
+                <input className={`${inp} max-w-xs`} style={{ borderColor: !mgr_name ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={mgr_name} onChange={e => setMgrName(e.target.value)} />
               </FormRowAuto>
               <FormRowAuto label="電話番号" modified={masterSnapshot.mgr_tel !== undefined && mgr_tel !== masterSnapshot.mgr_tel} source={mgrCmpSource}
                 isEmpty={!mgr_tel} emptyHint="入力してください">
                 <TelInput value={mgr_tel} onChange={setMgrTel} />
               </FormRowAuto>
               <SectionHeader label="苦情処理申出先（派遣元）" />
-              <FormRowAuto label="部署名" modified={masterSnapshot.cmp_dept !== undefined && cmp_dept !== masterSnapshot.cmp_dept} source={mgrCmpSource}
+              <FormRowAuto label="部署名" modified={masterSnapshot.cmp_dept !== undefined && cmp_dept !== masterSnapshot.cmp_dept} source={mgrCmpSource} wide
                 isEmpty={!cmp_dept} emptyHint="入力してください">
                 <input className={inp} style={{ borderColor: !cmp_dept ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={cmp_dept} onChange={e => setCmpDept(e.target.value)} />
               </FormRowAuto>
               <FormRowAuto label="役職" modified={masterSnapshot.cmp_role !== undefined && cmp_role !== masterSnapshot.cmp_role} source={mgrCmpSource}
                 isEmpty={!cmp_role} emptyHint="入力してください">
-                <input className={inp} style={{ borderColor: !cmp_role ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={cmp_role} onChange={e => setCmpRole(e.target.value)} />
+                <input className={`${inp} max-w-xs`} style={{ borderColor: !cmp_role ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={cmp_role} onChange={e => setCmpRole(e.target.value)} />
               </FormRowAuto>
               <FormRowAuto label="氏名" modified={masterSnapshot.cmp_name !== undefined && cmp_name !== masterSnapshot.cmp_name} source={mgrCmpSource}
                 isEmpty={!cmp_name} emptyHint="入力してください">
-                <input className={inp} style={{ borderColor: !cmp_name ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={cmp_name} onChange={e => setCmpName(e.target.value)} />
+                <input className={`${inp} max-w-xs`} style={{ borderColor: !cmp_name ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={cmp_name} onChange={e => setCmpName(e.target.value)} />
               </FormRowAuto>
               <FormRowAuto label="電話番号" modified={masterSnapshot.cmp_tel !== undefined && cmp_tel !== masterSnapshot.cmp_tel} source={mgrCmpSource}
                 isEmpty={!cmp_tel} emptyHint="入力してください">
@@ -2896,7 +2905,7 @@ export default function ApplyPage() {
                           )}
                         </div>
                         {showEmptyHint && !contractStartDate && (
-                          <div><EmptyHintBubble text="入力してください" direction="down" /></div>
+                          <EmptyHintBubble text="入力してください" direction="down" />
                         )}
                         {isDateBefore(contractStartDate, dispatchStart) && (
                           <p className="text-xs" style={{ color: '#DC2626' }}>契約条件適用開始日は派遣期間の開始日以降の日付にしてください</p>
@@ -2933,7 +2942,7 @@ export default function ApplyPage() {
                           )}
                         </div>
                         {showEmptyHint && (!employStart || !employEnd) && (
-                          <div><EmptyHintBubble text="入力してください" direction="down" /></div>
+                          <EmptyHintBubble text="入力してください" direction="down" />
                         )}
                         {employStartError && <p className="text-xs" style={{ color: '#DC2626' }}>{employStartError}</p>}
                         {employEndError && <p className="text-xs" style={{ color: '#DC2626' }}>{employEndError}</p>}
@@ -2969,7 +2978,7 @@ export default function ApplyPage() {
                             </div>
                           </div>
                           {showEmptyHint && (!trialStart || !trialEnd) && (
-                            <div><EmptyHintBubble text="入力してください" direction="down" /></div>
+                            <EmptyHintBubble text="入力してください" direction="down" />
                           )}
                           {trialStartError && <p className="text-xs" style={{ color: '#DC2626' }}>{trialStartError}</p>}
                           {trialEndError && <p className="text-xs" style={{ color: '#DC2626' }}>{trialEndError}</p>}

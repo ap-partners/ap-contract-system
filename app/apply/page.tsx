@@ -751,14 +751,26 @@ const FormRow = ({ label, required, tooltip, badge, children, isEmpty, emptyHint
   )
 }
 
-// 未入力時の案内吹き出し。direction="left"は入力欄の右隣（左向き矢印）、direction="down"は入力欄の上（下向き矢印）
-const EmptyHintBubble = ({ text, direction }: { text: string; direction: 'left' | 'down' }) => {
+// 未入力時の案内吹き出し。
+// direction="left"は入力欄の右隣に並べる（左向き矢印）
+// direction="down"は入力欄の上に置く（下向き矢印で入力欄を指す）
+// direction="up"は入力欄の下に置く（上向き矢印で、上にある入力欄を指す。複数の入力欄が並ぶ行の下に置きたい場合に使う）
+const EmptyHintBubble = ({ text, direction }: { text: string; direction: 'left' | 'down' | 'up' }) => {
   if (direction === 'down') {
     return (
       <div className="text-xs font-medium px-2.5 py-1 rounded-md relative"
         style={{ background: '#DC2626', color: 'white', marginLeft: '12px', whiteSpace: 'nowrap', display: 'inline-block', width: 'fit-content' }}>
         {text}
         <div className="absolute" style={{ bottom: '-5px', left: '16px', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid #DC2626' }} />
+      </div>
+    )
+  }
+  if (direction === 'up') {
+    return (
+      <div className="text-xs font-medium px-2.5 py-1 rounded-md relative"
+        style={{ background: '#DC2626', color: 'white', marginLeft: '12px', whiteSpace: 'nowrap', display: 'inline-block', width: 'fit-content' }}>
+        <div className="absolute" style={{ top: '-5px', left: '16px', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderBottom: '5px solid #DC2626' }} />
+        {text}
       </div>
     )
   }
@@ -2826,20 +2838,24 @@ export default function ApplyPage() {
               {(pattern === 'B' || pattern === 'C') && (
                 <>
                   <SectionHeader label="派遣期間" />
-                  <FormRow label="派遣期間" required>
+                  <FormRow label="派遣期間" required hintInline
+                    isEmpty={showEmptyHint && (!dispatchStart || !dispatchEnd)}>
                     <div className="flex items-center gap-3 flex-wrap">
                       <div className="flex items-center gap-2">
                         <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>自</span>
-                        <input type="date" className={`${inp} w-40`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                        <input type="date" className={`${inp} w-40`} style={{ borderColor: (showEmptyHint && !dispatchStart) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
                           value={dispatchStart} onChange={e => setDispatchStart(e.target.value)} />
                       </div>
                       <span className="text-sm" style={{ color: '#5A6A8A' }}>〜</span>
                       <div className="flex items-center gap-2">
                         <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>至</span>
-                        <input type="date" className={`${inp} w-40`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                        <input type="date" className={`${inp} w-40`} style={{ borderColor: (showEmptyHint && !dispatchEnd) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
                           value={dispatchEnd} onChange={e => setDispatchEnd(e.target.value)} />
                       </div>
                     </div>
+                    {showEmptyHint && (!dispatchStart || !dispatchEnd) && (
+                      <EmptyHintBubble text="入力してください" direction="up" />
+                    )}
                   </FormRow>
                   <FormRow label="抵触日（事業所単位）" required tooltip={TOOLTIPS['抵触日（事業所単位）']} badge={<CsvBadge name="conflict" />}
                     isEmpty={showEmptyHint && !isConflictDateExempt && !conflictDate} emptyHint="入力してください">
@@ -2942,7 +2958,7 @@ export default function ApplyPage() {
                           )}
                         </div>
                         {showEmptyHint && (!employStart || !employEnd) && (
-                          <EmptyHintBubble text="入力してください" direction="down" />
+                          <EmptyHintBubble text="入力してください" direction="up" />
                         )}
                         {employStartError && <p className="text-xs" style={{ color: '#DC2626' }}>{employStartError}</p>}
                         {employEndError && <p className="text-xs" style={{ color: '#DC2626' }}>{employEndError}</p>}

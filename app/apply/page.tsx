@@ -714,25 +714,62 @@ const Tooltip = ({ text }: { text: string }) => {
   )
 }
 
-const FormRow = ({ label, required, tooltip, badge, children }: {
+const FormRow = ({ label, required, tooltip, badge, children, isEmpty, emptyHint, wide }: {
   label: string; required?: boolean; tooltip?: string; badge?: React.ReactNode; children: React.ReactNode
-}) => (
-  <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-    <div className="border-r border-b px-4 py-4 flex flex-col items-start gap-1.5"
-      style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-      <div className="flex items-center flex-wrap gap-1">
-        <span className="text-sm font-medium leading-snug" style={{ color: '#1A2340' }}>{label}</span>
-        {required && <Req />}
-        {tooltip && <Tooltip text={tooltip} />}
+  isEmpty?: boolean; emptyHint?: string; wide?: boolean
+}) => {
+  // isEmpty（未入力強調）が立っている時だけ、赤系の配色に切り替える
+  const highlight = !!isEmpty
+  return (
+    <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
+      <div className="border-r border-b px-4 py-4 flex flex-col items-start justify-center gap-1.5"
+        style={{ background: highlight ? '#FEF2F2' : '#EEF2FA', borderColor: highlight ? '#FECACA' : '#D0DAF0' }}>
+        <div className="flex items-center flex-wrap gap-1">
+          <span className="text-sm font-medium leading-snug" style={{ color: '#1A2340' }}>{label}</span>
+          {required && <Req />}
+          {tooltip && <Tooltip text={tooltip} />}
+        </div>
+        {highlight ? (
+          <span className="text-xs px-1.5 py-0.5 rounded shrink-0 flex items-center gap-1"
+            style={{ background: 'white', color: '#DC2626', border: '1px solid #DC2626' }}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="13" /><line x1="12" y1="16" x2="12" y2="16.01" /></svg>
+            未入力
+          </span>
+        ) : badge}
       </div>
-      {badge}
+      <div className="border-b px-5 py-4 flex flex-col gap-3"
+        style={{ background: highlight ? '#FEF2F2' : '#FFFFFF', borderColor: highlight ? '#FECACA' : '#D0DAF0' }}>
+        {highlight && emptyHint && wide && <EmptyHintBubble text={emptyHint} direction="down" />}
+        {wide ? children : (
+          <div className="flex items-center gap-3 flex-wrap">
+            {children}
+            {highlight && emptyHint && <EmptyHintBubble text={emptyHint} direction="left" />}
+          </div>
+        )}
+      </div>
     </div>
-    <div className="border-b px-5 py-4 flex flex-col gap-3"
-      style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
-      {children}
+  )
+}
+
+// 未入力時の案内吹き出し。direction="left"は入力欄の右隣（左向き矢印）、direction="down"は入力欄の上（下向き矢印）
+const EmptyHintBubble = ({ text, direction }: { text: string; direction: 'left' | 'down' }) => {
+  if (direction === 'down') {
+    return (
+      <div className="text-xs font-medium px-2.5 py-1 rounded-md self-start relative"
+        style={{ background: '#DC2626', color: 'white', marginLeft: '12px', whiteSpace: 'nowrap' }}>
+        {text}
+        <div className="absolute" style={{ bottom: '-5px', left: '16px', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid #DC2626' }} />
+      </div>
+    )
+  }
+  return (
+    <div className="text-xs font-medium px-2.5 py-1 rounded-md relative shrink-0"
+      style={{ background: '#DC2626', color: 'white', whiteSpace: 'nowrap' }}>
+      <div className="absolute" style={{ top: '50%', left: '-5px', transform: 'translateY(-50%)', width: 0, height: 0, borderTop: '5px solid transparent', borderBottom: '5px solid transparent', borderRight: '5px solid #DC2626' }} />
+      {text}
     </div>
-  </div>
-)
+  )
+}
 
 const FormRowAuto = ({ label, modified, source, children }: { label: string; modified?: boolean; source?: 'master' | 'csv'; children: React.ReactNode }) => (
   <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
@@ -1064,6 +1101,8 @@ export default function ApplyPage() {
   const [salaryWarningChecked, setSalaryWarningChecked] = useState(false)
 
   const trialCalc = calcTrialMonths(trialStart, trialEnd)
+  // CSVデータから自動入力している時だけ、未入力必須項目を赤く強調する（手入力の時はそもそも全項目が空欄から始まるため対象外）
+  const showEmptyHint = csvMode === 'csv'
 
   // STEP5バリデーション派生値
   const employStartError = (() => {
@@ -1433,7 +1472,6 @@ export default function ApplyPage() {
     if (isSubmitting) return // 二重送信防止
     setIsSubmitting(true)
     setSubmitError('')
-    console.log('【デバッグ】csvMode:', csvMode, ' csvSelectedId:', csvSelectedId, ' csvResults:', csvResults)
     try {
       // STEP1〜8で入力したすべての値（再申請時の復元・SSC確認・将来の帳票生成にそのまま使う）
       const fields = {
@@ -2446,40 +2484,22 @@ export default function ApplyPage() {
 
                   {/* 就業先情報 */}
                   <SectionHeader label="就業先情報" />
+                  <FormRow label="就業場所名" required badge={<CsvBadge name="locationName" />} wide
+                    isEmpty={showEmptyHint && !workLocationName} emptyHint="入力してください">
+                    <input className={`${inp} max-w-lg`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                      value={workLocationName}
+                      onChange={e => { setWorkLocationName(e.target.value) }}
+                      placeholder="例）ソフトバンク（SB） 量販 コジマ×ビックカメラ福生店" />
+                  </FormRow>
+                  <FormRow label="就業場所住所" required badge={<CsvBadge name="locationAddress" />} wide
+                    isEmpty={showEmptyHint && !workLocationAddress} emptyHint="入力してください">
+                    <input className={`${inp} max-w-lg`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                      value={workLocationAddress}
+                      onChange={e => { setWorkLocationAddress(e.target.value) }}
+                      placeholder="例）東京都福生市本町36番地1" />
+                  </FormRow>
                   <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-                    <div className="border-r border-b px-4 py-4 flex flex-col items-start gap-1.5"
-                      style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                      <div className="flex items-center flex-wrap gap-1">
-                        <span className="text-sm font-medium" style={{ color: '#1A2340' }}>就業場所名</span>
-                        <Req />
-                      </div>
-                      <CsvBadge name="locationName" />
-                    </div>
-                    <div className="border-b px-5 py-4" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
-                      <input className={`${inp} max-w-lg`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                        value={workLocationName}
-                        onChange={e => { setWorkLocationName(e.target.value) }}
-                        placeholder="例）ソフトバンク（SB） 量販 コジマ×ビックカメラ福生店" />
-                    </div>
-                  </div>
-                  <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-                    <div className="border-r border-b px-4 py-4 flex flex-col items-start gap-1.5"
-                      style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                      <div className="flex items-center flex-wrap gap-1">
-                        <span className="text-sm font-medium" style={{ color: '#1A2340' }}>就業場所住所</span>
-                        <Req />
-                      </div>
-                      <CsvBadge name="locationAddress" />
-                    </div>
-                    <div className="border-b px-5 py-4" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
-                      <input className={`${inp} max-w-lg`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                        value={workLocationAddress}
-                        onChange={e => { setWorkLocationAddress(e.target.value) }}
-                        placeholder="例）東京都福生市本町36番地1" />
-                    </div>
-                  </div>
-                  <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-                    <div className="border-r border-b px-4 py-4 flex flex-col items-start gap-1.5"
+                    <div className="border-r border-b px-4 py-4 flex flex-col items-start justify-center gap-1.5"
                       style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
                       <div className="flex items-center flex-wrap gap-1">
                         <span className="text-sm font-medium" style={{ color: '#1A2340' }}>就業場所電話番号</span>
@@ -2492,102 +2512,65 @@ export default function ApplyPage() {
                         note="未入力の場合、帳票の「TEL:」以降は表示されません" />
                     </div>
                   </div>
-                  <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-                    <div className="border-r border-b px-4 py-4 flex flex-col items-start gap-1.5"
-                      style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                      <div className="flex items-center flex-wrap gap-1">
-                        <span className="text-sm font-medium" style={{ color: '#1A2340' }}>業務内容</span>
-                        <Req />
-                      </div>
-                      <CsvBadge name="business" />
-                    </div>
-                    <div className="border-b px-5 py-4 flex flex-col gap-1.5" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
-                      <textarea
-                        className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 placeholder:text-gray-400"
-                        style={{ borderColor: '#D0DAF0', color: '#1A2340', maxWidth: '480px', minHeight: '60px', resize: 'vertical', fontFamily: 'inherit', lineHeight: '1.6' }}
-                        value={businessContent}
-                        onChange={e => { setBusinessContent(e.target.value) }}
-                        onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }}
-                        placeholder="例）携帯電話販売促進業務" />
-                      <p className="text-xs" style={{ color: '#5A6A8A' }}>Enterキーでの改行はできません</p>
-                    </div>
-                  </div>
+                  <FormRow label="業務内容" required badge={<CsvBadge name="business" />} wide
+                    isEmpty={showEmptyHint && !businessContent} emptyHint="入力してください">
+                    <textarea
+                      className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 placeholder:text-gray-400"
+                      style={{ borderColor: (showEmptyHint && !businessContent) ? '#DC2626' : '#D0DAF0', color: '#1A2340', maxWidth: '480px', minHeight: '60px', resize: 'vertical', fontFamily: 'inherit', lineHeight: '1.6', width: '100%' }}
+                      value={businessContent}
+                      onChange={e => { setBusinessContent(e.target.value) }}
+                      onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }}
+                      placeholder="例）携帯電話販売促進業務" />
+                    <p className="text-xs" style={{ color: '#5A6A8A' }}>Enterキーでの改行はできません</p>
+                  </FormRow>
 
-                  {/* 始業・終業時刻 */}
-                  <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-                    <div className="border-r border-b px-4 py-4 flex flex-col items-start gap-1.5"
-                      style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                      <div className="flex items-center flex-wrap gap-1">
-                        <span className="text-sm font-medium" style={{ color: '#1A2340' }}>始業・終業時刻</span>
-                        <Req />
-                      </div>
-                      <div className="flex flex-col gap-0.5">
-                        <CsvBadge name="startTime" />
-                        <CsvBadge name="endTime" />
-                      </div>
+                  <FormRow label="始業・終業時刻" required
+                    badge={<div className="flex flex-col gap-0.5"><CsvBadge name="startTime" /><CsvBadge name="endTime" /></div>}
+                    isEmpty={showEmptyHint && (!startTime || !endTime)} emptyHint="入力してください">
+                    <div className="flex items-center gap-2 flex-nowrap">
+                      <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>始業</span>
+                      <input type="time" className="bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 shrink-0"
+                        style={{ borderColor: (showEmptyHint && !startTime) ? '#DC2626' : '#D0DAF0', color: '#1A2340', width: '130px' }}
+                        value={startTime}
+                        onChange={e => { setStartTime(e.target.value) }} />
+                      <span className="text-sm shrink-0" style={{ color: '#5A6A8A' }}>〜</span>
+                      <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>終業</span>
+                      <input type="time" className="bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 shrink-0"
+                        style={{ borderColor: (showEmptyHint && !endTime) ? '#DC2626' : '#D0DAF0', color: '#1A2340', width: '130px' }}
+                        value={endTime}
+                        onChange={e => { setEndTime(e.target.value) }} />
+                      <button
+                        onClick={e => { e.preventDefault(); setIsShift(!isShift) }}
+                        className="px-3 py-1.5 border rounded-lg text-xs transition-colors shrink-0"
+                        style={{
+                          borderColor: isShift ? '#1B3A8C' : '#D0DAF0',
+                          background: isShift ? '#EEF2FA' : 'white',
+                          color: isShift ? '#1B3A8C' : '#1A2340',
+                          fontWeight: isShift ? 600 : 400,
+                        }}>シフト制</button>
                     </div>
-                    <div className="border-b px-5 py-4 flex flex-col gap-2" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
-                      <div className="flex items-center gap-2 flex-nowrap">
-                        <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>始業</span>
-                        <input type="time" className="bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 shrink-0"
-                          style={{ borderColor: '#D0DAF0', color: '#1A2340', width: '130px' }}
-                          value={startTime}
-                          onChange={e => { setStartTime(e.target.value) }} />
-                        <span className="text-sm shrink-0" style={{ color: '#5A6A8A' }}>〜</span>
-                        <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>終業</span>
-                        <input type="time" className="bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 shrink-0"
-                          style={{ borderColor: '#D0DAF0', color: '#1A2340', width: '130px' }}
-                          value={endTime}
-                          onChange={e => { setEndTime(e.target.value) }} />
-                        <button
-                          onClick={e => { e.preventDefault(); setIsShift(!isShift) }}
-                          className="px-3 py-1.5 border rounded-lg text-xs transition-colors shrink-0"
-                          style={{
-                            borderColor: isShift ? '#1B3A8C' : '#D0DAF0',
-                            background: isShift ? '#EEF2FA' : 'white',
-                            color: isShift ? '#1B3A8C' : '#1A2340',
-                            fontWeight: isShift ? 600 : 400,
-                          }}>シフト制</button>
-                      </div>
-                    </div>
-                  </div>
+                  </FormRow>
 
-                  {/* 休憩時間 */}
-                  <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-                    <div className="border-r border-b px-4 py-4 flex flex-col items-start gap-1.5"
-                      style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                      <div className="flex items-center flex-wrap gap-1">
-                        <span className="text-sm font-medium" style={{ color: '#1A2340' }}>休憩時間</span>
-                        <Req />
-                      </div>
-                      <CsvBadge name="breakTime" />
-                    </div>
-                    <div className="border-b px-5 py-4 flex flex-col gap-1.5" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
+                  <FormRow label="休憩時間" required badge={<CsvBadge name="breakTime" />}
+                    isEmpty={showEmptyHint && !breakTime} emptyHint="入力してください">
+                    <div className="flex flex-col gap-1.5">
                       <div className="flex items-center gap-2">
                         <input type="text" className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20 placeholder:text-gray-400"
-                          style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                          style={{ borderColor: (showEmptyHint && !breakTime) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
                           value={breakTime}
                           onChange={e => { setBreakTime(toHalfWidthDigits(e.target.value)) }} />
                         <span className="text-sm" style={{ color: '#5A6A8A' }}>分</span>
                       </div>
                       <p className="text-xs" style={{ color: '#5A6A8A' }}>例）60、75、90</p>
                     </div>
-                  </div>
+                  </FormRow>
 
-                  {/* 所定労働時間 */}
-                  <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-                    <div className="border-r border-b px-4 py-4 flex flex-col items-start gap-1.5"
-                      style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                      <div className="flex items-center flex-wrap gap-1">
-                        <span className="text-sm font-medium" style={{ color: '#1A2340' }}>所定労働時間</span>
-                        <Req />
-                      </div>
-                      <CsvBadge name="workingHours" />
-                    </div>
-                    <div className="border-b px-5 py-4 flex flex-col gap-2" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
+                  <FormRow label="所定労働時間" required badge={<CsvBadge name="workingHours" />}
+                    isEmpty={showEmptyHint && !workingHoursH} emptyHint="入力してください">
+                    <div className="flex flex-col gap-2">
                       <div className="flex items-center gap-2">
                         <input type="text" className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20 placeholder:text-gray-400"
-                          style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                          style={{ borderColor: (showEmptyHint && !workingHoursH) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
                           value={workingHoursH}
                           onChange={e => { setWorkingHoursH(toHalfWidthDigits(e.target.value)) }}
                           onBlur={() => setWorkingHoursH(prev => padTwoDigits(prev))} />
@@ -2607,7 +2590,7 @@ export default function ApplyPage() {
                         </div>
                       )}
                     </div>
-                  </div>
+                  </FormRow>
 
                   {/* 所定労働日数 */}
                   <FormRow label="所定労働日数" required>
@@ -2644,21 +2627,11 @@ export default function ApplyPage() {
                   {(pattern === 'B' || pattern === 'C') && (
                     <>
                       <SectionHeader label="就業条件明示書の追加項目" />
-                      <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
-                        <div className="border-r border-b px-4 py-4 flex flex-col items-start gap-1.5"
-                          style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                          <div className="flex items-center flex-wrap gap-1">
-                            <span className="text-sm font-medium" style={{ color: '#1A2340' }}>業務に伴う責任の程度</span>
-                            <Req />
-                            <Tooltip text={TOOLTIPS['業務に伴う責任の程度']} />
-                          </div>
-                          <CsvBadge name="resp" />
-                        </div>
-                        <div className="border-b px-5 py-4" style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
-                          <RadioGroup name="responsibility" value={responsibility}
-                            onChange={v => { setResponsibility(v) }} />
-                        </div>
-                      </div>
+                      <FormRow label="業務に伴う責任の程度" required tooltip={TOOLTIPS['業務に伴う責任の程度']} badge={<CsvBadge name="resp" />}
+                        isEmpty={showEmptyHint && !responsibility} emptyHint="選択してください">
+                        <RadioGroup name="responsibility" value={responsibility}
+                          onChange={v => { setResponsibility(v) }} />
+                      </FormRow>
                     </>
                   )}
                   <NavButtons onNext={() => {
@@ -2675,56 +2648,69 @@ export default function ApplyPage() {
           {stepType === 'dispatchContact' && (
             <>
               <SectionHeader label="指揮命令者" />
-              <FormRow label="部署名" required badge={<CsvBadge name="cmdDept" />}>
+              <FormRow label="部署名" required badge={<CsvBadge name="cmdDept" />} wide
+                isEmpty={showEmptyHint && !cmd_dept} emptyHint="入力してください">
                 <input className={inp} style={deptInputStyle} value={cmd_dept} onChange={e => { setCmdDept(e.target.value) }}
                   placeholder="例）東日本ｴﾘｱ営業本部 関東営業統括部 第3営業部" />
               </FormRow>
-              <FormRow label="役職" required badge={<CsvBadge name="cmdRole" />}>
+              <FormRow label="役職" required badge={<CsvBadge name="cmdRole" />}
+                isEmpty={showEmptyHint && !cmd_role} emptyHint="入力してください">
                 <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                   value={cmd_role} onChange={e => { setCmdRole(e.target.value) }} placeholder="例）課長" />
               </FormRow>
-              <FormRow label="氏名" required badge={<CsvBadge name="cmdName" />}>
+              <FormRow label="氏名" required badge={<CsvBadge name="cmdName" />}
+                isEmpty={showEmptyHint && !cmd_name} emptyHint="入力してください">
                 <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                   value={cmd_name} onChange={e => { setCmdName(e.target.value) }} placeholder="例）山田 太郎" />
               </FormRow>
-              <FormRow label="電話番号" required badge={<CsvBadge name="cmdTel" />}>
+              <FormRow label="電話番号" required badge={<CsvBadge name="cmdTel" />}
+                isEmpty={showEmptyHint && !cmd_tel} emptyHint="入力してください">
                 <TelInput value={cmd_tel} onChange={v => { setCmdTel(v) }} />
               </FormRow>
 
               <SectionHeader label="派遣先責任者" />
-              <FormRow label="部署名" required badge={<CsvBadge name="respDept" />}>
+              <FormRow label="部署名" required badge={<CsvBadge name="respDept" />} wide
+                isEmpty={showEmptyHint && !resp_dept} emptyHint="入力してください">
                 <input className={inp} style={deptInputStyle} value={resp_dept} onChange={e => { setRespDept(e.target.value) }} placeholder="例）人事部" />
               </FormRow>
-              <FormRow label="役職" required badge={<CsvBadge name="respRole" />}>
+              <FormRow label="役職" required badge={<CsvBadge name="respRole" />}
+                isEmpty={showEmptyHint && !resp_role} emptyHint="入力してください">
                 <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                   value={resp_role} onChange={e => { setRespRole(e.target.value) }} placeholder="例）部長" />
               </FormRow>
-              <FormRow label="氏名" required badge={<CsvBadge name="respName" />}>
+              <FormRow label="氏名" required badge={<CsvBadge name="respName" />}
+                isEmpty={showEmptyHint && !resp_name} emptyHint="入力してください">
                 <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                   value={resp_name} onChange={e => { setRespName(e.target.value) }} placeholder="例）鈴木 花子" />
               </FormRow>
-              <FormRow label="電話番号" required badge={<CsvBadge name="respTel" />}>
+              <FormRow label="電話番号" required badge={<CsvBadge name="respTel" />}
+                isEmpty={showEmptyHint && !resp_tel} emptyHint="入力してください">
                 <TelInput value={resp_tel} onChange={v => { setRespTel(v) }} />
               </FormRow>
 
               <SectionHeader label="苦情処理申出先（派遣先）" />
-              <FormRow label="部署名" required badge={<CsvBadge name="compDept" />}>
+              <FormRow label="部署名" required badge={<CsvBadge name="compDept" />} wide
+                isEmpty={showEmptyHint && !comp_dept} emptyHint="入力してください">
                 <input className={inp} style={deptInputStyle} value={comp_dept} onChange={e => { setCompDept(e.target.value) }} placeholder="例）総務部" />
               </FormRow>
-              <FormRow label="役職" required badge={<CsvBadge name="compRole" />}>
+              <FormRow label="役職" required badge={<CsvBadge name="compRole" />}
+                isEmpty={showEmptyHint && !comp_role} emptyHint="入力してください">
                 <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                   value={comp_role} onChange={e => { setCompRole(e.target.value) }} placeholder="例）担当者" />
               </FormRow>
-              <FormRow label="氏名" required badge={<CsvBadge name="compName" />}>
+              <FormRow label="氏名" required badge={<CsvBadge name="compName" />}
+                isEmpty={showEmptyHint && !comp_name} emptyHint="入力してください">
                 <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                   value={comp_name} onChange={e => { setCompName(e.target.value) }} placeholder="例）田中 次郎" />
               </FormRow>
-              <FormRow label="電話番号" required badge={<CsvBadge name="compTel" />}>
+              <FormRow label="電話番号" required badge={<CsvBadge name="compTel" />}
+                isEmpty={showEmptyHint && !comp_tel} emptyHint="入力してください">
                 <TelInput value={comp_tel} onChange={v => { setCompTel(v) }} />
               </FormRow>
 
               <SectionHeader label="追加項目" />
-              <FormRow label="福利厚生施設の利用等" required badge={<CsvBadge name="welfare" />}>
+              <FormRow label="福利厚生施設の利用等" required badge={<CsvBadge name="welfare" />} wide
+                isEmpty={showEmptyHint && !welfare} emptyHint="入力してください">
                 <NoBreakTextarea value={welfare} onChange={v => { setWelfare(v) }} placeholder="例）社員食堂・更衣室の利用可" minHeight="60px" />
               </FormRow>
               <FormRow label="安全及び衛生" required badge={<CsvBadge name="safety" />}>
@@ -2821,7 +2807,8 @@ export default function ApplyPage() {
                       </div>
                     </div>
                   </FormRow>
-                  <FormRow label="抵触日（事業所単位）" required tooltip={TOOLTIPS['抵触日（事業所単位）']} badge={<CsvBadge name="conflict" />}>
+                  <FormRow label="抵触日（事業所単位）" required tooltip={TOOLTIPS['抵触日（事業所単位）']} badge={<CsvBadge name="conflict" />}
+                    isEmpty={showEmptyHint && !isConflictDateExempt && !conflictDate} emptyHint="入力してください">
                     {isConflictDateExempt ? fixedText('無期雇用派遣のため該当しない（自動）') : (
                       <div>
                         <input type="date" className={`${inp} max-w-xs`}
@@ -2834,7 +2821,8 @@ export default function ApplyPage() {
                       </div>
                     )}
                   </FormRow>
-                  <FormRow label="抵触日（組織単位）" required tooltip={TOOLTIPS['抵触日（組織単位）']} badge={<CsvBadge name="conflictOrg" />}>
+                  <FormRow label="抵触日（組織単位）" required tooltip={TOOLTIPS['抵触日（組織単位）']} badge={<CsvBadge name="conflictOrg" />}
+                    isEmpty={showEmptyHint && !isConflictDateExempt && !conflictDateOrg} emptyHint="入力してください">
                     {isConflictDateExempt ? fixedText('無期雇用派遣のため該当しない（自動）') : (
                       <div>
                         <input type="date" className={`${inp} max-w-xs`}
@@ -2846,7 +2834,8 @@ export default function ApplyPage() {
                       </div>
                     )}
                   </FormRow>
-                  <FormRow label="組織単位" required badge={<CsvBadge name="org" />}>
+                  <FormRow label="組織単位" required badge={<CsvBadge name="org" />} wide
+                    isEmpty={showEmptyHint && !organizationUnit} emptyHint="入力してください">
                     <input className={`${inp} max-w-lg`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                       value={organizationUnit}
                       onChange={e => { setOrganizationUnit(e.target.value) }}
@@ -2973,11 +2962,13 @@ export default function ApplyPage() {
               )}
 
               <SectionHeader label="労働条件" />
-              <FormRow label="変形労働時間制" required tooltip={TOOLTIPS['変形労働時間制']} badge={<CsvBadge name="flexTime" />}>
+              <FormRow label="変形労働時間制" required tooltip={TOOLTIPS['変形労働時間制']} badge={<CsvBadge name="flexTime" />}
+                isEmpty={showEmptyHint && !flexTime} emptyHint="選択してください">
                 <RadioGroup name="flextime" value={flexTime}
                   onChange={v => { setFlexTime(v) }} />
               </FormRow>
-              <FormRow label="所定労働時間外労働" required tooltip={TOOLTIPS['所定労働時間外労働']} badge={<CsvBadge name="overtime" />}>
+              <FormRow label="所定労働時間外労働" required tooltip={TOOLTIPS['所定労働時間外労働']} badge={<CsvBadge name="overtime" />}
+                isEmpty={showEmptyHint && !overtime} emptyHint="選択してください">
                 <RadioGroup name="overtime" value={overtime}
                   onChange={v => { setOvertime(v) }} />
               </FormRow>

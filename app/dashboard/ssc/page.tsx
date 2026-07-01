@@ -252,40 +252,25 @@ export default function SSCDashboard() {
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-8">
-        {/* サマリーカード */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
-          <div className="bg-white rounded-xl border p-5" style={{ borderColor: '#D0DAF0' }}>
-            <p className="text-xs font-medium mb-1" style={{ color: '#5A6A8A' }}>承認待ち</p>
-            <p className="text-3xl font-bold" style={{ color: '#1D4ED8' }}>{pendingCount}</p>
-            <p className="text-xs mt-1" style={{ color: '#5A6A8A' }}>件の申請が届いています</p>
-          </div>
-          <div className="bg-white rounded-xl border p-5" style={{ borderColor: '#D0DAF0' }}>
-            <p className="text-xs font-medium mb-1" style={{ color: '#5A6A8A' }}>差し戻し中</p>
-            <p className="text-3xl font-bold" style={{ color: '#B91C1C' }}>{rejectedCount}</p>
-            <p className="text-xs mt-1" style={{ color: '#5A6A8A' }}>件が再申請待ちです</p>
-          </div>
-          <div className="bg-white rounded-xl border p-5" style={{ borderColor: '#D0DAF0' }}>
-            <p className="text-xs font-medium mb-1" style={{ color: '#5A6A8A' }}>承認済み・完了</p>
-            <p className="text-3xl font-bold" style={{ color: '#065F46' }}>{approvedCount}</p>
-            <p className="text-xs mt-1" style={{ color: '#5A6A8A' }}>件を処理済みです</p>
-          </div>
-        </div>
-
-        {/* タブ */}
-        <div className="flex gap-1 mb-4 bg-white rounded-xl border p-1" style={{ borderColor: '#D0DAF0' }}>
-          {tabs.map(tab => (
-            <button key={tab.key} onClick={() => { setActiveTab(tab.key); setSelectedIds(new Set()) }}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all"
-              style={activeTab === tab.key ? { background: '#1B3A8C', color: 'white' } : { color: '#5A6A8A' }}>
-              {tab.label}
-              <span className="text-xs font-bold px-1.5 py-0.5 rounded-full"
-                style={activeTab === tab.key
-                  ? { background: 'rgba(255,255,255,0.25)', color: 'white' }
-                  : { background: '#EEF2FA', color: tab.color }}>
-                {tab.count}
-              </span>
-            </button>
-          ))}
+        {/* タブ型サマリーカード（クリックで絞り込み） */}
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          {tabs.map(tab => {
+            const isActive = activeTab === tab.key
+            return (
+              <button key={tab.key}
+                onClick={() => { setActiveTab(tab.key); setSelectedIds(new Set()) }}
+                className="text-left rounded-xl px-4 py-3.5 transition-all"
+                style={isActive
+                  ? { background: tab.color, border: 'none', boxShadow: '0 6px 16px rgba(27,58,140,0.28)', transform: 'translateY(-2px)' }
+                  : { background: 'white', border: `1.5px solid ${tab.color}`, boxShadow: '0 1px 3px rgba(16,24,64,0.06)' }}>
+                <p className="text-xs" style={{ color: isActive ? 'rgba(255,255,255,0.85)' : tab.color }}>{tab.label}</p>
+                <div className="flex items-end justify-between mt-1.5">
+                  <span className="text-2xl font-bold" style={{ color: isActive ? 'white' : tab.color }}>{tab.count}</span>
+                  <span className="text-sm" style={{ color: isActive ? 'white' : tab.color, opacity: isActive ? 0.9 : 0.6 }}>{isActive ? '▲' : '▾'}</span>
+                </div>
+              </button>
+            )
+          })}
         </div>
 
         {/* 一括承認バー（承認待ちタブのみ） */}

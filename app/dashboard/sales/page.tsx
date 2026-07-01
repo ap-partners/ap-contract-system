@@ -35,11 +35,18 @@ type Contract = {
       dispatchStart?: string
       dispatchEnd?: string
       period?: string
+      closingPattern?: string
     }
   }
 }
 
 const SIGN_DEADLINE_DAYS = 7 // 署名期日＝通知から7日（初期値。将来アラート日数マスタで変更可能にする予定）
+
+const CLOSING_PATTERN_LABEL: Record<string, string> = {
+  auto: '指定しない',
+  face: '対面でその場説明',
+  print: '印刷して説明後にリンク送付',
+}
 
 // 日時を「YYYY/MM/DD HH:mm」形式に変換
 const formatDateTime = (iso: string) => {
@@ -73,7 +80,7 @@ const ContractTypeBadge = ({ contractType, workPlace }: { contractType: string; 
 }
 
 // ステータスバッジ（塗りつぶし）
-const StatusBadge = ({ status }: { status: ContractStatus }) => {
+const StatusBadge = ({ status, label }: { status: ContractStatus; label?: string }) => {
   const map: Record<string, { bg: string; label: string }> = {
     '申請中':     { bg: '#1D4ED8', label: '申請中' },
     'SSC承認済み': { bg: '#065F46', label: 'SSC承認済み' },
@@ -86,7 +93,7 @@ const StatusBadge = ({ status }: { status: ContractStatus }) => {
   const s = map[status] || { bg: '#9CA3AF', label: status }
   return (
     <span className="text-xs font-medium px-2 py-0.5 rounded whitespace-nowrap" style={{ background: s.bg, color: 'white' }}>
-      {s.label}
+      {label || s.label}
     </span>
   )
 }
@@ -96,8 +103,7 @@ const SignDeadlineBadge = ({ signRequestedAt }: { signRequestedAt: string | null
   if (!signRequestedAt) return null
   const notified = new Date(signRequestedAt)
   const deadline = new Date(notified.getTime() + SIGN_DEADLINE_DAYS * 24 * 60 * 60 * 1000)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  const today = new Date(); today.setHours(0, 0, 0, 0)
   const deadlineDay = new Date(deadline); deadlineDay.setHours(0, 0, 0, 0)
   const remain = Math.floor((deadlineDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
   const overdue = remain < 0
@@ -114,7 +120,7 @@ const SignDeadlineBadge = ({ signRequestedAt }: { signRequestedAt: string | null
   )
 }
 
-// 期日アラートの判定（雇用開始日ベース。申請中・SSC承認済みの遅延確認用）
+// 期日アラートの判定（雇用開始日ベース）
 const getDeadlineAlert = (contract: Contract): { type: 'overdue' | 'urgent' | null; label: string } => {
   const f = contract.input_data?.fields
   if (!f) return { type: null, label: '' }
@@ -139,7 +145,8 @@ const getEmployPeriodLabel = (contract: Contract): string => {
   return '―'
 }
 
-type FilterKey = 'pending' | 'rejected' | 'waiting' | 'other'
+type FilterKey = 'pending' | 'explain' | 'rejected' | 'waiting' | 'other'
+type SubFilter = 'all' | '申請中' | 'SSC承認済み' | '署名済み'
 
 export default function SalesDashboard() {
   const router = useRouter()
@@ -148,6 +155,9 @@ export default function SalesDashboard() {
   const [contracts, setContracts] = useState<Contract[]>([])
   const [loading, setLoading] = useState(true)
   const [activeFilter, setActiveFilter] = useState<FilterKey>('pending')
+  const [subFilter, setSubFilter] = useState<SubFilter>('all')
+  const [confirmingExplainId, setConfirmingExplainId] = useState<string | null>(null)
+  const [explainLoading, setExplainLoading] = useState(false)
 
   useEffect(() => {
     const init = async () => {
@@ -172,44 +182,77 @@ export default function SalesDashboard() {
         return
       }
 
-      // 自部門の申請のみ取得
-      const { data: rows, error } = await supabase
-        .from('contracts')
-        .select('id, pattern, contract_type, document_type, work_place, status, created_by, created_by_dept_no, created_at, rejection_reason, sign_requested_at, input_data')
-        .eq('created_by_dept_no', staffRow.dept_no)
-        .order('created_at', { ascending: false })
-
-      if (error) { console.error('contracts取得エラー:', error); setLoading(false); return }
-      setContracts((rows || []) as Contract[])
+      await loadContracts(staffRow.dept_no)
       setLoading(false)
     }
     init()
   }, [router])
+
+  const loadContracts = async (deptNo: number) => {
+    const { data: rows, error } = await supabase
+      .from('contracts')
+      .select('id, pattern, contract_type, document_type, work_place, status, created_by, created_by_dept_no, created_at, rejection_reason, sign_requested_at, input_data')
+      .eq('created_by_dept_no', deptNo)
+      .order('created_at', { ascending: false })
+
+    if (error) { console.error('contracts取得エラー:', error); return }
+    setContracts((rows || []) as Contract[])
+  }
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.push('/login')
   }
 
-  const pendingList = contracts.filter(c => ['申請中', 'SSC承認済み', '署名済み'].includes(c.status))
+  // 「説明対応が必要」：SSC承認済み かつ 締結パターンが対面／印刷（担当営業のアクション待ち）
+  const isExplainNeeded = (c: Contract) => {
+    const cp = c.input_data?.fields?.closingPattern
+    return c.status === 'SSC承認済み' && (cp === 'face' || cp === 'print')
+  }
+
+  const explainList = contracts.filter(isExplainNeeded)
+  const pendingList = contracts.filter(c => ['申請中', 'SSC承認済み', '署名済み'].includes(c.status) && !isExplainNeeded(c))
   const rejectedList = contracts.filter(c => c.status === '差し戻し中')
   const waitingList = contracts.filter(c => c.status === '署名待ち')
 
+  const pendingListFiltered = subFilter === 'all' ? pendingList : pendingList.filter(c => c.status === subFilter)
+
   const filterCards: { key: FilterKey; label: string; count: number | null; color: string }[] = [
-    { key: 'pending',  label: '申請中',           count: pendingList.length,  color: '#1B3A8C' },
-    { key: 'rejected', label: '差し戻し',         count: rejectedList.length, color: '#DC2626' },
-    { key: 'waiting',  label: '署名待ち',         count: waitingList.length,  color: '#92400E' },
-    { key: 'other',    label: 'その他の依頼・回答', count: null,               color: '#5A6A8A' },
+    { key: 'pending',  label: '申請中',            count: pendingList.length,  color: '#1B3A8C' },
+    { key: 'explain',  label: '説明対応が必要',     count: explainList.length,  color: '#0E7490' },
+    { key: 'rejected', label: '差し戻し',           count: rejectedList.length, color: '#DC2626' },
+    { key: 'waiting',  label: '署名待ち',           count: waitingList.length,  color: '#92400E' },
+    { key: 'other',    label: 'その他の依頼・回答',  count: null,               color: '#5A6A8A' },
   ]
 
   const listForFilter: Record<FilterKey, Contract[]> = {
-    pending: pendingList,
+    pending: pendingListFiltered,
+    explain: explainList,
     rejected: rejectedList,
     waiting: waitingList,
     other: [],
   }
   const currentList = listForFilter[activeFilter]
   const currentLabel = filterCards.find(c => c.key === activeFilter)?.label || ''
+
+  // 「説明完了」ボタン処理：ステータスを署名待ちに進め、通知日時を記録する
+  const handleExplainDone = async (contractId: string) => {
+    if (explainLoading) return
+    setExplainLoading(true)
+    const now = new Date().toISOString()
+    const { error } = await supabase
+      .from('contracts')
+      .update({ status: '署名待ち', sign_requested_at: now, updated_at: now })
+      .eq('id', contractId)
+    if (error) {
+      alert('更新に失敗しました：' + error.message)
+      setExplainLoading(false)
+      return
+    }
+    setContracts(prev => prev.map(c => c.id === contractId ? { ...c, status: '署名待ち' as ContractStatus, sign_requested_at: now } : c))
+    setConfirmingExplainId(null)
+    setExplainLoading(false)
+  }
 
   if (!user) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: '#F5F7FC' }}>
@@ -223,6 +266,7 @@ export default function SalesDashboard() {
     const f = contract.input_data?.fields || {}
     const deadline = getDeadlineAlert(contract)
     const isWaitingSign = contract.status === '署名待ち'
+    const isExplain = isExplainNeeded(contract)
     const leftBorderColor = deadline.type === 'overdue' ? '#DC2626' : deadline.type === 'urgent' ? '#F97316' : 'transparent'
 
     return (
@@ -243,7 +287,7 @@ export default function SalesDashboard() {
               </div>
             </div>
             <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-              <StatusBadge status={contract.status} />
+              <StatusBadge status={contract.status} label={isExplain ? '説明対応が必要' : undefined} />
               {isWaitingSign && <SignDeadlineBadge signRequestedAt={contract.sign_requested_at} />}
             </div>
           </div>
@@ -275,6 +319,12 @@ export default function SalesDashboard() {
               <p className="text-xs mb-0.5" style={{ color: '#5A6A8A' }}>雇用期間</p>
               <p className="text-xs" style={{ color: '#1A2340' }}>{getEmployPeriodLabel(contract)}</p>
             </div>
+            {isExplain && f.closingPattern && (
+              <div>
+                <p className="text-xs mb-0.5" style={{ color: '#5A6A8A' }}>締結パターン</p>
+                <p className="text-xs" style={{ color: '#1A2340' }}>{CLOSING_PATTERN_LABEL[f.closingPattern] || f.closingPattern}</p>
+              </div>
+            )}
           </div>
 
           {contract.status === '差し戻し中' && contract.rejection_reason && (
@@ -283,15 +333,64 @@ export default function SalesDashboard() {
               <p className="text-xs leading-relaxed" style={{ color: '#1A2340' }}>{contract.rejection_reason}</p>
             </div>
           )}
+
+          {isExplain && contract.status === 'SSC承認済み' && (
+            <div className="mt-3 rounded-lg px-3 py-2" style={{ background: '#ECFEFF' }}>
+              <p className="text-xs leading-relaxed" style={{ color: '#0E7490' }}>
+                ℹ️ SSC承認済みです。従業員への説明が完了したら「説明完了」を押してください。押すと従業員が署名待ちの状態になります。
+              </p>
+            </div>
+          )}
+
+          {/* 説明完了の確認 */}
+          {isExplain && confirmingExplainId === contract.id && (
+            <div className="mt-3 rounded-lg p-3 border-2" style={{ background: '#ECFEFF', borderColor: '#0E7490' }}>
+              <p className="text-xs font-bold mb-2" style={{ color: '#0E7490' }}>従業員への説明は完了しましたか？</p>
+              <p className="text-xs mb-3" style={{ color: '#1A2340' }}>押すと、従業員が署名待ちの状態に切り替わります。</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleExplainDone(contract.id)}
+                  disabled={explainLoading}
+                  className="flex-1 py-2 rounded-lg text-xs font-bold text-white disabled:opacity-50"
+                  style={{ background: '#0E7490' }}>
+                  {explainLoading ? '処理中...' : '✅ 説明完了'}
+                </button>
+                <button
+                  onClick={() => setConfirmingExplainId(null)}
+                  className="px-3 py-2 rounded-lg text-xs border" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
+                  キャンセル
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
-        <button
-          className="w-full border-t flex items-center justify-end gap-1.5 px-5 py-2.5 transition-all"
-          style={{ borderColor: '#D0DAF0', background: '#EEF2FA' }}
-          onClick={() => router.push(`/dashboard/sales/contracts/${contract.id}`)}>
-          <span className="text-xs font-medium" style={{ color: '#1B3A8C' }}>詳細を見る</span>
-          <span className="text-xs" style={{ color: '#1B3A8C' }}>→</span>
-        </button>
+        {isExplain ? (
+          <div className="flex border-t" style={{ borderColor: '#D0DAF0' }}>
+            <button
+              className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 transition-all"
+              style={{ background: '#EEF2FA' }}
+              onClick={() => router.push(`/dashboard/sales/contracts/${contract.id}`)}>
+              <span className="text-xs font-medium" style={{ color: '#1B3A8C' }}>詳細を見る</span>
+            </button>
+            {confirmingExplainId !== contract.id && (
+              <button
+                className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 transition-all"
+                style={{ background: '#0E7490' }}
+                onClick={() => setConfirmingExplainId(contract.id)}>
+                <span className="text-xs font-medium text-white">✅ 説明完了</span>
+              </button>
+            )}
+          </div>
+        ) : (
+          <button
+            className="w-full border-t flex items-center justify-end gap-1.5 px-5 py-2.5 transition-all"
+            style={{ borderColor: '#D0DAF0', background: '#EEF2FA' }}
+            onClick={() => router.push(`/dashboard/sales/contracts/${contract.id}`)}>
+            <span className="text-xs font-medium" style={{ color: '#1B3A8C' }}>詳細を見る</span>
+            <span className="text-xs" style={{ color: '#1B3A8C' }}>→</span>
+          </button>
+        )}
       </div>
     )
   }
@@ -300,7 +399,7 @@ export default function SalesDashboard() {
     <div className="min-h-screen" style={{ background: '#F5F7FC' }}>
       {/* ヘッダー */}
       <header className="bg-white border-b" style={{ borderColor: '#D0DAF0' }}>
-        <div className="max-w-7xl mx-auto px-6 py-3 flex justify-between items-center">
+        <div className="max-w-4xl mx-auto px-6 py-3 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <Image src="/logo.png" alt="APパートナーズ" width={60} height={35} />
             <div className="border-l pl-3" style={{ borderColor: '#D0DAF0' }}>
@@ -316,7 +415,7 @@ export default function SalesDashboard() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="max-w-4xl mx-auto px-6 py-8">
         {/* 部門特定エラー */}
         {deptLookupError && (
           <div className="rounded-xl p-5 mb-6 border-2" style={{ background: '#FEF2F2', borderColor: '#F87171' }}>
@@ -333,26 +432,53 @@ export default function SalesDashboard() {
           </button>
         </div>
 
-        {/* フィルターカード */}
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        {/* ボタン型フィルターカード */}
+        <div className="grid grid-cols-5 gap-3 mb-3">
           {filterCards.map(card => {
             const isActive = activeFilter === card.key
             return (
               <button
                 key={card.key}
-                onClick={() => setActiveFilter(card.key)}
-                className="text-left bg-white rounded-lg p-5 transition-all"
-                style={{ border: isActive ? `2px solid ${card.color}` : '0.5px solid #D0DAF0' }}>
-                <p className="text-sm" style={{ color: '#5A6A8A' }}>{card.label}</p>
+                onClick={() => { setActiveFilter(card.key); setSubFilter('all') }}
+                className="text-left rounded-xl px-3.5 py-3.5 transition-all"
+                style={isActive
+                  ? { background: card.color, border: 'none', boxShadow: '0 6px 16px rgba(27,58,140,0.28)', transform: 'translateY(-2px)' }
+                  : { background: 'white', border: `1.5px solid ${card.color}`, boxShadow: '0 1px 3px rgba(16,24,64,0.06)' }}>
+                <p className="text-xs leading-snug" style={{ color: isActive ? 'rgba(255,255,255,0.85)' : card.color, minHeight: '2.2em' }}>
+                  {card.label}
+                </p>
                 {card.count === null ? (
-                  <p className="text-sm mt-2" style={{ color: '#9CA3AF' }}>準備中</p>
+                  <p className="text-xs font-bold mt-1.5" style={{ color: isActive ? 'white' : '#9CA3AF' }}>準備中</p>
                 ) : (
-                  <p className="text-3xl font-bold mt-2" style={{ color: card.color }}>{card.count}</p>
+                  <div className="flex items-end justify-between mt-1.5">
+                    <span className="text-2xl font-bold" style={{ color: isActive ? 'white' : card.color }}>{card.count}</span>
+                    <span className="text-sm" style={{ color: isActive ? 'white' : card.color, opacity: isActive ? 0.9 : 0.6 }}>{isActive ? '▲' : '▾'}</span>
+                  </div>
                 )}
               </button>
             )
           })}
         </div>
+
+        {/* サブフィルター（申請中のみ） */}
+        {activeFilter === 'pending' && (
+          <div className="flex gap-2 mb-4">
+            {([['all', 'すべて'], ['申請中', '申請中'], ['SSC承認済み', 'SSC承認済み'], ['署名済み', '署名済み']] as [SubFilter, string][]).map(([key, label]) => {
+              const isActive = subFilter === key
+              return (
+                <button
+                  key={key}
+                  onClick={() => setSubFilter(key)}
+                  className="text-xs px-3.5 py-1.5 rounded-full transition-all"
+                  style={isActive
+                    ? { background: '#1B3A8C', color: 'white', border: '1px solid #1B3A8C' }
+                    : { background: 'white', color: '#5A6A8A', border: '1px solid #D0DAF0' }}>
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        )}
 
         {loading ? (
           <div className="text-center py-16">
@@ -360,7 +486,7 @@ export default function SalesDashboard() {
           </div>
         ) : (
           <div className="bg-white rounded-lg border p-6" style={{ borderColor: '#D0DAF0' }}>
-            <h2 className="text-base font-bold mb-4" style={{ color: '#1A2340' }}>{currentLabel}</h2>
+            <h2 className="text-base font-bold mb-4" style={{ color: '#1A2340' }}>{currentLabel}（{currentList.length}件）</h2>
 
             {activeFilter === 'other' ? (
               <div className="text-center py-10">
@@ -372,7 +498,7 @@ export default function SalesDashboard() {
             ) : currentList.length === 0 ? (
               <p className="text-sm py-6" style={{ color: '#5A6A8A' }}>該当する書類はありません。</p>
             ) : (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-3">
                 {currentList.map(c => <ContractCard key={c.id} contract={c} />)}
               </div>
             )}

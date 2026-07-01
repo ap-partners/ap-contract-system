@@ -1401,7 +1401,30 @@ function ApplyPageInner() {
       // 差し戻し情報を復元し、STEP8（最終確認）に直行する
       setIsRejected(true)
       setRejectionReason(row.rejection_reason || '')
-      setOriginalFieldsSnapshot(JSON.stringify(f)) // 差し戻し時点の内容を保存し、送信直前に「変更されたか」を比較する
+      // 差し戻された既存データを、画面のstateと同じ整形ルール（未入力→空文字 等）に揃える。
+      // これをしないと「保存されている生データ」と「画面に読み込んだ後の値」で表記ゆれが起き、変更有無の判定が正しく行えない。
+      const normalizeFields = (raw: Record<string, any>) => ({
+        contractType: raw.contractType || '', workPlace: raw.workPlace || '現場', documentType: raw.documentType || '',
+        workLocationName: raw.workLocationName || '', workLocationAddress: raw.workLocationAddress || '', workLocationTel: raw.workLocationTel || '',
+        businessContent: raw.businessContent || '', startTime: raw.startTime || '', endTime: raw.endTime || '', isShift: !!raw.isShift, breakTime: raw.breakTime || '',
+        workingHoursH: raw.workingHoursH || '', workingHoursM: raw.workingHoursM || '', workDays: raw.workDays || '', workDaysOther: raw.workDaysOther || '',
+        organizationUnit: raw.organizationUnit || '', conflictDate: raw.conflictDate || '', conflictDateOrg: raw.conflictDateOrg || '', responsibility: raw.responsibility || '',
+        cmd_dept: raw.cmd_dept || '', cmd_role: raw.cmd_role || '', cmd_name: raw.cmd_name || '', cmd_tel: raw.cmd_tel || '',
+        resp_dept: raw.resp_dept || '', resp_role: raw.resp_role || '', resp_name: raw.resp_name || '', resp_tel: raw.resp_tel || '',
+        comp_dept: raw.comp_dept || '', comp_role: raw.comp_role || '', comp_name: raw.comp_name || '', comp_tel: raw.comp_tel || '',
+        welfare: raw.welfare || '', safetyMode: raw.safetyMode || 'default', safetyText: raw.safetyText || DEFAULT_SAFETY, conflictMode: raw.conflictMode || 'default', conflictText: raw.conflictText || DEFAULT_CONFLICT,
+        mgr_dept: raw.mgr_dept || '', mgr_role: raw.mgr_role || '', mgr_name: raw.mgr_name || '', mgr_tel: raw.mgr_tel || '',
+        cmp_dept: raw.cmp_dept || '', cmp_role: raw.cmp_role || '', cmp_name: raw.cmp_name || '', cmp_tel: raw.cmp_tel || '',
+        dispatchStart: raw.dispatchStart || '', dispatchEnd: raw.dispatchEnd || '',
+        employStart: raw.employStart || '', employEnd: raw.employEnd || '', contractStartDate: raw.contractStartDate || '',
+        trialPeriod: raw.trialPeriod || '', trialStart: raw.trialStart || '', trialEnd: raw.trialEnd || '',
+        flexTime: raw.flexTime || '', overtime: raw.overtime || '',
+        closingPattern: raw.closingPattern || 'auto', bonusType: raw.bonusType || '',
+        salaryType: raw.salaryType || '時給', basicSalary: raw.basicSalary || '', skillPay: raw.skillPay || '0', rolePay: raw.rolePay || '0', salesPay: raw.salesPay || '0', housingPay: raw.housingPay || '0',
+        overtimePay: raw.overtimePay || '0', overtimeHours: raw.overtimeHours || '0', transportType: raw.transportType || 'default',
+        hasEmployInsurance: raw.hasEmployInsurance !== false, hasSocialInsurance: raw.hasSocialInsurance !== false,
+      })
+      setOriginalFieldsSnapshot(JSON.stringify(normalizeFields(f))) // 差し戻し時点の内容（画面と同じ整形ルール適用後）を保存し、送信直前に「変更されたか」を比較する
       if (row.rejected_at) {
         const d = new Date(row.rejected_at)
         setRejectedAt(`${d.getFullYear()}年${String(d.getMonth() + 1).padStart(2, '0')}月${String(d.getDate()).padStart(2, '0')}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`)

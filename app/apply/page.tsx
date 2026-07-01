@@ -3779,9 +3779,9 @@ function ApplyPageInner() {
 
                     {/* 差し戻し案件で、差し戻し時点から内容が本当に変わっていない場合のみ表示する実チェック */}
                     {isRejected && originalFieldsSnapshot !== null && JSON.stringify(buildCurrentFields()) === originalFieldsSnapshot && (
-                      <div className="rounded-lg px-4 py-3 mb-4 border" style={{ background: '#FFFBEB', borderColor: '#D97706' }}>
-                        <p className="text-xs leading-relaxed" style={{ color: '#92400E' }}>
-                          ⚠️ 差し戻し前の内容から変更されていません。内容に問題がないか今一度ご確認の上、申請してください。
+                      <div className="rounded-lg px-4 py-3 mb-4 border-2" style={{ background: '#FEF2F2', borderColor: '#DC2626' }}>
+                        <p className="text-xs leading-relaxed" style={{ color: '#B91C1C' }}>
+                          ⚠️ 差し戻し前の内容から変更されていません。<br />内容に問題がないか今一度ご確認の上、申請してください。
                         </p>
                       </div>
                     )}
@@ -3803,7 +3803,7 @@ function ApplyPageInner() {
                       </div>
                     </div>
                     <p className="text-xs leading-relaxed mb-5" style={{ color: '#5A6A8A' }}>
-                      申請後はSSCの承認が必要となり、申請内容の変更はできません。内容に誤りがないか今一度ご確認ください。
+                      申請後はSSCの承認が必要となり、申請内容の変更はできません。<br />内容に誤りがないか今一度ご確認ください。
                     </p>
                     <div className="flex gap-3">
                       <button

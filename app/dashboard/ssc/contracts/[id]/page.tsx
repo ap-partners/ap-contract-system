@@ -413,7 +413,11 @@ export default function SSCContractDetail() {
         {actionDone === 'approved' && (
           <div className="rounded-xl p-5 mb-6 border-2" style={{ background: '#ECFDF5', borderColor: '#34D399' }}>
             <p className="text-base font-bold mb-1" style={{ color: '#065F46' }}>✅ 承認しました</p>
-            <p className="text-sm" style={{ color: '#065F46' }}>担当営業へ通知が送信されます。</p>
+            <p className="text-sm" style={{ color: '#065F46' }}>
+              {(f.closingPattern === 'face' || f.closingPattern === 'print')
+                ? '担当営業のダッシュボードに「説明対応が必要」として表示されます。'
+                : 'スタッフへ署名依頼が自動送信されます。'}
+            </p>
             <button onClick={() => router.push('/dashboard/ssc')}
               className="mt-3 text-sm px-4 py-2 rounded-lg text-white" style={{ background: '#1B3A8C' }}>
               一覧に戻る
@@ -749,8 +753,10 @@ export default function SSCContractDetail() {
                   <div className="rounded-xl p-4 mb-4 border-2" style={{ background: '#ECFDF5', borderColor: '#34D399' }}>
                     <p className="text-sm font-bold mb-2" style={{ color: '#065F46' }}>✅ 本当に承認してよいですか？</p>
                     <p className="text-sm mb-3 leading-relaxed" style={{ color: '#1A2340' }}>
-                      承認すると、担当営業へ通知が送信されます。<br />
-                      内容に問題がなければ「承認する」を押してください。
+                      承認すると、申請内容の変更はできません。内容に誤りがないか今一度ご確認ください。<br />
+                      {(f.closingPattern === 'face' || f.closingPattern === 'print')
+                        ? '承認後、担当営業のダッシュボードに「説明対応が必要」として表示されます。'
+                        : '承認後、スタッフへ署名依頼が自動送信されます。'}
                     </p>
                     <div className="flex gap-3">
                       <button

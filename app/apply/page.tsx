@@ -1104,10 +1104,10 @@ function ApplyPageInner() {
   // STEP8：最終確認
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
   const [isRejected, setIsRejected] = useState(false)
+  const [originalFieldsSnapshot, setOriginalFieldsSnapshot] = useState<string | null>(null) // 差し戻し時点の内容（変更有無チェック用）
   const [rejectionReason, setRejectionReason] = useState('業務内容の記載が個別契約書の内容と一致していません。STEP2の業務内容をご確認の上、修正してください。')
   const [rejectedAt, setRejectedAt] = useState('2026年06月18日 14:32')
   const [rejectedBy, setRejectedBy] = useState('SSC 高橋')
-  const [submitClickCount, setSubmitClickCount] = useState(0)
 
   // STEP1：スタッフ登録依頼フォーム
   const [showRequestForm, setShowRequestForm] = useState(false)
@@ -1401,6 +1401,7 @@ function ApplyPageInner() {
       // 差し戻し情報を復元し、STEP8（最終確認）に直行する
       setIsRejected(true)
       setRejectionReason(row.rejection_reason || '')
+      setOriginalFieldsSnapshot(JSON.stringify(f)) // 差し戻し時点の内容を保存し、送信直前に「変更されたか」を比較する
       if (row.rejected_at) {
         const d = new Date(row.rejected_at)
         setRejectedAt(`${d.getFullYear()}年${String(d.getMonth() + 1).padStart(2, '0')}月${String(d.getDate()).padStart(2, '0')}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`)
@@ -1634,33 +1635,36 @@ function ApplyPageInner() {
   const [isSubmitted, setIsSubmitted] = useState(false)
   const [showConfirmModal, setShowConfirmModal] = useState(false)
 
+  // STEP1〜8で入力したすべての値をまとめる（保存・再申請時の変更有無チェックの両方で使う）
+  const buildCurrentFields = () => ({
+    contractType, workPlace, documentType,
+    workLocationName, workLocationAddress, workLocationTel,
+    businessContent, startTime, endTime, isShift, breakTime,
+    workingHoursH, workingHoursM, workDays, workDaysOther,
+    organizationUnit, conflictDate, conflictDateOrg, responsibility,
+    cmd_dept, cmd_role, cmd_name, cmd_tel,
+    resp_dept, resp_role, resp_name, resp_tel,
+    comp_dept, comp_role, comp_name, comp_tel,
+    welfare, safetyMode, safetyText, conflictMode, conflictText,
+    mgr_dept, mgr_role, mgr_name, mgr_tel,
+    cmp_dept, cmp_role, cmp_name, cmp_tel,
+    dispatchStart, dispatchEnd,
+    employStart, employEnd, contractStartDate,
+    trialPeriod, trialStart, trialEnd,
+    flexTime, overtime,
+    closingPattern, bonusType,
+    salaryType, basicSalary, skillPay, rolePay, salesPay, housingPay,
+    overtimePay, overtimeHours, transportType,
+    hasEmployInsurance, hasSocialInsurance,
+  })
+
   const handleSubmitContract = async () => {
     if (isSubmitting) return // 二重送信防止
     setIsSubmitting(true)
     setSubmitError('')
     try {
       // STEP1〜8で入力したすべての値（再申請時の復元・SSC確認・将来の帳票生成にそのまま使う）
-      const fields = {
-        contractType, workPlace, documentType,
-        workLocationName, workLocationAddress, workLocationTel,
-        businessContent, startTime, endTime, isShift, breakTime,
-        workingHoursH, workingHoursM, workDays, workDaysOther,
-        organizationUnit, conflictDate, conflictDateOrg, responsibility,
-        cmd_dept, cmd_role, cmd_name, cmd_tel,
-        resp_dept, resp_role, resp_name, resp_tel,
-        comp_dept, comp_role, comp_name, comp_tel,
-        welfare, safetyMode, safetyText, conflictMode, conflictText,
-        mgr_dept, mgr_role, mgr_name, mgr_tel,
-        cmp_dept, cmp_role, cmp_name, cmp_tel,
-        dispatchStart, dispatchEnd,
-        employStart, employEnd, contractStartDate,
-        trialPeriod, trialStart, trialEnd,
-        flexTime, overtime,
-        closingPattern, bonusType,
-        salaryType, basicSalary, skillPay, rolePay, salesPay, housingPay,
-        overtimePay, overtimeHours, transportType,
-        hasEmployInsurance, hasSocialInsurance,
-      }
+      const fields = buildCurrentFields()
 
       // CSV関連の記録（SSC確認画面での差分表示・将来の振り返り用）
       const csvMeta = {
@@ -3725,14 +3729,6 @@ function ApplyPageInner() {
                     : '申請後はSSCの承認をお待ちください。承認後、ダッシュボードから説明手続きを行ってください。'}
                 </div>
 
-                {isRejected && submitClickCount === 1 && (
-                  <div className="rounded-lg px-4 py-3 mb-3 border" style={{ background: '#FFFBEB', borderColor: '#D97706' }}>
-                    <p className="text-xs leading-relaxed" style={{ color: '#92400E' }}>
-                      ⚠️ 差し戻し前と入力内容が変わっていません。内容に問題がないか今一度ご確認ください。問題なければ、もう一度ボタンを押して申請してください。
-                    </p>
-                  </div>
-                )}
-
                 {submitError && (
                   <div className="rounded-lg px-4 py-3 mb-3 border" style={{ background: '#FEF2F2', borderColor: '#DC2626' }}>
                     <p className="text-xs leading-relaxed" style={{ color: '#DC2626' }}>{submitError}</p>
@@ -3741,17 +3737,10 @@ function ApplyPageInner() {
 
                 <button
                   disabled={isSubmitting}
-                  onClick={() => {
-                    if (isRejected) {
-                      if (submitClickCount === 0) { setSubmitClickCount(1); return }
-                      setShowConfirmModal(true)
-                      return
-                    }
-                    setShowConfirmModal(true)
-                  }}
+                  onClick={() => setShowConfirmModal(true)}
                   className="w-full py-3.5 rounded-lg text-white font-bold text-sm mb-2"
                   style={{ background: isSubmitting ? '#A8C0E8' : '#1B3A8C' }}>
-                  {isSubmitting ? '送信中...' : (isRejected && submitClickCount === 1 ? 'このまま申請する' : '申請する')}
+                  {isSubmitting ? '送信中...' : '申請する'}
                 </button>
                 <button onClick={handleCancel} className="w-full text-center text-xs underline py-1" style={{ color: '#5A6A8A' }}>
                   この申請をやめる
@@ -3764,6 +3753,16 @@ function ApplyPageInner() {
                 <div className="fixed inset-0 flex items-center justify-center p-4 z-50" style={{ background: 'rgba(26, 35, 64, 0.5)' }}>
                   <div className="bg-white rounded-xl shadow-lg w-full max-w-md p-6">
                     <h3 className="text-base font-bold mb-4" style={{ color: '#1A2340' }}>この内容で申請しますか？</h3>
+
+                    {/* 差し戻し案件で、差し戻し時点から内容が本当に変わっていない場合のみ表示する実チェック */}
+                    {isRejected && originalFieldsSnapshot !== null && JSON.stringify(buildCurrentFields()) === originalFieldsSnapshot && (
+                      <div className="rounded-lg px-4 py-3 mb-4 border" style={{ background: '#FFFBEB', borderColor: '#D97706' }}>
+                        <p className="text-xs leading-relaxed" style={{ color: '#92400E' }}>
+                          ⚠️ 差し戻し前の内容から変更されていません。内容に問題がないか今一度ご確認の上、申請してください。
+                        </p>
+                      </div>
+                    )}
+
                     <div className="rounded-lg p-4 mb-5 flex flex-col gap-2" style={{ background: '#EEF2FA' }}>
                       <div className="flex justify-between text-sm">
                         <span style={{ color: '#5A6A8A' }}>対象スタッフ</span>

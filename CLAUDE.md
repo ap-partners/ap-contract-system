@@ -1,1 +1,61 @@
-@AGENTS.md
+# CLAUDE.md ― APパートナーズ 契約書管理システム
+
+> このファイルはセッション開始時に自動で読み込まれる「常時オンの薄い層」です。
+> **詳細仕様（テーブル定義・CSVマッピング・STEP仕様など）は `docs/SYSTEM_DESIGN.md` にあります。**
+> 必要になったときだけ `docs/SYSTEM_DESIGN.md` の該当セクションを読んでください。ここには全体像と運用ルールだけを置きます。
+
+---
+
+## ⚙️ 運用ルール（必ず守る）
+
+1. **1チャット＝1機能** で短く区切る。長い1本に詰め込まない（コンテキスト劣化＝忘れの最大要因）。
+2. **仕様・判断が決まったら、その場で差分だけ追記する**。`docs/SYSTEM_DESIGN.md` を**全文再生成しない**こと（トークン浪費）。確定仕様は該当章を部分編集、判断の経緯は「意思決定ログ」に1行追記。
+3. **実装コードを正（source of truth）とする**。設計書とコードがズレたらコードを優先し、ズレは設計書側を訂正する。
+4. **コードと設計書の突合（監査）は節目だけ**（機能の区切り・本番リリース前など）。毎回はやらない（重い）。
+5. **CSV・Excel等の機密ファイル（個人情報・契約データ）はGit管理対象外**。コミット前に `.gitignore` が効いているか必ず確認（過去に誤アップロード事故2回）。
+6. テーブル／ファイルを「無いはず」と判断する前に、**必ず実環境（Supabaseのテーブル一覧・GitHub・ローカル）を確認**する（思い込みによる衝突事故あり）。
+7. 「マッピングできてる？」等の確認質問には即答せず、**実データ・実コードを再検証してから回答**する。
+8. ユーザー（伊藤さん）はプログラミング知識ゼロ。手順は「VSCodeを開く」から省略せず全手順を書く。
+9. **画面に表示する文章は、改行位置を意識して読みやすく配置する**。特に警告・確認メッセージ・バナー等は、意味の切れ目（句点等）で改行し、不自然な位置で折り返さないようにする（2026-07-01決定）。
+
+---
+
+## 🗺️ システム全体像（サマリ）
+
+人材派遣会社APパートナーズの**担当営業が、雇用契約書・就業条件明示書をWebで発行申請する**システム。発行→SSC承認→従業員署名→保管までWeb完結。月額¥0運用。
+
+**技術**：Next.js(App Router)/TypeScript/Tailwind/Supabase/Vercel自動デプロイ
+**本番**：https://ap-contract-system.vercel.app/apply ／ **GitHub**：github.com/ap-partners/ap-contract-system
+**Supabase**：argpiiznuzxmmqraynfo（東京） ／ **ローカル**：`C:\Users\ito\Desktop\ap-contract-system`
+**テストユーザー**：sales-test / ssc-test / admin-test @appart.co.jp（全て `Test1234!`）
+
+**ロール**：担当営業（申請）／SSC（確認・承認）／管理部（CSV取込・マスタ・監視）／従業員（署名）
+
+**テーブル（7）**：`staff` `department_master` `master_imports` `csv_imports` `csv_raw_data`（以上投入済み）／`contracts`（申請本体・稼働中）／`company_master`（派遣元設定key-value・稼働中）
+→ 各カラム定義は `docs/SYSTEM_DESIGN.md` 第3章。
+
+**画面**：`/apply` のみ本番稼働。`/login` `/dashboard` `/ssc` `/admin` `/help/*`・署名画面・アルバイト誓約書システムは**未実装**。
+
+**書類パターン**：A=雇用契約書(6STEP)／B=就業条件明示書(6STEP)／C=兼用(8STEP)。社内は雇用契約書(A)のみ。
+→ STEP内訳・自動反映ロジックは `docs/SYSTEM_DESIGN.md` 第4章。
+
+**CSV連携**：e-staffing/HRstation/winworks/Staffia(KEF00103/00104) の5ソース（全件投入済み）。検索キー・マッピングは `docs/SYSTEM_DESIGN.md` 第5章。
+
+---
+
+## ✅ 実装済み / 🔜 次にやること
+
+**実装済み**：申請ウィザード`/apply`本体、staff・部門・5システムCSVの投入、CSV検索→STEP2/3自動反映（e-staffingのみ実機確認済み）、contractsへの申請保存。
+
+**次の優先タスク**（詳細は `docs/SYSTEM_DESIGN.md` 第9章）
+1. **【最優先】4システム動作確認テスト**（HRstation・winworks・Staffia未テスト。新項目＝指揮命令者・福利厚生・派遣期間・Staffia2段階検索を含む）
+2. 派遣元情報(STEP4)のCSV優先表示
+3. CSV反映項目を営業が修正した場合の特別対応（注意文＋チェック＋STEP8差分表示）
+4. STEP1に「アルバイト」選択肢追加
+5. 管理部ダッシュボード／各画面／自動チェック機能 ほか
+
+**ドキュメント整備TODO**：`contracts`・`company_master` の正式DDLをSupabaseから取得して `docs/SYSTEM_DESIGN.md` 3-6/3-7を確定版に差し替える。
+
+---
+
+*詳細・経緯・差分監査表・全PENDINGは `docs/SYSTEM_DESIGN.md` を参照。*

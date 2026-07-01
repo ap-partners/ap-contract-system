@@ -382,6 +382,21 @@ export default function SalesDashboard() {
               </button>
             )}
           </div>
+        ) : contract.status === '差し戻し中' ? (
+          <div className="flex border-t" style={{ borderColor: '#D0DAF0' }}>
+            <button
+              className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 transition-all"
+              style={{ background: '#EEF2FA' }}
+              onClick={() => router.push(`/dashboard/sales/contracts/${contract.id}`)}>
+              <span className="text-xs font-medium" style={{ color: '#1B3A8C' }}>詳細を見る</span>
+            </button>
+            <button
+              className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 transition-all"
+              style={{ background: '#B91C1C' }}
+              onClick={() => router.push(`/apply?edit=${contract.id}`)}>
+              <span className="text-xs font-medium text-white">↩ 再申請する</span>
+            </button>
+          </div>
         ) : (
           <button
             className="w-full border-t flex items-center justify-end gap-1.5 px-5 py-2.5 transition-all"

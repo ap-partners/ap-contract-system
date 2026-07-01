@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
 
 const getDocumentTypes = (workPlace: string) => {
@@ -990,6 +990,10 @@ function SearchInput({ onSearch }: { onSearch: (query: string) => void }) {
 
 export default function ApplyPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const editContractId = searchParams.get('edit') // 再申請モード：/apply?edit=契約ID で開いた場合の契約ID
+  const [editLoading, setEditLoading] = useState(!!editContractId)
+  const [editNotFound, setEditNotFound] = useState(false)
   const [user, setUser] = useState<any>(null)
   const [currentStep, setCurrentStep] = useState(1)
   const [searched, setSearched] = useState(false)
@@ -1283,6 +1287,137 @@ export default function ApplyPage() {
     loadCompanyMaster()
   }, [])
 
+  // 再申請モード（/apply?edit=契約ID）：差し戻された既存申請のデータを全STEPのstateに復元する
+  useEffect(() => {
+    if (!editContractId) { setEditLoading(false); return }
+    if (!user) return
+    const loadForEdit = async () => {
+      // ログインユーザーの所属部門NOを取得（自部門以外の申請は編集不可）
+      const { data: staffRow } = await supabase
+        .from('staff')
+        .select('dept_no')
+        .eq('email', user.email)
+        .limit(1)
+        .maybeSingle()
+
+      const { data: row, error } = await supabase
+        .from('contracts')
+        .select('*')
+        .eq('id', editContractId)
+        .single()
+
+      // 差し戻し中以外・自部門以外の申請は編集不可（見つからない扱い）
+      if (error || !row || row.status !== '差し戻し中' || !staffRow || row.created_by_dept_no !== staffRow.dept_no) {
+        setEditNotFound(true)
+        setEditLoading(false)
+        return
+      }
+
+      const staffSnap = row.input_data?.staff || {}
+      const f = row.input_data?.fields || {}
+      const csvMeta = row.input_data?.csvMeta || {}
+
+      // STEP1：対象スタッフ・雇用区分・就業場所区分・書類種別
+      setSelectedStaff({
+        id: row.staff_id,
+        employee_number: staffSnap.employee_number,
+        name: staffSnap.name,
+        department: staffSnap.department,
+        crew_code: staffSnap.crew_code,
+      })
+      setSearched(true)
+      setContractType(f.contractType || '')
+      setWorkPlace(f.workPlace || '現場')
+      setDocumentType(f.documentType || '')
+
+      // STEP2：就業先情報
+      setCsvMode(csvMeta.csvMode || 'manual')
+      setCsvSystem(csvMeta.csvSystem || 'e-staffing')
+      setCsvDispatchStart(csvMeta.csvDispatchStart || '')
+      setCsvSnapshot(csvMeta.csvSnapshot || {})
+      setWorkLocationName(f.workLocationName || '')
+      setWorkLocationAddress(f.workLocationAddress || '')
+      setWorkLocationTel(f.workLocationTel || '')
+      setBusinessContent(f.businessContent || '')
+      setStartTime(f.startTime || '')
+      setEndTime(f.endTime || '')
+      setIsShift(!!f.isShift)
+      setBreakTime(f.breakTime || '')
+      setWorkingHoursH(f.workingHoursH || '')
+      setWorkingHoursM(f.workingHoursM || '')
+      setWorkDays(f.workDays || '')
+      setWorkDaysOther(f.workDaysOther || '')
+      setOrganizationUnit(f.organizationUnit || '')
+      setConflictDate(f.conflictDate || '')
+      setResponsibility(f.responsibility || '')
+
+      // STEP3：派遣先担当者
+      setCmdDept(f.cmd_dept || ''); setCmdRole(f.cmd_role || ''); setCmdName(f.cmd_name || ''); setCmdTel(f.cmd_tel || '')
+      setRespDept(f.resp_dept || ''); setRespRole(f.resp_role || ''); setRespName(f.resp_name || ''); setRespTel(f.resp_tel || '')
+      setCompDept(f.comp_dept || ''); setCompRole(f.comp_role || ''); setCompName(f.comp_name || ''); setCompTel(f.comp_tel || '')
+      setWelfare(f.welfare || '')
+      setSafetyMode(f.safetyMode || 'default')
+      setSafetyText(f.safetyText || DEFAULT_SAFETY)
+      setConflictMode(f.conflictMode || 'default')
+      setConflictText(f.conflictText || DEFAULT_CONFLICT)
+
+      // STEP4：派遣元担当者
+      setMgrDept(f.mgr_dept || ''); setMgrRole(f.mgr_role || ''); setMgrName(f.mgr_name || ''); setMgrTel(f.mgr_tel || '')
+      setCmpDept(f.cmp_dept || ''); setCmpRole(f.cmp_role || ''); setCmpName(f.cmp_name || ''); setCmpTel(f.cmp_tel || '')
+      setMgrCmpSource(csvMeta.mgrCmpSource || 'master')
+      setMasterSnapshot(csvMeta.masterSnapshot || {})
+
+      // STEP5：期間・労働条件
+      setDispatchStart(f.dispatchStart || '')
+      setDispatchEnd(f.dispatchEnd || '')
+      setConflictDateOrg(f.conflictDateOrg || '')
+      setEmployStart(f.employStart || '')
+      setEmployEnd(f.employEnd || '')
+      setContractStartDate(f.contractStartDate || '')
+      setTrialPeriod(f.trialPeriod || '')
+      setTrialStart(f.trialStart || '')
+      setTrialEnd(f.trialEnd || '')
+      setFlexTime(f.flexTime || '')
+      setOvertime(f.overtime || '')
+      // 上長承認が必要な警告のチェックは、再申請のたびに改めて確認してもらうためあえて復元しない（未チェックに戻す）
+
+      // STEP6：契約条件
+      setClosingPattern(f.closingPattern || 'auto')
+      setBonusType(f.bonusType || '')
+
+      // STEP7：給与・保険
+      setSalaryType(f.salaryType || '時給')
+      setBasicSalary(f.basicSalary || '')
+      setSkillPay(f.skillPay || '0')
+      setRolePay(f.rolePay || '0')
+      setSalesPay(f.salesPay || '0')
+      setHousingPay(f.housingPay || '0')
+      setOvertimePay(f.overtimePay || '0')
+      setOvertimeHours(f.overtimeHours || '0')
+      setTransportType(f.transportType || 'default')
+      setHasEmployInsurance(f.hasEmployInsurance !== false)
+      setHasSocialInsurance(f.hasSocialInsurance !== false)
+
+      // 差し戻し情報を復元し、STEP8（最終確認）に直行する
+      setIsRejected(true)
+      setRejectionReason(row.rejection_reason || '')
+      if (row.rejected_at) {
+        const d = new Date(row.rejected_at)
+        setRejectedAt(`${d.getFullYear()}年${String(d.getMonth() + 1).padStart(2, '0')}月${String(d.getDate()).padStart(2, '0')}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`)
+      } else {
+        setRejectedAt('―')
+      }
+      setRejectedBy('SSC') // フェーズ2.5の認証統合完了後、担当者名を表示予定
+
+      const patternFromDoc = getPattern(f.documentType || '')
+      const targetSteps = patternFromDoc === 'A' ? STEPS_A.length : patternFromDoc === 'B' ? STEPS_B.length : patternFromDoc === 'C' ? STEPS_C.length : STEPS_A.length
+      setCurrentStep(targetSteps)
+
+      setEditLoading(false)
+    }
+    loadForEdit()
+  }, [user, editContractId])
+
   // STEP2の「入力方法」（CSV検索／手動入力）を切り替えた時、新規作成時と同じ状態に完全にリセットする処理
   // ※CSV→手動、手動→CSVどちらの切り替えでもリセットする（確定仕様）
   const resetStep2Step3ForModeChange = () => {
@@ -1553,7 +1688,9 @@ export default function ApplyPage() {
         warningConfirmations.push({ type: 'salary_over_1000000', confirmed_at: new Date().toISOString() })
       }
 
-      const { error } = await supabase.from('contracts').insert({
+      // 再申請モード：既存の契約IDをそのままupdateし、ステータスを申請中に戻す（差し戻し情報はクリア）
+      // 新規申請：新しい行としてinsertする
+      const payload = {
         staff_id: selectedStaff?.id,
         pattern,
         contract_type: contractType,
@@ -1566,9 +1703,21 @@ export default function ApplyPage() {
         csv_raw_data_id: (csvMode === 'csv' && csvSelectedId !== null && csvResults[csvSelectedId]) ? csvResults[csvSelectedId].id : null,
         input_data: { staff: staffSnapshot, fields, csvMeta },
         warning_confirmations: warningConfirmations,
-        auto_check_results: [], // 自動チェック結果は別タスクで実装予定。現時点では空配列で初期化
-        created_by: user.id,
-      })
+      }
+
+      const { error } = editContractId
+        ? await supabase.from('contracts').update({
+            ...payload,
+            rejection_reason: null,
+            rejected_by: null,
+            rejected_at: null,
+            updated_at: new Date().toISOString(),
+          }).eq('id', editContractId)
+        : await supabase.from('contracts').insert({
+            ...payload,
+            auto_check_results: [], // 自動チェック結果は別タスクで実装予定。現時点では空配列で初期化
+            created_by: user.id,
+          })
 
       if (error) {
         setSubmitError('申請の保存に失敗しました。お手数ですが、もう一度お試しください。（' + error.message + '）')
@@ -1602,7 +1751,16 @@ export default function ApplyPage() {
   }
 
   const stepType = getStepType(currentStep)
-  if (!user) return <div className="p-8" style={{ color: '#5A6A8A' }}>読み込み中...</div>
+  if (!user || editLoading) return <div className="p-8" style={{ color: '#5A6A8A' }}>読み込み中...</div>
+  if (editNotFound) return (
+    <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ background: '#F5F7FC' }}>
+      <p className="text-lg font-bold" style={{ color: '#1A2340' }}>再申請する差し戻し案件が見つかりませんでした</p>
+      <button onClick={() => router.push('/dashboard/sales')}
+        className="text-sm px-4 py-2 rounded-lg text-white" style={{ background: '#1B3A8C' }}>
+        ダッシュボードに戻る
+      </button>
+    </div>
+  )
 
   const fixedText = (text: string) => (
     <p className="text-sm rounded-lg px-3 py-2 inline-block border"

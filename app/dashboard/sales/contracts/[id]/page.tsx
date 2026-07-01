@@ -405,6 +405,14 @@ export default function SalesContractDetail() {
           {contract.status === '差し戻し中' && contract.rejection_reason && (
             <p className="text-sm mt-1 leading-relaxed" style={{ color: '#1A2340' }}>差し戻し理由：{contract.rejection_reason}</p>
           )}
+          {contract.status === '差し戻し中' && (
+            <button
+              onClick={() => router.push(`/apply?edit=${contract.id}`)}
+              className="mt-3 text-sm px-4 py-2 rounded-lg font-bold text-white transition-all"
+              style={{ background: '#B91C1C' }}>
+              ↩ 再申請する
+            </button>
+          )}
         </div>
 
         {/* 署名待ちの詳細情報（通知日時・署名期日） */}

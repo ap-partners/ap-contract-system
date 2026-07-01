@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
@@ -988,7 +988,7 @@ function SearchInput({ onSearch }: { onSearch: (query: string) => void }) {
   )
 }
 
-export default function ApplyPage() {
+function ApplyPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const editContractId = searchParams.get('edit') // 再申請モード：/apply?edit=契約ID で開いた場合の契約ID
@@ -3810,5 +3810,14 @@ export default function ApplyPage() {
         </div>
       </main>
     </div>
+  )
+}
+
+// useSearchParams()を使うため、Next.jsの要件でSuspenseで包んで外部公開する
+export default function ApplyPage() {
+  return (
+    <Suspense fallback={<div className="p-8" style={{ color: '#5A6A8A' }}>読み込み中...</div>}>
+      <ApplyPageInner />
+    </Suspense>
   )
 }

@@ -1028,8 +1028,8 @@ function ApplyPageInner() {
   const [csvLoading, setCsvLoading] = useState(false)
   const [csvSelectedId, setCsvSelectedId] = useState<number | null>(null)
   const [csvRequestSent, setCsvRequestSent] = useState(false)
-  const [csvRequestFormOpen, setCsvRequestFormOpen] = useState(false)
-  const [csvRequestLocationName, setCsvRequestLocationName] = useState('')
+  const [csvRequestSubmitting, setCsvRequestSubmitting] = useState(false)
+  const [csvRequestError, setCsvRequestError] = useState('')
   const [workLocationName, setWorkLocationName] = useState('')
   const [workLocationAddress, setWorkLocationAddress] = useState('')
   const [workLocationTel, setWorkLocationTel] = useState('')
@@ -1126,6 +1126,8 @@ function ApplyPageInner() {
   const [reqCsvSystem, setReqCsvSystem] = useState('')
   const [reqDispatchStart, setReqDispatchStart] = useState('')
   const [reqSubmitted, setReqSubmitted] = useState(false)
+  const [reqSubmitting, setReqSubmitting] = useState(false)
+  const [reqError, setReqError] = useState('')
 
   // STEP7
   const [salaryType, setSalaryType] = useState('時給')
@@ -1911,8 +1913,87 @@ function ApplyPageInner() {
   const handleSubmitRequest = async () => {
     const err = validateRequestForm()
     if (err) { alert(err); return }
-    // TODO: Supabaseのrequestsテーブルに登録
-    setReqSubmitted(true)
+    if (reqSubmitting) return // 二重送信防止
+    setReqSubmitting(true)
+    setReqError('')
+    try {
+      // 申請者（担当営業）自身の部門名を取得（requested_by_deptに保存する表示用テキスト）
+      const { data: submitterStaffRow } = await supabase
+        .from('staff')
+        .select('department_master(dept_name)')
+        .eq('email', user.email)
+        .limit(1)
+        .maybeSingle()
+
+      const { error } = await supabase.from('requests').insert([{
+        request_type: 'staff_register',
+        staff_name: reqName,
+        staff_code: reqEmployeeNumber,
+        staff_dept: reqDept,
+        staff_hire_date: reqHireDate,
+        client_name: reqWorkLocation,
+        // 「CSVインポートも同時に依頼する」がオフの場合は、csv_import_status を明示的に
+        // 'not_required' にする（デフォルトが'pending'のままだと、CSVインポートも
+        // 未対応の依頼として管理部側に表示されてしまうため）
+        csv_import_status: reqWithCsv ? 'pending' : 'not_required',
+        system_type: reqWithCsv ? reqCsvSystem : null,
+        dispatch_start_date: reqWithCsv ? reqDispatchStart : null,
+        requested_by: user.id,
+        requested_by_dept: submitterStaffRow?.department_master?.dept_name || null,
+      }])
+
+      if (error) {
+        setReqError('依頼の送信に失敗しました。お手数ですが、もう一度お試しください。（' + error.message + '）')
+        setReqSubmitting(false)
+        return
+      }
+      setReqSubmitted(true)
+      setReqSubmitting(false)
+    } catch (e: any) {
+      setReqError('依頼の送信中に問題が発生しました。お手数ですが、もう一度お試しください。')
+      setReqSubmitting(false)
+    }
+  }
+
+  // STEP2：CSVインポート依頼（社員番号・使用システム・派遣開始日は画面上ですでに分かっているため、
+  // 追加入力なしでその場で送信する）
+  const handleSubmitCsvRequest = async () => {
+    if (csvRequestSubmitting) return // 二重送信防止
+    setCsvRequestSubmitting(true)
+    setCsvRequestError('')
+    try {
+      const { data: submitterStaffRow } = await supabase
+        .from('staff')
+        .select('department_master(dept_name)')
+        .eq('email', user.email)
+        .limit(1)
+        .maybeSingle()
+
+      const { error } = await supabase.from('requests').insert([{
+        request_type: 'csv_import',
+        staff_name: selectedStaff?.name || null,
+        staff_code: selectedStaff?.employee_number || null,
+        staff_id: selectedStaff?.id || null,
+        system_type: csvSystem,
+        dispatch_start_date: csvDispatchStart,
+        // スタッフはすでに登録済み（この依頼はCSVデータの話のみ）なので、
+        // デフォルトの'pending'のままにせず明示的にnullにする
+        staff_register_status: null,
+        requested_by: user.id,
+        requested_by_dept: submitterStaffRow?.department_master?.dept_name || null,
+      }])
+
+      if (error) {
+        setCsvRequestError('依頼の送信に失敗しました。お手数ですが、もう一度お試しください。（' + error.message + '）')
+        setCsvRequestSubmitting(false)
+        return
+      }
+      setCsvRequestSent(true)
+      setCsvRequestSubmitting(false)
+    } catch (e: any) {
+      setCsvRequestError('依頼の送信中に問題が発生しました。お手数ですが、もう一度お試しください。')
+      setCsvRequestSubmitting(false)
+    }
   }
 
   const validateSalary = () => {
@@ -2182,17 +2263,20 @@ function ApplyPageInner() {
                               <div className="flex gap-2 pt-1">
                                 <button
                                   onClick={e => { e.preventDefault(); handleSubmitRequest() }}
+                                  disabled={reqSubmitting}
                                   className="text-white px-4 py-2 rounded-lg text-xs font-medium"
-                                  style={{ background: '#1B3A8C' }}>
-                                  依頼を送信する
+                                  style={{ background: '#1B3A8C', opacity: reqSubmitting ? 0.6 : 1, cursor: reqSubmitting ? 'not-allowed' : 'pointer' }}>
+                                  {reqSubmitting ? '送信中…' : '依頼を送信する'}
                                 </button>
                                 <button
                                   onClick={e => { e.preventDefault(); setShowRequestForm(false) }}
+                                  disabled={reqSubmitting}
                                   className="px-4 py-2 rounded-lg text-xs border"
                                   style={{ color: '#5A6A8A', borderColor: '#D0DAF0', background: 'white' }}>
                                   キャンセル
                                 </button>
                               </div>
+                              {reqError && <p className="text-xs" style={{ color: '#DC2626' }}>{reqError}</p>}
                             </div>
                           </div>
                         )}
@@ -2681,12 +2765,14 @@ function ApplyPageInner() {
                                 style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
                                 <span className="text-xs" style={{ color: '#5A6A8A' }}>該当する就業先が一覧にありませんか？</span>
                                 <button
-                                  onClick={e => { e.preventDefault(); setCsvRequestSent(true) }}
+                                  onClick={e => { e.preventDefault(); handleSubmitCsvRequest() }}
+                                  disabled={csvRequestSubmitting}
                                   className="text-xs px-3 py-1.5 rounded-lg border"
-                                  style={{ color: '#DC2626', borderColor: '#FECACA', background: 'white', whiteSpace: 'nowrap' }}>
-                                  管理部へCSVインポートを依頼する
+                                  style={{ color: '#DC2626', borderColor: '#FECACA', background: 'white', whiteSpace: 'nowrap', opacity: csvRequestSubmitting ? 0.6 : 1 }}>
+                                  {csvRequestSubmitting ? '送信中…' : '管理部へCSVインポートを依頼する'}
                                 </button>
                               </div>
+                              {csvRequestError && <p className="text-xs" style={{ color: '#DC2626' }}>{csvRequestError}</p>}
                             </div>
                           )}
 
@@ -2697,10 +2783,11 @@ function ApplyPageInner() {
                               <p className="text-xs" style={{ color: '#DC2626' }}>対象スタッフの就業先データが見つかりませんでした。</p>
                               <div className="flex gap-2 flex-wrap">
                                 <button
-                                  onClick={e => { e.preventDefault(); setCsvRequestSent(true) }}
+                                  onClick={e => { e.preventDefault(); handleSubmitCsvRequest() }}
+                                  disabled={csvRequestSubmitting}
                                   className="text-xs px-3 py-1.5 rounded-lg text-white"
-                                  style={{ background: '#DC2626' }}>
-                                  管理部へCSVインポートを依頼する
+                                  style={{ background: '#DC2626', opacity: csvRequestSubmitting ? 0.6 : 1 }}>
+                                  {csvRequestSubmitting ? '送信中…' : '管理部へCSVインポートを依頼する'}
                                 </button>
                                 <button
                                   onClick={e => { e.preventDefault(); setCsvMode('manual') }}
@@ -2709,34 +2796,10 @@ function ApplyPageInner() {
                                   手動で入力する
                                 </button>
                               </div>
+                              {csvRequestError && <p className="text-xs" style={{ color: '#DC2626' }}>{csvRequestError}</p>}
                             </div>
                           )}
 
-                          {/* CSVインポート依頼フォーム */}
-              {csvRequestFormOpen && !csvRequestSent && (
-                <div className="mt-2 rounded-xl border p-4 flex flex-col gap-3" style={{ background: '#FEF2F2', borderColor: '#FECACA' }}>
-                  <p className="text-sm font-medium" style={{ color: '#1A2340' }}>管理部へCSVインポートを依頼する</p>
-                  <p className="text-xs" style={{ color: '#5A6A8A' }}>以下の情報を入力して送信してください。</p>
-                  <div className="flex flex-col gap-1">
-                    <span className="text-xs font-medium" style={{ color: '#1A2340' }}>就業場所名 <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>必須</span></span>
-                    <input type="text" className="border rounded-lg px-3 py-2 text-sm focus:outline-none placeholder:text-gray-400"
-                      style={{ borderColor: '#D0DAF0', color: '#1A2340', maxWidth: '480px' }}
-                      value={csvRequestLocationName}
-                      onChange={e => setCsvRequestLocationName(e.target.value)}
-                      placeholder="例）ソフトバンク（SB） 量販 コジマ×ビックカメラ福生店" />
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={e => { e.preventDefault(); if (!csvRequestLocationName) { alert('就業場所名を入力してください'); return } setCsvRequestSent(true); setCsvRequestFormOpen(false) }}
-                      className="text-xs px-4 py-2 rounded-lg text-white"
-                      style={{ background: '#EA6C00' }}>依頼を送信する</button>
-                    <button
-                      onClick={e => { e.preventDefault(); setCsvRequestFormOpen(false) }}
-                      className="text-xs px-4 py-2 rounded-lg border"
-                      style={{ color: '#5A6A8A', borderColor: '#D0DAF0', background: 'white' }}>キャンセル</button>
-                  </div>
-                </div>
-              )}
 
               {/* 自動反映済み通知 */}
                           {csvSelectedId !== null && (

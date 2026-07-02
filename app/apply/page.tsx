@@ -2252,8 +2252,9 @@ function ApplyPageInner() {
                             }
                             setContractType(v)
                           }}
-                          className="px-4 py-2 text-sm border-r last:border-0 transition-colors whitespace-nowrap"
+                          className="py-2 text-sm border-r last:border-0 transition-colors whitespace-nowrap text-center"
                           style={{
+                            width: '84px',
                             borderColor: '#D0DAF0',
                             background: contractType === v ? '#1B3A8C' : 'white',
                             color: contractType === v ? 'white' : (isContractTypeLocked ? '#A8B3C9' : '#1A2340'),

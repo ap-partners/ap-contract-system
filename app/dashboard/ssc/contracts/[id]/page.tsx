@@ -215,6 +215,7 @@ const WarningBox = ({ type, confirmedAt }: { type: string; confirmedAt: string }
     trial_over6months: '試用期間6ヶ月超の警告が出ていました。担当営業が上長の了承を得た上で申請しています。',
     no_trial_period:   '正社員で試用期間「無し」の警告が出ていました。担当営業が上長の了承を得た上で申請しています。',
     salary_over_1000000: '合計支給額が100万円超の警告が出ていました。担当営業が上長の了承を得た上で申請しています。',
+    csv_fields_modified: 'CSV反映項目が個別契約書の情報と異なる内容に修正されています。担当営業が管理部への修正依頼が必要なことを確認した上で申請しています。管理部への修正依頼が行われているか、あわせてご確認ください。',
   }
   const message = messages[type] || `警告確認済み（種別：${type}）`
   return (

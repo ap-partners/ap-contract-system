@@ -947,17 +947,17 @@ const RadioGroup = ({ name, value, onChange }: {
   </div>
 )
 
-const CriticalWarning = ({ message, checked, onCheck }: {
-  message: string; checked: boolean; onCheck: (v: boolean) => void
+const CriticalWarning = ({ message, checked, onCheck, checkboxLabel, title }: {
+  message: string; checked: boolean; onCheck: (v: boolean) => void; checkboxLabel?: string; title?: string
 }) => (
   <div className="rounded-lg p-4 border-2 mt-3" style={{ background: '#FEF2F2', borderColor: '#DC2626' }}>
-    <p className="text-sm font-bold mb-2" style={{ color: '#DC2626' }}>🔴 最重要警告</p>
+    <p className="text-sm font-bold mb-2" style={{ color: '#DC2626' }}>{title || '🔴 最重要警告'}</p>
     <p className="text-sm leading-relaxed whitespace-pre-line mb-4" style={{ color: '#1A2340' }}>{message}</p>
     <label className="flex items-center gap-2 cursor-pointer">
       <input type="checkbox" checked={checked} onChange={e => onCheck(e.target.checked)}
         className="w-4 h-4" style={{ accentColor: '#DC2626' }} />
       <span className="text-sm font-medium" style={{ color: '#DC2626' }}>
-        上記の警告内容について、上長の了承を得ています。
+        {checkboxLabel || '上記の警告内容について、上長の了承を得ています。'}
       </span>
     </label>
   </div>
@@ -1106,6 +1106,8 @@ function ApplyPageInner() {
 
   // STEP8：最終確認
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
+  // CSV反映項目の修正について、管理部への修正依頼が必要なことを確認したかどうか（2026-07-02追加）
+  const [csvModWarningChecked, setCsvModWarningChecked] = useState(false)
   const [isRejected, setIsRejected] = useState(false)
   const [originalFieldsSnapshot, setOriginalFieldsSnapshot] = useState<string | null>(null) // 差し戻し時点の内容（変更有無チェック用）
   const [rejectionReason, setRejectionReason] = useState('業務内容の記載が個別契約書の内容と一致していません。STEP2の業務内容をご確認の上、修正してください。')
@@ -1141,6 +1143,36 @@ function ApplyPageInner() {
   const trialCalc = calcTrialMonths(trialStart, trialEnd)
   // CSVデータから自動入力している時だけ、未入力必須項目を赤く強調する（手入力の時はそもそも全項目が空欄から始まるため対象外）
   const showEmptyHint = csvMode === 'csv'
+
+  // CSV反映項目（STEP2・STEP3・STEP5）が、反映時点から1つでも修正されているか（2026-07-02追加）
+  // ※CsvBadgeコンポーネント内のcurrentValueMapと同じ比較ロジック。将来もし項目を追加する場合は両方合わせて直すこと
+  const hasModifiedCsvFields = Object.keys(csvSnapshot).some(key => {
+    const currentValueMap: Record<string, string> = {
+      locationName: workLocationName, locationAddress: workLocationAddress, locationTel: workLocationTel,
+      business: businessContent, startTime: startTime, endTime: endTime, breakTime: breakTime,
+      workingHours: `${workingHoursH}-${workingHoursM}`, org: organizationUnit, conflict: conflictDate, conflictOrg: conflictDateOrg,
+      resp: responsibility, cmdDept: cmd_dept, cmdRole: cmd_role, cmdName: cmd_name, cmdTel: cmd_tel,
+      respDept: resp_dept, respRole: resp_role, respName: resp_name, respTel: resp_tel,
+      compDept: comp_dept, compRole: comp_role, compName: comp_name, compTel: comp_tel,
+      welfare: welfare, flexTime: flexTime, overtime: overtime,
+    }
+    return currentValueMap[key] !== csvSnapshot[key]
+  })
+
+  // 派遣元情報（STEP4：mgr_*・cmp_*）が、CSV反映時点から1つでも修正されているか（2026-07-02追加）
+  const hasModifiedMgrFields = mgrCmpSource === 'csv' && (
+    (masterSnapshot.mgr_dept !== undefined && mgr_dept !== masterSnapshot.mgr_dept) ||
+    (masterSnapshot.mgr_role !== undefined && mgr_role !== masterSnapshot.mgr_role) ||
+    (masterSnapshot.mgr_name !== undefined && mgr_name !== masterSnapshot.mgr_name) ||
+    (masterSnapshot.mgr_tel !== undefined && mgr_tel !== masterSnapshot.mgr_tel) ||
+    (masterSnapshot.cmp_dept !== undefined && cmp_dept !== masterSnapshot.cmp_dept) ||
+    (masterSnapshot.cmp_role !== undefined && cmp_role !== masterSnapshot.cmp_role) ||
+    (masterSnapshot.cmp_name !== undefined && cmp_name !== masterSnapshot.cmp_name) ||
+    (masterSnapshot.cmp_tel !== undefined && cmp_tel !== masterSnapshot.cmp_tel)
+  )
+
+  // 上記のいずれかが1つでも該当すれば、STEP8で確認チェックが必要
+  const hasCsvModifiedFields = hasModifiedCsvFields || hasModifiedMgrFields
 
   // STEP5バリデーション派生値
   const employStartError = (() => {
@@ -1725,6 +1757,9 @@ function ApplyPageInner() {
       }
       if (salaryTotal > 1000000 && salaryWarningChecked) {
         warningConfirmations.push({ type: 'salary_over_1000000', confirmed_at: new Date().toISOString() })
+      }
+      if (hasCsvModifiedFields && csvModWarningChecked) {
+        warningConfirmations.push({ type: 'csv_fields_modified', confirmed_at: new Date().toISOString() })
       }
 
       // 再申請モード：既存の契約IDをそのままupdateし、ステータスを申請中に戻す（差し戻し情報はクリア）
@@ -3767,6 +3802,17 @@ function ApplyPageInner() {
                     : '申請後はSSCの承認をお待ちください。承認後、ダッシュボードから説明手続きを行ってください。'}
                 </div>
 
+                {/* CSV反映項目が修正されている場合の注意（2026-07-02追加） */}
+                {hasCsvModifiedFields && (
+                  <CriticalWarning
+                    title="⚠️ CSV反映項目の修正について"
+                    message="個別契約書の情報が修正されています。管理部へ個別に修正依頼を行う必要があります。"
+                    checkboxLabel="上記の内容を確認しました。管理部への修正依頼が必要なことを理解しています。"
+                    checked={csvModWarningChecked}
+                    onCheck={setCsvModWarningChecked}
+                  />
+                )}
+
                 {submitError && (
                   <div className="rounded-lg px-4 py-3 mb-3 border" style={{ background: '#FEF2F2', borderColor: '#DC2626' }}>
                     <p className="text-xs leading-relaxed" style={{ color: '#DC2626' }}>{submitError}</p>
@@ -3775,8 +3821,14 @@ function ApplyPageInner() {
 
                 <button
                   disabled={isSubmitting}
-                  onClick={() => setShowConfirmModal(true)}
-                  className="w-full py-3.5 rounded-lg text-white font-bold text-sm mb-2"
+                  onClick={() => {
+                    if (hasCsvModifiedFields && !csvModWarningChecked) {
+                      alert('CSV反映項目の修正について、内容を確認しチェックを入れてください')
+                      return
+                    }
+                    setShowConfirmModal(true)
+                  }}
+                  className="w-full py-3.5 rounded-lg text-white font-bold text-sm mb-2 mt-3"
                   style={{ background: isSubmitting ? '#A8C0E8' : '#1B3A8C' }}>
                   {isSubmitting ? '送信中...' : '申請する'}
                 </button>

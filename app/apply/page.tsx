@@ -1939,7 +1939,7 @@ function ApplyPageInner() {
         system_type: reqWithCsv ? reqCsvSystem : null,
         dispatch_start_date: reqWithCsv ? reqDispatchStart : null,
         requested_by: user.id,
-        requested_by_dept: submitterStaffRow?.department_master?.dept_name || null,
+        requested_by_dept: (submitterStaffRow as any)?.department_master?.dept_name || null,
       }])
 
       if (error) {
@@ -1980,7 +1980,7 @@ function ApplyPageInner() {
         // デフォルトの'pending'のままにせず明示的にnullにする
         staff_register_status: null,
         requested_by: user.id,
-        requested_by_dept: submitterStaffRow?.department_master?.dept_name || null,
+        requested_by_dept: (submitterStaffRow as any)?.department_master?.dept_name || null,
       }])
 
       if (error) {

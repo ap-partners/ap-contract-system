@@ -2119,10 +2119,10 @@ function ApplyPageInner() {
                   </div>
                 ) : (
                   <div className="max-w-xl">
-                    <SearchInput onSearch={handleSearch} />
+                    {!reqSubmitted && <SearchInput onSearch={handleSearch} />}
                     {searched && searchResults.length === 0 && (
                       <div className="mt-2">
-                        <p className="text-xs text-red-400 mb-2">該当するスタッフが見つかりませんでした</p>
+                        {!reqSubmitted && <p className="text-xs text-red-400 mb-2">該当するスタッフが見つかりませんでした</p>}
                         {!showRequestForm && !reqSubmitted && (
                           <button
                             onClick={e => { e.preventDefault(); setShowRequestForm(true) }}

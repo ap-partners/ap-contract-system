@@ -154,7 +154,7 @@ const FinalRow = ({ label, value, badge, multiline, preview, oldValue, suffix }:
         {badge}
       </div>
       <div className={`px-5 py-3.5 text-sm ${multiline ? 'whitespace-pre-line' : (showDiff ? '' : 'flex items-center')}`}
-        style={{ background: preview ? '#EEF2FA' : 'white', color: '#1A2340', lineHeight: 1.7 }}>
+        style={{ background: preview ? '#EEF2FA' : (showDiff ? '#FFFBEB' : 'white'), color: '#1A2340', lineHeight: 1.7 }}>
         {showDiff
           ? <DiffText oldText={oldValue!} newText={value} multiline={multiline} suffix={suffix} />
           : <>{value}{suffix && <span className="text-xs ml-1.5" style={{ color: '#1A2340' }}>{suffix}</span>}</>}
@@ -215,13 +215,13 @@ const WarningBox = ({ type, confirmedAt }: { type: string; confirmedAt: string }
     trial_over6months: '試用期間6ヶ月超の警告が出ていました。担当営業が上長の了承を得た上で申請しています。',
     no_trial_period:   '正社員で試用期間「無し」の警告が出ていました。担当営業が上長の了承を得た上で申請しています。',
     salary_over_1000000: '合計支給額が100万円超の警告が出ていました。担当営業が上長の了承を得た上で申請しています。',
-    csv_fields_modified: 'CSV反映項目が個別契約書の情報と異なる内容に修正されています。担当営業が管理部への修正依頼が必要なことを確認した上で申請しています。管理部への修正依頼が行われているか、あわせてご確認ください。',
+    csv_fields_modified: 'CSV反映項目が個別契約書の情報と異なる内容に修正されています。\n担当営業が管理部への修正依頼が必要なことを確認した上で申請しています。\n管理部への修正依頼が行われているか、あわせてご確認ください。',
   }
   const message = messages[type] || `警告確認済み（種別：${type}）`
   return (
     <div className="rounded-lg p-4 border-2" style={{ background: '#FEF2F2', borderColor: '#DC2626' }}>
       <p className="text-sm font-bold mb-1.5" style={{ color: '#DC2626' }}>🔴 担当営業が確認した警告</p>
-      <p className="text-sm leading-relaxed" style={{ color: '#1A2340' }}>{message}</p>
+      <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: '#1A2340' }}>{message}</p>
       <p className="text-xs mt-2" style={{ color: '#9CA3AF' }}>確認日時：{formatDateTime(confirmedAt)}</p>
     </div>
   )

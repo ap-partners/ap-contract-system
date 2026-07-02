@@ -877,7 +877,7 @@ const FinalRow = ({ label, value, badge, multiline, preview, highlight, oldValue
         {badge}
       </div>
       <div className={`px-5 py-3.5 text-sm ${multiline ? 'whitespace-pre-line' : (showDiff ? '' : 'flex items-center')}`}
-        style={{ background: preview ? '#EEF2FA' : 'white', color: '#1A2340', lineHeight: 1.7, borderRadius: preview ? '8px' : 0, margin: preview ? '6px 12px' : 0 }}>
+        style={{ background: preview ? '#EEF2FA' : (showDiff ? '#FFFBEB' : 'white'), color: '#1A2340', lineHeight: 1.7, borderRadius: preview ? '8px' : 0, margin: preview ? '6px 12px' : 0 }}>
         {showDiff
           ? <DiffText oldText={oldValue} newText={value} multiline={multiline} suffix={suffix} />
           : <>{value}{suffix && <span className="text-xs ml-1.5" style={{ color: '#1A2340' }}>{suffix}</span>}</>}

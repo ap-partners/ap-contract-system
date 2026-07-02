@@ -436,7 +436,7 @@ export default function SalesDashboard() {
         )}
 
         {/* フィルタータブバー（2026-07-02改訂：5枚カードからタブバー形式に変更） */}
-        <div className="flex items-end gap-6 border-b mb-0 overflow-x-auto" style={{ borderColor: '#E5E9F2' }}>
+        <div className="flex items-end gap-6 border-b mb-0" style={{ borderColor: '#E5E9F2' }}>
           {filterCards.map(card => {
             const isActive = activeFilter === card.key
             const isDisabled = card.count === null

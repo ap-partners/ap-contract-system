@@ -264,35 +264,38 @@ export default function SSCDashboard() {
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-8">
-        {/* タブバー（クリックで絞り込み） */}
-        <div className="flex items-end gap-7 border-b mb-6 overflow-x-auto" style={{ borderColor: '#E5E9F2' }}>
+        {/* タブ型サマリーカード（クリックで絞り込み） */}
+        <div className="grid grid-cols-3 gap-3 mb-6">
           {tabs.map(tab => {
             const isActive = activeTab === tab.key
             const icon = tab.key === '承認待ち'
-              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? tab.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><rect x="4" y="4" width="16" height="16" rx="2" /><line x1="8" y1="10" x2="16" y2="10" /><line x1="8" y1="14" x2="13" y2="14" /></svg>
+              ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={isActive ? tab.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><rect x="4" y="4" width="16" height="16" rx="2" /><line x1="8" y1="10" x2="16" y2="10" /><line x1="8" y1="14" x2="13" y2="14" /></svg>
               : tab.key === '差し戻し中'
-              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? tab.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></svg>
-              : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? tab.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12" /></svg>
+              ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={isActive ? tab.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></svg>
+              : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={isActive ? tab.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12" /></svg>
             return (
-              <button key={tab.key}
-                onClick={() => { setActiveTab(tab.key); setSelectedIds(new Set()) }}
-                className="flex items-center gap-2 pb-3 relative transition-all"
-                style={{ background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                {icon}
-                <span className="text-sm font-medium" style={{ color: isActive ? tab.color : '#1A2340' }}>{tab.label}</span>
-                <span className="text-xs font-bold rounded-full"
-                  style={{
-                    color: isActive ? 'white' : '#5A6A8A',
-                    background: isActive ? tab.color : tab.tint,
-                    padding: '2px 8px',
-                    minWidth: '20px',
-                    textAlign: 'center',
-                    lineHeight: 1.4,
-                  }}>{tab.count}</span>
-                {isActive && (
-                  <div className="absolute" style={{ left: 0, right: 0, bottom: '-1px', height: '2.5px', background: tab.color, borderRadius: '2px 2px 0 0' }} />
-                )}
-              </button>
+              <div key={tab.key}
+                className="rounded-xl px-4 py-3.5 transition-all"
+                style={isActive
+                  ? { background: tab.tint, borderLeft: `3px solid ${tab.color}`, borderTop: '0.5px solid #D0DAF0', borderRight: '0.5px solid #D0DAF0', borderBottom: '0.5px solid #D0DAF0' }
+                  : { background: 'white', border: '0.5px solid #D0DAF0' }}>
+                <div className="flex items-center gap-1.5">
+                  {icon}
+                  <p className="text-xs font-medium" style={{ color: isActive ? tab.color : '#5A6A8A' }}>{tab.label}</p>
+                </div>
+                <div className="flex items-center justify-between mt-2.5">
+                  <span className="text-2xl font-bold" style={{ color: isActive ? tab.color : '#1A2340' }}>{tab.count}</span>
+                  <button
+                    onClick={() => { setActiveTab(tab.key); setSelectedIds(new Set()) }}
+                    className="flex items-center gap-1 rounded-full transition-all"
+                    style={isActive
+                      ? { background: tab.color, border: 'none', padding: '6px 13px', cursor: 'pointer' }
+                      : { background: 'white', border: `1px solid ${tab.color}`, padding: '5px 12px', cursor: 'pointer' }}>
+                    <span className="text-xs font-medium" style={{ color: isActive ? 'white' : tab.color }}>一覧を見る</span>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={isActive ? 'white' : tab.color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18" /></svg>
+                  </button>
+                </div>
+              </div>
             )
           })}
         </div>

@@ -231,10 +231,10 @@ export default function SSCDashboard() {
     setSelectedIds(new Set())
   }
 
-  const tabs: { key: TabType; label: string; count: number; color: string }[] = [
-    { key: '承認待ち', label: '承認待ち', count: pendingCount, color: '#1D4ED8' },
-    { key: '差し戻し中', label: '差し戻し中', count: rejectedCount, color: '#B91C1C' },
-    { key: '承認済み', label: '承認済み・完了', count: approvedCount, color: '#065F46' },
+  const tabs: { key: TabType; label: string; count: number; color: string; tint: string }[] = [
+    { key: '承認待ち', label: '承認待ち', count: pendingCount, color: '#1D4ED8', tint: '#EEF0F5' },
+    { key: '差し戻し中', label: '差し戻し中', count: rejectedCount, color: '#B91C1C', tint: '#FEE2E2' },
+    { key: '承認済み', label: '承認済み・完了', count: approvedCount, color: '#065F46', tint: '#D1FAE5' },
   ]
 
   if (!user) return (
@@ -264,22 +264,34 @@ export default function SSCDashboard() {
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-8">
-        {/* タブ型サマリーカード（クリックで絞り込み） */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
+        {/* タブバー（クリックで絞り込み） */}
+        <div className="flex items-end gap-7 border-b mb-6 overflow-x-auto" style={{ borderColor: '#E5E9F2' }}>
           {tabs.map(tab => {
             const isActive = activeTab === tab.key
+            const icon = tab.key === '承認待ち'
+              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? tab.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><rect x="4" y="4" width="16" height="16" rx="2" /><line x1="8" y1="10" x2="16" y2="10" /><line x1="8" y1="14" x2="13" y2="14" /></svg>
+              : tab.key === '差し戻し中'
+              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? tab.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></svg>
+              : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? tab.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12" /></svg>
             return (
               <button key={tab.key}
                 onClick={() => { setActiveTab(tab.key); setSelectedIds(new Set()) }}
-                className="text-left rounded-xl px-4 py-3.5 transition-all"
-                style={isActive
-                  ? { background: tab.color, border: 'none', boxShadow: '0 6px 16px rgba(27,58,140,0.28)', transform: 'translateY(-2px)' }
-                  : { background: 'white', border: `1.5px solid ${tab.color}`, boxShadow: '0 1px 3px rgba(16,24,64,0.06)' }}>
-                <p className="text-xs" style={{ color: isActive ? 'rgba(255,255,255,0.85)' : tab.color }}>{tab.label}</p>
-                <div className="flex items-end justify-between mt-1.5">
-                  <span className="text-2xl font-bold" style={{ color: isActive ? 'white' : tab.color }}>{tab.count}</span>
-                  <span className="text-sm" style={{ color: isActive ? 'white' : tab.color, opacity: isActive ? 0.9 : 0.6 }}>{isActive ? '▲' : '▾'}</span>
-                </div>
+                className="flex items-center gap-2 pb-3 relative transition-all"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                {icon}
+                <span className="text-sm font-medium" style={{ color: isActive ? tab.color : '#1A2340' }}>{tab.label}</span>
+                <span className="text-xs font-bold rounded-full"
+                  style={{
+                    color: isActive ? 'white' : '#5A6A8A',
+                    background: isActive ? tab.color : tab.tint,
+                    padding: '2px 8px',
+                    minWidth: '20px',
+                    textAlign: 'center',
+                    lineHeight: 1.4,
+                  }}>{tab.count}</span>
+                {isActive && (
+                  <div className="absolute" style={{ left: 0, right: 0, bottom: '-1px', height: '2.5px', background: tab.color, borderRadius: '2px 2px 0 0' }} />
+                )}
               </button>
             )
           })}
@@ -468,18 +480,18 @@ export default function SSCDashboard() {
                         <p className="text-xs leading-relaxed" style={{ color: '#1A2340' }}>{contract.rejection_reason}</p>
                       </div>
                     )}
-                  </div>
 
-                  {/* フッター（クリックで確認画面へ） */}
-                  <button
-                    className="w-full border-t flex items-center justify-end gap-1.5 px-5 py-2.5 transition-all"
-                    style={{ borderColor: '#D0DAF0', background: '#EEF2FA' }}
-                    onClick={() => router.push(`/dashboard/ssc/contracts/${contract.id}`)}>
-                    <span className="text-xs font-medium" style={{ color: '#1B3A8C' }}>
-                      {activeTab === '承認待ち' ? '内容を確認する' : '詳細を見る'}
-                    </span>
-                    <span className="text-xs" style={{ color: '#1B3A8C' }}>→</span>
-                  </button>
+                    {/* 確認ボタン（2026-07-02改訂：左揃えピル形） */}
+                    <button
+                      className="mt-3.5 flex items-center gap-1.5 rounded-full transition-all"
+                      style={{ background: '#1B3A8C', border: 'none', padding: '7px 16px', cursor: 'pointer' }}
+                      onClick={() => router.push(`/dashboard/ssc/contracts/${contract.id}`)}>
+                      <span className="text-xs font-medium text-white">
+                        {activeTab === '承認待ち' ? '内容を確認する' : '詳細を見る'}
+                      </span>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18" /></svg>
+                    </button>
+                  </div>
                 </div>
               )
             })}

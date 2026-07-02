@@ -3112,7 +3112,7 @@ function ApplyPageInner() {
                           )}
                         </div>
                         {showEmptyHint && !contractStartDate && (
-                          <EmptyHintBubble text="入力してください" direction="down" />
+                          <EmptyHintBubble text="入力してください" direction="up" />
                         )}
                         {isDateBefore(contractStartDate, dispatchStart) && (
                           <p className="text-xs" style={{ color: '#DC2626' }}>契約条件適用開始日は派遣期間の開始日以降の日付にしてください</p>
@@ -3184,7 +3184,7 @@ function ApplyPageInner() {
                             </div>
                           </div>
                           {showEmptyHint && (!trialStart || !trialEnd) && (
-                            <EmptyHintBubble text="入力してください" direction="down" />
+                            <EmptyHintBubble text="入力してください" direction="up" />
                           )}
                           {trialStartError && <p className="text-xs" style={{ color: '#DC2626' }}>{trialStartError}</p>}
                           {trialEndError && <p className="text-xs" style={{ color: '#DC2626' }}>{trialEndError}</p>}

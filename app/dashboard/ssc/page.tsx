@@ -7,6 +7,9 @@ import Image from 'next/image'
 
 type ContractStatus = '申請中' | 'SSC承認済み' | '差し戻し中' | '署名待ち' | '署名済み' | '完了' | '取り下げ'
 
+// 自動チェックの警告レベル（2026-07-02追加：7-5章の骨格実装）
+type WarningLevel = 'none' | 'yellow' | 'red'
+
 type Contract = {
   id: string
   pattern: string
@@ -18,6 +21,7 @@ type Contract = {
   created_at: string
   rejection_reason: string | null
   warning_confirmations: { type: string; confirmed_at: string }[]
+  warning_level: WarningLevel
   input_data: {
     staff?: {
       name?: string
@@ -126,9 +130,17 @@ const getDeadlineAlert = (contract: Contract): { type: 'overdue' | 'urgent' | nu
   return { type: null, label: '' }
 }
 
-// 警告ありかどうかの判定
+// 警告ありかどうかの判定（担当営業がSTEP8で確認・申告した警告）
 const hasWarning = (contract: Contract): boolean => {
   return contract.warning_confirmations && contract.warning_confirmations.length > 0
+}
+
+// 自動チェックの警告ありかどうかの判定（2026-07-02追加：7-5章の骨格実装）
+// 中身の判定ロジック未実装のため、現状は全案件 warning_level='none' で false になる。
+// 将来チェックロジックが実装され warning_level が yellow/red で入るようになった時点で
+// このまま自動的に一括承認対象外・バッジ表示が有効になる。
+const hasAutoCheckWarning = (contract: Contract): boolean => {
+  return !!contract.warning_level && contract.warning_level !== 'none'
 }
 
 // 雇用期間の表示文字列
@@ -162,7 +174,7 @@ export default function SSCDashboard() {
 
       const { data: rows, error } = await supabase
         .from('contracts')
-        .select('id, pattern, contract_type, document_type, work_place, status, created_by, created_at, rejection_reason, warning_confirmations, input_data')
+        .select('id, pattern, contract_type, document_type, work_place, status, created_by, created_at, rejection_reason, warning_confirmations, warning_level, input_data')
         .order('created_at', { ascending: false })
 
       if (error) { console.error('contracts取得エラー:', error); setLoading(false); return }
@@ -184,8 +196,8 @@ export default function SSCDashboard() {
     return false
   })
 
-  // 承認待ちタブで警告なし案件のみ一括承認対象
-  const bulkTargets = filtered.filter(c => !hasWarning(c))
+  // 承認待ちタブで一括承認対象となるのは「担当営業の自己申告警告」も「自動チェック警告」もない案件のみ
+  const bulkTargets = filtered.filter(c => !hasWarning(c) && !hasAutoCheckWarning(c))
 
   const pendingCount = contracts.filter(c => c.status === '申請中').length
   const rejectedCount = contracts.filter(c => c.status === '差し戻し中').length
@@ -321,8 +333,9 @@ export default function SSCDashboard() {
               const f = contract.input_data?.fields || {}
               const deadline = getDeadlineAlert(contract)
               const warning = hasWarning(contract)
+              const autoWarning = hasAutoCheckWarning(contract)
               const isSelected = selectedIds.has(contract.id)
-              const canBulkSelect = activeTab === '承認待ち' && !warning
+              const canBulkSelect = activeTab === '承認待ち' && !warning && !autoWarning
 
               // 期日アラートに応じた左ボーダー色
               const leftBorderColor = deadline.type === 'overdue' ? '#DC2626' : deadline.type === 'urgent' ? '#F97316' : 'transparent'
@@ -376,6 +389,16 @@ export default function SSCDashboard() {
                           {warning && (
                             <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: '#FEE2E2', color: '#B91C1C' }}>
                               🔴 個別確認が必要
+                            </span>
+                          )}
+                          {/* 自動チェック警告バッジ（2026-07-02追加：中身の判定ロジック実装後に表示され始める） */}
+                          {autoWarning && (
+                            <span className="text-xs font-medium px-2 py-0.5 rounded"
+                              style={{
+                                background: contract.warning_level === 'red' ? '#FEE2E2' : '#FFFBEB',
+                                color: contract.warning_level === 'red' ? '#B91C1C' : '#D97706',
+                              }}>
+                              {contract.warning_level === 'red' ? '🔴' : '🟡'} 自動チェック要確認
                             </span>
                           )}
                           {/* フェーズ2で申請者氏名に切り替え予定。現在はIDの先頭8文字 */}

@@ -9,6 +9,9 @@ import Image from 'next/image'
 
 type DiffPart = { type: 'same' | 'removed' | 'added'; text: string }
 
+// 自動チェックの警告レベル（2026-07-02追加：7-5章の骨格実装）
+type WarningLevel = 'none' | 'yellow' | 'red'
+
 type ContractDetail = {
   id: string
   staff_id: string
@@ -31,6 +34,8 @@ type ContractDetail = {
     }
   }
   warning_confirmations: { type: string; confirmed_at: string }[]
+  warning_level: WarningLevel
+  force_approve_reason: string | null
   rejection_reason: string | null
   rejected_by: string | null
   rejected_at: string | null
@@ -204,7 +209,7 @@ const MasterBadge = ({ modified }: { modified?: boolean }) => modified ? (
   <span className="text-xs px-1.5 py-0.5 rounded shrink-0" style={{ background: 'white', color: '#1B3A8C', border: '1px solid #1B3A8C' }}>マスタ情報反映</span>
 )
 
-// 警告ボックス（SSC向けは読み取り専用・チェックなし）
+// 警告ボックス（SSC向けは読み取り専用・チェックなし）※担当営業の自己申告警告
 const WarningBox = ({ type, confirmedAt }: { type: string; confirmedAt: string }) => {
   const messages: Record<string, string> = {
     trial_over6months: '試用期間6ヶ月超の警告が出ていました。担当営業が上長の了承を得た上で申請しています。',
@@ -217,6 +222,26 @@ const WarningBox = ({ type, confirmedAt }: { type: string; confirmedAt: string }
       <p className="text-sm font-bold mb-1.5" style={{ color: '#DC2626' }}>🔴 担当営業が確認した警告</p>
       <p className="text-sm leading-relaxed" style={{ color: '#1A2340' }}>{message}</p>
       <p className="text-xs mt-2" style={{ color: '#9CA3AF' }}>確認日時：{formatDateTime(confirmedAt)}</p>
+    </div>
+  )
+}
+
+// 自動チェック警告バナー（2026-07-02追加：7-5章の骨格実装）
+// 中身の判定ロジックは未実装のため、現状は warning_level='none' のままで表示されない。
+// 将来チェックロジックが実装されると、ここがそのまま自動チェック結果の表示場所になる。
+const AutoCheckWarningBanner = ({ level }: { level: WarningLevel }) => {
+  if (level === 'none') return null
+  const isRed = level === 'red'
+  return (
+    <div className="rounded-lg p-4 border-2" style={{ background: isRed ? '#FEF2F2' : '#FFFBEB', borderColor: isRed ? '#DC2626' : '#D97706' }}>
+      <p className="text-sm font-bold mb-1.5" style={{ color: isRed ? '#DC2626' : '#D97706' }}>
+        {isRed ? '🔴 自動チェックで要確認の警告があります' : '🟡 自動チェックで要確認の警告があります'}
+      </p>
+      <p className="text-sm leading-relaxed" style={{ color: '#1A2340' }}>
+        {isRed
+          ? '内容を確認したうえで、問題なければ理由を入力して「強制承認」してください。'
+          : '内容を確認したうえで、「承認する」または「差し戻す」を選んでください。'}
+      </p>
     </div>
   )
 }
@@ -240,6 +265,10 @@ export default function SSCContractDetail() {
   const [rejectReason, setRejectReason] = useState('')
   const [showApproveConfirm, setShowApproveConfirm] = useState(false)
   const [actionDone, setActionDone] = useState<'approved' | 'rejected' | null>(null)
+
+  // 強制承認のUI状態（2026-07-02追加：7-5章の骨格実装。warning_level='red'の時のみ使用）
+  const [showForceApproveForm, setShowForceApproveForm] = useState(false)
+  const [forceApproveReason, setForceApproveReason] = useState('')
 
   useEffect(() => {
     const init = async () => {
@@ -265,7 +294,7 @@ export default function SSCContractDetail() {
     init()
   }, [id, router])
 
-  // 承認処理
+  // 承認処理（warning_level が none / yellow の場合。理由入力は不要）
   const handleApprove = async () => {
     if (!contract || actionLoading) return
     setActionLoading(true)
@@ -287,6 +316,32 @@ export default function SSCContractDetail() {
     setActionDone('approved')
     setActionLoading(false)
     setShowApproveConfirm(false)
+  }
+
+  // 強制承認処理（2026-07-02追加：warning_level='red'の場合のみ。理由入力必須）
+  const handleForceApprove = async () => {
+    if (!contract || actionLoading) return
+    if (!forceApproveReason.trim()) { setActionError('強制承認の理由を入力してください。'); return }
+    setActionLoading(true)
+    setActionError('')
+    const { error } = await supabase
+      .from('contracts')
+      .update({
+        status: 'SSC承認済み',
+        approved_by: user.id,
+        approved_at: new Date().toISOString(),
+        force_approve_reason: forceApproveReason.trim(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', contract.id)
+    if (error) {
+      setActionError('強制承認の保存に失敗しました。もう一度お試しください。（' + error.message + '）')
+      setActionLoading(false)
+      return
+    }
+    setActionDone('approved')
+    setActionLoading(false)
+    setShowForceApproveForm(false)
   }
 
   // 差し戻し処理
@@ -382,6 +437,11 @@ export default function SSCContractDetail() {
 
   const isAlreadyProcessed = contract.status !== '申請中'
 
+  // 自動チェックの警告レベル（2026-07-02追加：中身未実装のため現状は必ず'none'）
+  const warningLevel: WarningLevel = contract.warning_level || 'none'
+  const isRedWarning = warningLevel === 'red'
+  const isYellowWarning = warningLevel === 'yellow'
+
   return (
     <div className="min-h-screen" style={{ background: '#F5F7FC' }}>
       {/* ヘッダー */}
@@ -451,6 +511,10 @@ export default function SSCContractDetail() {
             {contract.status === '差し戻し中' && contract.rejection_reason && (
               <p className="text-sm mt-1 leading-relaxed" style={{ color: '#1A2340' }}>差し戻し理由：{contract.rejection_reason}</p>
             )}
+            {/* 強制承認理由の表示（2026-07-02追加：監査・振り返り用） */}
+            {contract.status === 'SSC承認済み' && contract.force_approve_reason && (
+              <p className="text-sm mt-1 leading-relaxed" style={{ color: '#1A2340' }}>強制承認理由：{contract.force_approve_reason}</p>
+            )}
           </div>
         )}
 
@@ -494,7 +558,14 @@ export default function SSCContractDetail() {
           </div>
         </div>
 
-        {/* 警告確認ボックス（warning_confirmationsがある場合） */}
+        {/* 自動チェック警告バナー（2026-07-02追加：中身未実装のため現状は表示されない） */}
+        {warningLevel !== 'none' && (
+          <div className="mb-6">
+            <AutoCheckWarningBanner level={warningLevel} />
+          </div>
+        )}
+
+        {/* 警告確認ボックス（warning_confirmationsがある場合＝担当営業の自己申告警告） */}
         {contract.warning_confirmations && contract.warning_confirmations.length > 0 && (
           <div className="mb-6 flex flex-col gap-3">
             <p className="text-sm font-bold" style={{ color: '#B91C1C' }}>⚠️ 担当営業が確認した警告（上長承認済み）</p>
@@ -748,7 +819,38 @@ export default function SSCContractDetail() {
                   </div>
                 )}
 
-                {/* 承認確認モーダル */}
+                {/* 強制承認フォーム（展開式・2026-07-02追加：warning_level='red'の場合のみ表示される） */}
+                {showForceApproveForm && (
+                  <div className="rounded-xl p-4 mb-4 border-2" style={{ background: '#FEF2F2', borderColor: '#DC2626' }}>
+                    <p className="text-sm font-bold mb-2" style={{ color: '#DC2626' }}>🔴 強制承認の理由を入力してください</p>
+                    <p className="text-xs mb-2 leading-relaxed" style={{ color: '#1A2340' }}>
+                      自動チェックで要確認の警告が出ていますが、内容を確認したうえで承認する場合は、理由を入力してください。
+                    </p>
+                    <textarea
+                      className="w-full text-sm rounded-lg px-3 py-2 border focus:outline-none"
+                      style={{ borderColor: '#D0DAF0', color: '#1A2340', minHeight: '100px', lineHeight: '1.6', resize: 'vertical' }}
+                      placeholder="例：クライアント特別対応のため、上長確認済みで金額に問題ないことを確認しました。"
+                      value={forceApproveReason}
+                      onChange={e => setForceApproveReason(e.target.value)}
+                    />
+                    <div className="flex gap-3 mt-3">
+                      <button
+                        onClick={handleForceApprove}
+                        disabled={actionLoading || !forceApproveReason.trim()}
+                        className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white transition-all disabled:opacity-50"
+                        style={{ background: '#DC2626' }}>
+                        {actionLoading ? '処理中...' : '強制承認する'}
+                      </button>
+                      <button
+                        onClick={() => { setShowForceApproveForm(false); setForceApproveReason(''); setActionError('') }}
+                        className="px-4 py-2.5 rounded-lg text-sm border" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
+                        キャンセル
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 承認確認モーダル（warning_level が none / yellow の通常承認のみ） */}
                 {showApproveConfirm && (
                   <div className="rounded-xl p-4 mb-4 border-2" style={{ background: '#ECFDF5', borderColor: '#34D399' }}>
                     <p className="text-sm font-bold mb-2" style={{ color: '#065F46' }}>✅ 本当に承認してよいですか？</p>
@@ -776,7 +878,7 @@ export default function SSCContractDetail() {
                 )}
 
                 {/* メインボタン（フォーム展開前のみ表示） */}
-                {!showRejectForm && !showApproveConfirm && (
+                {!showRejectForm && !showApproveConfirm && !showForceApproveForm && (
                   <div className="flex gap-4">
                     <button
                       onClick={() => { setShowRejectForm(true); setActionError('') }}
@@ -784,12 +886,21 @@ export default function SSCContractDetail() {
                       style={{ color: '#DC2626', borderColor: '#DC2626', background: 'white' }}>
                       ↩ 差し戻す
                     </button>
-                    <button
-                      onClick={() => { setShowApproveConfirm(true); setActionError('') }}
-                      className="flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all"
-                      style={{ background: '#1B3A8C' }}>
-                      ✅ 承認する
-                    </button>
+                    {isRedWarning ? (
+                      <button
+                        onClick={() => { setShowForceApproveForm(true); setActionError('') }}
+                        className="flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all"
+                        style={{ background: '#DC2626' }}>
+                        🔴 強制承認する（理由入力必須）
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => { setShowApproveConfirm(true); setActionError('') }}
+                        className="flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all"
+                        style={{ background: '#1B3A8C' }}>
+                        ✅ 承認する
+                      </button>
+                    )}
                   </div>
                 )}
               </>

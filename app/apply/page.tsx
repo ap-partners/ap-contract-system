@@ -142,8 +142,8 @@ const SALARY_RULES: Record<string, { min: number; max: number }> = {
 const TOOLTIPS: Record<string, string> = {
   '変形労働時間制': '毎日同じ時間働くのではなく、忙しい日は長く・暇な日は短くなど、期間全体で帳尻を合わせる働き方です。シフト制の職場などで使われます。',
   '所定労働時間外労働': '定められた就業時間を超えて働く「残業」があるかどうかです。「有」の場合は残業代が発生します。',
-  '抵触日（事業所単位）': '同じ派遣先の会社（事業所）に派遣できる期限のことです。原則この日を超えると、その会社への派遣ができなくなります。派遣先に確認して入力してください。',
-  '抵触日（組織単位）': '同じ派遣先の同じ部署に、同じスタッフを派遣できる期限のことです。事業所単位の抵触日より前の日付になります。派遣先に確認して入力してください。',
+  '抵触日（事業所単位）': 'その事業所（会社・支店など）全体が、派遣社員を受け入れられる期限です（原則3年）。※無期雇用派遣社員は対象外です。',
+  '抵触日（組織単位）': 'このスタッフが、同じ部署（課・グループなど）で勤務できる期限です（原則3年）。継続する場合は別の部署への異動などが必要です。※無期雇用派遣社員は対象外です。',
   '業務に伴う責任の程度': 'このスタッフが他のスタッフへの指示・管理などリーダー的な役割を担うかどうかです。派遣先との個別契約の内容を確認の上、選択してください。',
 }
 
@@ -1959,7 +1959,9 @@ function ApplyPageInner() {
           {showStepDesc && (
             <div className="px-5 py-4 border-b" style={{ background: 'white', borderColor: '#D0DAF0' }}>
               <p className="text-sm leading-relaxed" style={{ color: '#1A2340' }}>
-                {STEP_DESC[getStepLabel(currentStep)] || ''}
+                {stepType === 'sourceContact'
+                  ? `自社（APパートナーズ）の担当者情報が${mgrCmpSource === 'csv' ? 'CSVデータ' : '自社マスタ'}から自動で入力されています。内容を確認し、異なる場合は修正してください。`
+                  : (STEP_DESC[getStepLabel(currentStep)] || '')}
               </p>
             </div>
           )}
@@ -3086,6 +3088,7 @@ function ApplyPageInner() {
                     isEmpty={showEmptyHint && ((period === '無期' || contractType === '正社員') ? !contractStartDate : (!employStart || !employEnd))}>
                     {(period === '無期' || contractType === '正社員') ? (
                       <div className="flex flex-col gap-2">
+                        <p className="text-xs" style={{ color: '#5A6A8A' }}>※雇用期間は無期契約のため、下記の固定文言で自動表示されます。開始日付だけ入力してください。</p>
                         {fixedText('期間の定めなし（自動）')}
                         <div className="flex items-center gap-3 flex-wrap">
                           <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>契約条件適用開始日</span>
@@ -3111,7 +3114,6 @@ function ApplyPageInner() {
                         {isDateBefore(contractStartDate, dispatchStart) && (
                           <p className="text-xs" style={{ color: '#DC2626' }}>契約条件適用開始日は派遣期間の開始日以降の日付にしてください</p>
                         )}
-                        <p className="text-xs" style={{ color: '#5A6A8A' }}>※無期契約のため雇用期間は固定文言になります</p>
                       </div>
                     ) : (
                       <div className="flex flex-col gap-2">

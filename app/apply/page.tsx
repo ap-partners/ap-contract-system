@@ -149,6 +149,9 @@ const TOOLTIPS: Record<string, string> = {
 
 const inp = "bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 w-full placeholder:text-gray-400"
 
+// 幅を固定したい日付欄専用（inpのw-fullと衝突しないよう別クラスとして定義。2026-07-02追加）
+const inpDate = "bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 w-40 placeholder:text-gray-400"
+
 const deptInputStyle = {
   borderColor: '#D0DAF0',
   color: '#1A2340',
@@ -970,7 +973,7 @@ function SearchInput({ onSearch }: { onSearch: (query: string) => void }) {
     setLocalSearching(false)
   }
   return (
-    <div className="max-w-md">
+    <div className="max-w-xl">
       <div className="flex gap-2">
         <input type="text" value={localQuery}
           onChange={e => setLocalQuery(e.target.value)}
@@ -1971,15 +1974,15 @@ function ApplyPageInner() {
             <>
               <FormRow label="対象スタッフ" required>
                 {selectedStaff ? (
-                  <div className="flex items-center gap-3 rounded-lg px-4 py-3 max-w-md border"
+                  <div className="flex items-center gap-3 rounded-lg px-4 py-3 max-w-xl border"
                     style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
                     <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium shrink-0"
                       style={{ background: '#1B3A8C', color: 'white' }}>
                       {selectedStaff.name?.[0] || '?'}
                     </div>
-                    <div>
-                      <p className="text-sm font-medium" style={{ color: '#1A2340' }}>{selectedStaff.name}</p>
-                      <p className="text-xs" style={{ color: '#5A6A8A' }}>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium break-words" style={{ color: '#1A2340' }}>{selectedStaff.name}</p>
+                      <p className="text-xs break-words" style={{ color: '#5A6A8A' }}>
                         {selectedStaff.department && `${selectedStaff.department}　`}社員番号：{selectedStaff.employee_number}
                       </p>
                     </div>
@@ -1988,7 +1991,7 @@ function ApplyPageInner() {
                       style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>変更</button>
                   </div>
                 ) : (
-                  <div className="max-w-md">
+                  <div className="max-w-xl">
                     <SearchInput onSearch={handleSearch} />
                     {searched && searchResults.length === 0 && (
                       <div className="mt-2">
@@ -3030,13 +3033,13 @@ function ApplyPageInner() {
                     <div className="flex items-center gap-3 flex-wrap">
                       <div className="flex items-center gap-2">
                         <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>自</span>
-                        <input type="date" className={`${inp} w-40`} style={{ borderColor: (showEmptyHint && !dispatchStart) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
+                        <input type="date" className={inpDate} style={{ borderColor: (showEmptyHint && !dispatchStart) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
                           value={dispatchStart} onChange={e => setDispatchStart(e.target.value)} />
                       </div>
                       <span className="text-sm" style={{ color: '#5A6A8A' }}>〜</span>
                       <div className="flex items-center gap-2">
                         <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>至</span>
-                        <input type="date" className={`${inp} w-40`} style={{ borderColor: (showEmptyHint && !dispatchEnd) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
+                        <input type="date" className={inpDate} style={{ borderColor: (showEmptyHint && !dispatchEnd) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
                           value={dispatchEnd} onChange={e => setDispatchEnd(e.target.value)} />
                       </div>
                     </div>
@@ -3092,7 +3095,7 @@ function ApplyPageInner() {
                         {fixedText('期間の定めなし（自動）')}
                         <div className="flex items-center gap-3 flex-wrap">
                           <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>契約条件適用開始日</span>
-                          <input type="date" className={`${inp} w-40`}
+                          <input type="date" className={inpDate}
                             style={{ borderColor: (showEmptyHint && !contractStartDate) ? '#DC2626' : (isDateBefore(contractStartDate, dispatchStart) ? '#DC2626' : '#D0DAF0'), color: '#1A2340' }}
                             value={contractStartDate} onChange={e => setContractStartDate(e.target.value)} />
                           {pattern === 'C' && (
@@ -3120,14 +3123,14 @@ function ApplyPageInner() {
                         <div className="flex items-center gap-3 flex-wrap">
                           <div className="flex items-center gap-2">
                             <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>自</span>
-                            <input type="date" className={`${inp} w-40`}
+                            <input type="date" className={inpDate}
                               style={{ borderColor: (showEmptyHint && !employStart) ? '#DC2626' : (employStartError ? '#DC2626' : '#D0DAF0'), color: '#1A2340' }}
                               value={employStart} onChange={e => setEmployStart(e.target.value)} />
                           </div>
                           <span className="text-sm" style={{ color: '#5A6A8A' }}>〜</span>
                           <div className="flex items-center gap-2">
                             <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>至</span>
-                            <input type="date" className={`${inp} w-40`}
+                            <input type="date" className={inpDate}
                               style={{ borderColor: (showEmptyHint && !employEnd) ? '#DC2626' : (employEndError ? '#DC2626' : '#D0DAF0'), color: '#1A2340' }}
                               value={employEnd} onChange={e => setEmployEnd(e.target.value)} />
                           </div>
@@ -3168,14 +3171,14 @@ function ApplyPageInner() {
                           <div className="flex items-center gap-3 flex-wrap">
                             <div className="flex items-center gap-2">
                               <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>自</span>
-                              <input type="date" className={`${inp} w-40`}
+                              <input type="date" className={inpDate}
                                 style={{ borderColor: (showEmptyHint && !trialStart) ? '#DC2626' : (trialStartError ? '#DC2626' : '#D0DAF0'), color: '#1A2340' }}
                                 value={trialStart} onChange={e => setTrialStart(e.target.value)} />
                             </div>
                             <span className="text-sm" style={{ color: '#5A6A8A' }}>〜</span>
                             <div className="flex items-center gap-2">
                               <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>至</span>
-                              <input type="date" className={`${inp} w-40`}
+                              <input type="date" className={inpDate}
                                 style={{ borderColor: (showEmptyHint && !trialEnd) ? '#DC2626' : (trialEndError ? '#DC2626' : '#D0DAF0'), color: '#1A2340' }}
                                 value={trialEnd} onChange={e => setTrialEnd(e.target.value)} />
                             </div>

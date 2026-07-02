@@ -2321,102 +2321,123 @@ function ApplyPageInner() {
                 )}
               </FormRow>
 
-              <FormRow label="雇用区分" required>
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <div className="flex border rounded-lg overflow-hidden bg-white" style={{ borderColor: '#D0DAF0' }}>
-                      {['アルバイト', '有期契約', '無期契約', '正社員'].map(v => (
-                        <button key={v}
-                          onClick={e => {
-                            e.preventDefault()
-                            if (isContractTypeLocked) {
-                              // ロック中はスタッフマスタの値以外への変更を禁止し、案内メッセージを表示する
-                              if (v !== contractType) setShowContractTypeLockedMsg(true)
-                              return
-                            }
-                            setContractType(v)
-                          }}
-                          className="py-2 text-sm border-r last:border-0 transition-colors whitespace-nowrap text-center"
+              {!reqSubmitted && (
+                <>
+                  <FormRow label="雇用区分" required>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <div className="flex border rounded-lg overflow-hidden bg-white" style={{ borderColor: '#D0DAF0' }}>
+                          {['アルバイト', '有期契約', '無期契約', '正社員'].map(v => (
+                            <button key={v}
+                              onClick={e => {
+                                e.preventDefault()
+                                if (isContractTypeLocked) {
+                                  // ロック中はスタッフマスタの値以外への変更を禁止し、案内メッセージを表示する
+                                  if (v !== contractType) setShowContractTypeLockedMsg(true)
+                                  return
+                                }
+                                setContractType(v)
+                              }}
+                              className="py-2 text-sm border-r last:border-0 transition-colors whitespace-nowrap text-center"
+                              style={{
+                                width: '84px',
+                                borderColor: '#D0DAF0',
+                                background: contractType === v ? '#1B3A8C' : 'white',
+                                color: contractType === v ? 'white' : (isContractTypeLocked ? '#A8B3C9' : '#1A2340'),
+                                fontWeight: contractType === v ? 600 : 400,
+                                cursor: isContractTypeLocked ? 'not-allowed' : 'pointer',
+                              }}>{v}</button>
+                          ))}
+                        </div>
+                        <div className="w-px h-7 shrink-0" style={{ background: '#D0DAF0' }} />
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm shrink-0" style={{ color: '#5A6A8A' }}>勤務地</span>
+                          <select value={workPlace} onChange={e => setWorkPlace(e.target.value)}
+                            className="bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none"
+                            style={{ borderColor: '#D0DAF0', color: '#1A2340' }}>
+                            <option value="現場">現場</option>
+                            <option value="社内">社内</option>
+                          </select>
+                        </div>
+                      </div>
+                      {isContractTypeLocked && (
+                        <p className="text-xs" style={{ color: '#5A6A8A' }}>
+                          スタッフマスタの雇用区分が自動反映されています（変更不可）
+                        </p>
+                      )}
+                      {showContractTypeLockedMsg && (
+                        <div className="rounded-lg px-3 py-2 text-xs flex items-center justify-between gap-3"
+                          style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FCA5A5' }}>
+                          <span>先にスタッフ情報申請にて雇用区分変更の手続きを行ってください。</span>
+                          <button onClick={e => { e.preventDefault(); setShowContractTypeLockedMsg(false) }}
+                            className="shrink-0 underline">閉じる</button>
+                        </div>
+                      )}
+                    </div>
+                  </FormRow>
+
+                  <FormRow label="帳票種別" required>
+                    <div className="grid grid-cols-3 gap-2 max-w-2xl">
+                      {getDocumentTypes(workPlace).map(d => (
+                        <button key={d.value} onClick={e => { e.preventDefault(); setDocumentType(d.value) }}
+                          className="text-left p-3 rounded-lg border transition-all"
                           style={{
-                            width: '84px',
-                            borderColor: '#D0DAF0',
-                            background: contractType === v ? '#1B3A8C' : 'white',
-                            color: contractType === v ? 'white' : (isContractTypeLocked ? '#A8B3C9' : '#1A2340'),
-                            fontWeight: contractType === v ? 600 : 400,
-                            cursor: isContractTypeLocked ? 'not-allowed' : 'pointer',
-                          }}>{v}</button>
+                            borderColor: documentType === d.value ? '#1B3A8C' : '#D0DAF0',
+                            background: documentType === d.value ? '#EEF2FA' : 'white',
+                          }}>
+                          <p className="text-xs font-medium leading-snug whitespace-pre-line"
+                            style={{ color: documentType === d.value ? '#1B3A8C' : '#1A2340' }}>{d.value}</p>
+                          <p className="text-xs mt-1" style={{ color: documentType === d.value ? '#4A7FD4' : '#5A6A8A' }}>{d.step}</p>
+                        </button>
+                      ))}
+                      {workPlace === '社内' && ['就業条件明示書', '雇用契約書 兼\n就業条件明示書'].map(d => (
+                        <div key={d} className="p-3 border rounded-lg opacity-40 cursor-not-allowed"
+                          style={{ borderColor: '#D0DAF0', background: '#F5F7FC' }}>
+                          <p className="text-xs leading-snug whitespace-pre-line" style={{ color: '#5A6A8A' }}>{d}</p>
+                          <p className="text-xs mt-1" style={{ color: '#5A6A8A' }}>社内は選択不可</p>
+                        </div>
                       ))}
                     </div>
-                    <div className="w-px h-7 shrink-0" style={{ background: '#D0DAF0' }} />
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm shrink-0" style={{ color: '#5A6A8A' }}>勤務地</span>
-                      <select value={workPlace} onChange={e => setWorkPlace(e.target.value)}
-                        className="bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none"
-                        style={{ borderColor: '#D0DAF0', color: '#1A2340' }}>
-                        <option value="現場">現場</option>
-                        <option value="社内">社内</option>
-                      </select>
-                    </div>
-                  </div>
-                  {isContractTypeLocked && (
-                    <p className="text-xs" style={{ color: '#5A6A8A' }}>
-                      スタッフマスタの雇用区分が自動反映されています（変更不可）
-                    </p>
-                  )}
-                  {showContractTypeLockedMsg && (
-                    <div className="rounded-lg px-3 py-2 text-xs flex items-center justify-between gap-3"
-                      style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FCA5A5' }}>
-                      <span>先にスタッフ情報申請にて雇用区分変更の手続きを行ってください。</span>
-                      <button onClick={e => { e.preventDefault(); setShowContractTypeLockedMsg(false) }}
-                        className="shrink-0 underline">閉じる</button>
-                    </div>
-                  )}
-                </div>
-              </FormRow>
+                    {documentType && contractType && (
+                      <div className="max-w-2xl rounded-lg px-4 py-3 border" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
+                        <p className="text-xs mb-1" style={{ color: '#5A6A8A' }}>✓ 発行する帳票</p>
+                        <p className="text-sm font-medium" style={{ color: '#1A2340' }}>{fullDocumentName}</p>
+                        <p className="text-xs mt-0.5" style={{ color: '#5A6A8A' }}>
+                          {pattern === 'A' ? '雇用契約書のみ・6STEP で申請できます' :
+                           pattern === 'B' ? '就業条件明示書のみ・給与入力なし・6STEP で申請できます' :
+                           '全項目入力・8STEP で申請できます'}
+                        </p>
+                      </div>
+                    )}
+                  </FormRow>
 
-              <FormRow label="帳票種別" required>
-                <div className="grid grid-cols-3 gap-2 max-w-2xl">
-                  {getDocumentTypes(workPlace).map(d => (
-                    <button key={d.value} onClick={e => { e.preventDefault(); setDocumentType(d.value) }}
-                      className="text-left p-3 rounded-lg border transition-all"
-                      style={{
-                        borderColor: documentType === d.value ? '#1B3A8C' : '#D0DAF0',
-                        background: documentType === d.value ? '#EEF2FA' : 'white',
-                      }}>
-                      <p className="text-xs font-medium leading-snug whitespace-pre-line"
-                        style={{ color: documentType === d.value ? '#1B3A8C' : '#1A2340' }}>{d.value}</p>
-                      <p className="text-xs mt-1" style={{ color: documentType === d.value ? '#4A7FD4' : '#5A6A8A' }}>{d.step}</p>
-                    </button>
-                  ))}
-                  {workPlace === '社内' && ['就業条件明示書', '雇用契約書 兼\n就業条件明示書'].map(d => (
-                    <div key={d} className="p-3 border rounded-lg opacity-40 cursor-not-allowed"
-                      style={{ borderColor: '#D0DAF0', background: '#F5F7FC' }}>
-                      <p className="text-xs leading-snug whitespace-pre-line" style={{ color: '#5A6A8A' }}>{d}</p>
-                      <p className="text-xs mt-1" style={{ color: '#5A6A8A' }}>社内は選択不可</p>
-                    </div>
-                  ))}
-                </div>
-                {documentType && contractType && (
-                  <div className="max-w-2xl rounded-lg px-4 py-3 border" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                    <p className="text-xs mb-1" style={{ color: '#5A6A8A' }}>✓ 発行する帳票</p>
-                    <p className="text-sm font-medium" style={{ color: '#1A2340' }}>{fullDocumentName}</p>
-                    <p className="text-xs mt-0.5" style={{ color: '#5A6A8A' }}>
-                      {pattern === 'A' ? '雇用契約書のみ・6STEP で申請できます' :
-                       pattern === 'B' ? '就業条件明示書のみ・給与入力なし・6STEP で申請できます' :
-                       '全項目入力・8STEP で申請できます'}
-                    </p>
+                  <div className="border-t px-5 py-4 flex justify-end" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
+                    <button onClick={e => {
+                      e.preventDefault()
+                      if (!selectedStaff || !documentType || !contractType) { alert('すべての項目を選択してください'); return }
+                      handleNext()
+                    }} className="text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-all"
+                      style={{ background: '#1B3A8C' }}>次へ進む →</button>
                   </div>
-                )}
-              </FormRow>
+                </>
+              )}
 
-              <div className="border-t px-5 py-4 flex justify-end" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
-                <button onClick={e => {
-                  e.preventDefault()
-                  if (!selectedStaff || !documentType || !contractType) { alert('すべての項目を選択してください'); return }
-                  handleNext()
-                }} className="text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-all"
-                  style={{ background: '#1B3A8C' }}>次へ進む →</button>
-              </div>
+              {reqSubmitted && (
+                <div className="border-t px-5 py-4 flex justify-end" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
+                  <button onClick={e => {
+                    e.preventDefault()
+                    // 依頼送信後の画面をリセットし、別のスタッフを検索し直せる状態に戻す
+                    setReqSubmitted(false)
+                    setShowRequestForm(false)
+                    setReqEmployeeNumber(''); setReqName(''); setReqDept(''); setReqHireDate('')
+                    setReqWorkLocation(''); setReqWithCsv(false); setReqCsvSystem(''); setReqDispatchStart('')
+                    setReqError('')
+                    setSearched(false); setSearchResults([])
+                    setContractType(''); setDocumentType(''); setShowContractTypeLockedMsg(false)
+                  }} className="text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-all"
+                    style={{ background: '#1B3A8C' }}>別のスタッフを探す</button>
+                </div>
+              )}
             </>
           )}
 

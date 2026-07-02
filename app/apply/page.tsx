@@ -1692,6 +1692,15 @@ function ApplyPageInner() {
       // STEP1〜8で入力したすべての値（再申請時の復元・SSC確認・将来の帳票生成にそのまま使う）
       const fields = buildCurrentFields()
 
+      // 申請者（担当営業）自身の部門番号を取得し、担当営業ダッシュボードの閲覧範囲フィルタに使う
+      // （2026-07-02追加：この取得処理がなく、新規申請のcreated_by_dept_noが常にnullになっていたバグを修正）
+      const { data: submitterStaffRow } = await supabase
+        .from('staff')
+        .select('dept_no')
+        .eq('email', user.email)
+        .limit(1)
+        .maybeSingle()
+
       // CSV関連の記録（SSC確認画面での差分表示・将来の振り返り用）
       const csvMeta = {
         csvMode, csvSystem, csvDispatchStart,
@@ -1728,6 +1737,7 @@ function ApplyPageInner() {
         work_place: workPlace,
         status: '申請中',
         closing_pattern: (pattern === 'A' || pattern === 'C') ? closingPattern : null,
+        created_by_dept_no: submitterStaffRow?.dept_no ?? null,
         // csvSelectedIdは配列のインデックス（何番目を選んだか）であり、CSV行の実IDではない。
         // 実IDはcsvResults[csvSelectedId].idに入っているため、ここで変換してから保存する
         csv_raw_data_id: (csvMode === 'csv' && csvSelectedId !== null && csvResults[csvSelectedId]) ? csvResults[csvSelectedId].id : null,

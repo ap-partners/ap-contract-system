@@ -335,10 +335,15 @@ export default function SSCDashboard() {
               const warning = hasWarning(contract)
               const autoWarning = hasAutoCheckWarning(contract)
               const isSelected = selectedIds.has(contract.id)
-              const canBulkSelect = activeTab === '承認待ち' && !warning && !autoWarning
+              const hasAnyWarning = warning || autoWarning
+              const canBulkSelect = activeTab === '承認待ち' && !hasAnyWarning
+              // 承認待ちタブでチェックボックスの代わりに警告アイコンを出す条件（2026-07-02追加）
+              const showWarningIcon = activeTab === '承認待ち' && hasAnyWarning
+              // アイコン・バッジの色（自己申告警告 or 自動チェック赤 → 赤、自動チェック黄のみ → 黄）
+              const warningColor = (warning || contract.warning_level === 'red') ? '#DC2626' : '#D97706'
 
-              // 期日アラートに応じた左ボーダー色
-              const leftBorderColor = deadline.type === 'overdue' ? '#DC2626' : deadline.type === 'urgent' ? '#F97316' : 'transparent'
+              // 期日アラートに応じた左ボーダー色（赤は警告系の色として予約しているため、期日はオレンジ系で統一）
+              const leftBorderColor = deadline.type === 'overdue' ? '#EA580C' : deadline.type === 'urgent' ? '#F97316' : 'transparent'
 
               return (
                 <div key={contract.id}
@@ -362,8 +367,19 @@ export default function SSCDashboard() {
                             style={{ accentColor: '#1B3A8C' }}
                           />
                         )}
+                        {/* 警告アイコン（チェックボックスと同じ位置・サイズに表示。2026-07-02追加）
+                            警告がある案件は一括承認の対象外になるため、チェックボックスの代わりにここへ表示し、
+                            「なぜチェックボックスが無いのか」がその場で分かるようにする。 */}
+                        {showWarningIcon && (
+                          <span
+                            title="警告あり（一括承認対象外）"
+                            className="w-4 h-4 mt-5 flex-shrink-0 rounded flex items-center justify-center"
+                            style={{ background: warningColor }}>
+                            <span style={{ color: 'white', fontSize: '10px', fontWeight: 700, lineHeight: 1 }}>!</span>
+                          </span>
+                        )}
                         {/* スタッフ情報 */}
-                        <div className={canBulkSelect ? '' : 'pl-0'}>
+                        <div className={(canBulkSelect || showWarningIcon) ? '' : 'pl-0'}>
                           <p className="text-xs mb-1" style={{ color: '#5A6A8A' }}>{staff.department || '―'}</p>
                           <div className="flex items-center gap-2 flex-wrap">
                             <ContractTypeBadge contractType={f.contractType || contract.contract_type} workPlace={f.workPlace || contract.work_place} />
@@ -387,18 +403,18 @@ export default function SSCDashboard() {
                         {/* 申請者名 ＋ 警告バッジ */}
                         <div className="flex items-center gap-2">
                           {warning && (
-                            <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: '#FEE2E2', color: '#B91C1C' }}>
-                              🔴 個別確認が必要
+                            <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: '#DC2626', color: 'white' }}>
+                              🔴 個別確認が必要（一括承認対象外）
                             </span>
                           )}
                           {/* 自動チェック警告バッジ（2026-07-02追加：中身の判定ロジック実装後に表示され始める） */}
                           {autoWarning && (
                             <span className="text-xs font-medium px-2 py-0.5 rounded"
                               style={{
-                                background: contract.warning_level === 'red' ? '#FEE2E2' : '#FFFBEB',
-                                color: contract.warning_level === 'red' ? '#B91C1C' : '#D97706',
+                                background: contract.warning_level === 'red' ? '#DC2626' : '#D97706',
+                                color: 'white',
                               }}>
-                              {contract.warning_level === 'red' ? '🔴' : '🟡'} 自動チェック要確認
+                              {contract.warning_level === 'red' ? '🔴' : '🟡'} 自動チェック要確認（一括承認対象外）
                             </span>
                           )}
                           {/* フェーズ2で申請者氏名に切り替え予定。現在はIDの先頭8文字 */}
@@ -419,10 +435,10 @@ export default function SSCDashboard() {
                       {deadline.type && (
                         <span className="text-xs font-medium px-2 py-0.5 rounded flex-shrink-0"
                           style={{
-                            background: deadline.type === 'overdue' ? '#FEE2E2' : '#FFF7ED',
-                            color: deadline.type === 'overdue' ? '#B91C1C' : '#C2410C',
+                            background: deadline.type === 'overdue' ? '#FFEDD5' : '#FFF7ED',
+                            color: deadline.type === 'overdue' ? '#9A3412' : '#C2410C',
                           }}>
-                          {deadline.type === 'overdue' ? '🔴' : '⚠'} {deadline.label}
+                          ⚠ {deadline.label}
                         </span>
                       )}
                     </div>

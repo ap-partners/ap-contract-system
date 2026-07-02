@@ -783,7 +783,7 @@ export default function SSCContractDetail() {
               <p className="text-sm text-center" style={{ color: '#9CA3AF' }}>この申請は処理済みです（ステータス：{contract.status}）</p>
             ) : (
               <>
-                <p className="text-sm font-bold mb-4 text-center" style={{ color: '#1A2340' }}>この申請を確認しました。どちらかを選んでください。</p>
+                <p className="text-sm font-bold mb-4 text-center" style={{ color: '#1A2340' }}>内容をご確認のうえ、どちらかを選んでください。</p>
 
                 {actionError && (
                   <div className="rounded-lg p-3 mb-4 border" style={{ background: '#FEF2F2', borderColor: '#FECACA' }}>

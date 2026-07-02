@@ -17,7 +17,7 @@ const getDocumentTypes = (workPlace: string) => {
 const getFullDocumentName = (docType: string, contractType: string) => {
   if (!docType || !contractType) return ''
   const cleanDocType = docType.replace('\n', ' ')
-  const period = contractType === '有期契約' ? '有期' : contractType === '無期契約' ? '無期' : ''
+  const period = contractType === '有期契約' ? '有期' : contractType === '無期契約' ? '無期' : contractType === 'アルバイト' ? 'アルバイト' : ''
   return period ? `${cleanDocType}（${period}）` : cleanDocType
 }
 
@@ -86,7 +86,7 @@ const getRemarksText = (pattern: string, contractType: string, bonusType: string
   const suffix = FIXED_REMARKS_SUFFIX
   if (pattern === 'B') return ''
   const isSeishain = contractType === '正社員'
-  const isKeiyaku = contractType === '有期契約' || contractType === '無期契約'
+  const isKeiyaku = contractType === '有期契約' || contractType === '無期契約' || contractType === 'アルバイト'
 
   if (pattern === 'C') {
     if (isKeiyaku) return `賞与【無】、退職手当【有】(退職手当前払い制度)、昇給【無】(契約更新時に改定する場合がある。)\n${suffix}`
@@ -1004,14 +1004,15 @@ function ApplyPageInner() {
   const [selectedStaff, setSelectedStaff] = useState<any>(null)
   const [contractType, setContractType] = useState('')
   // スタッフマスタの雇用区分が自動反映されている場合、変更不可にする（確定仕様）
-  const isContractTypeLocked = !!(selectedStaff && ['有期契約', '無期契約', '正社員'].includes(selectedStaff.contract_type))
+  const isContractTypeLocked = !!(selectedStaff && ['アルバイト', '有期契約', '無期契約', '正社員'].includes(selectedStaff.contract_type))
   const [showContractTypeLockedMsg, setShowContractTypeLockedMsg] = useState(false)
   const [workPlace, setWorkPlace] = useState('現場')
   const [documentType, setDocumentType] = useState('')
 
   const pattern = getPattern(documentType)
-  const period = contractType === '有期契約' ? '有期' : contractType === '無期契約' ? '無期' : ''
-  // 抵触日が不要な雇用区分（無期雇用派遣・正社員は「該当しない」扱い）
+  // アルバイトは雇用期間・試用期間まわりのバリデーションを有期契約と同じ扱いにする（表示用の帳票名ラベルは別途getFullDocumentName側で「アルバイト」と表示する）
+  const period = contractType === '有期契約' ? '有期' : contractType === '無期契約' ? '無期' : contractType === 'アルバイト' ? '有期' : ''
+  // 抵触日が不要な雇用区分（無期雇用派遣・正社員は「該当しない」扱い。アルバイトは有期契約と同じく対象）
   const isConflictDateExempt = contractType === '無期契約' || contractType === '正社員'
   const fullDocumentName = getFullDocumentName(documentType, contractType)
   const steps = pattern === 'A' ? STEPS_A : pattern === 'B' ? STEPS_B : pattern === 'C' ? STEPS_C : STEPS_A
@@ -2209,9 +2210,9 @@ function ApplyPageInner() {
                               setSelectedStaff(s)
                               setSearchResults([])
                               setShowContractTypeLockedMsg(false)
-                              // 雇用区分の自動反映：スタッフマスタの契約形態が有期契約/無期契約/正社員のいずれかであれば自動選択する
-                              // （null=雇用形態不明、アルバイトの場合は自動選択せず、これまで通り手動選択可能のままにする）
-                              if (['有期契約', '無期契約', '正社員'].includes(s.contract_type)) {
+                              // 雇用区分の自動反映：スタッフマスタの契約形態が有期契約/無期契約/正社員/アルバイトのいずれかであれば自動選択する
+                              // （null=雇用形態不明の場合のみ自動選択せず、手動選択可能のままにする）
+                              if (['アルバイト', '有期契約', '無期契約', '正社員'].includes(s.contract_type)) {
                                 setContractType(s.contract_type)
                               } else {
                                 setContractType('')
@@ -2240,7 +2241,7 @@ function ApplyPageInner() {
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center gap-3 flex-wrap">
                     <div className="flex border rounded-lg overflow-hidden bg-white" style={{ borderColor: '#D0DAF0' }}>
-                      {['有期契約', '無期契約', '正社員'].map(v => (
+                      {['アルバイト', '有期契約', '無期契約', '正社員'].map(v => (
                         <button key={v}
                           onClick={e => {
                             e.preventDefault()

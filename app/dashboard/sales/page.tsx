@@ -363,49 +363,35 @@ export default function SalesDashboard() {
               </div>
             </div>
           )}
-        </div>
-
-        {isExplain ? (
-          <div className="flex border-t" style={{ borderColor: '#D0DAF0' }}>
+          {/* 確認ボタン（2026-07-02改訂：左揃えピル形に統一。複数アクションがある場合は主アクションを塗りつぶし、詳細を見るは輪郭線に） */}
+          <div className="flex items-center gap-2 mt-3.5 flex-wrap">
             <button
-              className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 transition-all"
-              style={{ background: '#EEF2FA' }}
+              className="flex items-center gap-1.5 rounded-full transition-all"
+              style={(isExplain || contract.status === '差し戻し中')
+                ? { background: 'white', border: '1px solid #1B3A8C', padding: '6px 15px', cursor: 'pointer' }
+                : { background: '#1B3A8C', border: 'none', padding: '7px 16px', cursor: 'pointer' }}
               onClick={() => router.push(`/dashboard/sales/contracts/${contract.id}`)}>
-              <span className="text-xs font-medium" style={{ color: '#1B3A8C' }}>詳細を見る</span>
+              <span className="text-xs font-medium" style={{ color: (isExplain || contract.status === '差し戻し中') ? '#1B3A8C' : 'white' }}>詳細を見る</span>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={(isExplain || contract.status === '差し戻し中') ? '#1B3A8C' : 'white'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18" /></svg>
             </button>
-            {confirmingExplainId !== contract.id && (
+            {isExplain && confirmingExplainId !== contract.id && (
               <button
-                className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 transition-all"
-                style={{ background: '#0E7490' }}
+                className="flex items-center gap-1.5 rounded-full transition-all"
+                style={{ background: '#0E7490', border: 'none', padding: '7px 16px', cursor: 'pointer' }}
                 onClick={() => setConfirmingExplainId(contract.id)}>
                 <span className="text-xs font-medium text-white">✅ 説明完了</span>
               </button>
             )}
+            {contract.status === '差し戻し中' && (
+              <button
+                className="flex items-center gap-1.5 rounded-full transition-all"
+                style={{ background: '#B91C1C', border: 'none', padding: '7px 16px', cursor: 'pointer' }}
+                onClick={() => router.push(`/apply?edit=${contract.id}`)}>
+                <span className="text-xs font-medium text-white">↩ 再申請する</span>
+              </button>
+            )}
           </div>
-        ) : contract.status === '差し戻し中' ? (
-          <div className="flex border-t" style={{ borderColor: '#D0DAF0' }}>
-            <button
-              className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 transition-all"
-              style={{ background: '#EEF2FA' }}
-              onClick={() => router.push(`/dashboard/sales/contracts/${contract.id}`)}>
-              <span className="text-xs font-medium" style={{ color: '#1B3A8C' }}>詳細を見る</span>
-            </button>
-            <button
-              className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 transition-all"
-              style={{ background: '#B91C1C' }}
-              onClick={() => router.push(`/apply?edit=${contract.id}`)}>
-              <span className="text-xs font-medium text-white">↩ 再申請する</span>
-            </button>
-          </div>
-        ) : (
-          <button
-            className="w-full border-t flex items-center justify-end gap-1.5 px-5 py-2.5 transition-all"
-            style={{ borderColor: '#D0DAF0', background: '#EEF2FA' }}
-            onClick={() => router.push(`/dashboard/sales/contracts/${contract.id}`)}>
-            <span className="text-xs font-medium" style={{ color: '#1B3A8C' }}>詳細を見る</span>
-            <span className="text-xs" style={{ color: '#1B3A8C' }}>→</span>
-          </button>
-        )}
+        </div>
       </div>
     )
   }
@@ -422,11 +408,22 @@ export default function SalesDashboard() {
               <p className="text-xs" style={{ color: '#5A6A8A' }}>担当営業ダッシュボード</p>
             </div>
           </div>
-          <button onClick={handleLogout}
-            className="text-sm px-4 py-2 rounded-lg border transition-all"
-            style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
-            ログアウト
-          </button>
+          <div className="flex items-center gap-2.5 flex-shrink-0">
+            {/* 新規発行申請ボタン（2026-07-02改訂：ヘッダー内・ログアウトの左に移動、アイコンを書類＋プラスに変更） */}
+            <button onClick={() => router.push('/apply')}
+              className="flex items-center gap-1.5 rounded-lg font-medium transition-all whitespace-nowrap"
+              style={{ background: '#1B3A8C', color: 'white', border: 'none', padding: '9px 16px' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <path d="M14 3v4a1 1 0 0 0 1 1h4" /><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /><line x1="12" y1="12" x2="12" y2="16" /><line x1="10" y1="14" x2="14" y2="14" />
+              </svg>
+              <span className="text-xs">新規発行申請</span>
+            </button>
+            <button onClick={handleLogout}
+              className="text-sm px-4 py-2 rounded-lg border transition-all whitespace-nowrap"
+              style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
+              ログアウト
+            </button>
+          </div>
         </div>
       </header>
 
@@ -438,37 +435,44 @@ export default function SalesDashboard() {
           </div>
         )}
 
-        {/* 新規発行申請ボタン */}
-        <div className="mb-6">
-          <button onClick={() => router.push('/apply')}
-            className="text-white px-6 py-3 rounded-lg font-medium transition-all"
-            style={{ background: '#1B3A8C' }}>
-            ＋ 新規発行申請
-          </button>
-        </div>
-
-        {/* ボタン型フィルターカード */}
-        <div className="grid grid-cols-5 gap-3 mb-3">
+        {/* フィルタータブバー（2026-07-02改訂：5枚カードからタブバー形式に変更） */}
+        <div className="flex items-end gap-6 border-b mb-0 overflow-x-auto" style={{ borderColor: '#E5E9F2' }}>
           {filterCards.map(card => {
             const isActive = activeFilter === card.key
+            const isDisabled = card.count === null
+            const icon = card.key === 'pending'
+              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? card.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><rect x="4" y="4" width="16" height="16" rx="2" /><line x1="8" y1="10" x2="16" y2="10" /><line x1="8" y1="14" x2="13" y2="14" /></svg>
+              : card.key === 'explain'
+              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? card.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></svg>
+              : card.key === 'rejected'
+              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? card.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></svg>
+              : card.key === 'waiting'
+              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? card.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>
+              : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9AA5BD" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><rect x="3" y="5" width="18" height="14" rx="2" /><polyline points="3 7 12 13 21 7" /></svg>
             return (
               <button
                 key={card.key}
-                onClick={() => { setActiveFilter(card.key); setSubFilter('all') }}
-                className="text-left rounded-xl px-3.5 py-3.5 transition-all"
-                style={isActive
-                  ? { background: card.color, border: 'none', boxShadow: '0 6px 16px rgba(27,58,140,0.28)', transform: 'translateY(-2px)' }
-                  : { background: 'white', border: `1.5px solid ${card.color}`, boxShadow: '0 1px 3px rgba(16,24,64,0.06)' }}>
-                <p className="text-xs leading-snug" style={{ color: isActive ? 'rgba(255,255,255,0.85)' : card.color, minHeight: '2.2em' }}>
-                  {card.label}
-                </p>
+                onClick={() => { if (isDisabled) return; setActiveFilter(card.key); setSubFilter('all') }}
+                disabled={isDisabled}
+                className="flex items-center gap-2 pb-3 relative transition-all"
+                style={{ background: 'none', border: 'none', cursor: isDisabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', flexShrink: 0, opacity: isDisabled ? 0.55 : 1 }}>
+                {icon}
+                <span className="text-sm font-medium" style={{ color: isActive ? card.color : (isDisabled ? '#9AA5BD' : '#1A2340') }}>{card.label}</span>
                 {card.count === null ? (
-                  <p className="text-xs font-bold mt-1.5" style={{ color: isActive ? 'white' : '#9CA3AF' }}>準備中</p>
+                  <span className="text-xs" style={{ color: '#9AA5BD' }}>準備中</span>
                 ) : (
-                  <div className="flex items-end justify-between mt-1.5">
-                    <span className="text-2xl font-bold" style={{ color: isActive ? 'white' : card.color }}>{card.count}</span>
-                    <span className="text-sm" style={{ color: isActive ? 'white' : card.color, opacity: isActive ? 0.9 : 0.6 }}>{isActive ? '▲' : '▾'}</span>
-                  </div>
+                  <span className="text-xs font-bold rounded-full"
+                    style={{
+                      color: isActive ? 'white' : '#5A6A8A',
+                      background: isActive ? card.color : '#EEF0F5',
+                      padding: '2px 8px',
+                      minWidth: '20px',
+                      textAlign: 'center',
+                      lineHeight: 1.4,
+                    }}>{card.count}</span>
+                )}
+                {isActive && (
+                  <div className="absolute" style={{ left: 0, right: 0, bottom: '-1px', height: '2.5px', background: card.color, borderRadius: '2px 2px 0 0' }} />
                 )}
               </button>
             )
@@ -477,7 +481,8 @@ export default function SalesDashboard() {
 
         {/* サブフィルター（申請中のみ） */}
         {activeFilter === 'pending' && (
-          <div className="flex gap-2 mb-4">
+          <div className="flex items-center gap-2 mb-4 mt-4">
+            <span className="text-xs" style={{ color: '#5A6A8A' }}>絞り込み：</span>
             {([['all', 'すべて'], ['申請中', '申請中'], ['SSC承認済み', 'SSC承認済み'], ['署名済み', '署名済み']] as [SubFilter, string][]).map(([key, label]) => {
               const isActive = subFilter === key
               return (
@@ -487,13 +492,15 @@ export default function SalesDashboard() {
                   className="text-xs px-3.5 py-1.5 rounded-full transition-all"
                   style={isActive
                     ? { background: '#1B3A8C', color: 'white', border: '1px solid #1B3A8C' }
-                    : { background: 'white', color: '#5A6A8A', border: '1px solid #D0DAF0' }}>
+                    : { background: 'white', color: '#1A2340', border: '1px solid #D0DAF0' }}>
                   {label}
                 </button>
               )
             })}
           </div>
         )}
+
+        <div className="mb-2" style={{ marginTop: activeFilter === 'pending' ? 0 : '1rem' }} />
 
         {loading ? (
           <div className="text-center py-16">

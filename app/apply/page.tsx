@@ -2972,7 +2972,7 @@ function ApplyPageInner() {
           {stepType === 'sourceContact' && (
             <>
               <div className="px-5 py-3 border-b text-sm" style={{ background: '#EEF2FA', borderColor: '#D0DAF0', color: '#5A6A8A' }}>
-                ℹ️ 以下は自社マスタから自動入力されています。内容を確認し、必要であれば修正してください。
+                ℹ️ 以下は{mgrCmpSource === 'csv' ? 'CSVデータ' : '自社マスタ'}から自動入力されています。内容を確認し、必要であれば修正してください。
               </div>
               <SectionHeader label="派遣元責任者" />
               <FormRowAuto label="部署名" modified={masterSnapshot.mgr_dept !== undefined && mgr_dept !== masterSnapshot.mgr_dept} source={mgrCmpSource} wide

@@ -47,6 +47,10 @@ function formatDate(str: string | null) {
 function isPending(r: RequestRow) {
   return r.staff_register_status === 'pending' || r.csv_import_status === 'pending'
 }
+// この依頼行が「取消されたタスクを1つでも持っているか」
+function hasCancelled(r: RequestRow) {
+  return r.staff_register_status === 'cancelled' || r.csv_import_status === 'cancelled'
+}
 
 export default function AdminDashboard() {
   const router = useRouter()
@@ -57,7 +61,6 @@ export default function AdminDashboard() {
   const [requests, setRequests] = useState<RequestRow[]>([])
   const [reqLoading, setReqLoading] = useState(true)
   const [reqError, setReqError] = useState('')
-  const [departmentOptions, setDepartmentOptions] = useState<string[]>([])
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
 
   // 絞り込み条件
@@ -65,7 +68,7 @@ export default function AdminDashboard() {
   const [deptFilter, setDeptFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState<'' | 'staff_register' | 'csv_import'>('')
   const [systemFilter, setSystemFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState<'pending' | 'all' | 'completed'>('pending')
+  const [statusFilter, setStatusFilter] = useState<'pending' | 'all' | 'completed' | 'cancelled'>('pending')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
 
@@ -78,15 +81,6 @@ export default function AdminDashboard() {
       setUser(data.user)
     }
     checkUser()
-  }, [])
-
-  // 部門マスタ（絞り込みの選択肢用）
-  useEffect(() => {
-    const loadDepts = async () => {
-      const { data } = await supabase.from('department_master').select('dept_name').order('dept_no')
-      setDepartmentOptions((data || []).map((d: any) => d.dept_name).filter(Boolean))
-    }
-    loadDepts()
   }, [])
 
   // 依頼一覧の取得（絞り込み条件が変わるたびに再取得。件数はもっと見るで増やす）
@@ -130,10 +124,11 @@ export default function AdminDashboard() {
           displayDept: r.request_type === 'staff_register' ? r.staff_dept : (r.staff_id ? deptByStaffId[r.staff_id] || null : null),
         }))
 
-        if (deptFilter) rows = rows.filter(r => r.displayDept === deptFilter)
+        if (deptFilter) rows = rows.filter(r => r.displayDept && r.displayDept.includes(deptFilter))
 
         if (statusFilter === 'pending') rows = rows.filter(r => isPending(r))
-        if (statusFilter === 'completed') rows = rows.filter(r => !isPending(r))
+        if (statusFilter === 'completed') rows = rows.filter(r => !isPending(r) && !hasCancelled(r))
+        if (statusFilter === 'cancelled') rows = rows.filter(r => hasCancelled(r))
 
         setRequests(rows)
         setVisibleCount(PAGE_SIZE)
@@ -240,11 +235,10 @@ export default function AdminDashboard() {
                     placeholder="社員番号または氏名で検索（例）100001 or 山田"
                     className="flex-1 min-w-[220px] text-xs px-3 py-2 rounded-md border focus:outline-none"
                     style={{ borderColor: '#D0DAF0', color: '#1A2340', background: 'white' }} />
-                  <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)}
-                    className="text-xs px-3 py-2 rounded-md border bg-white" style={{ borderColor: '#D0DAF0', color: '#1A2340' }}>
-                    <option value="">部門名：すべて</option>
-                    {departmentOptions.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
+                  <input value={deptFilter} onChange={e => setDeptFilter(e.target.value)}
+                    placeholder="部門名で検索（空欄ですべて）"
+                    className="text-xs px-3 py-2 rounded-md border focus:outline-none"
+                    style={{ width: 180, borderColor: '#D0DAF0', color: '#1A2340', background: 'white' }} />
                   <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value as any); setSystemFilter('') }}
                     className="text-xs px-3 py-2 rounded-md border bg-white" style={{ borderColor: '#D0DAF0', color: '#1A2340' }}>
                     <option value="">依頼種別：すべて</option>
@@ -263,15 +257,16 @@ export default function AdminDashboard() {
                     <option value="pending">ステータス：未対応のみ</option>
                     <option value="all">未対応＋完了済み</option>
                     <option value="completed">完了済みのみ</option>
+                    <option value="cancelled">取消済みのみ</option>
                   </select>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs whitespace-nowrap" style={{ color: '#5A6A8A' }}>依頼日</span>
                   <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-                    className="text-xs px-2 py-1.5 rounded-md border" style={{ width: 130, borderColor: '#D0DAF0', color: '#1A2340' }} />
+                    className="text-xs px-2 py-1.5 rounded-md border" style={{ width: 130, borderColor: '#D0DAF0', color: '#1A2340', background: 'white' }} />
                   <span className="text-xs" style={{ color: '#5A6A8A' }}>〜</span>
                   <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-                    className="text-xs px-2 py-1.5 rounded-md border" style={{ width: 130, borderColor: '#D0DAF0', color: '#1A2340' }} />
+                    className="text-xs px-2 py-1.5 rounded-md border" style={{ width: 130, borderColor: '#D0DAF0', color: '#1A2340', background: 'white' }} />
                 </div>
               </div>
 

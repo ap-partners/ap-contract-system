@@ -175,6 +175,7 @@ export default function SSCDashboard() {
       const { data: rows, error } = await supabase
         .from('contracts')
         .select('id, pattern, contract_type, document_type, work_place, status, created_by, created_at, rejection_reason, warning_confirmations, warning_level, input_data')
+        .neq('work_place', '社内')
         .order('created_at', { ascending: false })
 
       if (error) { console.error('contracts取得エラー:', error); setLoading(false); return }

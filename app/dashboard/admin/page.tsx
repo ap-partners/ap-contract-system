@@ -239,7 +239,7 @@ export default function AdminDashboard() {
                   <input value={searchText} onChange={e => setSearchText(e.target.value)}
                     placeholder="社員番号または氏名で検索（例）100001 or 山田"
                     className="flex-1 min-w-[220px] text-xs px-3 py-2 rounded-md border focus:outline-none"
-                    style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                    style={{ borderColor: '#D0DAF0', color: '#1A2340', background: 'white' }} />
                   <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)}
                     className="text-xs px-3 py-2 rounded-md border bg-white" style={{ borderColor: '#D0DAF0', color: '#1A2340' }}>
                     <option value="">部門名：すべて</option>
@@ -417,7 +417,7 @@ function StatusRow({ label, status, cancelReason, onCancel }: {
           <input value={reasonText} onChange={e => setReasonText(e.target.value)}
             placeholder="取消理由を入力（例：社員番号の入力ミスのため）"
             className="text-xs px-3 py-2 rounded-md border focus:outline-none"
-            style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+            style={{ borderColor: '#D0DAF0', color: '#1A2340', background: 'white' }} />
           <div className="flex gap-2">
             <button onClick={submitCancel} disabled={submitting}
               className="text-[11px] px-3 py-1.5 rounded text-white"

@@ -40,6 +40,22 @@ type Contract = {
   }
 }
 
+type MyRequest = {
+  id: string
+  request_type: 'staff_register' | 'csv_import'
+  staff_name: string | null
+  staff_code: string | null
+  system_type: string | null
+  dispatch_start_date: string | null
+  staff_register_status: string | null
+  csv_import_status: string | null
+  staff_register_cancel_reason: string | null
+  csv_import_cancel_reason: string | null
+  requested_by_name: string | null
+  requested_by_dept: string | null
+  requested_at: string
+}
+
 const SIGN_DEADLINE_DAYS = 7 // 署名期日＝通知から7日（初期値。将来アラート日数マスタで変更可能にする予定）
 
 const CLOSING_PATTERN_LABEL: Record<string, string> = {
@@ -158,6 +174,9 @@ export default function SalesDashboard() {
   const [subFilter, setSubFilter] = useState<SubFilter>('all')
   const [confirmingExplainId, setConfirmingExplainId] = useState<string | null>(null)
   const [explainLoading, setExplainLoading] = useState(false)
+  const [myRequests, setMyRequests] = useState<MyRequest[]>([])
+  const [myRequestsLoading, setMyRequestsLoading] = useState(true)
+  const [includeCompletedRequests, setIncludeCompletedRequests] = useState(false)
 
   useEffect(() => {
     const init = async () => {
@@ -167,11 +186,11 @@ export default function SalesDashboard() {
       if (role !== '担当営業') { router.push('/login'); return }
       setUser(data.user)
 
-      // ログインユーザーのメールアドレスから所属部門NOを取得
+      // ログインユーザーのメールアドレスから所属部門NO・部門名を取得
       const email = data.user.email
       const { data: staffRow, error: staffError } = await supabase
         .from('staff')
-        .select('dept_no')
+        .select('dept_no, department_master(dept_name)')
         .eq('email', email)
         .limit(1)
         .maybeSingle()
@@ -179,14 +198,35 @@ export default function SalesDashboard() {
       if (staffError || !staffRow || staffRow.dept_no === null) {
         setDeptLookupError('ログインユーザーの所属部門が特定できませんでした。管理部にご確認ください。')
         setLoading(false)
+        setMyRequestsLoading(false)
         return
       }
 
-      await loadContracts(staffRow.dept_no)
+      const deptName = (staffRow as any)?.department_master?.dept_name || null
+
+      // 契約一覧と依頼一覧は互いに依存しないため並列で取得する
+      await Promise.all([
+        loadContracts(staffRow.dept_no),
+        loadMyRequests(deptName),
+      ])
       setLoading(false)
     }
     init()
   }, [router])
+
+  // 自分の部門全体が送った依頼（スタッフマスタ登録・CSVインポート）の状況を取得
+  const loadMyRequests = async (deptName: string | null) => {
+    setMyRequestsLoading(true)
+    if (!deptName) { setMyRequests([]); setMyRequestsLoading(false); return }
+    const { data: rows, error } = await supabase
+      .from('requests')
+      .select('id, request_type, staff_name, staff_code, system_type, dispatch_start_date, staff_register_status, csv_import_status, staff_register_cancel_reason, csv_import_cancel_reason, requested_by_name, requested_by_dept, requested_at')
+      .eq('requested_by_dept', deptName)
+      .order('requested_at', { ascending: false })
+    if (error) { console.error('requests取得エラー:', error); setMyRequestsLoading(false); return }
+    setMyRequests((rows || []) as MyRequest[])
+    setMyRequestsLoading(false)
+  }
 
   const loadContracts = async (deptNo: number) => {
     const { data: rows, error } = await supabase
@@ -217,12 +257,21 @@ export default function SalesDashboard() {
 
   const pendingListFiltered = subFilter === 'all' ? pendingList : pendingList.filter(c => c.status === subFilter)
 
+  // 「その他の依頼・回答」：デフォルトでは完了したタスクを持つだけの行は表示しない
+  // （未対応・取消済みのタスクが1つでもあれば表示する）
+  const hasVisibleTask = (r: MyRequest, includeCompleted: boolean) => {
+    const srVisible = !!r.staff_register_status && (r.staff_register_status !== 'completed' || includeCompleted)
+    const csvVisible = !!r.csv_import_status && r.csv_import_status !== 'not_required' && (r.csv_import_status !== 'completed' || includeCompleted)
+    return srVisible || csvVisible
+  }
+  const visibleMyRequests = myRequests.filter(r => hasVisibleTask(r, includeCompletedRequests))
+
   const filterCards: { key: FilterKey; label: string; count: number | null; color: string }[] = [
     { key: 'pending',  label: '申請中',            count: pendingList.length,  color: '#1B3A8C' },
     { key: 'explain',  label: '説明対応が必要',     count: explainList.length,  color: '#0E7490' },
     { key: 'rejected', label: '差し戻し',           count: rejectedList.length, color: '#DC2626' },
     { key: 'waiting',  label: '署名待ち',           count: waitingList.length,  color: '#92400E' },
-    { key: 'other',    label: 'その他の依頼・回答',  count: null,               color: '#5A6A8A' },
+    { key: 'other',    label: 'その他の依頼・回答',  count: visibleMyRequests.length,  color: '#5A6A8A' },
   ]
 
   const listForFilter: Record<FilterKey, Contract[]> = {
@@ -508,15 +557,29 @@ export default function SalesDashboard() {
           </div>
         ) : (
           <div className="bg-white rounded-lg border p-6" style={{ borderColor: '#D0DAF0' }}>
-            <h2 className="text-base font-bold mb-4" style={{ color: '#1A2340' }}>{currentLabel}（{currentList.length}件）</h2>
+            {activeFilter === 'other' ? (
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-bold" style={{ color: '#1A2340' }}>{currentLabel}（{visibleMyRequests.length}件）</h2>
+                <label className="flex items-center gap-1.5 text-xs" style={{ color: '#5A6A8A' }}>
+                  <input type="checkbox" checked={includeCompletedRequests}
+                    onChange={e => setIncludeCompletedRequests(e.target.checked)} />
+                  完了したものも表示する
+                </label>
+              </div>
+            ) : (
+              <h2 className="text-base font-bold mb-4" style={{ color: '#1A2340' }}>{currentLabel}（{currentList.length}件）</h2>
+            )}
 
             {activeFilter === 'other' ? (
-              <div className="text-center py-10">
-                <p className="text-sm mb-1" style={{ color: '#5A6A8A' }}>この機能は準備中です。</p>
-                <p className="text-xs" style={{ color: '#9CA3AF' }}>
-                  管理部への依頼（マスタ登録・CSVインポート依頼）／更新回答　は今後追加予定です。
-                </p>
-              </div>
+              myRequestsLoading ? (
+                <p className="text-sm py-6" style={{ color: '#5A6A8A' }}>読み込み中...</p>
+              ) : visibleMyRequests.length === 0 ? (
+                <p className="text-sm py-6" style={{ color: '#5A6A8A' }}>該当する依頼はありません。</p>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {visibleMyRequests.map(r => <MyRequestCard key={r.id} r={r} includeCompleted={includeCompletedRequests} />)}
+                </div>
+              )
             ) : currentList.length === 0 ? (
               <p className="text-sm py-6" style={{ color: '#5A6A8A' }}>該当する書類はありません。</p>
             ) : (
@@ -524,9 +587,76 @@ export default function SalesDashboard() {
                 {currentList.map(c => <ContractCard key={c.id} contract={c} />)}
               </div>
             )}
+
+            {activeFilter === 'other' && (
+              <div className="border-t mt-4 pt-3 text-center" style={{ borderColor: '#EEF0F5' }}>
+                <span className="text-xs" style={{ color: '#9AA5BD' }}>更新回答機能は準備中です。</span>
+              </div>
+            )}
           </div>
         )}
       </main>
+    </div>
+  )
+}
+
+function MyRequestCard({ r, includeCompleted }: { r: MyRequest; includeCompleted: boolean }) {
+  const badge = (status: string) => {
+    const isDone = status === 'completed'
+    const isCancelled = status === 'cancelled'
+    const label = isDone ? '完了' : isCancelled ? '要確認：取消済み' : status === 'in_progress' ? '対応中' : '未対応'
+    const color = isDone ? '#0D9488' : isCancelled ? '#EA580C' : '#DC2626'
+    return <span className="text-white text-[10px] px-2 py-0.5 rounded-full" style={{ background: color }}>{label}</span>
+  }
+  const taskVisible = (status: string | null) => !!status && status !== 'not_required' && (status !== 'completed' || includeCompleted)
+
+  const showStaffRegister = taskVisible(r.staff_register_status)
+  const showCsvImport = taskVisible(r.csv_import_status)
+  const hasCancelled = r.staff_register_status === 'cancelled' || r.csv_import_status === 'cancelled'
+
+  return (
+    <div className="rounded-lg border p-4"
+      style={{
+        borderColor: hasCancelled ? '#FDBA74' : '#D0DAF0',
+        background: hasCancelled ? '#FFF7ED' : 'white',
+      }}>
+      <div className="flex justify-between items-start mb-2">
+        <p className="text-sm font-semibold" style={{ color: '#1A2340' }}>
+          {r.staff_name || '―'}（社員番号：{r.staff_code || '―'}）
+        </p>
+        <p className="text-xs text-right" style={{ color: '#5A6A8A' }}>
+          {r.requested_by_name && <>依頼者：{r.requested_by_name}{r.requested_by_dept ? `（${r.requested_by_dept}）` : ''}<br /></>}
+          依頼日：{formatDateTime(r.requested_at)}
+        </p>
+      </div>
+      <div className="flex flex-col gap-2">
+        {showStaffRegister && (
+          <div className="rounded-md border px-3 py-2"
+            style={{ background: 'white', borderColor: r.staff_register_status === 'cancelled' ? '#FDBA74' : '#D0DAF0' }}>
+            <div className="flex items-center gap-2">
+              {badge(r.staff_register_status as string)}
+              <span className="text-xs" style={{ color: '#1A2340' }}>スタッフマスタ登録</span>
+            </div>
+            {r.staff_register_status === 'cancelled' && r.staff_register_cancel_reason && (
+              <p className="text-[11px] mt-1.5" style={{ color: '#9A3412' }}>取消理由：{r.staff_register_cancel_reason}</p>
+            )}
+          </div>
+        )}
+        {showCsvImport && (
+          <div className="rounded-md border px-3 py-2"
+            style={{ background: 'white', borderColor: r.csv_import_status === 'cancelled' ? '#FDBA74' : '#D0DAF0' }}>
+            <div className="flex items-center gap-2">
+              {badge(r.csv_import_status as string)}
+              <span className="text-xs" style={{ color: '#1A2340' }}>
+                CSVインポート{r.system_type ? `（${r.system_type}${r.dispatch_start_date ? '・派遣開始日 ' + formatDate(new Date(r.dispatch_start_date)) : ''}）` : ''}
+              </span>
+            </div>
+            {r.csv_import_status === 'cancelled' && r.csv_import_cancel_reason && (
+              <p className="text-[11px] mt-1.5" style={{ color: '#9A3412' }}>取消理由：{r.csv_import_cancel_reason}</p>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

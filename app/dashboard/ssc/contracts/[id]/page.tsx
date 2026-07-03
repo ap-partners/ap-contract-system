@@ -289,6 +289,9 @@ export default function SSCContractDetail() {
         .single()
 
       if (error || !row) { setNotFound(true); setLoading(false); return }
+      // 社内案件はSSCの閲覧対象外（一覧画面と同じ制限。URL直打ちでの閲覧を防ぐ）。
+      // 存在しない申請と同じ表示にすることで、社内案件が存在すること自体も分からないようにする。
+      if ((row as any).work_place === '社内') { setNotFound(true); setLoading(false); return }
       setContract(row as ContractDetail)
       setLoading(false)
     }

@@ -161,8 +161,8 @@ const getEmployPeriodLabel = (contract: Contract): string => {
   return '―'
 }
 
-type FilterKey = 'pending' | 'explain' | 'rejected' | 'waiting' | 'other'
-type SubFilter = 'all' | '申請中' | 'SSC承認済み' | '署名済み'
+type FilterKey = 'pending' | 'explain' | 'rejected' | 'waiting' | 'completed' | 'other'
+type SubFilter = 'all' | '申請中' | 'SSC承認済み' | '署名済み' | '完了'
 
 export default function SalesDashboard() {
   const router = useRouter()
@@ -244,20 +244,22 @@ export default function SalesDashboard() {
     router.push('/login')
   }
 
-  // 「説明対応が必要」：SSC承認済み かつ 締結パターンが対面／印刷（担当営業のアクション待ち）
+  // 「要説明」：SSC承認済み かつ 締結パターンが対面／印刷（担当営業のアクション待ち）
   const isExplainNeeded = (c: Contract) => {
     const cp = c.input_data?.fields?.closingPattern
     return c.status === 'SSC承認済み' && (cp === 'face' || cp === 'print')
   }
 
   const explainList = contracts.filter(isExplainNeeded)
-  const pendingList = contracts.filter(c => ['申請中', 'SSC承認済み', '署名済み'].includes(c.status) && !isExplainNeeded(c))
+  const pendingList = contracts.filter(c => ['申請中', 'SSC承認済み'].includes(c.status) && !isExplainNeeded(c))
   const rejectedList = contracts.filter(c => c.status === '差し戻し中')
   const waitingList = contracts.filter(c => c.status === '署名待ち')
+  const completedList = contracts.filter(c => ['署名済み', '完了'].includes(c.status))
 
   const pendingListFiltered = subFilter === 'all' ? pendingList : pendingList.filter(c => c.status === subFilter)
+  const completedListFiltered = subFilter === 'all' ? completedList : completedList.filter(c => c.status === subFilter)
 
-  // 「その他の依頼・回答」：デフォルトでは完了したタスクを持つだけの行は表示しない
+  // 「依頼状況」：デフォルトでは完了したタスクを持つだけの行は表示しない
   // （未対応・取消済みのタスクが1つでもあれば表示する）
   const hasVisibleTask = (r: MyRequest, includeCompleted: boolean) => {
     const srVisible = !!r.staff_register_status && (r.staff_register_status !== 'completed' || includeCompleted)
@@ -267,11 +269,12 @@ export default function SalesDashboard() {
   const visibleMyRequests = myRequests.filter(r => hasVisibleTask(r, includeCompletedRequests))
 
   const filterCards: { key: FilterKey; label: string; count: number | null; color: string }[] = [
-    { key: 'pending',  label: '申請中',            count: pendingList.length,  color: '#1B3A8C' },
-    { key: 'explain',  label: '説明対応が必要',     count: explainList.length,  color: '#0E7490' },
-    { key: 'rejected', label: '差し戻し',           count: rejectedList.length, color: '#DC2626' },
-    { key: 'waiting',  label: '署名待ち',           count: waitingList.length,  color: '#92400E' },
-    { key: 'other',    label: 'その他の依頼・回答',  count: visibleMyRequests.length,  color: '#5A6A8A' },
+    { key: 'pending',   label: '進行中',     count: pendingList.length,       color: '#1B3A8C' },
+    { key: 'explain',   label: '要説明',     count: explainList.length,       color: '#0E7490' },
+    { key: 'rejected',  label: '差し戻し',   count: rejectedList.length,      color: '#DC2626' },
+    { key: 'waiting',   label: '署名待ち',   count: waitingList.length,       color: '#92400E' },
+    { key: 'completed', label: '完了',       count: completedList.length,     color: '#0D9488' },
+    { key: 'other',     label: '依頼状況',   count: visibleMyRequests.length, color: '#5A6A8A' },
   ]
 
   const listForFilter: Record<FilterKey, Contract[]> = {
@@ -279,6 +282,7 @@ export default function SalesDashboard() {
     explain: explainList,
     rejected: rejectedList,
     waiting: waitingList,
+    completed: completedListFiltered,
     other: [],
   }
   const currentList = listForFilter[activeFilter]
@@ -497,6 +501,8 @@ export default function SalesDashboard() {
               ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? card.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></svg>
               : card.key === 'waiting'
               ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? card.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>
+              : card.key === 'completed'
+              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? card.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="9" /><polyline points="8 12.5 10.8 15 16 9" /></svg>
               : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9AA5BD" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><rect x="3" y="5" width="18" height="14" rx="2" /><polyline points="3 7 12 13 21 7" /></svg>
             return (
               <button
@@ -528,11 +534,14 @@ export default function SalesDashboard() {
           })}
         </div>
 
-        {/* サブフィルター（申請中のみ） */}
-        {activeFilter === 'pending' && (
+        {/* サブフィルター（進行中・完了のみ） */}
+        {(activeFilter === 'pending' || activeFilter === 'completed') && (
           <div className="flex items-center gap-2 mb-4 mt-4">
             <span className="text-xs" style={{ color: '#5A6A8A' }}>絞り込み：</span>
-            {([['all', 'すべて'], ['申請中', '申請中'], ['SSC承認済み', 'SSC承認済み'], ['署名済み', '署名済み']] as [SubFilter, string][]).map(([key, label]) => {
+            {(activeFilter === 'pending'
+              ? ([['all', 'すべて'], ['申請中', '申請中'], ['SSC承認済み', 'SSC承認済み']] as [SubFilter, string][])
+              : ([['all', 'すべて'], ['署名済み', '署名済み'], ['完了', '完了']] as [SubFilter, string][])
+            ).map(([key, label]) => {
               const isActive = subFilter === key
               return (
                 <button

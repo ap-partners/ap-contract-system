@@ -18,6 +18,9 @@ type RequestRow = {
   dispatch_start_date: string | null
   staff_register_status: string | null
   csv_import_status: string | null
+  staff_register_cancel_reason: string | null
+  csv_import_cancel_reason: string | null
+  requested_by_name: string | null
   requested_by_dept: string | null
   requested_at: string
   // 表示用に後から補完する項目
@@ -149,6 +152,21 @@ export default function AdminDashboard() {
   const pendingTotalCount = requests.filter(isPending).length
   const visibleRequests = requests.slice(0, visibleCount)
 
+  const handleCancelTask = async (
+    requestId: string,
+    statusField: 'staff_register_status' | 'csv_import_status',
+    reasonField: 'staff_register_cancel_reason' | 'csv_import_cancel_reason',
+    reason: string
+  ) => {
+    const { error } = await supabase
+      .from('requests')
+      .update({ [statusField]: 'cancelled', [reasonField]: reason })
+      .eq('id', requestId)
+    if (error) { alert('取消の保存に失敗しました。（' + error.message + '）'); return false }
+    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, [statusField]: 'cancelled', [reasonField]: reason } : r))
+    return true
+  }
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.push('/login')
@@ -266,7 +284,8 @@ export default function AdminDashboard() {
 
               <div className="flex flex-col gap-3">
                 {visibleRequests.map(r => (
-                  <RequestCard key={r.id} r={r} />
+                  <RequestCard key={r.id} r={r}
+                    onCancel={(statusField, reasonField, reason) => handleCancelTask(r.id, statusField, reasonField, reason)} />
                 ))}
               </div>
 
@@ -297,7 +316,10 @@ export default function AdminDashboard() {
   )
 }
 
-function RequestCard({ r }: { r: RequestRow }) {
+function RequestCard({ r, onCancel }: {
+  r: RequestRow
+  onCancel: (statusField: 'staff_register_status' | 'csv_import_status', reasonField: 'staff_register_cancel_reason' | 'csv_import_cancel_reason', reason: string) => Promise<boolean>
+}) {
   return (
     <div className="rounded-lg border p-4" style={{ borderColor: '#D0DAF0' }}>
       <div className="flex justify-between items-start mb-2">
@@ -310,6 +332,11 @@ function RequestCard({ r }: { r: RequestRow }) {
         <div className="text-right">
           <p className="text-[10px]" style={{ color: '#A8B3C9' }}>依頼日</p>
           <p className="text-xs" style={{ color: '#5A6A8A' }}>{formatDateTime(r.requested_at)}</p>
+          {r.requested_by_name && (
+            <p className="text-[11px] mt-0.5" style={{ color: '#5A6A8A' }}>
+              申請者：{r.requested_by_name}{r.requested_by_dept ? `（${r.requested_by_dept}）` : ''}
+            </p>
+          )}
         </div>
       </div>
 
@@ -325,12 +352,16 @@ function RequestCard({ r }: { r: RequestRow }) {
           <StatusRow
             label="スタッフマスタ登録"
             status={r.staff_register_status}
+            cancelReason={r.staff_register_cancel_reason}
+            onCancel={reason => onCancel('staff_register_status', 'staff_register_cancel_reason', reason)}
           />
         )}
         {r.csv_import_status && r.csv_import_status !== 'not_required' && (
           <StatusRow
             label={`CSVインポート${r.system_type ? `（${r.system_type}${r.dispatch_start_date ? '・派遣開始日 ' + formatDate(r.dispatch_start_date) : ''}）` : ''}`}
             status={r.csv_import_status}
+            cancelReason={r.csv_import_cancel_reason}
+            onCancel={reason => onCancel('csv_import_status', 'csv_import_cancel_reason', reason)}
           />
         )}
       </div>
@@ -338,18 +369,67 @@ function RequestCard({ r }: { r: RequestRow }) {
   )
 }
 
-function StatusRow({ label, status }: { label: string; status: string }) {
+function StatusRow({ label, status, cancelReason, onCancel }: {
+  label: string
+  status: string
+  cancelReason: string | null
+  onCancel: (reason: string) => Promise<boolean>
+}) {
+  const [showCancelForm, setShowCancelForm] = useState(false)
+  const [reasonText, setReasonText] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
   const isDone = status === 'completed'
+  const isCancelled = status === 'cancelled'
+  const badgeLabel = isDone ? '完了' : isCancelled ? '取消済み' : status === 'in_progress' ? '対応中' : '未対応'
+  const badgeColor = isDone ? '#0D9488' : isCancelled ? '#5A6A8A' : '#DC2626'
+  const bgColor = isDone ? '#ECFDF5' : isCancelled ? '#F1F2F5' : '#FEF2F2'
+  const borderColor = isDone ? '#A7F3D0' : isCancelled ? '#D0DAF0' : '#FECACA'
+
+  const submitCancel = async () => {
+    if (!reasonText.trim()) { alert('取消理由を入力してください'); return }
+    setSubmitting(true)
+    const ok = await onCancel(reasonText.trim())
+    setSubmitting(false)
+    if (ok) setShowCancelForm(false)
+  }
+
   return (
-    <div className="flex items-center gap-2 rounded-md border px-3 py-2"
-      style={{
-        background: isDone ? '#ECFDF5' : '#FEF2F2',
-        borderColor: isDone ? '#A7F3D0' : '#FECACA',
-      }}>
-      <span className="text-white text-[10px] px-2 py-0.5 rounded-full" style={{ background: isDone ? '#0D9488' : '#DC2626' }}>
-        {isDone ? '完了' : status === 'in_progress' ? '対応中' : '未対応'}
-      </span>
-      <span className="text-xs" style={{ color: '#1A2340' }}>{label}</span>
+    <div className="rounded-md border px-3 py-2" style={{ background: bgColor, borderColor }}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-white text-[10px] px-2 py-0.5 rounded-full" style={{ background: badgeColor }}>{badgeLabel}</span>
+          <span className="text-xs" style={{ color: '#1A2340' }}>{label}</span>
+        </div>
+        {status === 'pending' && !showCancelForm && (
+          <button onClick={() => setShowCancelForm(true)}
+            className="text-[11px] px-2 py-1 rounded border bg-white shrink-0"
+            style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>取消</button>
+        )}
+      </div>
+
+      {isCancelled && cancelReason && (
+        <p className="text-[11px] mt-1.5" style={{ color: '#5A6A8A' }}>取消理由：{cancelReason}</p>
+      )}
+
+      {showCancelForm && (
+        <div className="mt-2 flex flex-col gap-2">
+          <input value={reasonText} onChange={e => setReasonText(e.target.value)}
+            placeholder="取消理由を入力（例：社員番号の入力ミスのため）"
+            className="text-xs px-3 py-2 rounded-md border focus:outline-none"
+            style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+          <div className="flex gap-2">
+            <button onClick={submitCancel} disabled={submitting}
+              className="text-[11px] px-3 py-1.5 rounded text-white"
+              style={{ background: '#DC2626', opacity: submitting ? 0.6 : 1 }}>
+              {submitting ? '送信中…' : 'この理由で取消す'}
+            </button>
+            <button onClick={() => { setShowCancelForm(false); setReasonText('') }} disabled={submitting}
+              className="text-[11px] px-3 py-1.5 rounded border bg-white"
+              style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>キャンセル</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

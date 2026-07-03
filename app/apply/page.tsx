@@ -1917,10 +1917,10 @@ function ApplyPageInner() {
     setReqSubmitting(true)
     setReqError('')
     try {
-      // 申請者（担当営業）自身の部門名を取得（requested_by_deptに保存する表示用テキスト）
+      // 申請者（担当営業）自身の氏名・部門名を取得
       const { data: submitterStaffRow } = await supabase
         .from('staff')
-        .select('department_master(dept_name)')
+        .select('name, department_master(dept_name)')
         .eq('email', user.email)
         .limit(1)
         .maybeSingle()
@@ -1939,6 +1939,7 @@ function ApplyPageInner() {
         system_type: reqWithCsv ? reqCsvSystem : null,
         dispatch_start_date: reqWithCsv ? reqDispatchStart : null,
         requested_by: user.id,
+        requested_by_name: (submitterStaffRow as any)?.name || null,
         requested_by_dept: (submitterStaffRow as any)?.department_master?.dept_name || null,
       }])
 
@@ -1964,7 +1965,7 @@ function ApplyPageInner() {
     try {
       const { data: submitterStaffRow } = await supabase
         .from('staff')
-        .select('department_master(dept_name)')
+        .select('name, department_master(dept_name)')
         .eq('email', user.email)
         .limit(1)
         .maybeSingle()
@@ -1980,6 +1981,7 @@ function ApplyPageInner() {
         // デフォルトの'pending'のままにせず明示的にnullにする
         staff_register_status: null,
         requested_by: user.id,
+        requested_by_name: (submitterStaffRow as any)?.name || null,
         requested_by_dept: (submitterStaffRow as any)?.department_master?.dept_name || null,
       }])
 

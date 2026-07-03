@@ -66,6 +66,7 @@ export default function AdminDashboard() {
   // 絞り込み条件
   const [searchText, setSearchText] = useState('')
   const [deptFilter, setDeptFilter] = useState('')
+  const [requesterFilter, setRequesterFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState<'' | 'staff_register' | 'csv_import'>('')
   const [systemFilter, setSystemFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<'pending' | 'all' | 'completed' | 'cancelled'>('pending')
@@ -95,8 +96,11 @@ export default function AdminDashboard() {
         if (searchText) {
           query = query.or(`staff_name.ilike.%${searchText}%,staff_code.ilike.%${searchText}%`)
         }
-        if (typeFilter) query = query.eq('request_type', typeFilter)
+        // 依頼種別は request_type 列そのものではなく「該当タスクが実在するか」で絞り込む。
+        // request_type='staff_register' の依頼でも「CSVインポートも同時に依頼する」がオンなら
+        // csv_import_status も入っているため、request_type だけで絞ると同時依頼分を取りこぼす。
         if (systemFilter) query = query.eq('system_type', systemFilter)
+        if (requesterFilter) query = query.ilike('requested_by_name', `%${requesterFilter}%`)
         if (dateFrom) query = query.gte('requested_at', `${dateFrom}T00:00:00`)
         if (dateTo) query = query.lte('requested_at', `${dateTo}T23:59:59`)
 
@@ -104,6 +108,9 @@ export default function AdminDashboard() {
         if (error) { setReqError('依頼一覧の取得に失敗しました。（' + error.message + '）'); setReqLoading(false); return }
 
         let rows = (data || []) as RequestRow[]
+
+        if (typeFilter === 'staff_register') rows = rows.filter(r => !!r.staff_register_status)
+        if (typeFilter === 'csv_import') rows = rows.filter(r => !!r.csv_import_status && r.csv_import_status !== 'not_required')
 
         // staff_register型は入力済みのstaff_deptをそのまま表示用部門名にする
         // csv_import型はstaff_idからstaff→department_masterを引いて表示用部門名を補完する
@@ -137,10 +144,10 @@ export default function AdminDashboard() {
       }
     }
     loadRequests()
-  }, [user, searchText, deptFilter, typeFilter, systemFilter, statusFilter, dateFrom, dateTo])
+  }, [user, searchText, deptFilter, requesterFilter, typeFilter, systemFilter, statusFilter, dateFrom, dateTo])
 
   const resetFilters = () => {
-    setSearchText(''); setDeptFilter(''); setTypeFilter(''); setSystemFilter('')
+    setSearchText(''); setDeptFilter(''); setRequesterFilter(''); setTypeFilter(''); setSystemFilter('')
     setStatusFilter('pending'); setDateFrom(''); setDateTo('')
   }
 
@@ -239,6 +246,10 @@ export default function AdminDashboard() {
                     placeholder="部門名で検索（空欄ですべて）"
                     className="text-xs px-3 py-2 rounded-md border focus:outline-none"
                     style={{ width: 180, borderColor: '#D0DAF0', color: '#1A2340', background: 'white' }} />
+                  <input value={requesterFilter} onChange={e => setRequesterFilter(e.target.value)}
+                    placeholder="申請者名で検索（空欄ですべて）"
+                    className="text-xs px-3 py-2 rounded-md border focus:outline-none"
+                    style={{ width: 180, borderColor: '#D0DAF0', color: '#1A2340', background: 'white' }} />
                   <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value as any); setSystemFilter('') }}
                     className="text-xs px-3 py-2 rounded-md border bg-white" style={{ borderColor: '#D0DAF0', color: '#1A2340' }}>
                     <option value="">依頼種別：すべて</option>
@@ -255,7 +266,7 @@ export default function AdminDashboard() {
                   <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)}
                     className="text-xs px-3 py-2 rounded-md border bg-white" style={{ borderColor: '#D0DAF0', color: '#1A2340' }}>
                     <option value="pending">ステータス：未対応のみ</option>
-                    <option value="all">未対応＋完了済み</option>
+                    <option value="all">すべて（未対応・完了・取消済み）</option>
                     <option value="completed">完了済みのみ</option>
                     <option value="cancelled">取消済みのみ</option>
                   </select>

@@ -1142,6 +1142,14 @@ function ApplyPageInner() {
   const [hasEmployInsurance, setHasEmployInsurance] = useState(true)
   const [hasSocialInsurance, setHasSocialInsurance] = useState(true)
   const [salaryWarningChecked, setSalaryWarningChecked] = useState(false)
+  const [workingHoursMaster, setWorkingHoursMaster] = useState<any[]>([])
+
+  // 所定労働時間マスタを取得（月給者の最低賃金チェックで使用。件数が少ないため一括取得）
+  useEffect(() => {
+    supabase.from('standard_working_hours_master').select('*').then(({ data }) => {
+      setWorkingHoursMaster(data || [])
+    })
+  }, [])
 
   const trialCalc = calcTrialMonths(trialStart, trialEnd)
   // CSVデータから自動入力している時だけ、未入力必須項目を赤く強調する（手入力の時はそもそも全項目が空欄から始まるため対象外）
@@ -1220,6 +1228,14 @@ function ApplyPageInner() {
     if (val < rule.min || val > rule.max) return '桁数をご確認ください'
     return null
   })()
+
+  // 所定労働時間マスタから、現在の勤務地×雇用区分に該当するパターンを絞り込む
+  // （最低賃金の月給者チェックで使用。社内は個人差が大きく判別できないため対象外とし、現場のみ実施する2026-07-03決定）
+  const applicableHoursPatterns = workPlace === '現場'
+    ? workingHoursMaster.filter(p => p.work_place === workPlace && p.contract_type === contractType)
+    : []
+  // 確定した月所定労働時間（現場は組み合わせごとに必ず1パターンのため自動適用。社内はチェック対象外のためnull）
+  const resolvedMonthlyHours = applicableHoursPatterns.length === 1 ? applicableHoursPatterns[0].monthly_hours : null
 
   // STEP7：定額残業手当の時間数バリデーション（赤・止める）
   const overtimeHoursError = (() => {
@@ -1717,6 +1733,7 @@ function ApplyPageInner() {
     salaryType, basicSalary, skillPay, rolePay, salesPay, housingPay,
     overtimePay, overtimeHours, transportType,
     hasEmployInsurance, hasSocialInsurance,
+    monthlyStandardHours: resolvedMonthlyHours,
   })
 
   const handleSubmitContract = async () => {

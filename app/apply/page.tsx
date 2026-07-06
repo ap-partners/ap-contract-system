@@ -1812,7 +1812,7 @@ function ApplyPageInner() {
         monthlyStandardHours: resolvedMonthlyHours,
         deptNo: selectedStaff?.dept_no ?? null,
         staffHiredAt: selectedStaff?.hired_at ?? null,
-        employStart, employEnd,
+        employStart, employEnd, contractStartDate,
         dispatchStart, dispatchEnd,
         trialPeriod,
         minimumWageRowsForDept: minimumWageMaster.filter(r => r.dept_no === selectedStaff?.dept_no),
@@ -2090,11 +2090,14 @@ function ApplyPageInner() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <button onClick={handleCancel}
-              className="text-sm px-4 py-2 rounded-lg border font-medium transition-all"
-              style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: '#EEF2FA' }}>
-              ← この申請をやめる
-            </button>
+            {/* 申請完了後は「やめる」対象が無くなるため非表示にする（2026-07-07修正） */}
+            {!isSubmitted && (
+              <button onClick={handleCancel}
+                className="text-sm px-4 py-2 rounded-lg border font-medium transition-all"
+                style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: '#EEF2FA' }}>
+                この申請をやめる
+              </button>
+            )}
             <button onClick={handleLogout} className="text-sm" style={{ color: '#5A6A8A' }}>
               ログアウト
             </button>

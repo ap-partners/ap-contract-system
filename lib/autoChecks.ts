@@ -49,6 +49,7 @@ export interface AutoCheckInput {
   staffHiredAt: string | null // staff.hired_at（YYYY-MM-DD）
   employStart: string
   employEnd: string
+  contractStartDate: string // 無期契約・正社員は雇用期間ではなくこちら（契約条件適用開始日）を使う
   dispatchStart: string
   dispatchEnd: string
   trialPeriod: string // '有' | '無' | ''
@@ -97,7 +98,9 @@ function checkMinimumWage(input: AutoCheckInput): AutoCheckResult[] {
   }
   if (hourlyEquivalent === null) return results // 換算できない場合は判定不能のためスキップ
 
-  const periodEnd = input.employEnd || input.employStart || null // 無期・正社員等で終了日が無い場合は開始日を基準にする
+  // 無期契約・正社員は雇用期間（employStart/employEnd）を使わず、契約条件適用開始日（contractStartDate）を使う仕様のため、
+  // こちらが空の場合のフォールバックとして必ず含める（2026-07-07修正：この考慮漏れで正社員の最低賃金チェックが常にスキップされていた）
+  const periodEnd = input.employEnd || input.employStart || input.contractStartDate || null
   if (!periodEnd) return results
 
   // 雇用期間の終了日までに適用開始済みの行の中から、最も新しい（＝適用開始日が最も遅い）行を採用する。

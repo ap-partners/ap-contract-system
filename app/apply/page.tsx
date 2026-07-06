@@ -3024,7 +3024,7 @@ function ApplyPageInner() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <div className="flex gap-2 flex-wrap">
                         {[
-                          { value: '週5日（月〜金）', label: '週5日（月〜金）' },
+                          { value: '週5日', label: '週5日' },
                           { value: '週4日', label: '週4日' },
                           { value: '週3日', label: '週3日' },
                           { value: 'other', label: 'その他' },

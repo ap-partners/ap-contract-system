@@ -35,6 +35,7 @@ type ContractDetail = {
   }
   warning_confirmations: { type: string; confirmed_at: string }[]
   warning_level: WarningLevel
+  auto_check_results: { type: string; level: 'yellow' | 'red'; message: string }[]
   force_approve_reason: string | null
   rejection_reason: string | null
   rejected_by: string | null
@@ -227,17 +228,24 @@ const WarningBox = ({ type, confirmedAt }: { type: string; confirmedAt: string }
   )
 }
 
-// 自動チェック警告バナー（2026-07-02追加：7-5章の骨格実装）
-// 中身の判定ロジックは未実装のため、現状は warning_level='none' のままで表示されない。
-// 将来チェックロジックが実装されると、ここがそのまま自動チェック結果の表示場所になる。
-const AutoCheckWarningBanner = ({ level }: { level: WarningLevel }) => {
+// 自動チェック警告バナー（2026-07-02追加：7-5章の骨格実装／2026-07-06：判定結果の個別メッセージ表示に対応）
+const AutoCheckWarningBanner = ({ level, results }: { level: WarningLevel; results: { type: string; level: 'yellow' | 'red'; message: string }[] }) => {
   if (level === 'none') return null
   const isRed = level === 'red'
   return (
     <div className="rounded-lg p-4 border-2" style={{ background: isRed ? '#FEF2F2' : '#FFFBEB', borderColor: isRed ? '#DC2626' : '#D97706' }}>
-      <p className="text-sm font-bold mb-1.5" style={{ color: isRed ? '#DC2626' : '#D97706' }}>
+      <p className="text-sm font-bold mb-2" style={{ color: isRed ? '#DC2626' : '#D97706' }}>
         {isRed ? '🔴 自動チェックで要確認の警告があります' : '🟡 自動チェックで要確認の警告があります'}
       </p>
+      {results.length > 0 && (
+        <ul className="mb-2 flex flex-col gap-1.5">
+          {results.map((r, idx) => (
+            <li key={idx} className="text-sm leading-relaxed rounded-md px-3 py-2" style={{ background: 'white', color: '#1A2340' }}>
+              {r.level === 'red' ? '🔴 ' : '🟡 '}{r.message}
+            </li>
+          ))}
+        </ul>
+      )}
       <p className="text-sm leading-relaxed" style={{ color: '#1A2340' }}>
         {isRed
           ? '内容を確認したうえで、問題なければ理由を入力して「強制承認」してください。'
@@ -562,10 +570,10 @@ export default function SSCContractDetail() {
           </div>
         </div>
 
-        {/* 自動チェック警告バナー（2026-07-02追加：中身未実装のため現状は表示されない） */}
+        {/* 自動チェック警告バナー（2026-07-02追加骨格／2026-07-06中身実装） */}
         {warningLevel !== 'none' && (
           <div className="mb-6">
-            <AutoCheckWarningBanner level={warningLevel} />
+            <AutoCheckWarningBanner level={warningLevel} results={contract.auto_check_results || []} />
           </div>
         )}
 

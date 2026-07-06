@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
+import { runAutoChecks, isMinimumWageMasterMissing, type MinimumWageRow } from '@/lib/autoChecks'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
 
@@ -1143,6 +1144,7 @@ function ApplyPageInner() {
   const [hasSocialInsurance, setHasSocialInsurance] = useState(true)
   const [salaryWarningChecked, setSalaryWarningChecked] = useState(false)
   const [workingHoursMaster, setWorkingHoursMaster] = useState<any[]>([])
+  const [minimumWageMaster, setMinimumWageMaster] = useState<MinimumWageRow[]>([])
 
   // 所定労働時間マスタを取得（月給者の最低賃金チェックで使用。件数が少ないため一括取得）
   useEffect(() => {
@@ -1150,6 +1152,19 @@ function ApplyPageInner() {
       setWorkingHoursMaster(data || [])
     })
   }, [])
+
+  // 最低賃金マスタを取得（自動チェック機能。件数が少ないため一括取得。2026-07-06追加）
+  useEffect(() => {
+    supabase.from('minimum_wage_master').select('dept_no, hourly_wage, effective_from').then(({ data }) => {
+      setMinimumWageMaster(data || [])
+    })
+  }, [])
+
+  // STEP1：勤務地が「現場」の場合のみ対象。対象スタッフの所属部門に最低賃金マスタの登録が
+  // 1件も無い場合は、最低賃金チェック自体が実行できないため申請をブロックする（7-5章の例外規定）
+  const deptWageMasterMissing = !!(
+    selectedStaff && workPlace === '現場' && isMinimumWageMasterMissing(minimumWageMaster, selectedStaff.dept_no)
+  )
 
   const trialCalc = calcTrialMonths(trialStart, trialEnd)
   // CSVデータから自動入力している時だけ、未入力必須項目を赤く強調する（手入力の時はそもそも全項目が空欄から始まるため対象外）
@@ -1782,6 +1797,27 @@ function ApplyPageInner() {
         warningConfirmations.push({ type: 'csv_fields_modified', confirmed_at: new Date().toISOString() })
       }
 
+      // 自動チェック機能（7-5章・9-1章タスク18）：金額異常値・最低賃金・就業規則整合の3種を判定
+      // 2026-07-06実装。判定ロジック本体は lib/autoChecks.ts に切り出し済み
+      const { results: autoCheckResults, overallLevel: warningLevel } = runAutoChecks({
+        workPlace,
+        contractType,
+        salaryType,
+        basicSalary: parseAmount(basicSalary),
+        overtimePay: parseAmount(overtimePay),
+        hasEmployInsurance,
+        hasSocialInsurance,
+        workingHoursH: parseAmount(workingHoursH),
+        workingHoursM: parseAmount(workingHoursM),
+        monthlyStandardHours: resolvedMonthlyHours,
+        deptNo: selectedStaff?.dept_no ?? null,
+        staffHiredAt: selectedStaff?.hired_at ?? null,
+        employStart, employEnd,
+        dispatchStart, dispatchEnd,
+        trialPeriod,
+        minimumWageRowsForDept: minimumWageMaster.filter(r => r.dept_no === selectedStaff?.dept_no),
+      })
+
       // 再申請モード：既存の契約IDをそのままupdateし、ステータスを申請中に戻す（差し戻し情報はクリア）
       // 新規申請：新しい行としてinsertする
       const payload = {
@@ -1798,6 +1834,8 @@ function ApplyPageInner() {
         csv_raw_data_id: (csvMode === 'csv' && csvSelectedId !== null && csvResults[csvSelectedId]) ? csvResults[csvSelectedId].id : null,
         input_data: { staff: staffSnapshot, fields, csvMeta },
         warning_confirmations: warningConfirmations,
+        auto_check_results: autoCheckResults,
+        warning_level: warningLevel,
       }
 
       const { error } = editContractId
@@ -1810,7 +1848,6 @@ function ApplyPageInner() {
           }).eq('id', editContractId)
         : await supabase.from('contracts').insert({
             ...payload,
-            auto_check_results: [], // 自動チェック結果は別タスクで実装予定。現時点では空配列で初期化
             created_by: user.id,
           })
 
@@ -2430,13 +2467,29 @@ function ApplyPageInner() {
                     )}
                   </FormRow>
 
+                  {/* 最低賃金マスタ未登録による強制ブロック（7-5章の例外規定・2026-07-06実装） */}
+                  {deptWageMasterMissing && (
+                    <div className="max-w-2xl rounded-lg px-4 py-3 border-2" style={{ background: '#FEF2F2', borderColor: '#DC2626' }}>
+                      <p className="text-sm font-bold" style={{ color: '#DC2626' }}>🔴 この部門は申請できません</p>
+                      <p className="text-xs mt-1.5 leading-relaxed" style={{ color: '#1A2340' }}>
+                        {selectedStaff?.department || 'この部門'}は、最低賃金マスタが未登録のため、
+                        <br />
+                        現場配属での申請ができません。
+                        <br />
+                        管理部にマスタ登録を依頼してください。
+                      </p>
+                    </div>
+                  )}
+
                   <div className="border-t px-5 py-4 flex justify-end" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
                     <button onClick={e => {
                       e.preventDefault()
                       if (!selectedStaff || !documentType || !contractType) { alert('すべての項目を選択してください'); return }
+                      if (deptWageMasterMissing) { alert('この部門は最低賃金マスタが未登録のため、申請できません。管理部にお問い合わせください。'); return }
                       handleNext()
-                    }} className="text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-all"
-                      style={{ background: '#1B3A8C' }}>次へ進む →</button>
+                    }} disabled={deptWageMasterMissing}
+                      className="text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-all"
+                      style={{ background: deptWageMasterMissing ? '#A8B3C9' : '#1B3A8C', cursor: deptWageMasterMissing ? 'not-allowed' : 'pointer' }}>次へ進む →</button>
                   </div>
                 </>
               )}

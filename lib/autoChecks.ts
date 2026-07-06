@@ -17,8 +17,8 @@ export interface MinimumWageRow {
   effective_from: string // YYYY-MM-DD
 }
 
-// 部門マスタ（minimum_wage_master）に、対象部門の登録が1件も無いかどうか。
-// 7-5章の例外規定：「部門マスタに最低賃金が未登録の場合のみ、申請不可（強制ブロック）」。
+// 最低賃金マスタ（minimum_wage_master。department_masterとは別のテーブル）に、対象部門の登録が1件も無いかどうか。
+// 7-5章の例外規定：「最低賃金マスタに登録が無い場合のみ、申請不可（強制ブロック）」。
 // 対象は勤務地が「現場」の場合のみ（「社内」は最低賃金チェック自体の対象外のため呼び出し不要）。
 export function isMinimumWageMasterMissing(
   allRows: MinimumWageRow[],
@@ -26,12 +26,6 @@ export function isMinimumWageMasterMissing(
 ): boolean {
   if (deptNo === null || deptNo === undefined) return false // 部門が特定できないケースは別途ハンドリング（ここではブロックしない）
   return !allRows.some(r => r.dept_no === deptNo)
-}
-
-const addDays = (dateStr: string, days: number) => {
-  const d = new Date(dateStr + 'T00:00:00')
-  d.setDate(d.getDate() + days)
-  return d.toISOString().slice(0, 10)
 }
 
 const diffDays = (dateA: string, dateB: string) => {
@@ -81,7 +75,9 @@ function checkAmountAnomaly(input: AutoCheckInput): AutoCheckResult | null {
 }
 
 // ② 最低賃金チェック（現場のみ・部門×適用開始日単位）
-// 契約期間中に最低賃金の改定日をまたぐ場合は、改定後の金額でも別途チェックする。
+// 2026-07-07決定：雇用期間中に最低賃金の改定をまたぐ場合、改定後（＝雇用期間中で最も適用開始日が新しいもの）の
+// 金額1本でチェックするシンプルな設計に変更。最低賃金は下がることを想定しないため、最新の基準を満たしていれば
+// それより前の期間も自動的に満たしている、という考え方（過去の「区間ごとに別々にチェック」という設計から変更）。
 function checkMinimumWage(input: AutoCheckInput): AutoCheckResult[] {
   const results: AutoCheckResult[] = []
   if (input.workPlace !== '現場') return results // 社内は対象外（2026-07-03最終決定）
@@ -101,29 +97,24 @@ function checkMinimumWage(input: AutoCheckInput): AutoCheckResult[] {
   }
   if (hourlyEquivalent === null) return results // 換算できない場合は判定不能のためスキップ
 
-  // 適用開始日の昇順に並べ替え、雇用期間内で有効な区間（適用開始日〜次の改定日の前日）をすべて洗い出す
-  const sortedRows = [...input.minimumWageRowsForDept].sort((a, b) => a.effective_from < b.effective_from ? -1 : 1)
-  const periodStart = input.employStart || null
-  const periodEnd = input.employEnd || input.employStart || null // 無期・正社員等で終了日が無い場合は開始日時点のみ判定
-  if (!periodStart) return results
+  const periodEnd = input.employEnd || input.employStart || null // 無期・正社員等で終了日が無い場合は開始日を基準にする
+  if (!periodEnd) return results
 
-  sortedRows.forEach((row, idx) => {
-    const segStart = row.effective_from
-    const nextRow = sortedRows[idx + 1]
-    const segEnd = nextRow ? addDays(nextRow.effective_from, -1) : null // nullは「無期限（現在も適用中）」
+  // 雇用期間の終了日までに適用開始済みの行の中から、最も新しい（＝適用開始日が最も遅い）行を採用する。
+  // 該当する行が無い場合（雇用期間の終了日より後にしか改定が無い＝マスタ登録より前の契約等）は、
+  // 登録されている中で最も古い行を代わりに使う（判定不能で見逃すより、既知の中で最も近い基準で判定する方針）。
+  const applicableRows = input.minimumWageRowsForDept.filter(r => r.effective_from <= periodEnd)
+  const targetRow = applicableRows.length > 0
+    ? applicableRows.reduce((latest, r) => r.effective_from > latest.effective_from ? r : latest)
+    : input.minimumWageRowsForDept.reduce((earliest, r) => r.effective_from < earliest.effective_from ? r : earliest)
 
-    // 雇用期間 [periodStart, periodEnd] と、この最低賃金の有効区間 [segStart, segEnd]（segEnd=nullは無期限）が重なっているか
-    // 区間が重なる条件：periodStart <= segEndOrInfinity かつ segStart <= periodEnd
-    const overlaps = (segEnd === null || periodStart <= segEnd) && segStart <= (periodEnd as string)
-
-    if (overlaps && hourlyEquivalent! < row.hourly_wage) {
-      results.push({
-        type: 'minimum_wage_violation',
-        level: 'red',
-        message: `${row.effective_from}以降の最低賃金（時給${row.hourly_wage.toLocaleString()}円）に対して、入力内容の時給換算額（約${Math.floor(hourlyEquivalent!).toLocaleString()}円）が下回っています。`,
-      })
-    }
-  })
+  if (hourlyEquivalent < targetRow.hourly_wage) {
+    results.push({
+      type: 'minimum_wage_violation',
+      level: 'red',
+      message: `${targetRow.effective_from}時点の最低賃金（時給${targetRow.hourly_wage.toLocaleString()}円）に対して、入力内容の時給換算額（約${Math.floor(hourlyEquivalent).toLocaleString()}円）が下回っています。`,
+    })
+  }
 
   return results
 }

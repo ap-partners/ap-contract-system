@@ -201,6 +201,14 @@ const isDateBefore = (dateA: string, dateB: string) => {
   return dateA < dateB // YYYY-MM-DD形式は文字列比較でも日付の前後関係が正しく出る
 }
 
+// 2つの日付文字列（YYYY-MM-DD）の差を日数で返す（絶対値）。どちらか未入力ならnull（2026-07-07追加）
+const diffDaysAbs = (dateA: string, dateB: string): number | null => {
+  if (!dateA || !dateB) return null
+  const a = new Date(dateA + 'T00:00:00').getTime()
+  const b = new Date(dateB + 'T00:00:00').getTime()
+  return Math.abs(Math.round((a - b) / (1000 * 60 * 60 * 24)))
+}
+
 // 数値を2桁ゼロ埋めにする（時間・分の入力統一用）。空欄はそのまま空欄にする
 const padTwoDigits = (str: string) => {
   if (!str) return str
@@ -1167,6 +1175,17 @@ function ApplyPageInner() {
   )
 
   const trialCalc = calcTrialMonths(trialStart, trialEnd)
+
+  // 正社員・試用期間なしの警告：スタッフマスタの入社日と、雇用開始日（正社員はcontractStartDateを使用）が
+  // 同日または近い日付（30日以内）＝新規入社と推定できる場合のみ警告を出す（2026-07-07決定）。
+  // 人材派遣業では正社員でも案件変更のたびに雇用契約書を再締結することが多く、その都度警告が出ると
+  // SSCの一括承認ができずオペレーションの負担が大きいため、明らかな契約更新（入社日と離れている）は対象外にする。
+  const noTrialCheckRelevantDate = contractType === '正社員' ? contractStartDate : employStart
+  const isProbableNewHire = !!(
+    selectedStaff?.hired_at && noTrialCheckRelevantDate &&
+    diffDaysAbs(noTrialCheckRelevantDate, selectedStaff.hired_at) !== null &&
+    (diffDaysAbs(noTrialCheckRelevantDate, selectedStaff.hired_at) as number) <= 30
+  )
   // CSVデータから自動入力している時だけ、未入力必須項目を赤く強調する（手入力の時はそもそも全項目が空欄から始まるため対象外）
   const showEmptyHint = csvMode === 'csv'
 
@@ -1787,7 +1806,7 @@ function ApplyPageInner() {
       if (trialPeriod === '有' && trialCalc?.over6 && trialWarningChecked) {
         warningConfirmations.push({ type: 'trial_over6months', confirmed_at: new Date().toISOString() })
       }
-      if (trialPeriod === '無' && contractType === '正社員' && noTrialWarningChecked) {
+      if (trialPeriod === '無' && contractType === '正社員' && isProbableNewHire && noTrialWarningChecked) {
         warningConfirmations.push({ type: 'no_trial_period', confirmed_at: new Date().toISOString() })
       }
       if (salaryTotal > 1000000 && salaryWarningChecked) {
@@ -1940,7 +1959,7 @@ function ApplyPageInner() {
         if (trialEndError) return trialEndError
         if (trialCalc?.over6 && !trialWarningChecked) return '試用期間6ヶ月超の警告について、上長の了承確認が必要です'
       }
-      if (contractType === '正社員' && trialPeriod === '無' && !noTrialWarningChecked) {
+      if (contractType === '正社員' && trialPeriod === '無' && isProbableNewHire && !noTrialWarningChecked) {
         return '正社員・試用期間なしの警告について、上長の了承確認が必要です'
       }
     }
@@ -3410,7 +3429,7 @@ function ApplyPageInner() {
                         )}
                       </div>
                     )}
-                    {trialPeriod === '無' && contractType === '正社員' && (
+                    {trialPeriod === '無' && contractType === '正社員' && isProbableNewHire && (
                       <CriticalWarning
                         message={`正社員の雇用では原則として試用期間（6ヶ月）が設けられます（就業規則第13条）。\n試用期間「無し」で申請する場合は、会社が適当と認めた特別なケースに限られます。\n本当にこのまま申請してよろしいですか？`}
                         checked={noTrialWarningChecked}
@@ -3866,7 +3885,7 @@ function ApplyPageInner() {
                     </div>
                   </div>
                 )}
-                {trialPeriod === '無' && contractType === '正社員' && (
+                {trialPeriod === '無' && contractType === '正社員' && isProbableNewHire && (
                   <div className="grid border-b" style={{ gridTemplateColumns: '260px 1fr', borderColor: '#D0DAF0' }}>
                     <div className="border-r" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }} />
                     <div className="px-5 py-3.5">

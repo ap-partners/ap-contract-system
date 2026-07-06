@@ -125,15 +125,24 @@ function checkMinimumWage(input: AutoCheckInput): AutoCheckResult[] {
 // ③ 就業規則との整合チェック（7-5章の表より。定額残業代の異常値チェック分の重複は除く）
 function checkWorkRules(input: AutoCheckInput): AutoCheckResult[] {
   const results: AutoCheckResult[] = []
-  const { contractType, employStart, employEnd, dispatchEnd, trialPeriod, salaryType, overtimePay, hasEmployInsurance, hasSocialInsurance, staffHiredAt } = input
+  const { contractType, employStart, employEnd, contractStartDate, dispatchEnd, trialPeriod, salaryType, overtimePay, hasEmployInsurance, hasSocialInsurance, staffHiredAt } = input
 
-  // 1. 試用期間：新規入社（staff.hired_at = 雇用開始日）なのに試用期間「なし」
+  // 1. 試用期間：新規入社なのに試用期間「なし」
   //    アルバイトは「試用期間不要（有期契約と同じ扱い）」と決定済みのため対象外（2026-07-02決定）
-  if (contractType !== 'アルバイト' && staffHiredAt && employStart && staffHiredAt === employStart && trialPeriod === '無') {
+  //    2026-07-07決定：入社日と雇用開始日が完全一致の場合のみ「新規入社」としていたが、人材派遣業では
+  //    正社員でも案件変更のたびに契約書を再締結することが多く、その都度警告が出るとSSCの一括承認の妨げになる
+  //    ため、「入社日から30日以内」も新規入社とみなす範囲に含め、それ以外（明らかな契約更新）は対象外にする。
+  //    正社員・無期契約はemployStartではなくcontractStartDate（契約条件適用開始日）を使う。
+  const noTrialCheckRelevantDate = (contractType === '正社員' || contractType === '無期契約') ? contractStartDate : employStart
+  const daysSinceHire = (staffHiredAt && noTrialCheckRelevantDate)
+    ? Math.abs(diffDays(noTrialCheckRelevantDate, staffHiredAt))
+    : null
+  const isProbableNewHire = daysSinceHire !== null && daysSinceHire <= 30
+  if (contractType !== 'アルバイト' && isProbableNewHire && trialPeriod === '無') {
     results.push({
       type: 'no_trial_new_hire',
       level: 'yellow',
-      message: '新規入社（入社日＝雇用開始日）なのに、試用期間が「なし」に設定されています。契約社員第8条・正社員第13条により、原則として試用期間を設けることになっています。',
+      message: '新規入社（入社日が雇用開始日と同日または近い日付）なのに、試用期間が「なし」に設定されています。契約社員第8条・正社員第13条により、原則として試用期間を設けることになっています。',
     })
   }
 

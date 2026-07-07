@@ -40,14 +40,15 @@ export const WAGE_PAYMENT_TEXT =
 export const OVERTIME_RATE_TEXT = '法定の割合に基づく。'
 
 // ===== 賃金支払時の控除（テンプレートJ29ラベル＋R29）=====
-// 雇用保険・社会保険のいずれかに加入している場合のみ控除項目を列挙する。
+// 2026-07-07修正：雇用保険・社会保険のどちらにも未加入の場合でも、源泉所得税は必ず発生するため
+// 「なし」にはならない。以前は誤って空欄（呼び出し側で「なし」表示）になっていた実装バグを修正。
+// app/apply/page.tsxのdeductionText（STEP8帳票プレビュー）と内容を一致させている。
 export const getDeductionText = (hasEmployInsurance: boolean, hasSocialInsurance: boolean): string => {
   const items: string[] = []
   if (hasEmployInsurance) items.push('雇用保険')
   if (hasSocialInsurance) items.push('健康保険', '厚生年金')
-  items.push('源泉所得税')
-  if (items.length === 1) return '' // 源泉所得税のみ＝どちらの保険にも未加入の場合は空欄（テンプレート仕様に合わせる）
-  return `[社会保険料（${items.slice(0, -1).join('、')}）・${items[items.length - 1]}]`
+  if (items.length === 0) return '[源泉所得税]'
+  return `[社会保険料（${items.join('、')}）・源泉所得税]`
 }
 
 // ===== 各種保険（テンプレートJ34）=====
@@ -108,6 +109,16 @@ export const getTransportText = (transportType: string): string => {
 const TRANSPORT_SECONDARY_NOTE = '15日以上の勤務日数の場合は定期代支給とする。これに満たない勤務日数の場合、実費支給とする。'
 export const getTransportSecondaryNote = (transportType: string): string => {
   return (transportType === 'default' || transportType === 'pass-gas') ? TRANSPORT_SECONDARY_NOTE : ''
+}
+
+// ===== 所定労働日数の帳票表示文言（2026-07-07追加。過去のトーク履歴で確定していた変換ルール）=====
+// STEP2の選択肢「週5日」「週4日」「週3日」「その他（自由入力）」のうち、
+// 「週5日」を選んだ場合だけ、帳票上は選択値そのままではなく決まった文言に変換する。
+// 週4日・週3日・その他はそのまま表示（変換なし）。
+export const getWorkDaysText = (workDays: string, workDaysOther: string): string => {
+  if (workDays === '週5日') return '概ね、週5日とし、勤務日は就業規則第3章および勤務シフトによる'
+  if (workDays === 'other') return workDaysOther || '―'
+  return workDays || '―'
 }
 
 // ===== 自社住所（会社側署名欄。テンプレートE47/E48セルを書き起こし）=====

@@ -65,6 +65,7 @@ export async function GET(
       isShift: !!f.isShift,
       workDays: f.workDays || '',
       workDaysOther: f.workDaysOther || '',
+      flexTime: f.flexTime || '',
       workingHoursH: f.workingHoursH || 0,
       workingHoursM: f.workingHoursM || 0,
       breakTime: f.breakTime || 0,

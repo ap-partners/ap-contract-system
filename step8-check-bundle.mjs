@@ -29,9 +29,8 @@ var getDeductionText = (hasEmployInsurance, hasSocialInsurance) => {
   const items = [];
   if (hasEmployInsurance) items.push("\u96C7\u7528\u4FDD\u967A");
   if (hasSocialInsurance) items.push("\u5065\u5EB7\u4FDD\u967A", "\u539A\u751F\u5E74\u91D1");
-  items.push("\u6E90\u6CC9\u6240\u5F97\u7A0E");
-  if (items.length === 1) return "";
-  return `[\u793E\u4F1A\u4FDD\u967A\u6599\uFF08${items.slice(0, -1).join("\u3001")}\uFF09\u30FB${items[items.length - 1]}]`;
+  if (items.length === 0) return "[\u6E90\u6CC9\u6240\u5F97\u7A0E]";
+  return `[\u793E\u4F1A\u4FDD\u967A\u6599\uFF08${items.join("\u3001")}\uFF09\u30FB\u6E90\u6CC9\u6240\u5F97\u7A0E]`;
 };
 var getInsuranceLine = (hasEmployInsurance, hasSocialInsurance) => {
   const items = ["\u52B4\u707D\u4FDD\u967A"];
@@ -85,6 +84,11 @@ var getTransportText = (transportType) => {
 var TRANSPORT_SECONDARY_NOTE = "15\u65E5\u4EE5\u4E0A\u306E\u52E4\u52D9\u65E5\u6570\u306E\u5834\u5408\u306F\u5B9A\u671F\u4EE3\u652F\u7D66\u3068\u3059\u308B\u3002\u3053\u308C\u306B\u6E80\u305F\u306A\u3044\u52E4\u52D9\u65E5\u6570\u306E\u5834\u5408\u3001\u5B9F\u8CBB\u652F\u7D66\u3068\u3059\u308B\u3002";
 var getTransportSecondaryNote = (transportType) => {
   return transportType === "default" || transportType === "pass-gas" ? TRANSPORT_SECONDARY_NOTE : "";
+};
+var getWorkDaysText = (workDays, workDaysOther) => {
+  if (workDays === "\u90315\u65E5") return "\u6982\u306D\u3001\u90315\u65E5\u3068\u3057\u3001\u52E4\u52D9\u65E5\u306F\u5C31\u696D\u898F\u5247\u7B2C3\u7AE0\u304A\u3088\u3073\u52E4\u52D9\u30B7\u30D5\u30C8\u306B\u3088\u308B";
+  if (workDays === "other") return workDaysOther || "\u2015";
+  return workDays || "\u2015";
 };
 var COMPANY_HQ_ADDRESS_LINES = ["\u6771\u4EAC\u90FD\u65B0\u5BBF\u533A\u65B0\u5BBF2-16-20", "\u65B0\u5BBF\u901A\u6771\u6D0B\u30D3\u30EB10F"];
 var formatHoursMinutes = (h, m) => {
@@ -303,7 +307,7 @@ var WageGrid = ({ p, overtimeHoursNote }) => {
 };
 var EmploymentContractPdf = (p) => {
   const retirementClause = getRetirementClause(p.contractType);
-  const workDaysText = p.workDays === "other" ? p.workDaysOther : p.workDays;
+  const workDaysText = getWorkDaysText(p.workDays, p.workDaysOther);
   const overtimeHoursNote = Number(p.overtimeHours) > 0 ? `\u3000\u203B\u5B9A\u984D\u6B8B\u696D\u6642\u9593\uFF1A${p.overtimeHours}\u6642\u9593` : "";
   const deductionText = getDeductionText(p.hasEmployInsurance, p.hasSocialInsurance);
   const transportSecondaryNote = getTransportSecondaryNote(p.transportType);
@@ -328,22 +332,34 @@ var EmploymentContractPdf = (p) => {
         { label: "(\u5909\u66F4\u306E\u7BC4\u56F2)", value: "\u4F1A\u793E\u304C\u6307\u793A\u3059\u308B\u696D\u52D9" }
       ] }) }),
       /* @__PURE__ */ jsx(LabeledRow, { label: "\u59CB\u696D\u30FB\u7D42\u696D\u6642\u523B", children: /* @__PURE__ */ jsx(SplitLines, { lines: [
-        { label: "\u59CB\u696D", value: p.startTime + (p.isShift ? "\u3000\uFF08\u30B7\u30D5\u30C8\u5236\uFF09" : "") },
-        { label: "\u7D42\u696D", value: p.endTime }
+        { label: "\u59CB\u696D", value: p.startTime },
+        { label: "\u7D42\u696D", value: p.endTime + (p.isShift ? "\u3000\u203B\u30B7\u30D5\u30C8\u306B\u6E96\u305A\u308B" : "") }
       ] }) }),
-      /* @__PURE__ */ jsx(LabeledRow, { label: "\u6240\u5B9A\u52B4\u50CD\u65E5\u6570", children: /* @__PURE__ */ jsx(Text, { style: styles.freeText, children: workDaysText || "\u2015" }) }),
       /* @__PURE__ */ jsxs(View, { style: styles.row, children: [
-        /* @__PURE__ */ jsx(View, { style: styles.labelCell, children: /* @__PURE__ */ jsx(Text, { style: styles.labelText, children: "\u6240\u5B9A\u52B4\u50CD\u6642\u9593" }) }),
+        /* @__PURE__ */ jsx(View, { style: styles.labelCell, children: /* @__PURE__ */ jsx(Text, { style: styles.labelText, children: "\u6240\u5B9A\u52B4\u50CD\u65E5\u6570\n\u6240\u5B9A\u52B4\u50CD\u6642\u9593" }) }),
         /* @__PURE__ */ jsx(View, { style: styles.valueCell, children: /* @__PURE__ */ jsx(
           BoxedSplitRow,
           {
-            main: formatHoursMinutes(p.workingHoursH, p.workingHoursM),
+            main: /* @__PURE__ */ jsxs(Fragment, { children: [
+              /* @__PURE__ */ jsx(Text, { children: workDaysText }),
+              /* @__PURE__ */ jsx(Text, { children: formatHoursMinutes(p.workingHoursH, p.workingHoursM) })
+            ] }),
             boxLabel: "\u6240\u5B9A\u52B4\u50CD\u6642\u9593\u3092\u8D85\u3048\u308B\u52B4\u50CD",
             boxValue: p.overtime || "\u2015"
           }
         ) })
       ] }),
-      /* @__PURE__ */ jsx(LabeledRow, { label: "\u4F11\u61A9\u6642\u9593", children: /* @__PURE__ */ jsx(Text, { style: styles.freeText, children: formatMinutes(p.breakTime) }) }),
+      /* @__PURE__ */ jsxs(View, { style: styles.row, children: [
+        /* @__PURE__ */ jsx(View, { style: styles.labelCell, children: /* @__PURE__ */ jsx(Text, { style: styles.labelText, children: "\u4F11\u61A9\u6642\u9593" }) }),
+        /* @__PURE__ */ jsx(View, { style: styles.valueCell, children: /* @__PURE__ */ jsx(
+          BoxedSplitRow,
+          {
+            main: formatMinutes(p.breakTime),
+            boxLabel: "\u5909\u5F62\u52B4\u50CD\u6642\u9593\u5236",
+            boxValue: p.flexTime || "\u2015"
+          }
+        ) })
+      ] }),
       /* @__PURE__ */ jsx(LabeledRow, { label: "\u4F11\u65E5\u53C8\u306F\u52E4\u52D9\n\u4F11\u6687", children: /* @__PURE__ */ jsx(View, { style: styles.freeText, children: HOLIDAY_CLAUSE_LINES.map((line, i) => /* @__PURE__ */ jsx(Text, { children: line }, i)) }) }),
       /* @__PURE__ */ jsx(LabeledRow, { label: "\u8CC3\u91D1", children: /* @__PURE__ */ jsx(WageGrid, { p, overtimeHoursNote }) }),
       /* @__PURE__ */ jsx(LabeledRow, { label: "\u8CC3\u91D1\u652F\u6255\u65B9\u6CD5\n\n\u652F\u6255\u6642\u306E\u63A7\u9664", children: /* @__PURE__ */ jsxs(View, { style: styles.freeText, children: [

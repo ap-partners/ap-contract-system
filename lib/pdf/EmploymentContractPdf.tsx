@@ -8,7 +8,7 @@ import path from 'path'
 import {
   toJpDate, getRetirementClause, HOLIDAY_CLAUSE_LINES, WAGE_PAYMENT_TEXT, OVERTIME_RATE_TEXT,
   getDeductionText, getInsuranceLine, getTrialText, getRemarksText, getTransportText,
-  getTransportSecondaryNote, COMPANY_HQ_ADDRESS_LINES,
+  getTransportSecondaryNote, getWorkDaysText, COMPANY_HQ_ADDRESS_LINES,
   formatHoursMinutes, formatMinutes, formatSalaryType, formatYen,
 } from './documentText'
 
@@ -193,6 +193,7 @@ export interface EmploymentContractPdfProps {
   isShift: boolean
   workDays: string
   workDaysOther: string
+  flexTime: string
   workingHoursH: string | number
   workingHoursM: string | number
   breakTime: string | number
@@ -292,7 +293,7 @@ const WageGrid = ({ p, overtimeHoursNote }: { p: EmploymentContractPdfProps; ove
 
 export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
   const retirementClause = getRetirementClause(p.contractType)
-  const workDaysText = p.workDays === 'other' ? p.workDaysOther : p.workDays
+  const workDaysText = getWorkDaysText(p.workDays, p.workDaysOther)
   const overtimeHoursNote = Number(p.overtimeHours) > 0 ? `　※定額残業時間：${p.overtimeHours}時間` : ''
   const deductionText = getDeductionText(p.hasEmployInsurance, p.hasSocialInsurance)
   const transportSecondaryNote = getTransportSecondaryNote(p.transportType)
@@ -327,25 +328,39 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
 
           <LabeledRow label="始業・終業時刻">
             <SplitLines lines={[
-              { label: '始業', value: p.startTime + (p.isShift ? '　（シフト制）' : '') },
-              { label: '終業', value: p.endTime },
+              { label: '始業', value: p.startTime },
+              { label: '終業', value: p.endTime + (p.isShift ? '　※シフトに準ずる' : '') },
             ]} />
           </LabeledRow>
 
-          <LabeledRow label="所定労働日数"><Text style={styles.freeText}>{workDaysText || '―'}</Text></LabeledRow>
-
+          {/* 2026-07-07：伊藤さんの指示により、所定労働日数を「所定労働時間を超える労働」の左側（同じ行）に、
+              変形労働時間制の有無を「所定労働時間を超える労働」の下・休憩時間の右側（次の行）に配置。 */}
           <View style={styles.row}>
-            <View style={styles.labelCell}><Text style={styles.labelText}>所定労働時間</Text></View>
+            <View style={styles.labelCell}><Text style={styles.labelText}>{'所定労働日数\n所定労働時間'}</Text></View>
             <View style={styles.valueCell}>
               <BoxedSplitRow
-                main={formatHoursMinutes(p.workingHoursH, p.workingHoursM)}
+                main={
+                  <>
+                    <Text>{workDaysText}</Text>
+                    <Text>{formatHoursMinutes(p.workingHoursH, p.workingHoursM)}</Text>
+                  </>
+                }
                 boxLabel="所定労働時間を超える労働"
                 boxValue={p.overtime || '―'}
               />
             </View>
           </View>
 
-          <LabeledRow label="休憩時間"><Text style={styles.freeText}>{formatMinutes(p.breakTime)}</Text></LabeledRow>
+          <View style={styles.row}>
+            <View style={styles.labelCell}><Text style={styles.labelText}>休憩時間</Text></View>
+            <View style={styles.valueCell}>
+              <BoxedSplitRow
+                main={formatMinutes(p.breakTime)}
+                boxLabel="変形労働時間制"
+                boxValue={p.flexTime || '―'}
+              />
+            </View>
+          </View>
 
           <LabeledRow label={'休日又は勤務\n休暇'}>
             <View style={styles.freeText}>

@@ -6,9 +6,6 @@ import { createClient } from '@supabase/supabase-js'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { EmploymentContractPdf } from '@/lib/pdf/EmploymentContractPdf'
 
-// service role keyを使い、RLSを経由せずサーバー側で直接contractsを読む
-// （現フェーズはRLSを緩めに維持中のためanonキーでも読めるが、帳票生成は
-// ユーザーのログインセッションに依存させたくないためservice roleを使用）
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -17,6 +14,12 @@ const supabaseAdmin = createClient(
 const getDocumentLabel = (documentType: string, contractType: string): string => {
   const suffix = contractType === 'アルバイト' ? '（アルバイト）' : contractType === '無期契約' ? '（無期）' : contractType === '正社員' ? '' : '（有期）'
   return `${documentType}${suffix}`
+}
+
+// 会社印影（社印）は、SSC承認前の下書き段階では表示せず、承認後の最終版のみに印字する（2026-07-07決定）。
+// 「申請中」「差し戻し中」「取り下げ」以外のステータスであれば承認済みとみなす。
+const shouldShowSeal = (status: string): boolean => {
+  return !['申請中', '差し戻し中', '取り下げ'].includes(status)
 }
 
 export async function GET(
@@ -35,10 +38,9 @@ export async function GET(
     return NextResponse.json({ error: '契約データが見つかりませんでした。' }, { status: 404 })
   }
 
-  // 第1弾は「雇用契約書」（パターンA相当）のみ対応。それ以外は未対応であることを明示する。
   if (contract.document_type !== '雇用契約書') {
     return NextResponse.json(
-      { error: `この書類種別（${contract.document_type}）のPDF生成は未対応です。現在対応しているのは「雇用契約書」のみです。` },
+      { error: 'この書類種別のPDF生成は未対応です。現在対応しているのは雇用契約書のみです。' },
       { status: 501 }
     )
   }
@@ -82,13 +84,15 @@ export async function GET(
       trialEnd: f.trialEnd || '',
       pattern: contract.pattern,
       bonusType: f.bonusType || '',
+      overtime: f.overtime || '',
+      showSeal: shouldShowSeal(contract.status),
     })
   )
 
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="contract_${id}.pdf"`,
+      'Content-Disposition': 'inline; filename="contract.pdf"',
     },
   })
 }

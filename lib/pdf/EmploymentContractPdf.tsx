@@ -167,11 +167,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
   },
   boxedSplitBox: {
-    // 2026-07-07修正：伊藤さんの指示により、休憩時間・所定労働時間を超える労働の値自体は
-    // 短いため、その分ボックス側（所定労働時間を超える労働／変形労働時間制）の横幅を拡大。
-    // 左側main文言の最長ケース「概ね、週5日とし、勤務日は就業規則第3章および勤務シフトによる」
-    // （所定労働日数）が1行に収まる横幅は確保した上で拡大している（実レンダリングで確認済み）。
-    width: 175,
+    // 2026-07-07再修正：変形労働時間制の注記「(毎月1日を起算日とし...)」を1行に収めるには
+    // main側の横幅が約350pt以上必要（実レンダリングで検証済み）。ボックス側は休憩時間（60分等）・
+    // 所定労働時間を超える労働（有/無）という短い値のみのため、88まで縮小してmain側を確保する。
+    // ボックスラベル文言（「所定労働時間を超える労働」等）は狭くなった分2行になる場合があるが、
+    // 短い注記ラベルなので支障はない。
+    width: 88,
     borderLeftWidth: THIN,
     borderColor: BORDER,
     padding: '3 6',
@@ -181,10 +182,6 @@ const styles = StyleSheet.create({
     fontSize: 6.6,
     marginBottom: 1,
     fontWeight: 'bold',
-  },
-  // 2026-07-07追加：変形労働時間制ボックスの起算日注記は、本文（8.3pt）より1pt小さいフォントで表示する
-  flexTimeNote: {
-    fontSize: 7.3,
   },
 })
 
@@ -357,8 +354,9 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
             ]} />
           </LabeledRow>
 
-          {/* 2026-07-07：伊藤さんの指示により、所定労働日数を「所定労働時間を超える労働」の左側（同じ行）に、
-              変形労働時間制の有無を「所定労働時間を超える労働」の下・休憩時間の右側（次の行）に配置。 */}
+          {/* 2026-07-07再修正：伊藤さんの提案により、短い値（休憩時間・所定労働時間を超える労働の有無）を
+              ボックス側（狭い）に、長文になる変形労働時間制（起算日の注記付き）をmain側（広い）に配置し直した。
+              これによりボックス幅を132に戻せ、かつ変形労働時間制の注記も1行で収まりやすくなる。 */}
           <View style={styles.row}>
             <View style={styles.labelCell}><Text style={styles.labelText}>{'所定労働日数\n所定労働時間'}</Text></View>
             <View style={styles.valueCell}>
@@ -369,25 +367,19 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
                     <Text>{formatHoursMinutes(p.workingHoursH, p.workingHoursM)}</Text>
                   </>
                 }
-                boxLabel="所定労働時間を超える労働"
-                boxValue={p.overtime || '―'}
+                boxLabel="休憩時間"
+                boxValue={formatMinutes(p.breakTime)}
               />
             </View>
           </View>
 
           <View style={styles.row}>
-            <View style={styles.labelCell}><Text style={styles.labelText}>休憩時間</Text></View>
+            <View style={styles.labelCell}><Text style={styles.labelText}>変形労働時間制</Text></View>
             <View style={styles.valueCell}>
               <BoxedSplitRow
-                main={formatMinutes(p.breakTime)}
-                boxLabel="変形労働時間制"
-                boxValue={
-                  flexTimeNote ? (
-                    <Text>{getFlexTimeText(p.flexTime)}　<Text style={styles.flexTimeNote}>{flexTimeNote}</Text></Text>
-                  ) : (
-                    getFlexTimeText(p.flexTime)
-                  )
-                }
+                main={flexTimeNote ? `${getFlexTimeText(p.flexTime)}　${flexTimeNote}` : getFlexTimeText(p.flexTime)}
+                boxLabel="所定労働時間を超える労働"
+                boxValue={p.overtime || '―'}
               />
             </View>
           </View>

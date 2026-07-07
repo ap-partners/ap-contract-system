@@ -12,11 +12,19 @@ import {
   formatHoursMinutes, formatMinutes, formatSalaryType, formatYen,
 } from './documentText'
 
-// 日本語フォント登録。IPAexゴシック（ipaexg.ttf）を assets/fonts に配置する運用（README参照）。
-// react-pdfはNode実行時、ローカルファイルパスを直接読み込める。
+// 日本語フォント登録。
+// ベース資料（実物の雇用契約書PDF）の埋め込みフォントを実際に抽出・解析した結果、
+// 本文フォントは「MS P明朝」であることを確認済み（2026-07-07）。
+// MS P明朝は同梱・再配布不可のため、metric互換のフリーフォント「IPAex明朝」を採用。
+// 太字はIPAex明朝に太字ウェイトが無いため、「Noto Serif JP Bold」を組み合わせて
+// 同一ファミリー名（BodyFont）に登録し、fontWeight: 'bold' 指定だけで自動的に
+// 太字側が使われるようにしている。
 Font.register({
-  family: 'IPAexGothic',
-  src: path.join(process.cwd(), 'assets', 'fonts', 'ipaexg.ttf'),
+  family: 'BodyFont',
+  fonts: [
+    { src: path.join(process.cwd(), 'assets', 'fonts', 'ipaexm.ttf'), fontWeight: 'normal' },
+    { src: path.join(process.cwd(), 'assets', 'fonts', 'NotoSerifJP-Bold.ttf'), fontWeight: 'bold' },
+  ],
 })
 
 // 2026-07-07：長い単語が行末で自動的に「-」区切りされる（ハイフネーション）機能を無効化。
@@ -35,7 +43,7 @@ const THIN = 0.6
 
 const styles = StyleSheet.create({
   page: {
-    fontFamily: 'IPAexGothic',
+    fontFamily: 'BodyFont',
     fontSize: 8.3,
     lineHeight: 1.32,
     padding: 26,
@@ -46,6 +54,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 1,
     marginBottom: 18,
+    fontWeight: 'bold',
   },
   intro: {
     marginBottom: 8,
@@ -69,6 +78,9 @@ const styles = StyleSheet.create({
     borderColor: BORDER,
     justifyContent: 'center',
   },
+  labelText: {
+    fontWeight: 'bold',
+  },
   valueCell: {
     width: `${100 - 17}%`,
     padding: 0,
@@ -88,6 +100,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRightWidth: THIN,
     borderColor: BORDER,
+    fontWeight: 'bold',
   },
   splitSubValue: {
     flex: 1,
@@ -107,6 +120,7 @@ const styles = StyleSheet.create({
     borderRightWidth: THIN,
     borderColor: BORDER,
     justifyContent: 'center',
+    fontWeight: 'bold',
   },
   wageCellValue: {
     width: '28%',
@@ -160,6 +174,7 @@ const styles = StyleSheet.create({
   boxedSplitBoxLabel: {
     fontSize: 6.6,
     marginBottom: 1,
+    fontWeight: 'bold',
   },
 })
 
@@ -217,7 +232,7 @@ const EmploymentPeriodRow = ({ p }: { p: EmploymentContractPdfProps }) => {
   const mainText = isIndefinite ? '期間の定めなし' : `自　${toJpDate(p.employStart)}　　至　${toJpDate(p.employEnd)}`
   return (
     <View style={styles.row}>
-      <View style={styles.labelCell}><Text>雇用期間</Text></View>
+      <View style={styles.labelCell}><Text style={styles.labelText}>雇用期間</Text></View>
       <View style={styles.valueCell}>
         <BoxedSplitRow
           main={mainText}
@@ -231,7 +246,7 @@ const EmploymentPeriodRow = ({ p }: { p: EmploymentContractPdfProps }) => {
 
 const LabeledRow = ({ label, children, last, minHeight }: { label: string; children: React.ReactNode; last?: boolean; minHeight?: number }) => (
   <View style={minHeight ? [last ? styles.rowLast : styles.row, { minHeight }] : (last ? styles.rowLast : styles.row)}>
-    <View style={styles.labelCell}><Text>{label}</Text></View>
+    <View style={styles.labelCell}><Text style={styles.labelText}>{label}</Text></View>
     <View style={styles.valueCell}>{children}</View>
   </View>
 )
@@ -312,7 +327,7 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
           <LabeledRow label="所定労働日数"><Text style={styles.freeText}>{workDaysText || '―'}</Text></LabeledRow>
 
           <View style={styles.row}>
-            <View style={styles.labelCell}><Text>所定労働時間</Text></View>
+            <View style={styles.labelCell}><Text style={styles.labelText}>所定労働時間</Text></View>
             <View style={styles.valueCell}>
               <BoxedSplitRow
                 main={formatHoursMinutes(p.workingHoursH, p.workingHoursM)}
@@ -371,7 +386,7 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
           <View style={styles.signatureCol}>
             <Text>会社</Text>
             {COMPANY_HQ_ADDRESS_LINES.map((line, i) => <Text key={i}>{line}</Text>)}
-            <Text>株式会社APパートナーズ</Text>
+            <Text style={{ fontWeight: 'bold' }}>株式会社APパートナーズ</Text>
             <Text>代表取締役　山田　昌</Text>
             {p.showSeal && <Image src={COMPANY_SEAL_PATH} style={styles.companySeal} />}
           </View>

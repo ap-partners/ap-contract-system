@@ -9,7 +9,7 @@ import {
   toJpDate, getRetirementClause, HOLIDAY_CLAUSE_LINES_FIXED, getHolidayClauseLine1,
   WAGE_PAYMENT_TEXT, OVERTIME_RATE_TEXT,
   getDeductionText, getInsuranceLine, getTrialText, getRemarksText, getTransportText,
-  getTransportSecondaryNote, getWorkDaysText, getFlexTimeText, COMPANY_HQ_ADDRESS_LINES,
+  getTransportSecondaryNote, getWorkDaysText, getFlexTimeText, getFlexTimeNote, COMPANY_HQ_ADDRESS_LINES,
   formatHoursMinutes, formatMinutes, formatSalaryType, formatYen,
 } from './documentText'
 
@@ -167,7 +167,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
   },
   boxedSplitBox: {
-    width: 132,
+    // 2026-07-07修正：伊藤さんの指示により、休憩時間・所定労働時間を超える労働の値自体は
+    // 短いため、その分ボックス側（所定労働時間を超える労働／変形労働時間制）の横幅を拡大。
+    // 左側main文言の最長ケース「概ね、週5日とし、勤務日は就業規則第3章および勤務シフトによる」
+    // （所定労働日数）が1行に収まる横幅は確保した上で拡大している（実レンダリングで確認済み）。
+    width: 175,
     borderLeftWidth: THIN,
     borderColor: BORDER,
     padding: '3 6',
@@ -177,6 +181,10 @@ const styles = StyleSheet.create({
     fontSize: 6.6,
     marginBottom: 1,
     fontWeight: 'bold',
+  },
+  // 2026-07-07追加：変形労働時間制ボックスの起算日注記は、本文（8.3pt）より1pt小さいフォントで表示する
+  flexTimeNote: {
+    fontSize: 7.3,
   },
 })
 
@@ -312,6 +320,7 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
   const overtimeHoursNote = Number(p.overtimeHours) > 0 ? `※定額残業時間：${p.overtimeHours}時間` : ''
   const deductionText = getDeductionText(p.hasEmployInsurance, p.hasSocialInsurance)
   const transportSecondaryNote = getTransportSecondaryNote(p.transportType)
+  const flexTimeNote = getFlexTimeNote(p.flexTime)
 
   return (
     <Document>
@@ -372,7 +381,13 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
               <BoxedSplitRow
                 main={formatMinutes(p.breakTime)}
                 boxLabel="変形労働時間制"
-                boxValue={getFlexTimeText(p.flexTime)}
+                boxValue={
+                  flexTimeNote ? (
+                    <Text>{getFlexTimeText(p.flexTime)}　<Text style={styles.flexTimeNote}>{flexTimeNote}</Text></Text>
+                  ) : (
+                    getFlexTimeText(p.flexTime)
+                  )
+                }
               />
             </View>
           </View>

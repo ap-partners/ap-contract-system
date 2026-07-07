@@ -6,9 +6,10 @@
 import { Document, Page, Text, View, StyleSheet, Font, Image } from '@react-pdf/renderer'
 import path from 'path'
 import {
-  toJpDate, getRetirementClause, HOLIDAY_CLAUSE_LINES, WAGE_PAYMENT_TEXT, OVERTIME_RATE_TEXT,
+  toJpDate, getRetirementClause, HOLIDAY_CLAUSE_LINES_FIXED, getHolidayClauseLine1,
+  WAGE_PAYMENT_TEXT, OVERTIME_RATE_TEXT,
   getDeductionText, getInsuranceLine, getTrialText, getRemarksText, getTransportText,
-  getTransportSecondaryNote, getWorkDaysText, COMPANY_HQ_ADDRESS_LINES,
+  getTransportSecondaryNote, getWorkDaysText, getFlexTimeText, COMPANY_HQ_ADDRESS_LINES,
   formatHoursMinutes, formatMinutes, formatSalaryType, formatYen,
 } from './documentText'
 
@@ -371,14 +372,15 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
               <BoxedSplitRow
                 main={formatMinutes(p.breakTime)}
                 boxLabel="変形労働時間制"
-                boxValue={p.flexTime || '―'}
+                boxValue={getFlexTimeText(p.flexTime)}
               />
             </View>
           </View>
 
           <LabeledRow label={'休日又は勤務\n休暇'}>
             <View style={styles.freeText}>
-              {HOLIDAY_CLAUSE_LINES.map((line, i) => <Text key={i}>{line}</Text>)}
+              <Text>{getHolidayClauseLine1(p.workDays, p.workDaysOther, p.isShift)}</Text>
+              {HOLIDAY_CLAUSE_LINES_FIXED.map((line, i) => <Text key={i}>{line}</Text>)}
             </View>
           </LabeledRow>
 

@@ -39,6 +39,12 @@ export interface AutoCheckInput {
   contractType: string // '有期契約' | '無期契約' | '正社員' | 'アルバイト'
   salaryType: string // '時給' | '日給' | '月給'
   basicSalary: number
+  // 2026-07-07追加：最低賃金の時給換算に含めるため。定額残業手当（overtimePay）は
+  // 時間外労働の対価のため、最低賃金法上の除外賃金にあたり計算に含めない。
+  rolePay: number
+  skillPay: number
+  salesPay: number
+  housingPay: number
   overtimePay: number
   hasEmployInsurance: boolean
   hasSocialInsurance: boolean
@@ -85,6 +91,13 @@ function checkMinimumWage(input: AutoCheckInput): AutoCheckResult[] {
   if (input.minimumWageRowsForDept.length === 0) return results // STEP1で強制ブロック済みのはずだが念のため
 
   // 時給換算した金額を算出
+  // 2026-07-07修正：月給制で基本給のみを時給換算していたため、役職手当・職能給・営業手当・
+  // 住宅手当を上乗せしている場合に実際の実質時給より低く算出され、誤って最低賃金割れと
+  // 判定してしまう不具合があった（伊藤さん確認済み）。最低賃金法上、精皆勤手当・通勤手当・
+  // 家族手当・時間外等の割増賃金・賞与は算定対象から除外できるが、役職手当・職能給・営業手当・
+  // 住宅手当はいずれも除外規定に該当しないため算入する。定額残業手当（overtimePay）は
+  // 時間外労働の対価のため引き続き除外する。
+  const allowanceTotal = input.rolePay + input.skillPay + input.salesPay + input.housingPay
   let hourlyEquivalent: number | null = null
   if (input.salaryType === '時給') {
     hourlyEquivalent = input.basicSalary
@@ -93,7 +106,7 @@ function checkMinimumWage(input: AutoCheckInput): AutoCheckResult[] {
     if (dailyHours > 0) hourlyEquivalent = input.basicSalary / dailyHours
   } else if (input.salaryType === '月給') {
     if (input.monthlyStandardHours && input.monthlyStandardHours > 0) {
-      hourlyEquivalent = input.basicSalary / input.monthlyStandardHours
+      hourlyEquivalent = (input.basicSalary + allowanceTotal) / input.monthlyStandardHours
     }
   }
   if (hourlyEquivalent === null) return results // 換算できない場合は判定不能のためスキップ

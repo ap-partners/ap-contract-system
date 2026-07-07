@@ -12,7 +12,9 @@ const supabaseAdmin = createClient(
 )
 
 const getDocumentLabel = (documentType: string, contractType: string): string => {
-  const suffix = contractType === 'アルバイト' ? '（アルバイト）' : contractType === '無期契約' ? '（無期）' : contractType === '正社員' ? '' : '（有期）'
+  // 2026-07-07修正：有期契約に「（有期）」は不要という指摘により、無期契約・アルバイトのみ
+  // 括弧書きを付ける（有期契約・正社員は書類名そのまま）。
+  const suffix = contractType === 'アルバイト' ? '（アルバイト）' : contractType === '無期契約' ? '（無期）' : ''
   return `${documentType}${suffix}`
 }
 

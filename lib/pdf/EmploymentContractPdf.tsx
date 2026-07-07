@@ -237,11 +237,17 @@ const EmploymentPeriodRow = ({ p }: { p: EmploymentContractPdfProps }) => {
     <View style={styles.row}>
       <View style={styles.labelCell}><Text style={styles.labelText}>雇用期間</Text></View>
       <View style={styles.valueCell}>
-        <BoxedSplitRow
-          main={mainText}
-          boxLabel="契約条件適用開始日"
-          boxValue={isIndefinite ? toJpDate(p.contractStartDate) : ''}
-        />
+        {/* 2026-07-07修正：契約条件適用開始日は無期契約・正社員のみ意味を持つ欄のため、
+            有期契約・アルバイトでは欄自体を表示しない（空欄のまま出すのではなく非表示にする）。 */}
+        {isIndefinite ? (
+          <BoxedSplitRow
+            main={mainText}
+            boxLabel="契約条件適用開始日"
+            boxValue={toJpDate(p.contractStartDate)}
+          />
+        ) : (
+          <Text style={styles.freeText}>{mainText}</Text>
+        )}
       </View>
     </View>
   )
@@ -271,18 +277,26 @@ const SplitLines = ({ lines }: { lines: { label: string; value: React.ReactNode 
 )
 
 const WageGrid = ({ p, overtimeHoursNote }: { p: EmploymentContractPdfProps; overtimeHoursNote: string }) => {
+  // 2026-07-07修正：「50,000円　※定額残業時間：10時間」のように1行が長くなると、
+  // 数字と「円」の間で不格好に改行されることがあったため、金額と注記を明示的に別行にする。
+  const overtimePayValue: React.ReactNode = overtimeHoursNote
+    ? <>
+        <Text>{formatYen(p.overtimePay)}</Text>
+        <Text>{overtimeHoursNote}</Text>
+      </>
+    : formatYen(p.overtimePay)
   const rows: [string, React.ReactNode, string, React.ReactNode][] = [
     ['給与の種類', formatSalaryType(p.salaryType), '役職手当', formatYen(p.rolePay)],
     ['基本給', formatYen(p.basicSalary), '営業手当', formatYen(p.salesPay)],
     ['職能給', formatYen(p.skillPay), '住宅手当', formatYen(p.housingPay)],
-    ['定額残業手当', `${formatYen(p.overtimePay)}${overtimeHoursNote}`, '割増賃金率', OVERTIME_RATE_TEXT],
+    ['定額残業手当', overtimePayValue, '割増賃金率', OVERTIME_RATE_TEXT],
   ]
   return (
     <>
       {rows.map(([l1, v1, l2, v2], i) => (
         <View key={i} style={i < rows.length - 1 ? styles.wageGridRow : styles.wageGridRowLast}>
           <View style={styles.wageCellLabel}><Text>{l1}</Text></View>
-          <View style={styles.wageCellValue}><Text>{v1}</Text></View>
+          <View style={styles.wageCellValue}>{typeof v1 === 'string' ? <Text>{v1}</Text> : v1}</View>
           <View style={styles.wageCellLabel}><Text>{l2}</Text></View>
           <View style={styles.wageCellValueLast}><Text>{v2}</Text></View>
         </View>
@@ -294,7 +308,7 @@ const WageGrid = ({ p, overtimeHoursNote }: { p: EmploymentContractPdfProps; ove
 export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
   const retirementClause = getRetirementClause(p.contractType)
   const workDaysText = getWorkDaysText(p.workDays, p.workDaysOther)
-  const overtimeHoursNote = Number(p.overtimeHours) > 0 ? `　※定額残業時間：${p.overtimeHours}時間` : ''
+  const overtimeHoursNote = Number(p.overtimeHours) > 0 ? `※定額残業時間：${p.overtimeHours}時間` : ''
   const deductionText = getDeductionText(p.hasEmployInsurance, p.hasSocialInsurance)
   const transportSecondaryNote = getTransportSecondaryNote(p.transportType)
 

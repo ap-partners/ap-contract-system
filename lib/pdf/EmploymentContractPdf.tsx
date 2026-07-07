@@ -87,17 +87,16 @@ const styles = StyleSheet.create({
   },
   splitLine: {
     flexDirection: 'row',
-    paddingVertical: 3,
   },
   splitLineWithBorder: {
     flexDirection: 'row',
-    paddingVertical: 3,
     borderBottomWidth: THIN,
     borderColor: BORDER,
   },
   splitSubLabel: {
     width: 78,
     paddingHorizontal: 4,
+    paddingVertical: 3,
     borderRightWidth: THIN,
     borderColor: BORDER,
     fontWeight: 'bold',
@@ -105,6 +104,7 @@ const styles = StyleSheet.create({
   },
   splitSubValue: {
     flex: 1,
+    paddingVertical: 3,
     paddingHorizontal: 5,
   },
   wageGridRow: {

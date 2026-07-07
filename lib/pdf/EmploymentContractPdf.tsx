@@ -167,12 +167,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
   },
   boxedSplitBox: {
-    // 2026-07-07再修正：変形労働時間制の注記「(毎月1日を起算日とし...)」を1行に収めるには
-    // main側の横幅が約350pt以上必要（実レンダリングで検証済み）。ボックス側は休憩時間（60分等）・
-    // 所定労働時間を超える労働（有/無）という短い値のみのため、88まで縮小してmain側を確保する。
-    // ボックスラベル文言（「所定労働時間を超える労働」等）は狭くなった分2行になる場合があるが、
-    // 短い注記ラベルなので支障はない。
-    width: 88,
+    // 2026-07-07再々修正：ボックスラベル「所定労働時間を超える労働」が2行に折り返れるのは
+    // 読みづらいとのご指摘のため、1行で収まる116に戻す（13文字×6.6pt+左右パディングで
+    // 必要な約98ptを確保）。その分main側の横幅が減るため、変形労働時間制の注記側の
+    // フォントサイズを1pt落とす（flexTimeNoteスタイル）ことで1行表示を両立させている
+    // （実レンダリングで320pt幅・7.3ptなら1行に収まることを確認済み）。
+    width: 116,
     borderLeftWidth: THIN,
     borderColor: BORDER,
     padding: '3 6',
@@ -182,6 +182,9 @@ const styles = StyleSheet.create({
     fontSize: 6.6,
     marginBottom: 1,
     fontWeight: 'bold',
+  },
+  flexTimeNote: {
+    fontSize: 7.3,
   },
 })
 
@@ -377,7 +380,13 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
             <View style={styles.labelCell}><Text style={styles.labelText}>変形労働時間制</Text></View>
             <View style={styles.valueCell}>
               <BoxedSplitRow
-                main={flexTimeNote ? `${getFlexTimeText(p.flexTime)}　${flexTimeNote}` : getFlexTimeText(p.flexTime)}
+                main={
+                  flexTimeNote ? (
+                    <Text>{getFlexTimeText(p.flexTime)}　<Text style={styles.flexTimeNote}>{flexTimeNote}</Text></Text>
+                  ) : (
+                    getFlexTimeText(p.flexTime)
+                  )
+                }
                 boxLabel="所定労働時間を超える労働"
                 boxValue={p.overtime || '―'}
               />

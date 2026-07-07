@@ -1,0 +1,21 @@
+diff --git a/node_modules/@react-pdf/textkit/README.md b/node_modules/@react-pdf/textkit/README.md
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@react-pdf/textkit/lib/index.d.ts b/node_modules/@react-pdf/textkit/lib/index.d.ts
+old mode 100644
+new mode 100755
+diff --git a/node_modules/@react-pdf/textkit/lib/textkit.js b/node_modules/@react-pdf/textkit/lib/textkit.js
+old mode 100644
+new mode 100755
+index 0b8b6fa..da358f0
+--- a/node_modules/@react-pdf/textkit/lib/textkit.js
++++ b/node_modules/@react-pdf/textkit/lib/textkit.js
+@@ -2635,7 +2635,7 @@ const getNodes = (attributedString, { align }, options) => {
+             acc.push(linebreak.glue(width, start, end, stretch, shrink));
+         }
+         else {
+-            const hyphenated = syllables[index + 1] !== ' ';
++            const hyphenated = false;
+             const end = start + s.length;
+             // Add box node. Box nodes are used to represent words.
+             acc.push(linebreak.box(width, start, end, hyphenated));

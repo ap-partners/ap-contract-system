@@ -102,6 +102,21 @@ export const getTransportText = (transportType: string): string => {
   return TRANSPORT_BODY_TEXT[transportType] || TRANSPORT_BODY_TEXT.default
 }
 
+// ===== 交通費の補足注記（テンプレートJ31。VLOOKUP(C88,B99:AT100,13,0)を書き起こし）=====
+// 2026-07-07発見・追加：「実費または定期代」「定期代＋ガソリン代支給」の場合のみ、
+// 交通費本文の下にもう1行、勤務日数に応じた注記が付く。以前の実装ではこの行が漏れていた。
+const TRANSPORT_SECONDARY_NOTE = '15日以上の勤務日数の場合は定期代支給とする。これに満たない勤務日数の場合、実費支給とする。'
+export const getTransportSecondaryNote = (transportType: string): string => {
+  return (transportType === 'default' || transportType === 'pass-gas') ? TRANSPORT_SECONDARY_NOTE : ''
+}
+
+// ===== 自社住所（会社側署名欄。テンプレートE47/E48セルを書き起こし）=====
+// 2026-07-07発見・追加：会社名の上に自社住所を表示する行があり、以前の実装では抜けていた。
+// 【暫定】本社住所を固定で表示している。伊藤さん確認済み：営業所ごとに住所が異なるため、
+// 本来は部門→拠点住所のマスタが必要（2026-07-07時点でまだ存在しない・新規に決める必要がある。
+// docs/SYSTEM_DESIGN.md 9章PENDING参照）。マスタ整備までの暫定表示として本社住所を使う。
+export const COMPANY_HQ_ADDRESS_LINES = ['東京都新宿区新宿2-16-20', '新宿通東洋ビル10F']
+
 // ===== 始業・終業・休憩・所定労働時間の表示整形 =====
 export const formatHoursMinutes = (h: string | number | null | undefined, m: string | number | null | undefined): string => {
   const hh = Number(h) || 0

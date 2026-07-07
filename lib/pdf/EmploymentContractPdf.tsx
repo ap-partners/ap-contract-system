@@ -1,13 +1,14 @@
 // ===== 雇用契約書 PDF（react-pdf）=====
 // docs/SYSTEM_DESIGN.md 7-1章の確定仕様に基づく。パターンA（雇用契約書のみ・6STEP）。
 // 有期契約／無期契約／正社員／アルバイトの4区分に対応。A4縦・1ページ固定。
-// 2026-07-07実装。2026-07-07にベース資料（ベース.pdf＝実際に使われている無期雇用契約書）と
-// 突き合わせてレイアウトを精密化（列比率・罫線・賃金グリッド・始業終業の2行分割等）。
+// 2026-07-07実装。同日、ベース資料（実物の無期雇用契約書PDF）と突き合わせてレイアウトを
+// 精密化（列比率・罫線・賃金グリッド・始業終業の2行分割・交通費補足注記・自社住所欄等）。
 import { Document, Page, Text, View, StyleSheet, Font, Image } from '@react-pdf/renderer'
 import path from 'path'
 import {
   toJpDate, getRetirementClause, HOLIDAY_CLAUSE_LINES, WAGE_PAYMENT_TEXT, OVERTIME_RATE_TEXT,
   getDeductionText, getInsuranceLine, getTrialText, getRemarksText, getTransportText,
+  getTransportSecondaryNote, COMPANY_HQ_ADDRESS_LINES,
   formatHoursMinutes, formatMinutes, formatSalaryType, formatYen,
 } from './documentText'
 
@@ -17,6 +18,10 @@ Font.register({
   family: 'IPAexGothic',
   src: path.join(process.cwd(), 'assets', 'fonts', 'ipaexg.ttf'),
 })
+
+// 2026-07-07：長い単語が行末で自動的に「-」区切りされる（ハイフネーション）機能を無効化。
+// 素人には意味が分からないため不要、という伊藤さんの指摘により、単語をそのまま1つの塊として扱う。
+Font.registerHyphenationCallback(word => [word])
 
 // 会社印影（社印）画像。契約書関連フォルダのExcelテンプレートに埋め込まれていたものを流用。
 // 2026-07-07決定：SSC承認前の下書き段階では表示せず、承認後の最終版のみに印字する（showSealで制御）。
@@ -40,7 +45,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: 'center',
     letterSpacing: 1,
-    marginBottom: 10,
+    marginBottom: 18,
   },
   intro: {
     marginBottom: 8,
@@ -68,26 +73,26 @@ const styles = StyleSheet.create({
     width: `${100 - 17}%`,
     padding: 0,
   },
-  // 就業場所／従事すべき業務内容／始業・終業時刻のような「(見出し)＋値」を2段重ねる行
   splitLine: {
     flexDirection: 'row',
-    paddingVertical: 2.5,
-    paddingHorizontal: 4,
+    paddingVertical: 3,
   },
   splitLineWithBorder: {
     flexDirection: 'row',
-    paddingVertical: 2.5,
-    paddingHorizontal: 4,
+    paddingVertical: 3,
     borderBottomWidth: THIN,
     borderColor: BORDER,
   },
   splitSubLabel: {
     width: 78,
+    paddingHorizontal: 4,
+    borderRightWidth: THIN,
+    borderColor: BORDER,
   },
   splitSubValue: {
     flex: 1,
+    paddingHorizontal: 5,
   },
-  // 賃金セクションの2列グリッド（給与の種類/役職手当、基本給/営業手当 ...）
   wageGridRow: {
     flexDirection: 'row',
     borderBottomWidth: THIN,
@@ -137,6 +142,25 @@ const styles = StyleSheet.create({
     top: 6,
     left: 128,
   },
+  boxedSplitRow: {
+    flexDirection: 'row',
+  },
+  boxedSplitMain: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+  },
+  boxedSplitBox: {
+    width: 132,
+    borderLeftWidth: THIN,
+    borderColor: BORDER,
+    padding: '3 6',
+    justifyContent: 'center',
+  },
+  boxedSplitBoxLabel: {
+    fontSize: 6.6,
+    marginBottom: 1,
+  },
 })
 
 export interface EmploymentContractPdfProps {
@@ -178,32 +202,40 @@ export interface EmploymentContractPdfProps {
   showSeal: boolean
 }
 
-// 雇用期間：本文（自〜至／期間の定めなし）＋右側に「契約条件適用開始日」の小さな別枠。ベース資料の構成を再現。
+const BoxedSplitRow = ({ main, boxLabel, boxValue }: { main: React.ReactNode; boxLabel: string; boxValue: React.ReactNode }) => (
+  <View style={styles.boxedSplitRow}>
+    <View style={styles.boxedSplitMain}>{typeof main === 'string' ? <Text>{main}</Text> : main}</View>
+    <View style={styles.boxedSplitBox}>
+      <Text style={styles.boxedSplitBoxLabel}>{boxLabel}</Text>
+      {typeof boxValue === 'string' ? <Text>{boxValue}</Text> : boxValue}
+    </View>
+  </View>
+)
+
 const EmploymentPeriodRow = ({ p }: { p: EmploymentContractPdfProps }) => {
   const isIndefinite = p.contractType === '無期契約' || p.contractType === '正社員'
   const mainText = isIndefinite ? '期間の定めなし' : `自　${toJpDate(p.employStart)}　　至　${toJpDate(p.employEnd)}`
   return (
     <View style={styles.row}>
       <View style={styles.labelCell}><Text>雇用期間</Text></View>
-      <View style={[styles.valueCell, { flexDirection: 'row' }]}>
-        <View style={{ flex: 1, justifyContent: 'center', paddingLeft: 4 }}><Text>{mainText}</Text></View>
-        <View style={{ width: 108, borderLeftWidth: THIN, borderColor: BORDER, padding: '2 4', justifyContent: 'center' }}>
-          <Text style={{ fontSize: 6.3 }}>契約条件適用開始日</Text>
-          <Text>{isIndefinite ? toJpDate(p.contractStartDate) : ''}</Text>
-        </View>
+      <View style={styles.valueCell}>
+        <BoxedSplitRow
+          main={mainText}
+          boxLabel="契約条件適用開始日"
+          boxValue={isIndefinite ? toJpDate(p.contractStartDate) : ''}
+        />
       </View>
     </View>
   )
 }
 
-const LabeledRow = ({ label, children, last }: { label: string; children: React.ReactNode; last?: boolean }) => (
-  <View style={last ? styles.rowLast : styles.row}>
+const LabeledRow = ({ label, children, last, minHeight }: { label: string; children: React.ReactNode; last?: boolean; minHeight?: number }) => (
+  <View style={minHeight ? [last ? styles.rowLast : styles.row, { minHeight }] : (last ? styles.rowLast : styles.row)}>
     <View style={styles.labelCell}><Text>{label}</Text></View>
     <View style={styles.valueCell}>{children}</View>
   </View>
 )
 
-// (雇入れ時)／(変更の範囲) のように、小見出し＋値を2段重ねる行（就業場所・従事すべき業務内容で使用）
 const SplitLines = ({ lines }: { lines: { label: string; value: React.ReactNode }[] }) => (
   <>
     {lines.map((l, i) => (
@@ -217,7 +249,6 @@ const SplitLines = ({ lines }: { lines: { label: string; value: React.ReactNode 
   </>
 )
 
-// 賃金セクション：給与の種類/役職手当、基本給/営業手当、職能給/住宅手当、定額残業手当/割増賃金率の2列4行グリッド
 const WageGrid = ({ p, overtimeHoursNote }: { p: EmploymentContractPdfProps; overtimeHoursNote: string }) => {
   const rows: [string, React.ReactNode, string, React.ReactNode][] = [
     ['給与の種類', formatSalaryType(p.salaryType), '役職手当', formatYen(p.rolePay)],
@@ -244,10 +275,11 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
   const workDaysText = p.workDays === 'other' ? p.workDaysOther : p.workDays
   const overtimeHoursNote = Number(p.overtimeHours) > 0 ? `　※定額残業時間：${p.overtimeHours}時間` : ''
   const deductionText = getDeductionText(p.hasEmployInsurance, p.hasSocialInsurance)
+  const transportSecondaryNote = getTransportSecondaryNote(p.transportType)
 
   return (
     <Document>
-      <Page size="A4" style={styles.page} wrap={false}>
+      <Page size="A4" style={styles.page}>
         <Text style={styles.title}>{p.documentLabel}</Text>
         <Text style={styles.intro}>
           株式会社ＡＰパートナーズ(以下「甲」という)と　{p.employeeName}　(以下「乙」という)は、下記のとおり雇用契約を締結する。
@@ -278,12 +310,18 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
           </LabeledRow>
 
           <LabeledRow label="所定労働日数"><Text style={styles.freeText}>{workDaysText || '―'}</Text></LabeledRow>
-          <LabeledRow label="所定労働時間">
-            <View style={[styles.freeText, { flexDirection: 'row' }]}>
-              <Text style={{ marginRight: 16 }}>{formatHoursMinutes(p.workingHoursH, p.workingHoursM)}</Text>
-              <Text>所定労働時間を超える労働：{p.overtime || '―'}</Text>
+
+          <View style={styles.row}>
+            <View style={styles.labelCell}><Text>所定労働時間</Text></View>
+            <View style={styles.valueCell}>
+              <BoxedSplitRow
+                main={formatHoursMinutes(p.workingHoursH, p.workingHoursM)}
+                boxLabel="所定労働時間を超える労働"
+                boxValue={p.overtime || '―'}
+              />
             </View>
-          </LabeledRow>
+          </View>
+
           <LabeledRow label="休憩時間"><Text style={styles.freeText}>{formatMinutes(p.breakTime)}</Text></LabeledRow>
 
           <LabeledRow label={'休日又は勤務\n休暇'}>
@@ -303,7 +341,12 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
             </View>
           </LabeledRow>
 
-          <LabeledRow label="交通費"><Text style={styles.freeText}>{getTransportText(p.transportType)}</Text></LabeledRow>
+          <LabeledRow label="交通費">
+            <View style={styles.freeText}>
+              <Text>{getTransportText(p.transportType)}</Text>
+              {transportSecondaryNote ? <Text>{transportSecondaryNote}</Text> : null}
+            </View>
+          </LabeledRow>
 
           {retirementClause && (
             <LabeledRow label="退職・解雇"><Text style={styles.freeText}>{retirementClause}</Text></LabeledRow>
@@ -311,7 +354,9 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
 
           <LabeledRow label="各種保険"><Text style={styles.freeText}>{getInsuranceLine(p.hasEmployInsurance, p.hasSocialInsurance)}</Text></LabeledRow>
 
-          <LabeledRow label="試用期間"><Text style={styles.freeText}>{getTrialText(p.trialPeriod, p.trialStart, p.trialEnd)}</Text></LabeledRow>
+          <LabeledRow label="試用期間" minHeight={62}>
+            <Text style={styles.freeText}>{getTrialText(p.trialPeriod, p.trialStart, p.trialEnd)}</Text>
+          </LabeledRow>
 
           <LabeledRow label={'備考\nその他'} last>
             <Text style={styles.freeText}>{getRemarksText(p.pattern, p.contractType, p.bonusType)}</Text>
@@ -325,6 +370,7 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
         <View style={styles.signatureRow}>
           <View style={styles.signatureCol}>
             <Text>会社</Text>
+            {COMPANY_HQ_ADDRESS_LINES.map((line, i) => <Text key={i}>{line}</Text>)}
             <Text>株式会社APパートナーズ</Text>
             <Text>代表取締役　山田　昌</Text>
             {p.showSeal && <Image src={COMPANY_SEAL_PATH} style={styles.companySeal} />}

@@ -544,7 +544,21 @@ export default function SSCContractDetail() {
             </div>
             <div className="grid" style={{ gridTemplateColumns: '160px 1fr' }}>
               <div className="px-4 py-3 text-xs font-medium" style={{ background: '#EEF2FA', color: '#5A6A8A' }}>書類種別</div>
-              <div className="px-4 py-3 text-sm" style={{ color: '#1A2340' }}>{contract.document_type}</div>
+              <div className="px-4 py-3 text-sm flex items-center gap-3" style={{ color: '#1A2340' }}>
+                {contract.document_type}
+                {/* 帳票PDFプレビュー（2026-07-07追加・第1弾：雇用契約書のみ対応） */}
+                {contract.document_type === '雇用契約書' && (
+                  <a
+                    href={`/api/contracts/${contract.id}/pdf`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-medium px-3 py-1 rounded-full border"
+                    style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: '#EEF2FA' }}
+                  >
+                    📄 帳票PDFプレビュー
+                  </a>
+                )}
+              </div>
             </div>
             <div className="grid" style={{ gridTemplateColumns: '160px 1fr' }}>
               <div className="px-4 py-3 text-xs font-medium" style={{ background: '#EEF2FA', color: '#5A6A8A' }}>パターン / 雇用区分</div>

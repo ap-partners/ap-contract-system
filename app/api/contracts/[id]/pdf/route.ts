@@ -53,6 +53,9 @@ export async function GET(
       contractType: contract.contract_type,
       documentLabel: getDocumentLabel(contract.document_type, contract.contract_type),
       employeeName: staffSnapshot.name || '',
+      // 2026-07-07：staffテーブルに住所列がまだ無いため現状は常に空欄。
+      // 将来 staffSnapshot.address 等が追加された際、ここを差し替えるだけで反映される。
+      employeeAddress: staffSnapshot.address || '',
       workLocationName: f.workLocationName || '',
       workLocationAddress: f.workLocationAddress || '',
       workLocationTel: f.workLocationTel || '',

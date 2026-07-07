@@ -53,7 +53,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: 'center',
     letterSpacing: 1,
-    marginBottom: 18,
+    marginBottom: 26,
     fontWeight: 'bold',
   },
   intro: {
@@ -101,6 +101,7 @@ const styles = StyleSheet.create({
     borderRightWidth: THIN,
     borderColor: BORDER,
     fontWeight: 'bold',
+    justifyContent: 'center',
   },
   splitSubValue: {
     flex: 1,
@@ -182,6 +183,7 @@ export interface EmploymentContractPdfProps {
   contractType: string
   documentLabel: string
   employeeName: string
+  employeeAddress?: string
   workLocationName: string
   workLocationAddress: string
   workLocationTel: string
@@ -255,7 +257,10 @@ const SplitLines = ({ lines }: { lines: { label: string; value: React.ReactNode 
   <>
     {lines.map((l, i) => (
       <View key={i} style={i < lines.length - 1 ? styles.splitLineWithBorder : styles.splitLine}>
-        <Text style={styles.splitSubLabel}>{l.label}</Text>
+        {/* 2026-07-07：labelをTextのまま罫線を付けると、太字フォントの行高計算により
+            右の値側より縦罫線が短く見えることがあったため、labelCellと同様にViewで
+            囲んで罫線を持たせる形に変更（Viewはflexの高さ揃えが効くため隣と揃う）。 */}
+        <View style={styles.splitSubLabel}><Text>{l.label}</Text></View>
         <View style={styles.splitSubValue}>
           {typeof l.value === 'string' ? <Text>{l.value}</Text> : l.value}
         </View>
@@ -305,7 +310,10 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
 
           <LabeledRow label="就業場所">
             <SplitLines lines={[
-              { label: '(雇入れ時)', value: `${p.workLocationName}　${p.workLocationAddress}　TEL ${p.workLocationTel}` },
+              {
+                label: '(雇入れ時)',
+                value: `${p.workLocationName}　${p.workLocationAddress}${p.workLocationTel ? `　TEL ${p.workLocationTel}` : ''}`,
+              },
               { label: '(変更の範囲)', value: '会社の定める事業所' },
             ]} />
           </LabeledRow>
@@ -392,7 +400,10 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
           </View>
           <View style={styles.signatureCol}>
             <Text>従業員</Text>
-            <Text>住所：</Text>
+            {/* 2026-07-07：住所データは現時点でstaffテーブルに存在しないため空欄運用。
+                将来データが入った際、住所が長くて2行になっても崩れないよう、
+                固定高さを設けず自然に折り返す構造に最初からしておく（骨格のみ先行対応）。 */}
+            <Text>住所：{p.employeeAddress || ''}</Text>
             <Text>氏名：{p.employeeName}</Text>
           </View>
         </View>

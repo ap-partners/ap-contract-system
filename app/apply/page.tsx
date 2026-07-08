@@ -3712,15 +3712,13 @@ function ApplyPageInner() {
 
               <SectionHeader label="各種保険" />
 
-              {/* 労災保険（自動） */}
+              {/* 労災保険（自動）：全員一律加入の固定値であり、マスタ/CSVからの反映値ではないため
+                  AutoBadge（「マスタ情報反映」表示）は付けない（2026-07-08伊藤さん指摘・修正） */}
               <FormRow label="労災保険">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm rounded-lg px-3 py-2 inline-block border"
-                    style={{ color: '#5A6A8A', background: '#F5F7FC', borderColor: '#D0DAF0' }}>
-                    全員加入（自動）
-                  </p>
-                  <AutoBadge />
-                </div>
+                <p className="text-sm rounded-lg px-3 py-2 inline-block border"
+                  style={{ color: '#5A6A8A', background: '#F5F7FC', borderColor: '#D0DAF0' }}>
+                  全員加入（自動）
+                </p>
               </FormRow>
 
               {/* 加入保険 */}
@@ -3953,7 +3951,7 @@ function ApplyPageInner() {
                   <FinalRow label="帳票プレビュー" value={selectedTransport.preview} multiline preview />
 
                   <FinalGroupHeader label="各種保険" />
-                  <FinalRow label="労災保険" value="全員加入（自動）" badge={<AutoBadge />} />
+                  <FinalRow label="労災保険" value="全員加入（自動）" />
                   <FinalRow label="加入保険" value={
                     [hasEmployInsurance && '雇用保険に加入する', hasSocialInsurance && '健康保険・厚生年金に加入する'].filter(Boolean).join(' / ') || '―'
                   } />

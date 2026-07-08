@@ -251,12 +251,48 @@ export const getAgreementLaborText = (dispatchEnd: string | null | undefined): s
 export const CONTRACT_RENEWAL_TEXT =
   '契約の更新は次のいずれかにより判断します。\n①契約期間満了時の業務量　②従事している業務の進捗状況　③能力、勤務成績、勤務態度　④会社の経営状況\n契約期間満了で終了の場合は、少なくとも契約終了の３０日前に通知します。\n契約更新上限の有無（　無　・　有(更新回数上限または通算契約期間：　　　　　　　　　　　　)）\n労働契約法18条に基づく無期転換申込権については、権利発生する契約更新時にその条件と併せて明示する。'
 
-// ===== 当該事業所における労働者派遣料金額の平均額（兼用版パターンCのみ・テンプレートJ71）=====
-// 2026-07-08追加：STEP screensに対応する入力項目がまだ無いため、現時点では空欄（―）で
-// 出力する骨格のみ用意する（CLAUDE.md運用ルール10：将来の完成形を見据えた構造を先に作る）。
-// データ項目が追加された際は、呼び出し側（pdf/route.ts）でinput_data.fieldsから渡すだけで済む。
-export const getDispatchFeeAvgText = (dispatchFeeAvg: string | null | undefined): string => {
-  return `当該事業所における労働者派遣料金額の平均額(R6年度実績)　：　${dispatchFeeAvg || '―'}`
+// ===== 当該事業所における労働者派遣料金額の平均額（就業条件明示書・兼用版共通）=====
+// 2026-07-08追加・同日仕様確定（伊藤さん確認済み）。
+// 表示形式は「【営業所名】　◯,◯◯◯円/日」。営業所名・金額は自社の部門マスタ（department_master）と
+// 新設した年度別マスタ（dispatch_fee_master）から導出する。値の取得・整形はサーバー側
+// （app/api/contracts/[id]/pdf/route.ts）で行い、ここでは整形ロジックのみを持つ。
+
+// 自社の部署名（department_master.dept_name）から表示用の「営業所名」を判定する。
+// ルール（2026-07-08伊藤さん確認済み）：
+//   ①dept_nameに「営業所」または「支社」を含む場合→そのまま使用（末尾の「（内勤）」は除いて判定）
+//   ②それ以外（全社／本社／SP営業部／HRソリューション営業部／SP1課／SP2課／CS課／広域本部／
+//     北日本営業部／西日本営業部／事業開発部／デジタルマーケティング部／営業支援事務局／
+//     IT部（＝伊藤さんの言う「システム開発課」に相当）／管理部／管理課／法務部 法務課／営業開発課）
+//     →「本社」
+export const getOfficeName = (deptName: string | null | undefined): string => {
+  if (!deptName) return '本社'
+  const base = deptName.replace(/（内勤）$/, '').trim()
+  if (base.includes('営業所') || base.includes('支社')) return base
+  return '本社'
+}
+
+// ラベル行（左側の項目名）：年度ラベルは年1回のマスタ更新で変わるため、固定文言にしない。
+export const getDispatchFeeLabel = (fiscalYearLabel: string | null | undefined): string => {
+  const yearLabel = fiscalYearLabel || 'R6'
+  return `当該事業所における
+労働者派遣料金額の
+平均額(${yearLabel}年度実績)`
+}
+
+// 値セル：dispatch_fee_masterに該当する営業所のレコードが無い場合（マスタ未整備・新設営業所等）は
+// 従来通り「―」を表示する（骨格のみのフォールバック。2026-07-08確認済み：沖縄営業所は当面
+// 九州営業所と同額で運用する、という伊藤さんの判断は呼び出し側route.tsでのマスタ登録値で対応済み）。
+export const getDispatchFeeAvgText = (
+  officeName: string | null | undefined,
+  amountPerDay: number | null | undefined,
+  fiscalYearLabel: string | null | undefined
+): string => {
+  const yearLabel = fiscalYearLabel || 'R6'
+  const prefix = `当該事業所における労働者派遣料金額の平均額(${yearLabel}年度実績)　：　`
+  if (!officeName || amountPerDay === null || amountPerDay === undefined) {
+    return `${prefix}―`
+  }
+  return `${prefix}【${officeName}】　${amountPerDay.toLocaleString()}円/日`
 }
 
 // ===== 抵触日欄の表示文言（パターンB・C共通・テンプレートP16/P17固定文言）=====

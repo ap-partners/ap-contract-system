@@ -14,7 +14,7 @@ import {
   getWorkDaysText, getFlexTimeText, getFlexTimeNote, COMPANY_HQ_ADDRESS_LINES,
   formatHoursMinutes, formatMinutes,
   CONFLICT_DATE_NOTICE_TEXT, COMPLAINT_HANDLING_TEXT, DISPATCH_CANCEL_MEASURES_TEXT,
-  getAgreementLaborText, getConflictDateText, getDispatchFeeAvgText,
+  getAgreementLaborText, getConflictDateText, getDispatchFeeAvgText, getDispatchFeeLabel,
 } from './documentText'
 import { sharedStyles, LabeledRow, SplitLines, BoxedSplitRow, PersonGridRow } from './pdfShared'
 
@@ -65,7 +65,9 @@ export interface EmploymentConditionsPdfProps {
   welfare: string
   safetyText: string
   conflictText: string
-  dispatchFeeAvg?: string
+  dispatchFeeOfficeName?: string
+  dispatchFeeAmount?: number | null
+  dispatchFeeFiscalYear?: string
 }
 
 export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
@@ -231,8 +233,8 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
             <Text style={sharedStyles.freeText}>上記以外の事項については、当社就業規則及び賃金規定による。</Text>
           </LabeledRow>
 
-          <LabeledRow label={'当該事業所における\n労働者派遣料金額の\n平均額(R6年度実績)'} last>
-            <Text style={sharedStyles.freeText}>{getDispatchFeeAvgText(p.dispatchFeeAvg)}</Text>
+          <LabeledRow label={getDispatchFeeLabel(p.dispatchFeeFiscalYear)} last>
+            <Text style={sharedStyles.freeText}>{getDispatchFeeAvgText(p.dispatchFeeOfficeName, p.dispatchFeeAmount, p.dispatchFeeFiscalYear)}</Text>
           </LabeledRow>
         </View>
 

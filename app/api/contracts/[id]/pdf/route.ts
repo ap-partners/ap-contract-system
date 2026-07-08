@@ -8,6 +8,7 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import { EmploymentContractPdf } from '@/lib/pdf/EmploymentContractPdf'
 import { EmploymentConditionsPdf } from '@/lib/pdf/EmploymentConditionsPdf'
 import { EmploymentContractAndConditionsPdf } from '@/lib/pdf/EmploymentContractAndConditionsPdf'
+import { getOfficeName } from '@/lib/pdf/documentText'
 
 // app/apply/page.tsxのgetDocumentTypes()が保存するdocument_typeの生値（'\n'を含む）に合わせる。
 const PATTERN_C_DOCUMENT_TYPE = '雇用契約書 兼\n就業条件明示書'
@@ -44,6 +45,30 @@ export async function GET(
 
   const f = contract.input_data?.fields || {}
   const staffSnapshot = contract.input_data?.staff || {}
+
+  // ===== 当該事業所における労働者派遣料金額の平均額（B・C共通。2026-07-08追加）=====
+  // 申請した担当営業の自社部署（contracts.created_by_dept_no）→department_masterで部署名を引き、
+  // getOfficeName()で表示用の営業所名に変換したうえで、dispatch_fee_master（年度別マスタ）から
+  // 金額を検索する。マスタに該当レコードが無い場合（新設営業所等）はdispatchFeeAmountがnullのまま
+  // PDF側で「―」表示になる（documentText.tsのgetDispatchFeeAvgText参照）。
+  let dispatchFeeOfficeName: string | undefined
+  let dispatchFeeAmount: number | null = null
+  let dispatchFeeFiscalYear: string | undefined
+  if (contract.created_by_dept_no != null) {
+    const { data: deptRow } = await supabaseAdmin
+      .from('department_master')
+      .select('dept_name')
+      .eq('dept_no', contract.created_by_dept_no)
+      .maybeSingle()
+    dispatchFeeOfficeName = getOfficeName(deptRow?.dept_name)
+    const { data: feeRow } = await supabaseAdmin
+      .from('dispatch_fee_master')
+      .select('amount_per_day, fiscal_year_label')
+      .eq('office_name', dispatchFeeOfficeName)
+      .maybeSingle()
+    dispatchFeeAmount = feeRow?.amount_per_day ?? null
+    dispatchFeeFiscalYear = feeRow?.fiscal_year_label
+  }
 
   let buffer: Buffer
 
@@ -139,7 +164,9 @@ export async function GET(
         welfare: f.welfare || '',
         safetyText: f.safetyText || '',
         conflictText: f.conflictText || '',
-        dispatchFeeAvg: f.dispatchFeeAvg || '',
+        dispatchFeeOfficeName,
+        dispatchFeeAmount,
+        dispatchFeeFiscalYear,
       })
     )
   } else if (contract.document_type === PATTERN_C_DOCUMENT_TYPE) {
@@ -212,6 +239,9 @@ export async function GET(
         welfare: f.welfare || '',
         safetyText: f.safetyText || '',
         conflictText: f.conflictText || '',
+        dispatchFeeOfficeName,
+        dispatchFeeAmount,
+        dispatchFeeFiscalYear,
       })
     )
   } else {

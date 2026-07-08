@@ -16,7 +16,7 @@ import {
   getTransportText, getTransportSecondaryNote, getWorkDaysText, getFlexTimeText, getFlexTimeNote,
   COMPANY_HQ_ADDRESS_LINES, formatHoursMinutes, formatMinutes,
   CONFLICT_DATE_NOTICE_TEXT, COMPLAINT_HANDLING_TEXT, DISPATCH_CANCEL_MEASURES_TEXT,
-  getAgreementLaborText, CONTRACT_RENEWAL_TEXT, getDispatchFeeAvgText, getConflictDateText,
+  getAgreementLaborText, CONTRACT_RENEWAL_TEXT, getDispatchFeeAvgText, getDispatchFeeLabel, getConflictDateText,
 } from './documentText'
 import {
   sharedStyles, LabeledRow, SplitLines, BoxedSplitRow, WageGrid, PersonGridRow,
@@ -94,8 +94,10 @@ export interface EmploymentContractAndConditionsPdfProps {
   welfare: string
   safetyText: string
   conflictText: string
-  // ----- パターンCのみ（2026-07-08時点ではSTEP未対応・骨格のみ。documentText.ts参照）-----
-  dispatchFeeAvg?: string
+  // ----- 当該事業所における労働者派遣料金額の平均額（B・C共通。route.ts側でマスタから算出）-----
+  dispatchFeeOfficeName?: string
+  dispatchFeeAmount?: number | null
+  dispatchFeeFiscalYear?: string
 }
 
 const EmploymentPeriodRow = ({ p }: { p: EmploymentContractAndConditionsPdfProps }) => {
@@ -314,8 +316,8 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
             <Text style={sharedStyles.freeText}>{getRemarksText(p.pattern, p.contractType, p.bonusType)}</Text>
           </LabeledRow>
 
-          <LabeledRow label={'当該事業所における\n労働者派遣料金額の\n平均額(R6年度実績)'} last>
-            <Text style={sharedStyles.freeText}>{getDispatchFeeAvgText(p.dispatchFeeAvg)}</Text>
+          <LabeledRow label={getDispatchFeeLabel(p.dispatchFeeFiscalYear)} last>
+            <Text style={sharedStyles.freeText}>{getDispatchFeeAvgText(p.dispatchFeeOfficeName, p.dispatchFeeAmount, p.dispatchFeeFiscalYear)}</Text>
           </LabeledRow>
         </View>
 

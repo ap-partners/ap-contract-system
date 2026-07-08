@@ -187,16 +187,21 @@ export const sharedStyles = StyleSheet.create({
 // ページの継ぎ目で行の途中から強制的に分割してしまうことがある（罫線付きグリッド行を
 // 導入したことで顕在化。指揮命令者・派遣先責任者等、部署名が3行に折り返す行で
 // 実際に発生を確認）。wrap={false}を指定し、収まらない場合は行ごと次ページへ送るようにする。
+//
+// 2026-07-08再修正：外側の行(sharedStyles.row)の罫線がreact-pdfのレイアウト計算の都合で
+// 描画されない不具合が、指揮命令者行等で発生したため、一時的にラベル欄自体にも冗長な下罫線を
+// 「全てのLabeledRowで無条件に」追加していたが、これにより「元々正しく描画されていた大多数の行」で
+// 罫線が二重に重なり、太く・二重線に見える副作用が発生した（伊藤さん指摘・contract3.pdfで確認）。
+// 「線が重なっても見た目上は1本にしかならない」という想定は誤りで、react-pdfのベクター罫線同士が
+// ピクセル単位で完全に重なると、アンチエイリアスの合成でより太く見えることが判明。
+// 実際にこの不具合が再現するのはPersonGridRow（部署名｜値｜役職｜値…の罫線付きグリッド）を
+// 内包する行（指揮命令者・派遣先責任者・派遣元責任者・苦情処理申出先）のみで確認されているため、
+// 冗長罫線はredundantBorderプロパティで明示的にオプトインした行だけに限定する。
 export const LabeledRow = ({
-  label, children, last, minHeight,
-}: { label: string; children: React.ReactNode; last?: boolean; minHeight?: number }) => (
+  label, children, last, minHeight, redundantBorder,
+}: { label: string; children: React.ReactNode; last?: boolean; minHeight?: number; redundantBorder?: boolean }) => (
   <View wrap={false} style={minHeight ? [last ? sharedStyles.rowLast : sharedStyles.row, { minHeight }] : (last ? sharedStyles.rowLast : sharedStyles.row)}>
-    {/* 2026-07-08再修正：外側の行(sharedStyles.row)にborderBottomWidthを持たせているにもかかわらず、
-        react-pdfのレイアウト計算の都合でラベル欄の下だけ罫線が描画されない不具合が、行によって
-        ランダムに（指揮命令者行等で）再発することを実機確認で確認した。personGridStyles.rowと
-        同様、ラベル欄自体にも直接下罫線を持たせることで、外側の罫線が効かなくても必ず線が引かれるようにする
-        （線が重なっても見た目上は1本の線にしかならないため、二重描画による副作用は無い。 */}
-    <View style={last ? sharedStyles.labelCell : [sharedStyles.labelCell, sharedStyles.labelCellBorder]}><Text style={sharedStyles.labelText}>{label}</Text></View>
+    <View style={(!last && redundantBorder) ? [sharedStyles.labelCell, sharedStyles.labelCellBorder] : sharedStyles.labelCell}><Text style={sharedStyles.labelText}>{label}</Text></View>
     <View style={sharedStyles.valueCell}>{children}</View>
   </View>
 )

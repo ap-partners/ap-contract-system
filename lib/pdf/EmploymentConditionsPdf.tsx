@@ -187,19 +187,19 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
             </View>
           </LabeledRow>
 
-          <LabeledRow label="指揮命令者">
+          <LabeledRow label="指揮命令者" redundantBorder>
             <PersonGridRow dept={p.cmdDept} role={p.cmdRole} name={p.cmdName} tel={p.cmdTel} />
           </LabeledRow>
 
-          <LabeledRow label="派遣先責任者">
+          <LabeledRow label="派遣先責任者" redundantBorder>
             <PersonGridRow dept={p.respDept} role={p.respRole} name={p.respName} tel={p.respTel} />
           </LabeledRow>
 
-          <LabeledRow label="派遣元責任者">
+          <LabeledRow label="派遣元責任者" redundantBorder>
             <PersonGridRow dept={p.mgrDept} role={p.mgrRole} name={p.mgrName} tel={p.mgrTel} />
           </LabeledRow>
 
-          <LabeledRow label="苦情処理申出先">
+          <LabeledRow label="苦情処理申出先" redundantBorder>
             <PersonGridRow deptLabel="［派遣先］部署名" deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.compDept} role={p.compRole} name={p.compName} tel={p.compTel} withBorder />
             <PersonGridRow deptLabel="［派遣元］部署名" deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.cmpDept} role={p.cmpRole} name={p.cmpName} tel={p.cmpTel} />
           </LabeledRow>
@@ -243,9 +243,10 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
         <View style={{ marginTop: 10 }}>
           <Text>会社</Text>
           {COMPANY_HQ_ADDRESS_LINES.map((line, i) => <Text key={i}>{line}</Text>)}
-          {/* 2026-07-08修正：自社住所欄と会社名・代表者名の間隔が狭すぎるとの指摘のため余白を追加 */}
-          <Text style={{ fontWeight: 'bold', marginTop: 6 }}>株式会社APパートナーズ</Text>
-          <Text>代表取締役　山田　昌</Text>
+          <Text style={{ fontWeight: 'bold' }}>株式会社APパートナーズ</Text>
+          {/* 2026-07-08再修正：余白の追加位置を誤り、住所欄と会社名の間に入れていた。
+              正しくは会社名（株式会社APパートナーズ）と代表者名（代表取締役 山田 昌）の間 */}
+          <Text style={{ marginTop: 6 }}>代表取締役　山田　昌</Text>
         </View>
       </Page>
     </Document>

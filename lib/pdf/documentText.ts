@@ -274,9 +274,13 @@ export const getOfficeName = (deptName: string | null | undefined): string => {
 // 2026-07-08再修正：伊藤さんよりExcel実物（就業条件明示書_有期.xlsx）の該当箇所の
 // スクリーンショットを提示いただき、独立した項目行ではなく「備考／その他」セルの2行目に
 // 同じセル内で続けて表示される文言だったと判明（見た目上も項目名を新設していたのは誤り）。
-// 表記も「【営業所名】」ではなく、Excel実物の通り括弧無し・全角スペース区切りに訂正。
 // 呼び出し側（EmploymentConditionsPdf.tsx／EmploymentContractAndConditionsPdf.tsx）で
 // 備考・その他の本文に改行して連結する形に変更したため、この関数は「備考欄に追記する1行分の文言」を返す。
+//
+// 2026-07-08再々修正：上記スクリーンショットの見た目からは括弧無し表記に見えたため、
+// 一時的に「【営業所名】」の括弧を外していたが、伊藤さんより改めて「【本社】のように
+// 括弧付きで表示する」という以前確認済みの仕様の通りにしてほしいと明示的な指摘があったため、
+// 括弧付き表記に戻す。
 export const getDispatchFeeAvgText = (
   officeName: string | null | undefined,
   amountPerDay: number | null | undefined,
@@ -287,7 +291,7 @@ export const getDispatchFeeAvgText = (
   if (!officeName || amountPerDay === null || amountPerDay === undefined) {
     return `${prefix}―`
   }
-  return `${prefix}${officeName}　　${amountPerDay.toLocaleString()}円/日`
+  return `${prefix}【${officeName}】　${amountPerDay.toLocaleString()}円/日`
 }
 
 // ===== 抵触日欄の表示文言（パターンB・C共通・テンプレートP16/P17固定文言）=====

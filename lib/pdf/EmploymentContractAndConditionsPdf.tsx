@@ -16,7 +16,7 @@ import {
   getTransportText, getTransportSecondaryNote, getWorkDaysText, getFlexTimeText, getFlexTimeNote,
   COMPANY_HQ_ADDRESS_LINES, formatHoursMinutes, formatMinutes,
   CONFLICT_DATE_NOTICE_TEXT, COMPLAINT_HANDLING_TEXT, DISPATCH_CANCEL_MEASURES_TEXT,
-  getAgreementLaborText, CONTRACT_RENEWAL_TEXT, getDispatchFeeAvgText,
+  getAgreementLaborText, CONTRACT_RENEWAL_TEXT, getDispatchFeeAvgText, getConflictDateText,
 } from './documentText'
 import {
   sharedStyles, LabeledRow, SplitLines, BoxedSplitRow, WageGrid,
@@ -167,8 +167,8 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
 
           <LabeledRow label="抵触日">
             <View style={sharedStyles.freeText}>
-              <Text>(事業所単位)　{toJpDate(p.conflictDate) || '―'}</Text>
-              <Text>(組織単位)　{toJpDate(p.conflictDateOrg) || '―'}</Text>
+              <Text>(事業所単位)　{getConflictDateText(p.contractType, p.conflictDate)}</Text>
+              <Text>(組織単位)　{getConflictDateText(p.contractType, p.conflictDateOrg)}</Text>
               <Text>{CONFLICT_DATE_NOTICE_TEXT}</Text>
             </View>
           </LabeledRow>

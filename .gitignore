@@ -149,3 +149,5 @@ vite.config.ts.timestamp-*
 # マウントの制約でClaude側から削除できなかったため.gitignoreで除外。中身は不要なら伊藤さんの方で削除可。
 renderB.tsx
 renderC.tsx
+renderB_muki.tsx
+renderC_muki.tsx

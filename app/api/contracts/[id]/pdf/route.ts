@@ -94,6 +94,7 @@ export async function GET(
     buffer = await renderToBuffer(
       EmploymentConditionsPdf({
         documentLabel: getDocumentLabel(contract.document_type, contract.contract_type),
+        contractType: contract.contract_type,
         employeeName: staffSnapshot.name || '',
         workLocationName: f.workLocationName || '',
         workLocationAddress: f.workLocationAddress || '',

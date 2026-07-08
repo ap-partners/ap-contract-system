@@ -14,12 +14,13 @@ import {
   getWorkDaysText, getFlexTimeText, getFlexTimeNote, COMPANY_HQ_ADDRESS_LINES,
   formatHoursMinutes, formatMinutes,
   CONFLICT_DATE_NOTICE_TEXT, COMPLAINT_HANDLING_TEXT, DISPATCH_CANCEL_MEASURES_TEXT,
-  getAgreementLaborText,
+  getAgreementLaborText, getConflictDateText,
 } from './documentText'
 import { sharedStyles, LabeledRow, SplitLines, BoxedSplitRow } from './pdfShared'
 
 export interface EmploymentConditionsPdfProps {
   documentLabel: string
+  contractType: string
   employeeName: string
   workLocationName: string
   workLocationAddress: string
@@ -113,8 +114,8 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
 
           <LabeledRow label="抵触日">
             <View style={sharedStyles.freeText}>
-              <Text>(事業所単位)　{toJpDate(p.conflictDate) || '―'}</Text>
-              <Text>(組織単位)　{toJpDate(p.conflictDateOrg) || '―'}</Text>
+              <Text>(事業所単位)　{getConflictDateText(p.contractType, p.conflictDate)}</Text>
+              <Text>(組織単位)　{getConflictDateText(p.contractType, p.conflictDateOrg)}</Text>
               <Text>{CONFLICT_DATE_NOTICE_TEXT}</Text>
             </View>
           </LabeledRow>

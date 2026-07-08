@@ -190,7 +190,9 @@ export const getFlexTimeNote = (flexTime: string): string => {
 // 【暫定】本社住所を固定で表示している。伊藤さん確認済み：営業所ごとに住所が異なるため、
 // 本来は部門→拠点住所のマスタが必要（2026-07-07時点でまだ存在しない・新規に決める必要がある。
 // docs/SYSTEM_DESIGN.md 9章PENDING参照）。マスタ整備までの暫定表示として本社住所を使う。
-export const COMPANY_HQ_ADDRESS_LINES = ['東京都新宿区新宿2-16-20', '新宿通東洋ビル10F']
+// 2026-07-08修正：就業条件明示書のExcelテンプレート実物との突き合わせで住所の誤りが判明し、
+// 伊藤さんに正しい住所を確認済み（「2-16-20」→「2-6-4」、「10F」→「10階」表記に訂正）。
+export const COMPANY_HQ_ADDRESS_LINES = ['東京都新宿区新宿2-6-4', '新宿通東洋ビル10階']
 
 // ===== 始業・終業・休憩・所定労働時間の表示整形 =====
 export const formatHoursMinutes = (h: string | number | null | undefined, m: string | number | null | undefined): string => {
@@ -255,4 +257,16 @@ export const CONTRACT_RENEWAL_TEXT =
 // データ項目が追加された際は、呼び出し側（pdf/route.ts）でinput_data.fieldsから渡すだけで済む。
 export const getDispatchFeeAvgText = (dispatchFeeAvg: string | null | undefined): string => {
   return `当該事業所における労働者派遣料金額の平均額(実績)　：　${dispatchFeeAvg || '―'}`
+}
+
+// ===== 抵触日欄の表示文言（パターンB・C共通・テンプレートP16/P17固定文言）=====
+// 2026-07-08発見・追加：就業条件明示書_無期.xlsx／雇用契約書(兼)就業条件明示書_無期.xlsxの
+// 抵触日欄（事業所単位・組織単位とも）には、無期契約時「無期雇用派遣のため該当しない」という
+// 固定文言が入ることが判明（有期版は空欄=日付欄）。STEP8のisConflictDateExempt
+// （app/apply/page.tsx）と同じ判定基準（無期契約・正社員は対象外）に合わせる。
+export const getConflictDateText = (contractType: string, dateStr: string | null | undefined): string => {
+  if (contractType === '無期契約' || contractType === '正社員') {
+    return '無期雇用派遣のため該当しない'
+  }
+  return toJpDate(dateStr) || '―'
 }

@@ -559,8 +559,10 @@ export default function SSCContractDetail() {
               <div className="px-4 py-3 text-xs font-medium" style={{ background: '#EEF2FA', color: '#5A6A8A' }}>書類種別</div>
               <div className="px-4 py-3 text-sm flex items-center gap-3" style={{ color: '#1A2340' }}>
                 {contract.document_type}
-                {/* 帳票PDFプレビュー（2026-07-07追加・第1弾：雇用契約書のみ対応） */}
-                {contract.document_type === '雇用契約書' && (
+                {/* 帳票PDFプレビュー（2026-07-07追加。2026-07-08：就業条件明示書・兼用版のPDF生成も
+                    実装済みのため、全document_typeで表示するよう対応を拡大。
+                    未対応の書類種別があれば/api/contracts/[id]/pdf側が501エラーを返す） */}
+                {(contract.document_type === '雇用契約書' || contract.document_type === '就業条件明示書' || contract.document_type === '雇用契約書 兼\n就業条件明示書') && (
                   <a
                     href={`/api/contracts/${contract.id}/pdf`}
                     target="_blank"

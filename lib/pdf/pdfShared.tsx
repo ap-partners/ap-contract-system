@@ -178,10 +178,14 @@ export const sharedStyles = StyleSheet.create({
   },
 })
 
+// 2026-07-08修正：react-pdfはデフォルトでは1つの行（View）が長くなった場合、
+// ページの継ぎ目で行の途中から強制的に分割してしまうことがある（罫線付きグリッド行を
+// 導入したことで顕在化。指揮命令者・派遣先責任者等、部署名が3行に折り返す行で
+// 実際に発生を確認）。wrap={false}を指定し、収まらない場合は行ごと次ページへ送るようにする。
 export const LabeledRow = ({
   label, children, last, minHeight,
 }: { label: string; children: React.ReactNode; last?: boolean; minHeight?: number }) => (
-  <View style={minHeight ? [last ? sharedStyles.rowLast : sharedStyles.row, { minHeight }] : (last ? sharedStyles.rowLast : sharedStyles.row)}>
+  <View wrap={false} style={minHeight ? [last ? sharedStyles.rowLast : sharedStyles.row, { minHeight }] : (last ? sharedStyles.rowLast : sharedStyles.row)}>
     <View style={sharedStyles.labelCell}><Text style={sharedStyles.labelText}>{label}</Text></View>
     <View style={sharedStyles.valueCell}>{children}</View>
   </View>
@@ -190,7 +194,7 @@ export const LabeledRow = ({
 export const SplitLines = ({ lines }: { lines: { label: string; value: React.ReactNode }[] }) => (
   <>
     {lines.map((l, i) => (
-      <View key={i} style={i < lines.length - 1 ? sharedStyles.splitLineWithBorder : sharedStyles.splitLine}>
+      <View key={i} wrap={false} style={i < lines.length - 1 ? sharedStyles.splitLineWithBorder : sharedStyles.splitLine}>
         <View style={sharedStyles.splitSubLabel}><Text>{l.label}</Text></View>
         <View style={sharedStyles.splitSubValue}>
           {typeof l.value === 'string' ? <Text>{l.value}</Text> : l.value}
@@ -203,7 +207,7 @@ export const SplitLines = ({ lines }: { lines: { label: string; value: React.Rea
 export const BoxedSplitRow = ({
   main, boxLabel, boxValue,
 }: { main: React.ReactNode; boxLabel: string; boxValue: React.ReactNode }) => (
-  <View style={sharedStyles.boxedSplitRow}>
+  <View wrap={false} style={sharedStyles.boxedSplitRow}>
     <View style={sharedStyles.boxedSplitMain}>{typeof main === 'string' ? <Text>{main}</Text> : main}</View>
     <View style={sharedStyles.boxedSplitBox}>
       <Text style={sharedStyles.boxedSplitBoxLabel}>{boxLabel}</Text>
@@ -212,19 +216,61 @@ export const BoxedSplitRow = ({
   </View>
 )
 
-// 担当者情報（部署名・役職／氏名・電話番号）の共通表示部品。
-// 2026-07-08修正：以前は1行にまとめて表示しており、値の長さによって折り返し位置が
-// 不揃いになっていた（特に苦情処理申出先の「［派遣先］」等の接頭辞が付く行で、
-// 氏名の途中で改行される等、見た目が崩れていた）。「部署名・役職」と「氏名・電話番号」の
-// 間で必ず改行するよう固定し、指揮命令者・派遣先責任者・派遣元責任者・苦情処理申出先の
-// すべての行で統一した見た目になるようにした（伊藤さん指摘・2026-07-08）。
-export const PersonRow = ({
-  dept, role, name, tel, prefix,
-}: { dept: string; role: string; name: string; tel: string; prefix?: string }) => (
-  <>
-    <Text>{prefix || ''}部署名：{dept || '―'}　役職：{role || '―'}</Text>
-    <Text>氏名：{name || '―'}　電話番号：{tel || '―'}</Text>
-  </>
+// 担当者情報（部署名／役職／氏名／電話番号）の共通表示部品。
+// 2026-07-08再修正：以前は「部署名：X　役職：Y　氏名：Z　電話番号：W」を1つの文として
+// 折り返し表示していたが、伊藤さんの指摘でExcel実物（就業条件明示書_有期.xlsx等の
+// 指揮命令者・派遣先責任者・派遣元責任者・苦情処理申出先の各行）を列幅まで含めて再確認したところ、
+// 実際は「部署名｜値｜役職｜値｜氏名｜値｜電話番号｜値」を罫線で区切った1行の表（グリッド）で、
+// 文章の折り返しではなかったことが判明。列幅の比率もExcelの実列幅（ptで算出）から再現している
+// （通常行：11.0%/25.4%/5.1%/12.7%/7.6%/12.7%/10.2%/15.3%。苦情処理申出先は先頭ラベルに
+// 「［派遣先］／［派遣元］」が付き列が広がるため16.1%/20.3%/5.1%/12.7%/7.6%/12.7%/10.2%/15.3%）。
+export const personGridStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+  },
+  rowWithBorder: {
+    flexDirection: 'row',
+    borderBottomWidth: THIN,
+    borderColor: BORDER,
+  },
+  cellLabel: {
+    borderRightWidth: THIN,
+    borderColor: BORDER,
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    paddingVertical: 2,
+  },
+  cellValue: {
+    borderRightWidth: THIN,
+    borderColor: BORDER,
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    paddingVertical: 2,
+  },
+  cellValueLast: {
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    paddingVertical: 2,
+  },
+})
+
+export const PersonGridRow = ({
+  deptLabel = '部署名', dept, role, name, tel,
+  deptLabelWidth = '11.0%', deptValueWidth = '25.4%', withBorder,
+}: {
+  deptLabel?: string; dept: string; role: string; name: string; tel: string
+  deptLabelWidth?: string; deptValueWidth?: string; withBorder?: boolean
+}) => (
+  <View wrap={false} style={withBorder ? personGridStyles.rowWithBorder : personGridStyles.row}>
+    <View style={[personGridStyles.cellLabel, { width: deptLabelWidth }]}><Text style={sharedStyles.labelText}>{deptLabel}</Text></View>
+    <View style={[personGridStyles.cellValue, { width: deptValueWidth }]}><Text>{dept || '―'}</Text></View>
+    <View style={[personGridStyles.cellLabel, { width: '5.1%' }]}><Text style={sharedStyles.labelText}>役職</Text></View>
+    <View style={[personGridStyles.cellValue, { width: '12.7%' }]}><Text>{role || '―'}</Text></View>
+    <View style={[personGridStyles.cellLabel, { width: '7.6%' }]}><Text style={sharedStyles.labelText}>氏名</Text></View>
+    <View style={[personGridStyles.cellValue, { width: '12.7%' }]}><Text>{name || '―'}</Text></View>
+    <View style={[personGridStyles.cellLabel, { width: '10.2%' }]}><Text style={sharedStyles.labelText}>電話番号</Text></View>
+    <View style={[personGridStyles.cellValueLast, { width: '15.3%' }]}><Text>{tel || '―'}</Text></View>
+  </View>
 )
 
 // 賃金グリッド（パターンA・C共通。パターンBには賃金欄自体が無いため未使用）
@@ -253,7 +299,7 @@ export const WageGrid = ({ p, overtimeHoursNote }: { p: WageGridInput; overtimeH
   return (
     <>
       {rows.map(([l1, v1, l2, v2], i) => (
-        <View key={i} style={i < rows.length - 1 ? sharedStyles.wageGridRow : sharedStyles.wageGridRowLast}>
+        <View key={i} wrap={false} style={i < rows.length - 1 ? sharedStyles.wageGridRow : sharedStyles.wageGridRowLast}>
           <View style={sharedStyles.wageCellLabel}><Text>{l1}</Text></View>
           <View style={sharedStyles.wageCellValue}>{typeof v1 === 'string' ? <Text>{v1}</Text> : v1}</View>
           <View style={sharedStyles.wageCellLabel}><Text>{l2}</Text></View>

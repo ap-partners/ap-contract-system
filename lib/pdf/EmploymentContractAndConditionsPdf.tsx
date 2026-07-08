@@ -19,7 +19,7 @@ import {
   getAgreementLaborText, CONTRACT_RENEWAL_TEXT, getDispatchFeeAvgText, getConflictDateText,
 } from './documentText'
 import {
-  sharedStyles, LabeledRow, SplitLines, BoxedSplitRow, WageGrid, PersonRow,
+  sharedStyles, LabeledRow, SplitLines, BoxedSplitRow, WageGrid, PersonGridRow,
   COMPANY_SEAL_PATH,
 } from './pdfShared'
 
@@ -102,7 +102,7 @@ const EmploymentPeriodRow = ({ p }: { p: EmploymentContractAndConditionsPdfProps
   const isIndefinite = p.contractType === '無期契約' || p.contractType === '正社員'
   const mainText = isIndefinite ? '期間の定めなし' : `自　${toJpDate(p.employStart)}　　至　${toJpDate(p.employEnd)}`
   return (
-    <View style={sharedStyles.row}>
+    <View wrap={false} style={sharedStyles.row}>
       <View style={sharedStyles.labelCell}><Text style={sharedStyles.labelText}>雇用期間</Text></View>
       <View style={sharedStyles.valueCell}>
         {isIndefinite ? (
@@ -138,7 +138,7 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
         <View style={sharedStyles.table}>
           <EmploymentPeriodRow p={p} />
 
-          <View style={sharedStyles.row}>
+          <View wrap={false} style={sharedStyles.row}>
             <View style={sharedStyles.labelCell}><Text style={sharedStyles.labelText}>派遣期間</Text></View>
             <View style={sharedStyles.valueCell}>
               <Text style={sharedStyles.freeText}>自　{toJpDate(p.dispatchStart)}　　至　{toJpDate(p.dispatchEnd)}</Text>
@@ -161,11 +161,20 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
 
           <LabeledRow label="組織単位"><Text style={sharedStyles.freeText}>{p.organizationUnit || '―'}</Text></LabeledRow>
 
+          {/* 2026-07-08修正：Excel実物では(事業所単位)/(組織単位)がそれぞれ罫線で区切られた
+              ラベル・値のペアの行で、下の通知文もさらに罫線で区切られた別行になっている。
+              就業場所と同じ罫線構造で再現する（伊藤さん指摘・2026-07-08）。 */}
           <LabeledRow label="抵触日">
-            <View style={sharedStyles.freeText}>
-              <Text>(事業所単位)　{getConflictDateText(p.contractType, p.conflictDate)}</Text>
-              <Text>(組織単位)　{getConflictDateText(p.contractType, p.conflictDateOrg)}</Text>
-              <Text>{CONFLICT_DATE_NOTICE_TEXT}</Text>
+            <View>
+              <View wrap={false} style={sharedStyles.splitLineWithBorder}>
+                <View style={sharedStyles.splitSubLabel}><Text>(事業所単位)</Text></View>
+                <View style={sharedStyles.splitSubValue}><Text>{getConflictDateText(p.contractType, p.conflictDate)}</Text></View>
+              </View>
+              <View wrap={false} style={sharedStyles.splitLineWithBorder}>
+                <View style={sharedStyles.splitSubLabel}><Text>(組織単位)</Text></View>
+                <View style={sharedStyles.splitSubValue}><Text>{getConflictDateText(p.contractType, p.conflictDateOrg)}</Text></View>
+              </View>
+              <Text style={sharedStyles.freeText}>{CONFLICT_DATE_NOTICE_TEXT}</Text>
             </View>
           </LabeledRow>
 
@@ -187,7 +196,7 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
             ]} />
           </LabeledRow>
 
-          <View style={sharedStyles.row}>
+          <View wrap={false} style={sharedStyles.row}>
             <View style={sharedStyles.labelCell}><Text style={sharedStyles.labelText}>{'所定労働日数\n所定労働時間'}</Text></View>
             <View style={sharedStyles.valueCell}>
               <BoxedSplitRow
@@ -203,7 +212,7 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
             </View>
           </View>
 
-          <View style={sharedStyles.row}>
+          <View wrap={false} style={sharedStyles.row}>
             <View style={sharedStyles.labelCell}><Text style={sharedStyles.labelText}>変形労働時間制</Text></View>
             <View style={sharedStyles.valueCell}>
               <BoxedSplitRow
@@ -246,22 +255,20 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
           </LabeledRow>
 
           <LabeledRow label="指揮命令者">
-            <View style={sharedStyles.freeText}><PersonRow dept={p.cmdDept} role={p.cmdRole} name={p.cmdName} tel={p.cmdTel} /></View>
+            <PersonGridRow dept={p.cmdDept} role={p.cmdRole} name={p.cmdName} tel={p.cmdTel} />
           </LabeledRow>
 
           <LabeledRow label="派遣先責任者">
-            <View style={sharedStyles.freeText}><PersonRow dept={p.respDept} role={p.respRole} name={p.respName} tel={p.respTel} /></View>
+            <PersonGridRow dept={p.respDept} role={p.respRole} name={p.respName} tel={p.respTel} />
           </LabeledRow>
 
           <LabeledRow label="派遣元責任者">
-            <View style={sharedStyles.freeText}><PersonRow dept={p.mgrDept} role={p.mgrRole} name={p.mgrName} tel={p.mgrTel} /></View>
+            <PersonGridRow dept={p.mgrDept} role={p.mgrRole} name={p.mgrName} tel={p.mgrTel} />
           </LabeledRow>
 
           <LabeledRow label="苦情処理申出先">
-            <View style={sharedStyles.freeText}>
-              <PersonRow prefix="［派遣先］" dept={p.compDept} role={p.compRole} name={p.compName} tel={p.compTel} />
-              <PersonRow prefix="［派遣元］" dept={p.cmpDept} role={p.cmpRole} name={p.cmpName} tel={p.cmpTel} />
-            </View>
+            <PersonGridRow deptLabel="［派遣先］部署名" deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.compDept} role={p.compRole} name={p.compName} tel={p.compTel} withBorder />
+            <PersonGridRow deptLabel="［派遣元］部署名" deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.cmpDept} role={p.cmpRole} name={p.cmpName} tel={p.cmpTel} />
           </LabeledRow>
 
           <LabeledRow label="苦情処理内容"><Text style={sharedStyles.freeText}>{COMPLAINT_HANDLING_TEXT}</Text></LabeledRow>
@@ -276,7 +283,7 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
               のままだと自動折り返しで3行になってしまう。フォントサイズを落とす対応も試したが
               可読性が落ちるため、この行だけラベル欄を広げてExcel実物と同じ2行
               （「…雇用する場」／「合の…措置」で改行）に収める（伊藤さん指摘・2026-07-08）。 */}
-          <View style={sharedStyles.row}>
+          <View wrap={false} style={sharedStyles.row}>
             <View style={[sharedStyles.labelCell, { width: '24%' }]}>
               <Text style={sharedStyles.labelText}>{'派遣先が派遣労働者を雇用する場\n合の紛争防止措置'}</Text>
             </View>

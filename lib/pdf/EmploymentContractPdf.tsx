@@ -66,22 +66,19 @@ const EmploymentPeriodRow = ({ p }: { p: EmploymentContractPdfProps }) => {
   const isIndefinite = p.contractType === '無期契約' || p.contractType === '正社員'
   const mainText = isIndefinite ? '期間の定めなし' : `自　${toJpDate(p.employStart)}　　至　${toJpDate(p.employEnd)}`
   return (
-    <View style={sharedStyles.row}>
-      <View style={sharedStyles.labelCell}><Text style={sharedStyles.labelText}>雇用期間</Text></View>
-      <View style={sharedStyles.valueCell}>
-        {/* 2026-07-07修正：契約条件適用開始日は無期契約・正社員のみ意味を持つ欄のため、
-            有期契約・アルバイトでは欄自体を表示しない（空欄のまま出すのではなく非表示にする）。 */}
-        {isIndefinite ? (
-          <BoxedSplitRow
-            main={mainText}
-            boxLabel="契約条件適用開始日"
-            boxValue={toJpDate(p.contractStartDate)}
-          />
-        ) : (
-          <Text style={sharedStyles.freeText}>{mainText}</Text>
-        )}
-      </View>
-    </View>
+    <LabeledRow label="雇用期間">
+      {/* 2026-07-07修正：契約条件適用開始日は無期契約・正社員のみ意味を持つ欄のため、
+          有期契約・アルバイトでは欄自体を表示しない（空欄のまま出すのではなく非表示にする）。 */}
+      {isIndefinite ? (
+        <BoxedSplitRow
+          main={mainText}
+          boxLabel="契約条件適用開始日"
+          boxValue={toJpDate(p.contractStartDate)}
+        />
+      ) : (
+        <Text style={sharedStyles.freeText}>{mainText}</Text>
+      )}
+    </LabeledRow>
   )
 }
 
@@ -128,38 +125,32 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
             ]} />
           </LabeledRow>
 
-          <View style={sharedStyles.row}>
-            <View style={sharedStyles.labelCell}><Text style={sharedStyles.labelText}>{'所定労働日数\n所定労働時間'}</Text></View>
-            <View style={sharedStyles.valueCell}>
-              <BoxedSplitRow
-                main={
-                  <>
-                    <Text>{workDaysText}</Text>
-                    <Text>{formatHoursMinutes(p.workingHoursH, p.workingHoursM)}</Text>
-                  </>
-                }
-                boxLabel="休憩時間"
-                boxValue={formatMinutes(p.breakTime)}
-              />
-            </View>
-          </View>
+          <LabeledRow label={'所定労働日数\n所定労働時間'}>
+            <BoxedSplitRow
+              main={
+                <>
+                  <Text>{workDaysText}</Text>
+                  <Text>{formatHoursMinutes(p.workingHoursH, p.workingHoursM)}</Text>
+                </>
+              }
+              boxLabel="休憩時間"
+              boxValue={formatMinutes(p.breakTime)}
+            />
+          </LabeledRow>
 
-          <View style={sharedStyles.row}>
-            <View style={sharedStyles.labelCell}><Text style={sharedStyles.labelText}>変形労働時間制</Text></View>
-            <View style={sharedStyles.valueCell}>
-              <BoxedSplitRow
-                main={
-                  flexTimeNote ? (
-                    <Text>{getFlexTimeText(p.flexTime)}　<Text style={sharedStyles.flexTimeNote}>{flexTimeNote}</Text></Text>
-                  ) : (
-                    getFlexTimeText(p.flexTime)
-                  )
-                }
-                boxLabel="所定労働時間を超える労働"
-                boxValue={p.overtime || '―'}
-              />
-            </View>
-          </View>
+          <LabeledRow label="変形労働時間制">
+            <BoxedSplitRow
+              main={
+                flexTimeNote ? (
+                  <Text>{getFlexTimeText(p.flexTime)}　<Text style={sharedStyles.flexTimeNote}>{flexTimeNote}</Text></Text>
+                ) : (
+                  getFlexTimeText(p.flexTime)
+                )
+              }
+              boxLabel="所定労働時間を超える労働"
+              boxValue={p.overtime || '―'}
+            />
+          </LabeledRow>
 
           <LabeledRow label={'休日又は勤務\n休暇'}>
             <View style={sharedStyles.freeText}>

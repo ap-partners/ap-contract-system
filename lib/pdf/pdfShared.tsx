@@ -52,10 +52,14 @@ export const sharedStyles = StyleSheet.create({
     borderWidth: THICK,
     borderColor: BORDER,
   },
+  // 2026-07-08全面改訂：罫線の唯一の描画元（single source of truth）ルールに統一。
+  // 「行」を囲むコンテナ自身は一切罫線を持たない（レイアウト専用）。行の下罫線は必ず
+  // 末端のセル（labelCell・valueCell）自身が持つ（bottomBorderを参照）。react-pdfの
+  // レイアウト計算では「複数の子を横に並べるコンテナ自身の罫線」の描画が非決定的
+  // （レンダリングごとに描画されたりされなかったりする）ことが実機検証で判明したため、
+  // コンテナに罫線を持たせる設計そのものを廃止した（詳細な経緯は10章2026-07-08参照）。
   row: {
     flexDirection: 'row',
-    borderBottomWidth: THICK,
-    borderColor: BORDER,
   },
   rowLast: {
     flexDirection: 'row',
@@ -67,8 +71,10 @@ export const sharedStyles = StyleSheet.create({
     borderColor: BORDER,
     justifyContent: 'center',
   },
-  // 2026-07-08追加：LabeledRowのラベル欄用・外側の行罫線が描画されない不具合対策の冗長罫線（上記コメント参照）
-  labelCellBorder: {
+  // 行の下罫線の唯一の描画元。最終行以外のlabelCell・valueCellの両方に必ず付与する
+  // （LabeledRow参照）。同じスタイルをlabelCell・valueCell双方で共有することで、
+  // 見た目上ぴったり1本の連続した線になる。
+  bottomBorder: {
     borderBottomWidth: THICK,
     borderColor: BORDER,
   },
@@ -188,25 +194,28 @@ export const sharedStyles = StyleSheet.create({
 // 導入したことで顕在化。指揮命令者・派遣先責任者等、部署名が3行に折り返す行で
 // 実際に発生を確認）。wrap={false}を指定し、収まらない場合は行ごと次ページへ送るようにする。
 //
-// 2026-07-08再修正：外側の行(sharedStyles.row)の罫線がreact-pdfのレイアウト計算の都合で
-// 描画されない不具合が、指揮命令者行等で発生したため、一時的にラベル欄自体にも冗長な下罫線を
-// 「全てのLabeledRowで無条件に」追加していたが、これにより「元々正しく描画されていた大多数の行」で
-// 罫線が二重に重なり、太く・二重線に見える副作用が発生した（伊藤さん指摘・contract3.pdfで確認）。
-// 冗長罫線はredundantBorderプロパティで明示的にオプトインした行（指揮命令者・派遣先責任者・
-// 派遣元責任者・苦情処理申出先）だけに限定する対応をしたが、その後も一部レンダリングで
-// 二重線が残ることが判明（contract10.pdf、伊藤さん指摘）。原因は、外側の行(sharedStyles.row)の
-// 罫線描画がreact-pdf側で「常に失敗する」のではなく「非決定的（レンダリングによって描画されたり
-// されなかったりする）」ことで、redundantBorder側の罫線と重なるとその回だけ二重に見えていたため。
-// 「線が重なっても見た目上は1本にしかならない」という前提も誤りだったと判明済み（前回の教訓）。
-// 根本対策として、redundantBorderを使う行では外側の行自体の罫線を完全に無効化（rowLast相当）し、
-// ラベル欄・値欄（PersonGridRow自身）それぞれの罫線のみを罫線の唯一の描画元とすることで、
-// 常に「ぴったり1本」になることを保証する（非決定的な外側の罫線には一切頼らない）。
+// 2026-07-08全面改訂（罫線アーキテクチャ統一）：それまで「外側の行(sharedStyles.row)の
+// 罫線が非決定的に描画されない」不具合への対策として、一部の行だけラベル欄に冗長罫線を
+// 追加する（redundantBorderプロパティ）その場しのぎの対応を重ねていたが、対象範囲の
+// 見極めミスにより二重線・太さ不統一が繰り返し発生した（伊藤さん指摘・contract3.pdf／
+// contract10.pdf）。根本原因は「複数の子を横に並べるコンテナ自身が持つ罫線の描画が
+// react-pdfでは非決定的」という点にあり、対症療法では解決しないと判明したため、
+// 「罫線はコンテナが持たず、必ず末端のセル（labelCell・valueCell）自身が持つ」という
+// 単一ルールに全面統一した。これにより：
+//   ・コンテナ(sharedStyles.row/rowLast)は罫線を一切持たない（レイアウトのみ）
+//   ・最終行以外は、labelCell・valueCellの両方に必ずbottomBorderを付与する（redundantBorder
+//     プロパティは廃止・全行で自動的に同じ扱いになる）
+//   ・値欄の中身（PersonGridRow・SplitLines・WageGrid等）は「内部の仕切り線」だけを持ち、
+//     一番最後の要素は罫線を持たない（外側のvalueCellが行末の罫線を担当するため）
+// という構成にすることで、罫線が二重になる可能性を構造的に排除した。
 export const LabeledRow = ({
-  label, children, last, minHeight, redundantBorder,
-}: { label: string; children: React.ReactNode; last?: boolean; minHeight?: number; redundantBorder?: boolean }) => (
-  <View wrap={false} style={minHeight ? [(last || redundantBorder) ? sharedStyles.rowLast : sharedStyles.row, { minHeight }] : ((last || redundantBorder) ? sharedStyles.rowLast : sharedStyles.row)}>
-    <View style={(!last && redundantBorder) ? [sharedStyles.labelCell, sharedStyles.labelCellBorder] : sharedStyles.labelCell}><Text style={sharedStyles.labelText}>{label}</Text></View>
-    <View style={sharedStyles.valueCell}>{children}</View>
+  label, labelStyle, children, last, minHeight,
+}: { label: string; labelStyle?: Record<string, any>; children: React.ReactNode; last?: boolean; minHeight?: number }) => (
+  <View wrap={false} style={minHeight ? [sharedStyles.row, { minHeight }] : sharedStyles.row}>
+    <View style={last ? sharedStyles.labelCell : [sharedStyles.labelCell, sharedStyles.bottomBorder]}>
+      <Text style={labelStyle ? [sharedStyles.labelText, labelStyle] as any : sharedStyles.labelText}>{label}</Text>
+    </View>
+    <View style={last ? sharedStyles.valueCell : [sharedStyles.valueCell, sharedStyles.bottomBorder]}>{children}</View>
   </View>
 )
 
@@ -244,16 +253,15 @@ export const BoxedSplitRow = ({
 // （通常行：11.0%/25.4%/5.1%/12.7%/7.6%/12.7%/10.2%/15.3%。苦情処理申出先は先頭ラベルに
 // 「［派遣先］／［派遣元］」が付き列が広がるため16.1%/20.3%/5.1%/12.7%/7.6%/12.7%/10.2%/15.3%）。
 export const personGridStyles = StyleSheet.create({
-  // 2026-07-08修正：外側のLabeledRow（sharedStyles.row）にもborderBottomWidthを
-  // 持たせていたが、react-pdfの内部レイアウト計算の都合か、単独のPersonGridRowを
-  // 子に持つ行（例：派遣元責任者）で、その外側の罫線が実際には描画されない不具合が
-  // 実機確認で見つかった。原因の完全特定より確実性を優先し、PersonGridRow自身の行にも
-  // 直接下罫線を持たせることで、外側の罫線が効かなくても必ず線が引かれるようにする
-  // （線が重なっても見た目上は1本の線にしかならないため、二重描画による副作用は無い）。
+  // 2026-07-08全面改訂（罫線アーキテクチャ統一）：以前はこのrow自身にも下罫線を
+  // 持たせていたが（外側のLabeledRowの罫線が非決定的に描画されない対策として）、
+  // LabeledRow側を「行末の罫線は必ずvalueCell自身が持つ」方式に統一したことで、
+  // PersonGridRowが1つだけ（＝そのLabeledRowの最後かつ唯一の内容）の場合は
+  // 外側のvalueCellが行末の罫線を担当するため、rowはもう罫線を持つ必要が無い。
+  // rowWithBorder（薄い罫線）は、苦情処理申出先のように複数のPersonGridRowが
+  // 縦に並ぶ場合の「内部の仕切り線」としてのみ使う（一番下の要素には使わない）。
   row: {
     flexDirection: 'row',
-    borderBottomWidth: THICK,
-    borderColor: BORDER,
   },
   rowWithBorder: {
     flexDirection: 'row',

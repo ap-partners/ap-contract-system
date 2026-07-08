@@ -104,20 +104,17 @@ const EmploymentPeriodRow = ({ p }: { p: EmploymentContractAndConditionsPdfProps
   const isIndefinite = p.contractType === '無期契約' || p.contractType === '正社員'
   const mainText = isIndefinite ? '期間の定めなし' : `自　${toJpDate(p.employStart)}　　至　${toJpDate(p.employEnd)}`
   return (
-    <View wrap={false} style={sharedStyles.row}>
-      <View style={sharedStyles.labelCell}><Text style={sharedStyles.labelText}>雇用期間</Text></View>
-      <View style={sharedStyles.valueCell}>
-        {isIndefinite ? (
-          <BoxedSplitRow
-            main={mainText}
-            boxLabel="契約条件適用開始日"
-            boxValue={toJpDate(p.contractStartDate)}
-          />
-        ) : (
-          <Text style={sharedStyles.freeText}>{mainText}</Text>
-        )}
-      </View>
-    </View>
+    <LabeledRow label="雇用期間">
+      {isIndefinite ? (
+        <BoxedSplitRow
+          main={mainText}
+          boxLabel="契約条件適用開始日"
+          boxValue={toJpDate(p.contractStartDate)}
+        />
+      ) : (
+        <Text style={sharedStyles.freeText}>{mainText}</Text>
+      )}
+    </LabeledRow>
   )
 }
 
@@ -140,12 +137,9 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
         <View style={sharedStyles.table}>
           <EmploymentPeriodRow p={p} />
 
-          <View wrap={false} style={sharedStyles.row}>
-            <View style={sharedStyles.labelCell}><Text style={sharedStyles.labelText}>派遣期間</Text></View>
-            <View style={sharedStyles.valueCell}>
-              <Text style={sharedStyles.freeText}>自　{toJpDate(p.dispatchStart)}　　至　{toJpDate(p.dispatchEnd)}</Text>
-            </View>
-          </View>
+          <LabeledRow label="派遣期間">
+            <Text style={sharedStyles.freeText}>自　{toJpDate(p.dispatchStart)}　　至　{toJpDate(p.dispatchEnd)}</Text>
+          </LabeledRow>
 
           <LabeledRow label="派遣先事業者名">
             <Text style={sharedStyles.freeText}>{p.workLocationName}</Text>
@@ -198,38 +192,32 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
             ]} />
           </LabeledRow>
 
-          <View wrap={false} style={sharedStyles.row}>
-            <View style={sharedStyles.labelCell}><Text style={sharedStyles.labelText}>{'所定労働日数\n所定労働時間'}</Text></View>
-            <View style={sharedStyles.valueCell}>
-              <BoxedSplitRow
-                main={
-                  <>
-                    <Text>{workDaysText}</Text>
-                    <Text>{formatHoursMinutes(p.workingHoursH, p.workingHoursM)}</Text>
-                  </>
-                }
-                boxLabel="休憩時間"
-                boxValue={formatMinutes(p.breakTime)}
-              />
-            </View>
-          </View>
+          <LabeledRow label={'所定労働日数\n所定労働時間'}>
+            <BoxedSplitRow
+              main={
+                <>
+                  <Text>{workDaysText}</Text>
+                  <Text>{formatHoursMinutes(p.workingHoursH, p.workingHoursM)}</Text>
+                </>
+              }
+              boxLabel="休憩時間"
+              boxValue={formatMinutes(p.breakTime)}
+            />
+          </LabeledRow>
 
-          <View wrap={false} style={sharedStyles.row}>
-            <View style={sharedStyles.labelCell}><Text style={sharedStyles.labelText}>変形労働時間制</Text></View>
-            <View style={sharedStyles.valueCell}>
-              <BoxedSplitRow
-                main={
-                  flexTimeNote ? (
-                    <Text>{getFlexTimeText(p.flexTime)}　<Text style={sharedStyles.flexTimeNote}>{flexTimeNote}</Text></Text>
-                  ) : (
-                    getFlexTimeText(p.flexTime)
-                  )
-                }
-                boxLabel="所定労働時間を超える労働"
-                boxValue={p.overtime || '―'}
-              />
-            </View>
-          </View>
+          <LabeledRow label="変形労働時間制">
+            <BoxedSplitRow
+              main={
+                flexTimeNote ? (
+                  <Text>{getFlexTimeText(p.flexTime)}　<Text style={sharedStyles.flexTimeNote}>{flexTimeNote}</Text></Text>
+                ) : (
+                  getFlexTimeText(p.flexTime)
+                )
+              }
+              boxLabel="所定労働時間を超える労働"
+              boxValue={p.overtime || '―'}
+            />
+          </LabeledRow>
 
           <LabeledRow label={'休日又は勤務\n休暇'}>
             <View style={sharedStyles.freeText}>
@@ -256,19 +244,19 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
             </View>
           </LabeledRow>
 
-          <LabeledRow label="指揮命令者" redundantBorder>
+          <LabeledRow label="指揮命令者">
             <PersonGridRow dept={p.cmdDept} role={p.cmdRole} name={p.cmdName} tel={p.cmdTel} />
           </LabeledRow>
 
-          <LabeledRow label="派遣先責任者" redundantBorder>
+          <LabeledRow label="派遣先責任者">
             <PersonGridRow dept={p.respDept} role={p.respRole} name={p.respName} tel={p.respTel} />
           </LabeledRow>
 
-          <LabeledRow label="派遣元責任者" redundantBorder>
+          <LabeledRow label="派遣元責任者">
             <PersonGridRow dept={p.mgrDept} role={p.mgrRole} name={p.mgrName} tel={p.mgrTel} />
           </LabeledRow>
 
-          <LabeledRow label="苦情処理申出先" redundantBorder>
+          <LabeledRow label="苦情処理申出先">
             <PersonGridRow deptLabel="［派遣先］部署名" deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.compDept} role={p.compRole} name={p.compName} tel={p.compTel} withBorder />
             <PersonGridRow deptLabel="［派遣元］部署名" deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.cmpDept} role={p.cmpRole} name={p.cmpName} tel={p.cmpTel} />
           </LabeledRow>
@@ -285,14 +273,9 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
               ずれて見た目に違和感が出るため取りやめ（伊藤さん指摘）。標準の17%幅は維持したまま、
               ラベルのフォントサイズだけを落とし、Excel実物と同じ2行
               （「…雇用する場」／「合の…措置」で改行）に収める。 */}
-          <View wrap={false} style={sharedStyles.row}>
-            <View style={sharedStyles.labelCell}>
-              <Text style={[sharedStyles.labelText, { fontSize: 5.3, lineHeight: 1.15 }]}>{'派遣先が派遣労働者を雇用する場\n合の紛争防止措置'}</Text>
-            </View>
-            <View style={sharedStyles.valueCell}>
-              <Text style={sharedStyles.freeText}>{p.conflictText || '―'}</Text>
-            </View>
-          </View>
+          <LabeledRow label={'派遣先が派遣労働者を雇用する場\n合の紛争防止措置'} labelStyle={{ fontSize: 5.3, lineHeight: 1.15 }}>
+            <Text style={sharedStyles.freeText}>{p.conflictText || '―'}</Text>
+          </LabeledRow>
 
           {retirementClause && (
             <LabeledRow label="退職・解雇"><Text style={sharedStyles.freeText}>{retirementClause}</Text></LabeledRow>

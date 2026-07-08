@@ -256,7 +256,7 @@ export const CONTRACT_RENEWAL_TEXT =
 // 出力する骨格のみ用意する（CLAUDE.md運用ルール10：将来の完成形を見据えた構造を先に作る）。
 // データ項目が追加された際は、呼び出し側（pdf/route.ts）でinput_data.fieldsから渡すだけで済む。
 export const getDispatchFeeAvgText = (dispatchFeeAvg: string | null | undefined): string => {
-  return `当該事業所における労働者派遣料金額の平均額(実績)　：　${dispatchFeeAvg || '―'}`
+  return `当該事業所における労働者派遣料金額の平均額(R6年度実績)　：　${dispatchFeeAvg || '―'}`
 }
 
 // ===== 抵触日欄の表示文言（パターンB・C共通・テンプレートP16/P17固定文言）=====

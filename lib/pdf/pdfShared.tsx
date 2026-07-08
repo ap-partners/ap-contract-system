@@ -212,6 +212,21 @@ export const BoxedSplitRow = ({
   </View>
 )
 
+// 担当者情報（部署名・役職／氏名・電話番号）の共通表示部品。
+// 2026-07-08修正：以前は1行にまとめて表示しており、値の長さによって折り返し位置が
+// 不揃いになっていた（特に苦情処理申出先の「［派遣先］」等の接頭辞が付く行で、
+// 氏名の途中で改行される等、見た目が崩れていた）。「部署名・役職」と「氏名・電話番号」の
+// 間で必ず改行するよう固定し、指揮命令者・派遣先責任者・派遣元責任者・苦情処理申出先の
+// すべての行で統一した見た目になるようにした（伊藤さん指摘・2026-07-08）。
+export const PersonRow = ({
+  dept, role, name, tel, prefix,
+}: { dept: string; role: string; name: string; tel: string; prefix?: string }) => (
+  <>
+    <Text>{prefix || ''}部署名：{dept || '―'}　役職：{role || '―'}</Text>
+    <Text>氏名：{name || '―'}　電話番号：{tel || '―'}</Text>
+  </>
+)
+
 // 賃金グリッド（パターンA・C共通。パターンBには賃金欄自体が無いため未使用）
 export type WageGridInput = {
   salaryType: string

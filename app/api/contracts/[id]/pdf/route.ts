@@ -139,6 +139,7 @@ export async function GET(
         welfare: f.welfare || '',
         safetyText: f.safetyText || '',
         conflictText: f.conflictText || '',
+        dispatchFeeAvg: f.dispatchFeeAvg || '',
       })
     )
   } else if (contract.document_type === PATTERN_C_DOCUMENT_TYPE) {

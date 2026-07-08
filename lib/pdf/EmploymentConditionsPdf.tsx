@@ -14,9 +14,9 @@ import {
   getWorkDaysText, getFlexTimeText, getFlexTimeNote, COMPANY_HQ_ADDRESS_LINES,
   formatHoursMinutes, formatMinutes,
   CONFLICT_DATE_NOTICE_TEXT, COMPLAINT_HANDLING_TEXT, DISPATCH_CANCEL_MEASURES_TEXT,
-  getAgreementLaborText, getConflictDateText,
+  getAgreementLaborText, getConflictDateText, getDispatchFeeAvgText,
 } from './documentText'
-import { sharedStyles, LabeledRow, SplitLines, BoxedSplitRow } from './pdfShared'
+import { sharedStyles, LabeledRow, SplitLines, BoxedSplitRow, PersonRow } from './pdfShared'
 
 export interface EmploymentConditionsPdfProps {
   documentLabel: string
@@ -65,11 +65,8 @@ export interface EmploymentConditionsPdfProps {
   welfare: string
   safetyText: string
   conflictText: string
+  dispatchFeeAvg?: string
 }
-
-const PersonRow = ({ dept, role, name, tel }: { dept: string; role: string; name: string; tel: string }) => (
-  <Text>部署名：{dept || '―'}　役職：{role || '―'}　氏名：{name || '―'}　電話番号：{tel || '―'}</Text>
-)
 
 export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
   const workDaysText = getWorkDaysText(p.workDays, p.workDaysOther)
@@ -82,10 +79,10 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
           はみ出してしまう視覚バグがあったため、このページに限りフォントサイズ・
           行間・余白をわずかに詰めて1ページに収まるよう調整する
           （パターンA・Cのレイアウトはベース資料と厳密に一致させているため触らない）。 */}
-      <Page size="A4" style={[sharedStyles.page, { fontSize: 7.7, lineHeight: 1.2, padding: 22 }]}>
-        <Text style={[sharedStyles.title, { fontSize: 14, marginBottom: 12 }]}>{p.documentLabel}</Text>
+      <Page size="A4" style={[sharedStyles.page, { fontSize: 7.4, lineHeight: 1.13, padding: 15 }]}>
+        <Text style={[sharedStyles.title, { fontSize: 13, marginBottom: 7 }]}>{p.documentLabel}</Text>
         <Text style={sharedStyles.intro}>
-          株式会社ＡＰパートナーズは、　{p.workLocationName}　との合意に基づき、以下の就業条件により労働者派遣を行うことを明示する。
+          株式会社ＡＰパートナーズは、　{p.employeeName}　との合意に基づき、以下の就業条件により労働者派遣を行うことを明示する。
         </Text>
 
         <View style={sharedStyles.table}>
@@ -104,7 +101,7 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
             <SplitLines lines={[
               {
                 label: '(雇入れ時)',
-                value: `${p.workLocationName}　${p.workLocationAddress}${p.workLocationTel ? `　TEL ${p.workLocationTel}` : ''}`,
+                value: `${p.workLocationName}　${p.workLocationAddress}${p.workLocationTel ? `　TEL\u00A0${p.workLocationTel}` : ''}`,
               },
               { label: '(変更の範囲)', value: '会社の定める事業所' },
             ]} />
@@ -127,7 +124,7 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
             ]} />
           </LabeledRow>
 
-          <LabeledRow label={'業務に伴う\n責任の程度'}>
+          <LabeledRow label="業務に伴う責任の程度">
             <Text style={sharedStyles.freeText}>{p.responsibility || '付与される権限なし'}</Text>
           </LabeledRow>
 
@@ -179,21 +176,21 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
           </LabeledRow>
 
           <LabeledRow label="指揮命令者">
-            <Text style={sharedStyles.freeText}><PersonRow dept={p.cmdDept} role={p.cmdRole} name={p.cmdName} tel={p.cmdTel} /></Text>
+            <View style={sharedStyles.freeText}><PersonRow dept={p.cmdDept} role={p.cmdRole} name={p.cmdName} tel={p.cmdTel} /></View>
           </LabeledRow>
 
           <LabeledRow label="派遣先責任者">
-            <Text style={sharedStyles.freeText}><PersonRow dept={p.respDept} role={p.respRole} name={p.respName} tel={p.respTel} /></Text>
+            <View style={sharedStyles.freeText}><PersonRow dept={p.respDept} role={p.respRole} name={p.respName} tel={p.respTel} /></View>
           </LabeledRow>
 
           <LabeledRow label="派遣元責任者">
-            <Text style={sharedStyles.freeText}><PersonRow dept={p.mgrDept} role={p.mgrRole} name={p.mgrName} tel={p.mgrTel} /></Text>
+            <View style={sharedStyles.freeText}><PersonRow dept={p.mgrDept} role={p.mgrRole} name={p.mgrName} tel={p.mgrTel} /></View>
           </LabeledRow>
 
           <LabeledRow label="苦情処理申出先">
             <View style={sharedStyles.freeText}>
-              <Text>［派遣先］<PersonRow dept={p.compDept} role={p.compRole} name={p.compName} tel={p.compTel} /></Text>
-              <Text>［派遣元］<PersonRow dept={p.cmpDept} role={p.cmpRole} name={p.cmpName} tel={p.cmpTel} /></Text>
+              <PersonRow prefix="［派遣先］" dept={p.compDept} role={p.compRole} name={p.compName} tel={p.compTel} />
+              <PersonRow prefix="［派遣元］" dept={p.cmpDept} role={p.cmpRole} name={p.cmpName} tel={p.cmpTel} />
             </View>
           </LabeledRow>
 
@@ -205,16 +202,29 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
 
           <LabeledRow label={'派遣契約解除の\n場合の措置'}><Text style={sharedStyles.freeText}>{DISPATCH_CANCEL_MEASURES_TEXT}</Text></LabeledRow>
 
-          <LabeledRow label="派遣先が派遣労働者を雇用する場合の紛争防止措置">
-            <Text style={sharedStyles.freeText}>{p.conflictText || '―'}</Text>
-          </LabeledRow>
+          {/* 2026-07-08修正：この項目名は文字数が長く、通常のラベル欄幅（17%）・フォントサイズ
+              のままだと自動折り返しで3行になってしまう。フォントサイズを落とす対応も試したが
+              可読性が落ちるため、この行だけラベル欄を広げてExcel実物と同じ2行
+              （「…雇用する場」／「合の…措置」で改行）に収める（伊藤さん指摘・2026-07-08）。 */}
+          <View style={sharedStyles.row}>
+            <View style={[sharedStyles.labelCell, { width: '24%' }]}>
+              <Text style={sharedStyles.labelText}>{'派遣先が派遣労働者を雇用する場\n合の紛争防止措置'}</Text>
+            </View>
+            <View style={[sharedStyles.valueCell, { width: '76%' }]}>
+              <Text style={sharedStyles.freeText}>{p.conflictText || '―'}</Text>
+            </View>
+          </View>
 
           <LabeledRow label="協定対象派遣労働者であるか否か">
             <Text style={sharedStyles.freeText}>{getAgreementLaborText(p.dispatchEnd)}</Text>
           </LabeledRow>
 
-          <LabeledRow label={'備考\nその他'} last>
+          <LabeledRow label={'備考\nその他'}>
             <Text style={sharedStyles.freeText}>上記以外の事項については、当社就業規則及び賃金規定による。</Text>
+          </LabeledRow>
+
+          <LabeledRow label={'当該事業所における\n労働者派遣料金額の\n平均額(R6年度実績)'} last>
+            <Text style={sharedStyles.freeText}>{getDispatchFeeAvgText(p.dispatchFeeAvg)}</Text>
           </LabeledRow>
         </View>
 

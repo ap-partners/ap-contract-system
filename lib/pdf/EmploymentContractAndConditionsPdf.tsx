@@ -19,7 +19,7 @@ import {
   getAgreementLaborText, CONTRACT_RENEWAL_TEXT, getDispatchFeeAvgText, getConflictDateText,
 } from './documentText'
 import {
-  sharedStyles, LabeledRow, SplitLines, BoxedSplitRow, WageGrid,
+  sharedStyles, LabeledRow, SplitLines, BoxedSplitRow, WageGrid, PersonRow,
   COMPANY_SEAL_PATH,
 } from './pdfShared'
 
@@ -119,10 +119,6 @@ const EmploymentPeriodRow = ({ p }: { p: EmploymentContractAndConditionsPdfProps
   )
 }
 
-const PersonRow = ({ dept, role, name, tel }: { dept: string; role: string; name: string; tel: string }) => (
-  <Text>部署名：{dept || '―'}　役職：{role || '―'}　氏名：{name || '―'}　電話番号：{tel || '―'}</Text>
-)
-
 export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndConditionsPdfProps) => {
   const retirementClause = getRetirementClause(p.contractType)
   const workDaysText = getWorkDaysText(p.workDays, p.workDaysOther)
@@ -157,7 +153,7 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
             <SplitLines lines={[
               {
                 label: '(雇入れ時)',
-                value: `${p.workLocationName}　${p.workLocationAddress}${p.workLocationTel ? `　TEL ${p.workLocationTel}` : ''}`,
+                value: `${p.workLocationName}　${p.workLocationAddress}${p.workLocationTel ? `　TEL\u00A0${p.workLocationTel}` : ''}`,
               },
               { label: '(変更の範囲)', value: '会社の定める事業所' },
             ]} />
@@ -180,7 +176,7 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
             ]} />
           </LabeledRow>
 
-          <LabeledRow label={'業務に伴う\n責任の程度'}>
+          <LabeledRow label="業務に伴う責任の程度">
             <Text style={sharedStyles.freeText}>{p.responsibility || '付与される権限なし'}</Text>
           </LabeledRow>
 
@@ -250,21 +246,21 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
           </LabeledRow>
 
           <LabeledRow label="指揮命令者">
-            <Text style={sharedStyles.freeText}><PersonRow dept={p.cmdDept} role={p.cmdRole} name={p.cmdName} tel={p.cmdTel} /></Text>
+            <View style={sharedStyles.freeText}><PersonRow dept={p.cmdDept} role={p.cmdRole} name={p.cmdName} tel={p.cmdTel} /></View>
           </LabeledRow>
 
           <LabeledRow label="派遣先責任者">
-            <Text style={sharedStyles.freeText}><PersonRow dept={p.respDept} role={p.respRole} name={p.respName} tel={p.respTel} /></Text>
+            <View style={sharedStyles.freeText}><PersonRow dept={p.respDept} role={p.respRole} name={p.respName} tel={p.respTel} /></View>
           </LabeledRow>
 
           <LabeledRow label="派遣元責任者">
-            <Text style={sharedStyles.freeText}><PersonRow dept={p.mgrDept} role={p.mgrRole} name={p.mgrName} tel={p.mgrTel} /></Text>
+            <View style={sharedStyles.freeText}><PersonRow dept={p.mgrDept} role={p.mgrRole} name={p.mgrName} tel={p.mgrTel} /></View>
           </LabeledRow>
 
           <LabeledRow label="苦情処理申出先">
             <View style={sharedStyles.freeText}>
-              <Text>［派遣先］<PersonRow dept={p.compDept} role={p.compRole} name={p.compName} tel={p.compTel} /></Text>
-              <Text>［派遣元］<PersonRow dept={p.cmpDept} role={p.cmpRole} name={p.cmpName} tel={p.cmpTel} /></Text>
+              <PersonRow prefix="［派遣先］" dept={p.compDept} role={p.compRole} name={p.compName} tel={p.compTel} />
+              <PersonRow prefix="［派遣元］" dept={p.cmpDept} role={p.cmpRole} name={p.cmpName} tel={p.cmpTel} />
             </View>
           </LabeledRow>
 
@@ -276,9 +272,18 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
 
           <LabeledRow label={'派遣契約解除の\n場合の措置'}><Text style={sharedStyles.freeText}>{DISPATCH_CANCEL_MEASURES_TEXT}</Text></LabeledRow>
 
-          <LabeledRow label="派遣先が派遣労働者を雇用する場合の紛争防止措置">
-            <Text style={sharedStyles.freeText}>{p.conflictText || '―'}</Text>
-          </LabeledRow>
+          {/* 2026-07-08修正：この項目名は文字数が長く、通常のラベル欄幅（17%）・フォントサイズ
+              のままだと自動折り返しで3行になってしまう。フォントサイズを落とす対応も試したが
+              可読性が落ちるため、この行だけラベル欄を広げてExcel実物と同じ2行
+              （「…雇用する場」／「合の…措置」で改行）に収める（伊藤さん指摘・2026-07-08）。 */}
+          <View style={sharedStyles.row}>
+            <View style={[sharedStyles.labelCell, { width: '24%' }]}>
+              <Text style={sharedStyles.labelText}>{'派遣先が派遣労働者を雇用する場\n合の紛争防止措置'}</Text>
+            </View>
+            <View style={[sharedStyles.valueCell, { width: '76%' }]}>
+              <Text style={sharedStyles.freeText}>{p.conflictText || '―'}</Text>
+            </View>
+          </View>
 
           {retirementClause && (
             <LabeledRow label="退職・解雇"><Text style={sharedStyles.freeText}>{retirementClause}</Text></LabeledRow>
@@ -302,7 +307,7 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
             <Text style={sharedStyles.freeText}>{getRemarksText(p.pattern, p.contractType, p.bonusType)}</Text>
           </LabeledRow>
 
-          <LabeledRow label={'当該事業所における\n労働者派遣料金額の\n平均額(実績)'} last>
+          <LabeledRow label={'当該事業所における\n労働者派遣料金額の\n平均額(R6年度実績)'} last>
             <Text style={sharedStyles.freeText}>{getDispatchFeeAvgText(p.dispatchFeeAvg)}</Text>
           </LabeledRow>
         </View>

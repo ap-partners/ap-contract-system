@@ -212,15 +212,15 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
 
           <LabeledRow label={'派遣契約解除の\n場合の措置'}><Text style={sharedStyles.freeText}>{DISPATCH_CANCEL_MEASURES_TEXT}</Text></LabeledRow>
 
-          {/* 2026-07-08修正：この項目名は文字数が長く、通常のラベル欄幅（17%）・フォントサイズ
-              のままだと自動折り返しで3行になってしまう。フォントサイズを落とす対応も試したが
-              可読性が落ちるため、この行だけラベル欄を広げてExcel実物と同じ2行
-              （「…雇用する場」／「合の…措置」で改行）に収める（伊藤さん指摘・2026-07-08）。 */}
+          {/* 2026-07-08再修正：ラベル欄を24%に広げる対応は、この行だけ縦罫線の位置が
+              ずれて見た目に違和感が出るため取りやめ（伊藤さん指摘）。標準の17%幅は維持したまま、
+              ラベルのフォントサイズだけを落とし、Excel実物と同じ2行
+              （「…雇用する場」／「合の…措置」で改行）に収める。 */}
           <View wrap={false} style={sharedStyles.row}>
-            <View style={[sharedStyles.labelCell, { width: '24%' }]}>
-              <Text style={sharedStyles.labelText}>{'派遣先が派遣労働者を雇用する場\n合の紛争防止措置'}</Text>
+            <View style={sharedStyles.labelCell}>
+              <Text style={[sharedStyles.labelText, { fontSize: 5.3, lineHeight: 1.15 }]}>{'派遣先が派遣労働者を雇用する場\n合の紛争防止措置'}</Text>
             </View>
-            <View style={[sharedStyles.valueCell, { width: '76%' }]}>
+            <View style={sharedStyles.valueCell}>
               <Text style={sharedStyles.freeText}>{p.conflictText || '―'}</Text>
             </View>
           </View>
@@ -238,7 +238,7 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
           </LabeledRow>
         </View>
 
-        <View style={{ marginTop: 3 }}>
+        <View style={{ marginTop: 10 }}>
           <Text>会社</Text>
           {COMPANY_HQ_ADDRESS_LINES.map((line, i) => <Text key={i}>{line}</Text>)}
           <Text style={{ fontWeight: 'bold' }}>株式会社APパートナーズ</Text>

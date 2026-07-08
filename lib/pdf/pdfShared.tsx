@@ -225,8 +225,16 @@ export const BoxedSplitRow = ({
 // （通常行：11.0%/25.4%/5.1%/12.7%/7.6%/12.7%/10.2%/15.3%。苦情処理申出先は先頭ラベルに
 // 「［派遣先］／［派遣元］」が付き列が広がるため16.1%/20.3%/5.1%/12.7%/7.6%/12.7%/10.2%/15.3%）。
 export const personGridStyles = StyleSheet.create({
+  // 2026-07-08修正：外側のLabeledRow（sharedStyles.row）にもborderBottomWidthを
+  // 持たせていたが、react-pdfの内部レイアウト計算の都合か、単独のPersonGridRowを
+  // 子に持つ行（例：派遣元責任者）で、その外側の罫線が実際には描画されない不具合が
+  // 実機確認で見つかった。原因の完全特定より確実性を優先し、PersonGridRow自身の行にも
+  // 直接下罫線を持たせることで、外側の罫線が効かなくても必ず線が引かれるようにする
+  // （線が重なっても見た目上は1本の線にしかならないため、二重描画による副作用は無い）。
   row: {
     flexDirection: 'row',
+    borderBottomWidth: THICK,
+    borderColor: BORDER,
   },
   rowWithBorder: {
     flexDirection: 'row',
@@ -261,7 +269,7 @@ export const PersonGridRow = ({
   deptLabel?: string; dept: string; role: string; name: string; tel: string
   deptLabelWidth?: string; deptValueWidth?: string; withBorder?: boolean
 }) => (
-  <View wrap={false} style={withBorder ? personGridStyles.rowWithBorder : personGridStyles.row}>
+  <View style={withBorder ? personGridStyles.rowWithBorder : personGridStyles.row}>
     <View style={[personGridStyles.cellLabel, { width: deptLabelWidth }]}><Text style={sharedStyles.labelText}>{deptLabel}</Text></View>
     <View style={[personGridStyles.cellValue, { width: deptValueWidth }]}><Text>{dept || '―'}</Text></View>
     <View style={[personGridStyles.cellLabel, { width: '5.1%' }]}><Text style={sharedStyles.labelText}>役職</Text></View>

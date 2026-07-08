@@ -1819,6 +1819,7 @@ function ApplyPageInner() {
       // 自動チェック機能（7-5章・9-1章タスク18）：金額異常値・最低賃金・就業規則整合の3種を判定
       // 2026-07-06実装。判定ロジック本体は lib/autoChecks.ts に切り出し済み
       const { results: autoCheckResults, overallLevel: warningLevel } = runAutoChecks({
+        pattern,
         workPlace,
         contractType,
         salaryType,

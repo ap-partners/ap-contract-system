@@ -834,5 +834,16 @@ STEP2の検索は「使用システム＋派遣開始日＋スタッフ社員番
 
   - なお、この行のすぐ下の項目「労使協定の有効期間の終了日」については、伊藤さんよりExcel側の数式（`=IF(L7="","", "労使協定の有効期間の終了日　　【　"&IF(MONTH(L7)<=3,YEAR(L7),YEAR(L7)+1)&"年3月31日　】")`）を提示いただき、実際にExcel（V43セル）で同一の数式を確認した。既存実装の`getAgreementLaborText`（`lib/pdf/documentText.ts`）は、月が3月以前ならその年、4月以降なら翌年の3月31日、という同じロジックで実装済みのため、**変更不要と確認できた**。
 
+- **[完了] パターンB・C PDFの最終レイアウト修正**（2026-07-08）：伊藤さんが実際に生成されたPDF（contract2.pdf）をレビューし発見した3点を修正。
+  - **派遣元責任者行の縦罫線が下まで届かない不具合**：`PersonGridRow`（`lib/pdf/pdfShared.tsx`）の行スタイル`personGridStyles.row`に`borderBottomWidth: THICK`を明示的に追加（外側`LabeledRow`側の罫線と重複するが、同太さの罫線が重なるだけなので見た目に問題は無い）。原因（react-pdf/Yogaのレイアウト計算がなぜ外側の罫線だけを描画しないか）は特定できていないが、再レンダリング（ズームクロップ画像）で罫線がフル幅に描画されることを確認済み。
+  - **紛争防止措置ラベルの列幅**：前回「ラベル欄を24%に拡張」する対応をしたが、この行だけ縦罫線の位置がずれて見た目に違和感が出るとの指摘を受け撤回。標準の17%幅（`sharedStyles.labelCell`）に戻した上で、ラベル文字のフォントサイズのみ`6.1pt`→`5.3pt`に縮小し、Excel実物と同じ「派遣先が派遣労働者を雇用する場／合の紛争防止措置」の2行改行に収まることを確認（`EmploymentConditionsPdf.tsx`・`EmploymentContractAndConditionsPdf.tsx`両方に適用）。
+  - **パターンBフッターの余白不足**：表と「会社」表記の間の余白が窮屈との指摘を受け、`marginTop`を`3`→`10`に変更（`EmploymentConditionsPdf.tsx`のみ。パターンCは別スタイルで元々余白が十分だったため対象外）。
+  - 備考／その他欄の表示内容は、Excel実物と再突き合わせし一致を確認（変更なし）。
+  - 全修正後、パターンB＝1ページ・パターンC＝2ページを維持していることを再レンダリングで確認。`npx tsc --noEmit`エラー0件。
 
+- **[完了] 就業条件明示書（パターンB）申請で「時給0円は範囲外」の誤警告が出る不具合を修正**（2026-07-08）：伊藤さんがSSC確認画面で発見。パターンBはSTEP7（給与入力）自体が無い設計のため、`salaryType`は初期値`'時給'`、`basicSalary`は未入力（`0`扱い）のまま自動チェック（`lib/autoChecks.ts`の`runAutoChecks`）に渡ってしまい、`checkAmountAnomaly`が「時給0円は1,500〜5,000円の範囲外」と誤判定していたことが原因。
+  - `AutoCheckInput`に`pattern`（'A'|'B'|'C'）を追加し、賃金起因のチェックである`checkAmountAnomaly`・`checkMinimumWage`の冒頭で`pattern === 'B'`なら早期returnするガードを追加（呼び出し側の条件分岐漏れを防ぐため、呼び出し元ではなくチェック関数側にガードを置く設計とした）。
+  - 呼び出し元`app/apply/page.tsx`の`runAutoChecks(...)`呼び出しに`pattern`を渡すよう修正。
+  - `checkMinimumWage`は元々`workPlace !== '現場'`のガードがあったが、パターンBガードは無かったため同様に追加。就業規則整合チェック（`checkWorkRules`）は賃金非依存の項目もあるためパターンBガードは追加せず現状維持。
+  - `npx tsc --noEmit`エラー0件。
 

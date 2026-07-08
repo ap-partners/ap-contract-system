@@ -35,6 +35,10 @@ const diffDays = (dateA: string, dateB: string) => {
 }
 
 export interface AutoCheckInput {
+  // 2026-07-08追加：パターンB（就業条件明示書）はSTEP7（給与入力）自体が存在せず、
+  // salaryType/basicSalary等が未入力のまま初期値（時給・0円）で渡ってくるため、
+  // 賃金起因のチェック（金額異常値・最低賃金）はpattern==='B'の場合は必ずスキップする。
+  pattern: string // 'A' | 'B' | 'C'
   workPlace: string // '現場' | '社内'
   contractType: string // '有期契約' | '無期契約' | '正社員' | 'アルバイト'
   salaryType: string // '時給' | '日給' | '月給'
@@ -64,6 +68,7 @@ export interface AutoCheckInput {
 
 // ① 金額チェック（異常値検出）※7-5章の表より。定額残業代の異常値チェックは対象外（2026-07-06 伊藤さん確認：不要と判断）
 function checkAmountAnomaly(input: AutoCheckInput): AutoCheckResult | null {
+  if (input.pattern === 'B') return null // 2026-07-08：就業条件明示書は給与入力STEPが無いためスキップ
   const { salaryType, basicSalary } = input
   if (salaryType === '時給') {
     if (basicSalary < 1500 || basicSalary > 5000) {
@@ -87,6 +92,7 @@ function checkAmountAnomaly(input: AutoCheckInput): AutoCheckResult | null {
 // それより前の期間も自動的に満たしている、という考え方（過去の「区間ごとに別々にチェック」という設計から変更）。
 function checkMinimumWage(input: AutoCheckInput): AutoCheckResult[] {
   const results: AutoCheckResult[] = []
+  if (input.pattern === 'B') return results // 2026-07-08：就業条件明示書は給与入力STEPが無いためスキップ
   if (input.workPlace !== '現場') return results // 社内は対象外（2026-07-03最終決定）
   if (input.minimumWageRowsForDept.length === 0) return results // STEP1で強制ブロック済みのはずだが念のため
 

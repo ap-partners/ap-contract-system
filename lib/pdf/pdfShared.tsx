@@ -192,15 +192,19 @@ export const sharedStyles = StyleSheet.create({
 // 描画されない不具合が、指揮命令者行等で発生したため、一時的にラベル欄自体にも冗長な下罫線を
 // 「全てのLabeledRowで無条件に」追加していたが、これにより「元々正しく描画されていた大多数の行」で
 // 罫線が二重に重なり、太く・二重線に見える副作用が発生した（伊藤さん指摘・contract3.pdfで確認）。
-// 「線が重なっても見た目上は1本にしかならない」という想定は誤りで、react-pdfのベクター罫線同士が
-// ピクセル単位で完全に重なると、アンチエイリアスの合成でより太く見えることが判明。
-// 実際にこの不具合が再現するのはPersonGridRow（部署名｜値｜役職｜値…の罫線付きグリッド）を
-// 内包する行（指揮命令者・派遣先責任者・派遣元責任者・苦情処理申出先）のみで確認されているため、
-// 冗長罫線はredundantBorderプロパティで明示的にオプトインした行だけに限定する。
+// 冗長罫線はredundantBorderプロパティで明示的にオプトインした行（指揮命令者・派遣先責任者・
+// 派遣元責任者・苦情処理申出先）だけに限定する対応をしたが、その後も一部レンダリングで
+// 二重線が残ることが判明（contract10.pdf、伊藤さん指摘）。原因は、外側の行(sharedStyles.row)の
+// 罫線描画がreact-pdf側で「常に失敗する」のではなく「非決定的（レンダリングによって描画されたり
+// されなかったりする）」ことで、redundantBorder側の罫線と重なるとその回だけ二重に見えていたため。
+// 「線が重なっても見た目上は1本にしかならない」という前提も誤りだったと判明済み（前回の教訓）。
+// 根本対策として、redundantBorderを使う行では外側の行自体の罫線を完全に無効化（rowLast相当）し、
+// ラベル欄・値欄（PersonGridRow自身）それぞれの罫線のみを罫線の唯一の描画元とすることで、
+// 常に「ぴったり1本」になることを保証する（非決定的な外側の罫線には一切頼らない）。
 export const LabeledRow = ({
   label, children, last, minHeight, redundantBorder,
 }: { label: string; children: React.ReactNode; last?: boolean; minHeight?: number; redundantBorder?: boolean }) => (
-  <View wrap={false} style={minHeight ? [last ? sharedStyles.rowLast : sharedStyles.row, { minHeight }] : (last ? sharedStyles.rowLast : sharedStyles.row)}>
+  <View wrap={false} style={minHeight ? [(last || redundantBorder) ? sharedStyles.rowLast : sharedStyles.row, { minHeight }] : ((last || redundantBorder) ? sharedStyles.rowLast : sharedStyles.row)}>
     <View style={(!last && redundantBorder) ? [sharedStyles.labelCell, sharedStyles.labelCellBorder] : sharedStyles.labelCell}><Text style={sharedStyles.labelText}>{label}</Text></View>
     <View style={sharedStyles.valueCell}>{children}</View>
   </View>

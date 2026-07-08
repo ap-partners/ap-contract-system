@@ -174,15 +174,23 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
             </View>
           </LabeledRow>
 
+          {/* 2026-07-09修正：「業務に伴う責任の程度」は値が「無」等の短い1語のみのことが
+              多く、独立した1行を丸ごと使うと行の使い方がもったいないという指摘があった
+              （伊藤さん・contract20.pdf）。「従事すべき業務内容」の(変更の範囲)行の右側に
+              ボックス表示する形に統合し、独立行は廃止する。 */}
           <LabeledRow label={'従事すべき\n業務内容'}>
-            <SplitLines lines={[
-              { label: '(雇入れ時)', value: p.businessContent },
-              { label: '(変更の範囲)', value: '会社が指示する業務' },
-            ]} />
-          </LabeledRow>
-
-          <LabeledRow label="業務に伴う責任の程度">
-            <Text style={sharedStyles.freeText}>{p.responsibility || '付与される権限なし'}</Text>
+            <View wrap={false} style={sharedStyles.splitLineWithBorder}>
+              <View style={sharedStyles.splitSubLabel}><Text>(雇入れ時)</Text></View>
+              <View style={sharedStyles.splitSubValue}><Text>{p.businessContent}</Text></View>
+            </View>
+            <View wrap={false} style={sharedStyles.splitLine}>
+              <View style={sharedStyles.splitSubLabel}><Text>(変更の範囲)</Text></View>
+              <View style={sharedStyles.splitSubValue}><Text>会社が指示する業務</Text></View>
+              <View style={sharedStyles.boxedSplitBox}>
+                <Text style={sharedStyles.boxedSplitBoxLabel}>業務に伴う責任の程度</Text>
+                <Text>{p.responsibility || '付与される権限なし'}</Text>
+              </View>
+            </View>
           </LabeledRow>
 
           <LabeledRow label="始業・終業時刻">
@@ -265,9 +273,13 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
               <PersonGridRow dept={p.mgrDept} role={p.mgrRole} name={p.mgrName} tel={p.mgrTel} />
             </LabeledRow>
 
+            {/* 2026-07-09修正：「［派遣先］部署名」を1行のまま自動改行に任せると、
+                欄の幅ぎりぎりのため「［」の1文字だけが行末に取り残されて改行される
+                不自然な折り返しになっていた（伊藤さん指摘・contract20.pdf）。
+                「［派遣先］」と「部署名」の意味の切れ目で明示的に改行する。 */}
             <LabeledRow label="苦情処理申出先">
-              <PersonGridRow deptLabel="［派遣先］部署名" deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.compDept} role={p.compRole} name={p.compName} tel={p.compTel} withBorder />
-              <PersonGridRow deptLabel="［派遣元］部署名" deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.cmpDept} role={p.cmpRole} name={p.cmpName} tel={p.cmpTel} />
+              <PersonGridRow deptLabel={'［派遣先］\n部署名'} deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.compDept} role={p.compRole} name={p.compName} tel={p.compTel} withBorder />
+              <PersonGridRow deptLabel={'［派遣元］\n部署名'} deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.cmpDept} role={p.cmpRole} name={p.cmpName} tel={p.cmpTel} />
             </LabeledRow>
           </View>
 

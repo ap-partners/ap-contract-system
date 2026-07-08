@@ -91,9 +91,15 @@ export const sharedStyles = StyleSheet.create({
   labelText: {
     fontWeight: 'bold',
   },
+  // 2026-07-09修正：valueCell自身にjustifyContent（縦方向の配置）が無かったため、
+  // ラベル欄側が2行のラベル（例：「従事すべき\n業務内容」）や、minHeight指定で
+  // 意図的に高さを増やした行（試用期間等）で、値欄の中身が行の上端に貼り付いたまま
+  // 縦の中央に来ていなかった（伊藤さん指摘・contract20.pdf「全体的に枠に対して
+  // 文字の位置が縦の中央ぞろえになってません」）。labelCell同様centerを指定する。
   valueCell: {
     width: `${100 - 17}%`,
     padding: 0,
+    justifyContent: 'center',
   },
   splitLine: {
     flexDirection: 'row',
@@ -112,8 +118,12 @@ export const sharedStyles = StyleSheet.create({
     fontWeight: 'bold',
     justifyContent: 'center',
   },
+  // 2026-07-09修正：splitSubLabelにはjustifyContent:'center'があったが、対になる
+  // splitSubValueには無く、ラベルだけ縦中央・値だけ上寄せという不揃いな見た目に
+  // なっていた（伊藤さん指摘・contract20.pdf）。centerを追加して揃える。
   splitSubValue: {
     flex: 1,
+    justifyContent: 'center',
     paddingVertical: 3,
     paddingHorizontal: 5,
   },
@@ -344,6 +354,23 @@ export const personGridStyles = StyleSheet.create({
   },
 })
 
+// 2026-07-09追加：部署名等、区切りの半角スペースが無い長い日本語テキストを、react-pdfの
+// 行折返しエンジン（改行できる箇所＝半角スペースの位置のみ）にそのまま渡すと、欄の幅を
+// 超えても折り返されず隣の列にはみ出してしまう不具合が確認された（伊藤さん指摘・
+// contract20.pdfを踏まえた「あらゆるパターンを想定した」ストレステストで発覚）。
+// 実データ（CSV連携等）は基本的に半角スペース区切りのため通常は問題無いが、
+// ①全角スペース区切りのデータ、②区切りが全く無い極端に長いデータ、の2パターンに対する
+// 安全策として、表示直前に以下の正規化を行う：
+//   ・半角スペースを含む場合はそのまま（実データの想定どおりの表示を変えない）
+//   ・全角スペースのみの場合は半角スペースに変換（react-pdfは半角スペースでのみ折返し可能）
+//   ・スペースが全く無い場合のみ、一定文字数ごとに半角スペースを補い、折返し可能にする
+export const wrappableText = (text: string, chunkSize = 6): string => {
+  if (!text) return text
+  if (text.includes(' ')) return text
+  if (text.includes('　')) return text.replace(/　/g, ' ')
+  return text.replace(new RegExp(`(.{${chunkSize}})`, 'g'), '$1 ').trim()
+}
+
 export const PersonGridRow = ({
   deptLabel = '部署名', dept, role, name, tel,
   deptLabelWidth = '11.0%', deptValueWidth = '25.4%', withBorder,
@@ -353,7 +380,7 @@ export const PersonGridRow = ({
 }) => (
   <View style={withBorder ? personGridStyles.rowWithBorder : personGridStyles.row}>
     <View style={[personGridStyles.cellLabel, { width: deptLabelWidth }]}><Text style={sharedStyles.labelText}>{deptLabel}</Text></View>
-    <View style={[personGridStyles.cellValue, { width: deptValueWidth }]}><Text>{dept || '―'}</Text></View>
+    <View style={[personGridStyles.cellValue, { width: deptValueWidth }]}><Text>{wrappableText(dept) || '―'}</Text></View>
     <View style={[personGridStyles.cellLabel, { width: '5.1%' }]}><Text style={sharedStyles.labelText}>役職</Text></View>
     <View style={[personGridStyles.cellValue, { width: '12.7%' }]}><Text>{role || '―'}</Text></View>
     <View style={[personGridStyles.cellLabel, { width: '7.6%' }]}><Text style={sharedStyles.labelText}>氏名</Text></View>

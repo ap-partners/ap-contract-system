@@ -271,28 +271,23 @@ export const getOfficeName = (deptName: string | null | undefined): string => {
   return '本社'
 }
 
-// ラベル行（左側の項目名）：年度ラベルは年1回のマスタ更新で変わるため、固定文言にしない。
-export const getDispatchFeeLabel = (fiscalYearLabel: string | null | undefined): string => {
-  const yearLabel = fiscalYearLabel || 'R6'
-  return `当該事業所における
-労働者派遣料金額の
-平均額(${yearLabel}年度実績)`
-}
-
-// 値セル：dispatch_fee_masterに該当する営業所のレコードが無い場合（マスタ未整備・新設営業所等）は
-// 従来通り「―」を表示する（骨格のみのフォールバック。2026-07-08確認済み：沖縄営業所は当面
-// 九州営業所と同額で運用する、という伊藤さんの判断は呼び出し側route.tsでのマスタ登録値で対応済み）。
+// 2026-07-08再修正：伊藤さんよりExcel実物（就業条件明示書_有期.xlsx）の該当箇所の
+// スクリーンショットを提示いただき、独立した項目行ではなく「備考／その他」セルの2行目に
+// 同じセル内で続けて表示される文言だったと判明（見た目上も項目名を新設していたのは誤り）。
+// 表記も「【営業所名】」ではなく、Excel実物の通り括弧無し・全角スペース区切りに訂正。
+// 呼び出し側（EmploymentConditionsPdf.tsx／EmploymentContractAndConditionsPdf.tsx）で
+// 備考・その他の本文に改行して連結する形に変更したため、この関数は「備考欄に追記する1行分の文言」を返す。
 export const getDispatchFeeAvgText = (
   officeName: string | null | undefined,
   amountPerDay: number | null | undefined,
   fiscalYearLabel: string | null | undefined
 ): string => {
   const yearLabel = fiscalYearLabel || 'R6'
-  const prefix = `当該事業所における労働者派遣料金額の平均額(${yearLabel}年度実績)　：　`
+  const prefix = `当該事業所における労働者派遣料金額の平均額(${yearLabel}年度実績)：　　`
   if (!officeName || amountPerDay === null || amountPerDay === undefined) {
     return `${prefix}―`
   }
-  return `${prefix}【${officeName}】　${amountPerDay.toLocaleString()}円/日`
+  return `${prefix}${officeName}　　${amountPerDay.toLocaleString()}円/日`
 }
 
 // ===== 抵触日欄の表示文言（パターンB・C共通・テンプレートP16/P17固定文言）=====

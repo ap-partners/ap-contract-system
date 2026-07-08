@@ -67,6 +67,11 @@ export const sharedStyles = StyleSheet.create({
     borderColor: BORDER,
     justifyContent: 'center',
   },
+  // 2026-07-08追加：LabeledRowのラベル欄用・外側の行罫線が描画されない不具合対策の冗長罫線（上記コメント参照）
+  labelCellBorder: {
+    borderBottomWidth: THICK,
+    borderColor: BORDER,
+  },
   labelText: {
     fontWeight: 'bold',
   },
@@ -186,7 +191,12 @@ export const LabeledRow = ({
   label, children, last, minHeight,
 }: { label: string; children: React.ReactNode; last?: boolean; minHeight?: number }) => (
   <View wrap={false} style={minHeight ? [last ? sharedStyles.rowLast : sharedStyles.row, { minHeight }] : (last ? sharedStyles.rowLast : sharedStyles.row)}>
-    <View style={sharedStyles.labelCell}><Text style={sharedStyles.labelText}>{label}</Text></View>
+    {/* 2026-07-08再修正：外側の行(sharedStyles.row)にborderBottomWidthを持たせているにもかかわらず、
+        react-pdfのレイアウト計算の都合でラベル欄の下だけ罫線が描画されない不具合が、行によって
+        ランダムに（指揮命令者行等で）再発することを実機確認で確認した。personGridStyles.rowと
+        同様、ラベル欄自体にも直接下罫線を持たせることで、外側の罫線が効かなくても必ず線が引かれるようにする
+        （線が重なっても見た目上は1本の線にしかならないため、二重描画による副作用は無い。 */}
+    <View style={last ? sharedStyles.labelCell : [sharedStyles.labelCell, sharedStyles.labelCellBorder]}><Text style={sharedStyles.labelText}>{label}</Text></View>
     <View style={sharedStyles.valueCell}>{children}</View>
   </View>
 )

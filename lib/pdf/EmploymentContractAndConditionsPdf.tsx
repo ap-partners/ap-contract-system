@@ -16,7 +16,7 @@ import {
   getTransportText, getTransportSecondaryNote, getWorkDaysText, getFlexTimeText, getFlexTimeNote,
   COMPANY_HQ_ADDRESS_LINES, formatHoursMinutes, formatMinutes,
   CONFLICT_DATE_NOTICE_TEXT, COMPLAINT_HANDLING_TEXT, DISPATCH_CANCEL_MEASURES_TEXT,
-  getAgreementLaborText, CONTRACT_RENEWAL_TEXT, getDispatchFeeAvgText, getDispatchFeeLabel, getConflictDateText,
+  getAgreementLaborText, CONTRACT_RENEWAL_TEXT, getDispatchFeeAvgText, getConflictDateText,
 } from './documentText'
 import {
   sharedStyles, LabeledRow, SplitLines, BoxedSplitRow, WageGrid, PersonGridRow,
@@ -312,12 +312,14 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
             <Text style={sharedStyles.freeText}>{getTrialText(p.trialPeriod, p.trialStart, p.trialEnd)}</Text>
           </LabeledRow>
 
-          <LabeledRow label={'備考\nその他'}>
-            <Text style={sharedStyles.freeText}>{getRemarksText(p.pattern, p.contractType, p.bonusType)}</Text>
-          </LabeledRow>
-
-          <LabeledRow label={getDispatchFeeLabel(p.dispatchFeeFiscalYear)} last>
-            <Text style={sharedStyles.freeText}>{getDispatchFeeAvgText(p.dispatchFeeOfficeName, p.dispatchFeeAmount, p.dispatchFeeFiscalYear)}</Text>
+          {/* 2026-07-08修正：「当該事業所における労働者派遣料金額の平均額」は独立した項目行ではなく、
+              Excel実物では備考・その他セルの2行目に続けて表示される文言だったため、
+              項目行を新設せず備考・その他の本文に改行して連結する形に修正（伊藤さん指摘） */}
+          <LabeledRow label={'備考\nその他'} last>
+            <Text style={sharedStyles.freeText}>
+              {getRemarksText(p.pattern, p.contractType, p.bonusType)}{'\n'}
+              {getDispatchFeeAvgText(p.dispatchFeeOfficeName, p.dispatchFeeAmount, p.dispatchFeeFiscalYear)}
+            </Text>
           </LabeledRow>
         </View>
 
@@ -329,7 +331,8 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
           <View style={sharedStyles.signatureCol}>
             <Text>会社</Text>
             {COMPANY_HQ_ADDRESS_LINES.map((line, i) => <Text key={i}>{line}</Text>)}
-            <Text style={{ fontWeight: 'bold' }}>株式会社APパートナーズ</Text>
+            {/* 2026-07-08修正：自社住所欄と会社名・代表者名の間隔が狭すぎるとの指摘のため余白を追加（パターンB同様） */}
+            <Text style={{ fontWeight: 'bold', marginTop: 6 }}>株式会社APパートナーズ</Text>
             <Text>代表取締役　山田　昌</Text>
             {p.showSeal && <Image src={COMPANY_SEAL_PATH} style={sharedStyles.companySeal} />}
           </View>

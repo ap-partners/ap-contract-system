@@ -244,22 +244,32 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
             </View>
           </LabeledRow>
 
-          <LabeledRow label="指揮命令者">
-            <PersonGridRow dept={p.cmdDept} role={p.cmdRole} name={p.cmdName} tel={p.cmdTel} />
-          </LabeledRow>
+          {/* 2026-07-08修正：以前は指揮命令者・派遣先責任者・派遣元責任者・苦情処理申出先の
+              4行がそれぞれ個別にreact-pdfの自動改ページ判定を受けていたため、部署名の
+              文字数次第でこの4行の途中の意図しない位置に改ページが入ってしまい、
+              一部の行だけがページ2の先頭に取り残されて上に大きな空白ができる・その行の
+              上罫線が表示されない、という不具合があった（伊藤さん指摘・contract13.pdf）。
+              4行をまとめて1つのwrap={false}ブロックにすることで、この4行が必ず
+              「まとめてページ1に収まる」か「まとめてページ2に送られる」かのどちらかになり、
+              一部だけが取り残される不自然な分割を防ぐ。 */}
+          <View wrap={false}>
+            <LabeledRow label="指揮命令者">
+              <PersonGridRow dept={p.cmdDept} role={p.cmdRole} name={p.cmdName} tel={p.cmdTel} />
+            </LabeledRow>
 
-          <LabeledRow label="派遣先責任者">
-            <PersonGridRow dept={p.respDept} role={p.respRole} name={p.respName} tel={p.respTel} />
-          </LabeledRow>
+            <LabeledRow label="派遣先責任者">
+              <PersonGridRow dept={p.respDept} role={p.respRole} name={p.respName} tel={p.respTel} />
+            </LabeledRow>
 
-          <LabeledRow label="派遣元責任者">
-            <PersonGridRow dept={p.mgrDept} role={p.mgrRole} name={p.mgrName} tel={p.mgrTel} />
-          </LabeledRow>
+            <LabeledRow label="派遣元責任者">
+              <PersonGridRow dept={p.mgrDept} role={p.mgrRole} name={p.mgrName} tel={p.mgrTel} />
+            </LabeledRow>
 
-          <LabeledRow label="苦情処理申出先">
-            <PersonGridRow deptLabel="［派遣先］部署名" deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.compDept} role={p.compRole} name={p.compName} tel={p.compTel} withBorder />
-            <PersonGridRow deptLabel="［派遣元］部署名" deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.cmpDept} role={p.cmpRole} name={p.cmpName} tel={p.cmpTel} />
-          </LabeledRow>
+            <LabeledRow label="苦情処理申出先">
+              <PersonGridRow deptLabel="［派遣先］部署名" deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.compDept} role={p.compRole} name={p.compName} tel={p.compTel} withBorder />
+              <PersonGridRow deptLabel="［派遣元］部署名" deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.cmpDept} role={p.cmpRole} name={p.cmpName} tel={p.cmpTel} />
+            </LabeledRow>
+          </View>
 
           <LabeledRow label="苦情処理内容"><Text style={sharedStyles.freeText}>{COMPLAINT_HANDLING_TEXT}</Text></LabeledRow>
 

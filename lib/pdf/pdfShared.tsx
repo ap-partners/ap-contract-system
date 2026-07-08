@@ -78,6 +78,16 @@ export const sharedStyles = StyleSheet.create({
     borderBottomWidth: THICK,
     borderColor: BORDER,
   },
+  // 2026-07-08追加：react-pdfは、罫線を持つ大きなView（table全体）がページをまたいで
+  // 分割される際、そのViewの外枠（borderWidth）を「最初のページの上端」と「最後のページの
+  // 下端」にしか描画せず、途中のページの継ぎ目には一切描画しない（伊藤さん指摘・contract13.pdf
+  // で発覚：ページ2の先頭行「苦情処理申出先」の上に罫線が無く、表が宙に浮いたように見えていた）。
+  // LabeledRowのforceBreakBeforeプロパティを使って明示的にページ区切りを指定した行にのみ、
+  // この上罫線を付与する（自動改行に任せた行には付与しない＝二重線になる心配が無い）。
+  topBorder: {
+    borderTopWidth: THICK,
+    borderColor: BORDER,
+  },
   labelText: {
     fontWeight: 'bold',
   },
@@ -209,15 +219,43 @@ export const sharedStyles = StyleSheet.create({
 //     一番最後の要素は罫線を持たない（外側のvalueCellが行末の罫線を担当するため）
 // という構成にすることで、罫線が二重になる可能性を構造的に排除した。
 export const LabeledRow = ({
-  label, labelStyle, children, last, minHeight,
-}: { label: string; labelStyle?: Record<string, any>; children: React.ReactNode; last?: boolean; minHeight?: number }) => (
-  <View wrap={false} style={minHeight ? [sharedStyles.row, { minHeight }] : sharedStyles.row}>
-    <View style={last ? sharedStyles.labelCell : [sharedStyles.labelCell, sharedStyles.bottomBorder]}>
-      <Text style={labelStyle ? [sharedStyles.labelText, labelStyle] as any : sharedStyles.labelText}>{label}</Text>
-    </View>
-    <View style={last ? sharedStyles.valueCell : [sharedStyles.valueCell, sharedStyles.bottomBorder]}>{children}</View>
-  </View>
-)
+  label, labelStyle, children, last, minHeight, forceBreakBefore,
+}: {
+  label: string; labelStyle?: Record<string, any>; children: React.ReactNode; last?: boolean
+  minHeight?: number
+  // 2026-07-08追加：trueを指定した行は、react-pdfの自動改ページに任せず必ずこの行の直前で
+  // ページを区切る（break）。あわせて上罫線を付与し、新しいページの先頭で表が正しく
+  // 囲まれて見えるようにする。データ量によって自動改ページの位置が変わってしまう箇所
+  // （指揮命令者〜苦情処理申出先付近）でのみ使う想定。
+  forceBreakBefore?: boolean
+}) => {
+  const labelCellStyle: Record<string, any>[] = [sharedStyles.labelCell]
+  const valueCellStyle: Record<string, any>[] = [sharedStyles.valueCell]
+  if (!last) {
+    labelCellStyle.push(sharedStyles.bottomBorder)
+    valueCellStyle.push(sharedStyles.bottomBorder)
+  }
+  if (forceBreakBefore) {
+    labelCellStyle.push(sharedStyles.topBorder)
+    valueCellStyle.push(sharedStyles.topBorder)
+  }
+  // 2026-07-08修正：break propを行自身のView（wrap={false}と同居）に付けても効かない
+  // （react-pdfの実機検証で確認：wrap={false}と同じViewにbreakを指定すると無視され、
+  // 自動改ページの位置がそのまま優先されてしまう）。react-pdfで実際に確実にページ区切りを
+  // 強制する定石どおり、breakだけを持つ空のView（幅0・見た目に影響しないマーカー）を
+  // 行の直前に兄弟要素として置く方式に変更した。
+  return (
+    <>
+      {forceBreakBefore && <View break />}
+      <View wrap={false} style={minHeight ? [sharedStyles.row, { minHeight }] : sharedStyles.row}>
+        <View style={labelCellStyle}>
+          <Text style={labelStyle ? [sharedStyles.labelText, labelStyle] as any : sharedStyles.labelText}>{label}</Text>
+        </View>
+        <View style={valueCellStyle}>{children}</View>
+      </View>
+    </>
+  )
+}
 
 export const SplitLines = ({ lines }: { lines: { label: string; value: React.ReactNode }[] }) => (
   <>

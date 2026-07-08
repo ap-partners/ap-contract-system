@@ -20,7 +20,12 @@ const supabaseAdmin = createClient(
 
 const getDocumentLabel = (documentType: string, contractType: string): string => {
   const suffix = contractType === 'アルバイト' ? '（アルバイト）' : contractType === '無期契約' ? '（無期）' : ''
-  return `${documentType}${suffix}`
+  // 2026-07-08修正：document_typeにはapp/apply/page.tsxのgetDocumentTypes()で定義された
+  // 選択ボタン表示用のliteralな改行（'雇用契約書 兼\n就業条件明示書'）がそのまま入っている。
+  // STEP1の選択ボタンでは2行表示にしたいための改行だが、PDFのタイトルはこの改行のせいで
+  // そのまま2行に割れて表示されてしまっていた（伊藤さん指摘）。PDFタイトルでは改行を
+  // 半角スペースに置き換え、1行で表示されるようにする。
+  return `${documentType.replace(/\n/g, ' ')}${suffix}`
 }
 
 const shouldShowSeal = (status: string): boolean => {

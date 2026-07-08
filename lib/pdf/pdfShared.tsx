@@ -260,6 +260,13 @@ export const personGridStyles = StyleSheet.create({
   // 外側のvalueCellが行末の罫線を担当するため、rowはもう罫線を持つ必要が無い。
   // rowWithBorder（薄い罫線）は、苦情処理申出先のように複数のPersonGridRowが
   // 縦に並ぶ場合の「内部の仕切り線」としてのみ使う（一番下の要素には使わない）。
+  // 2026-07-08再修正：部署名が短い（1行に収まる）行（例：派遣元責任者）だと、
+  // ラベル欄（LabeledRowのlabelCell・太字1行分の高さ）の方がこの行自身の自然な高さより
+  // わずかに高くなり、外側の行が全体としてはラベル欄の高さに合わせて伸びる一方、
+  // この行（内側のグリッド）自身は伸びずに元の高さのまま残ってしまい、結果として
+  // 縦の仕切り線が下の横罫線まで届かない隙間ができる不具合があった（伊藤さん指摘）。
+  // flex: 1を指定し、親（valueCell）が伸びた分だけこの行も必ず追従して伸びるようにする
+  // ことで、縦の仕切り線が常に下の横罫線まで届くようにした。
   row: {
     flexDirection: 'row',
   },
@@ -268,24 +275,34 @@ export const personGridStyles = StyleSheet.create({
     borderBottomWidth: THIN,
     borderColor: BORDER,
   },
+  // 2026-07-08再修正：paddingVerticalをLabeledRowのlabelCell（padding: '3 4' -> 上下3ptずつ）と
+  // 揃えて3に変更（以前は2）。部署名が短い1行だけの行（例：派遣元責任者）だと、この行自身の
+  // 自然な高さがラベル欄（太字1行・上下3pt）より低くなり、外側のvalueCellがラベル欄に
+  // 合わせて（stretchで）伸びても、この行の中の縦の仕切り線は自分自身の元の高さまでしか
+  // 描画されず、下の横罫線まで届かない隙間ができる不具合があった（伊藤さん指摘）。
+  // flexやheight:'100%'によるstretchで後から引き伸ばす対応も試したが、react-pdf/Yogaの
+  // 「高さが未確定な親を持つ場合のflex/パーセント指定」は挙動が不安定で、行の高さが
+  // 想定外に巨大化したり文字が重なったりする副作用が出た。そのため、そもそも高さが
+  // 食い違わないようpaddingの数値をラベル欄と一致させ、単純に自然な高さを揃える方式に
+  // 変更した（stretchに頼らない、より確実な対策）。
   cellLabel: {
     borderRightWidth: THIN,
     borderColor: BORDER,
     justifyContent: 'center',
     paddingHorizontal: 3,
-    paddingVertical: 2,
+    paddingVertical: 3,
   },
   cellValue: {
     borderRightWidth: THIN,
     borderColor: BORDER,
     justifyContent: 'center',
     paddingHorizontal: 3,
-    paddingVertical: 2,
+    paddingVertical: 3,
   },
   cellValueLast: {
     justifyContent: 'center',
     paddingHorizontal: 3,
-    paddingVertical: 2,
+    paddingVertical: 3,
   },
 })
 

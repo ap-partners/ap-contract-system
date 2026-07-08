@@ -1,31 +1,34 @@
-// ===== 雇用契約書 PDF（react-pdf）=====
-// docs/SYSTEM_DESIGN.md 7-1章の確定仕様に基づく。パターンA（雇用契約書のみ・6STEP）。
-// 有期契約／無期契約／正社員／アルバイトの4区分に対応。A4縦・1ページ固定。
-// 2026-07-07実装。同日、ベース資料（実物の無期雇用契約書PDF）と突き合わせてレイアウトを
-// 精密化（列比率・罫線・賃金グリッド・始業終業の2行分割・交通費補足注記・自社住所欄等）。
-// 2026-07-08：フォント登録・共通スタイル・LabeledRow等はlib/pdf/pdfShared.tsxへ切り出し
-// （就業条件明示書・兼用版と共通化するため）。
+// ===== 雇用契約書 兼 就業条件明示書 PDF（react-pdf）=====
+// docs/SYSTEM_DESIGN.md 7-1章・4-1章の確定仕様に基づく。パターンC（兼用版・8STEP）。
+// パターンA（雇用契約書）とパターンB（就業条件明示書）の全項目を1つの帳票に統合したもの。
+// 2026-07-08実装（契約書関連フォルダの「雇用契約書(兼)就業条件明示書_有期.xlsx」
+// 「雇用契約書(兼)就業条件明示書_無期.xlsx」のセル内容から書き起こし。
+// 有期・無期どちらもテンプレート構成は同一のため、雇用期間行のみ契約種別で出し分ける
+// （EmploymentContractPdf.tsxのEmploymentPeriodRowと同じロジック）。
+// A4縦・react-pdfの自動改ページに任せて2ページ構成になる。
+//
+// 署名機能（フェーズ5）上の扱い：パターンCは実署名が必要な帳票のため（雇用契約書を含む）、
+// パターンA同様、従業員の手書き署名欄・会社印影欄を設ける（docs/SYSTEM_DESIGN.md 10章2026-07-08参照）。
 import { Document, Page, Text, View, Image } from '@react-pdf/renderer'
 import {
   toJpDate, getRetirementClause, HOLIDAY_CLAUSE_LINES_FIXED, getHolidayClauseLine1,
-  WAGE_PAYMENT_TEXT,
-  getDeductionText, getInsuranceLine, getTrialText, getRemarksText, getTransportText,
-  getTransportSecondaryNote, getWorkDaysText, getFlexTimeText, getFlexTimeNote, COMPANY_HQ_ADDRESS_LINES,
-  formatHoursMinutes, formatMinutes,
+  WAGE_PAYMENT_TEXT, getDeductionText, getInsuranceLine, getTrialText, getRemarksText,
+  getTransportText, getTransportSecondaryNote, getWorkDaysText, getFlexTimeText, getFlexTimeNote,
+  COMPANY_HQ_ADDRESS_LINES, formatHoursMinutes, formatMinutes,
+  CONFLICT_DATE_NOTICE_TEXT, COMPLAINT_HANDLING_TEXT, DISPATCH_CANCEL_MEASURES_TEXT,
+  getAgreementLaborText, CONTRACT_RENEWAL_TEXT, getDispatchFeeAvgText,
 } from './documentText'
 import {
   sharedStyles, LabeledRow, SplitLines, BoxedSplitRow, WageGrid,
   COMPANY_SEAL_PATH,
 } from './pdfShared'
 
-export interface EmploymentContractPdfProps {
+export interface EmploymentContractAndConditionsPdfProps {
+  // ----- パターンA由来（雇用契約に関する項目）-----
   contractType: string
   documentLabel: string
   employeeName: string
   employeeAddress?: string
-  workLocationName: string
-  workLocationAddress: string
-  workLocationTel: string
   businessContent: string
   startTime: string
   endTime: string
@@ -57,20 +60,51 @@ export interface EmploymentContractPdfProps {
   bonusType: string
   overtime: string
   showSeal: boolean
-  // 2026-07-08追加（フェーズ5・署名機能）：従業員の手書き署名画像（PNGのdata URL）。
-  // /sign/[id]で署名完了した時にのみ渡される。未署名の間はundefinedのまま（欄は空欄で出力）。
   signatureImageDataUrl?: string
+  // ----- パターンB由来（派遣契約に関する項目）-----
+  workLocationName: string
+  workLocationAddress: string
+  workLocationTel: string
+  organizationUnit: string
+  conflictDate: string
+  conflictDateOrg: string
+  responsibility: string
+  dispatchStart: string
+  dispatchEnd: string
+  cmdDept: string
+  cmdRole: string
+  cmdName: string
+  cmdTel: string
+  respDept: string
+  respRole: string
+  respName: string
+  respTel: string
+  mgrDept: string
+  mgrRole: string
+  mgrName: string
+  mgrTel: string
+  compDept: string
+  compRole: string
+  compName: string
+  compTel: string
+  cmpDept: string
+  cmpRole: string
+  cmpName: string
+  cmpTel: string
+  welfare: string
+  safetyText: string
+  conflictText: string
+  // ----- パターンCのみ（2026-07-08時点ではSTEP未対応・骨格のみ。documentText.ts参照）-----
+  dispatchFeeAvg?: string
 }
 
-const EmploymentPeriodRow = ({ p }: { p: EmploymentContractPdfProps }) => {
+const EmploymentPeriodRow = ({ p }: { p: EmploymentContractAndConditionsPdfProps }) => {
   const isIndefinite = p.contractType === '無期契約' || p.contractType === '正社員'
   const mainText = isIndefinite ? '期間の定めなし' : `自　${toJpDate(p.employStart)}　　至　${toJpDate(p.employEnd)}`
   return (
     <View style={sharedStyles.row}>
       <View style={sharedStyles.labelCell}><Text style={sharedStyles.labelText}>雇用期間</Text></View>
       <View style={sharedStyles.valueCell}>
-        {/* 2026-07-07修正：契約条件適用開始日は無期契約・正社員のみ意味を持つ欄のため、
-            有期契約・アルバイトでは欄自体を表示しない（空欄のまま出すのではなく非表示にする）。 */}
         {isIndefinite ? (
           <BoxedSplitRow
             main={mainText}
@@ -85,7 +119,11 @@ const EmploymentPeriodRow = ({ p }: { p: EmploymentContractPdfProps }) => {
   )
 }
 
-export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
+const PersonRow = ({ dept, role, name, tel }: { dept: string; role: string; name: string; tel: string }) => (
+  <Text>部署名：{dept || '―'}　役職：{role || '―'}　氏名：{name || '―'}　電話番号：{tel || '―'}</Text>
+)
+
+export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndConditionsPdfProps) => {
   const retirementClause = getRetirementClause(p.contractType)
   const workDaysText = getWorkDaysText(p.workDays, p.workDaysOther)
   const overtimeHoursNote = Number(p.overtimeHours) > 0 ? `※定額残業時間：${p.overtimeHours}時間` : ''
@@ -95,7 +133,7 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
 
   return (
     <Document>
-      <Page size="A4" style={sharedStyles.page}>
+      <Page size="A4" style={sharedStyles.page} wrap>
         <Text style={sharedStyles.title}>{p.documentLabel}</Text>
         <Text style={sharedStyles.intro}>
           株式会社ＡＰパートナーズ(以下「甲」という)と　{p.employeeName}　(以下「乙」という)は、下記のとおり雇用契約を締結する。
@@ -103,6 +141,17 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
 
         <View style={sharedStyles.table}>
           <EmploymentPeriodRow p={p} />
+
+          <View style={sharedStyles.row}>
+            <View style={sharedStyles.labelCell}><Text style={sharedStyles.labelText}>派遣期間</Text></View>
+            <View style={sharedStyles.valueCell}>
+              <Text style={sharedStyles.freeText}>自　{toJpDate(p.dispatchStart)}　　至　{toJpDate(p.dispatchEnd)}</Text>
+            </View>
+          </View>
+
+          <LabeledRow label="派遣先事業者名">
+            <Text style={sharedStyles.freeText}>{p.workLocationName}</Text>
+          </LabeledRow>
 
           <LabeledRow label="就業場所">
             <SplitLines lines={[
@@ -114,11 +163,25 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
             ]} />
           </LabeledRow>
 
+          <LabeledRow label="組織単位"><Text style={sharedStyles.freeText}>{p.organizationUnit || '―'}</Text></LabeledRow>
+
+          <LabeledRow label="抵触日">
+            <View style={sharedStyles.freeText}>
+              <Text>(事業所単位)　{toJpDate(p.conflictDate) || '―'}</Text>
+              <Text>(組織単位)　{toJpDate(p.conflictDateOrg) || '―'}</Text>
+              <Text>{CONFLICT_DATE_NOTICE_TEXT}</Text>
+            </View>
+          </LabeledRow>
+
           <LabeledRow label={'従事すべき\n業務内容'}>
             <SplitLines lines={[
               { label: '(雇入れ時)', value: p.businessContent },
               { label: '(変更の範囲)', value: '会社が指示する業務' },
             ]} />
+          </LabeledRow>
+
+          <LabeledRow label={'業務に伴う\n責任の程度'}>
+            <Text style={sharedStyles.freeText}>{p.responsibility || '付与される権限なし'}</Text>
           </LabeledRow>
 
           <LabeledRow label="始業・終業時刻">
@@ -186,18 +249,61 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
             </View>
           </LabeledRow>
 
+          <LabeledRow label="指揮命令者">
+            <Text style={sharedStyles.freeText}><PersonRow dept={p.cmdDept} role={p.cmdRole} name={p.cmdName} tel={p.cmdTel} /></Text>
+          </LabeledRow>
+
+          <LabeledRow label="派遣先責任者">
+            <Text style={sharedStyles.freeText}><PersonRow dept={p.respDept} role={p.respRole} name={p.respName} tel={p.respTel} /></Text>
+          </LabeledRow>
+
+          <LabeledRow label="派遣元責任者">
+            <Text style={sharedStyles.freeText}><PersonRow dept={p.mgrDept} role={p.mgrRole} name={p.mgrName} tel={p.mgrTel} /></Text>
+          </LabeledRow>
+
+          <LabeledRow label="苦情処理申出先">
+            <View style={sharedStyles.freeText}>
+              <Text>［派遣先］<PersonRow dept={p.compDept} role={p.compRole} name={p.compName} tel={p.compTel} /></Text>
+              <Text>［派遣元］<PersonRow dept={p.cmpDept} role={p.cmpRole} name={p.cmpName} tel={p.cmpTel} /></Text>
+            </View>
+          </LabeledRow>
+
+          <LabeledRow label="苦情処理内容"><Text style={sharedStyles.freeText}>{COMPLAINT_HANDLING_TEXT}</Text></LabeledRow>
+
+          <LabeledRow label={'福利厚生施設の\n利用等'}><Text style={sharedStyles.freeText}>{p.welfare || '―'}</Text></LabeledRow>
+
+          <LabeledRow label="安全及び衛生"><Text style={sharedStyles.freeText}>{p.safetyText || '―'}</Text></LabeledRow>
+
+          <LabeledRow label={'派遣契約解除の\n場合の措置'}><Text style={sharedStyles.freeText}>{DISPATCH_CANCEL_MEASURES_TEXT}</Text></LabeledRow>
+
+          <LabeledRow label="派遣先が派遣労働者を雇用する場合の紛争防止措置">
+            <Text style={sharedStyles.freeText}>{p.conflictText || '―'}</Text>
+          </LabeledRow>
+
           {retirementClause && (
             <LabeledRow label="退職・解雇"><Text style={sharedStyles.freeText}>{retirementClause}</Text></LabeledRow>
           )}
 
           <LabeledRow label="各種保険"><Text style={sharedStyles.freeText}>{getInsuranceLine(p.hasEmployInsurance, p.hasSocialInsurance)}</Text></LabeledRow>
 
+          <LabeledRow label={'契約更新の有無・\n基準・無期転換'}>
+            <Text style={sharedStyles.freeText}>{CONTRACT_RENEWAL_TEXT}</Text>
+          </LabeledRow>
+
+          <LabeledRow label="協定対象派遣労働者であるか否か">
+            <Text style={sharedStyles.freeText}>{getAgreementLaborText(p.dispatchEnd)}</Text>
+          </LabeledRow>
+
           <LabeledRow label="試用期間" minHeight={62}>
             <Text style={sharedStyles.freeText}>{getTrialText(p.trialPeriod, p.trialStart, p.trialEnd)}</Text>
           </LabeledRow>
 
-          <LabeledRow label={'備考\nその他'} last>
+          <LabeledRow label={'備考\nその他'}>
             <Text style={sharedStyles.freeText}>{getRemarksText(p.pattern, p.contractType, p.bonusType)}</Text>
+          </LabeledRow>
+
+          <LabeledRow label={'当該事業所における\n労働者派遣料金額の\n平均額(実績)'} last>
+            <Text style={sharedStyles.freeText}>{getDispatchFeeAvgText(p.dispatchFeeAvg)}</Text>
           </LabeledRow>
         </View>
 
@@ -215,9 +321,6 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
           </View>
           <View style={sharedStyles.signatureCol}>
             <Text>従業員</Text>
-            {/* 2026-07-07：住所データは現時点でstaffテーブルに存在しないため空欄運用。
-                将来データが入った際、住所が長くて2行になっても崩れないよう、
-                固定高さを設けず自然に折り返す構造に最初からしておく（骨格のみ先行対応）。 */}
             <Text>住所：{p.employeeAddress || ''}</Text>
             <Text>氏名：{p.employeeName}</Text>
             {p.signatureImageDataUrl && <Image src={p.signatureImageDataUrl} style={sharedStyles.signatureImage} />}

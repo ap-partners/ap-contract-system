@@ -76,8 +76,13 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
 
   return (
     <Document>
-      <Page size="A4" style={sharedStyles.page}>
-        <Text style={sharedStyles.title}>{p.documentLabel}</Text>
+      {/* 2026-07-08修正：パターンBは項目数が多く、標準のsharedStyles.pageのままだと
+          会社情報欄（署名不要のため印影も無く本来短いブロック）だけが2ページ目に
+          はみ出してしまう視覚バグがあったため、このページに限りフォントサイズ・
+          行間・余白をわずかに詰めて1ページに収まるよう調整する
+          （パターンA・Cのレイアウトはベース資料と厳密に一致させているため触らない）。 */}
+      <Page size="A4" style={[sharedStyles.page, { fontSize: 7.7, lineHeight: 1.2, padding: 22 }]}>
+        <Text style={[sharedStyles.title, { fontSize: 14, marginBottom: 12 }]}>{p.documentLabel}</Text>
         <Text style={sharedStyles.intro}>
           株式会社ＡＰパートナーズは、　{p.workLocationName}　との合意に基づき、以下の就業条件により労働者派遣を行うことを明示する。
         </Text>
@@ -212,7 +217,7 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
           </LabeledRow>
         </View>
 
-        <View style={{ marginTop: 10 }}>
+        <View style={{ marginTop: 3 }}>
           <Text>会社</Text>
           {COMPANY_HQ_ADDRESS_LINES.map((line, i) => <Text key={i}>{line}</Text>)}
           <Text style={{ fontWeight: 'bold' }}>株式会社APパートナーズ</Text>

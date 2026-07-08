@@ -39,6 +39,7 @@ export const sharedStyles = StyleSheet.create({
   },
   title: {
     fontSize: 15,
+    lineHeight: 1.4,
     textAlign: 'center',
     letterSpacing: 1,
     marginBottom: 26,

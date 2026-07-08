@@ -145,3 +145,7 @@ vite.config.ts.timestamp-*
 # 個人情報・機密データを含むファイル（Gitの管理対象に含めない）
 *.csv
 *.xlsx
+# 帳票PDFの見た目確認用に一時的に作成したレンダリングスクリプト（2026-07-08）
+# マウントの制約でClaude側から削除できなかったため.gitignoreで除外。中身は不要なら伊藤さんの方で削除可。
+renderB.tsx
+renderC.tsx

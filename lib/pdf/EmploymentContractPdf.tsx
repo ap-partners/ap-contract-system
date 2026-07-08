@@ -158,6 +158,15 @@ const styles = StyleSheet.create({
     top: 6,
     left: 128,
   },
+  // 2026-07-08追加（フェーズ5・署名機能）：従業員の手書き署名画像。
+  // 「氏名：」の右側あたりに重ねて表示する（会社印影と同じ考え方の絶対配置）。
+  signatureImage: {
+    width: 90,
+    height: 34,
+    position: 'absolute',
+    top: 14,
+    left: 128,
+  },
   boxedSplitRow: {
     flexDirection: 'row',
   },
@@ -227,6 +236,9 @@ export interface EmploymentContractPdfProps {
   bonusType: string
   overtime: string
   showSeal: boolean
+  // 2026-07-08追加（フェーズ5・署名機能）：従業員の手書き署名画像（PNGのdata URL）。
+  // /sign/[id]で署名完了した時にのみ渡される。未署名の間はundefinedのまま（欄は空欄で出力）。
+  signatureImageDataUrl?: string
 }
 
 const BoxedSplitRow = ({ main, boxLabel, boxValue }: { main: React.ReactNode; boxLabel: string; boxValue: React.ReactNode }) => (
@@ -452,6 +464,7 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
                 固定高さを設けず自然に折り返す構造に最初からしておく（骨格のみ先行対応）。 */}
             <Text>住所：{p.employeeAddress || ''}</Text>
             <Text>氏名：{p.employeeName}</Text>
+            {p.signatureImageDataUrl && <Image src={p.signatureImageDataUrl} style={styles.signatureImage} />}
           </View>
         </View>
       </Page>

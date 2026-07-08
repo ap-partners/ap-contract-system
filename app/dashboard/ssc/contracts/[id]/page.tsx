@@ -325,6 +325,14 @@ export default function SSCContractDetail() {
       setActionLoading(false)
       return
     }
+    // 締結パターンが「指定しない（自動送信）」の場合、ここで署名待ちへの自動遷移＋
+    // 従業員への署名依頼メール送信を行う（対面・印刷パターンは担当営業の「説明完了」時に送信）。
+    // メール送信に失敗しても承認自体は完了しているので、承認フロー自体は止めない。
+    try {
+      await fetch(`/api/contracts/${contract.id}/notify-sign-request`, { method: 'POST' })
+    } catch {
+      // 通知の失敗は承認をブロックしない（ログのみ・UIには表示しない）
+    }
     setActionDone('approved')
     setActionLoading(false)
     setShowApproveConfirm(false)
@@ -350,6 +358,11 @@ export default function SSCContractDetail() {
       setActionError('強制承認の保存に失敗しました。もう一度お試しください。（' + error.message + '）')
       setActionLoading(false)
       return
+    }
+    try {
+      await fetch(`/api/contracts/${contract.id}/notify-sign-request`, { method: 'POST' })
+    } catch {
+      // 通知の失敗は承認をブロックしない
     }
     setActionDone('approved')
     setActionLoading(false)

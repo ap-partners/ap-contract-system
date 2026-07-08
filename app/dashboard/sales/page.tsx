@@ -289,19 +289,20 @@ export default function SalesDashboard() {
   const currentLabel = filterCards.find(c => c.key === activeFilter)?.label || ''
 
   // 「説明完了」ボタン処理：ステータスを署名待ちに進め、通知日時を記録する
+  // ステータス更新・sign_requested_atの記録・従業員への署名依頼メール送信は
+  // /api/contracts/[id]/notify-sign-request（trigger=explain）にまとめて行わせる
+  // （2026-07-08フェーズ5・9-1章タスク8対応）。
   const handleExplainDone = async (contractId: string) => {
     if (explainLoading) return
     setExplainLoading(true)
-    const now = new Date().toISOString()
-    const { error } = await supabase
-      .from('contracts')
-      .update({ status: '署名待ち', sign_requested_at: now, updated_at: now })
-      .eq('id', contractId)
-    if (error) {
-      alert('更新に失敗しました：' + error.message)
+    const res = await fetch(`/api/contracts/${contractId}/notify-sign-request?trigger=explain`, { method: 'POST' })
+    const result = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      alert('更新に失敗しました：' + (result.error || '不明なエラー'))
       setExplainLoading(false)
       return
     }
+    const now = new Date().toISOString()
     setContracts(prev => prev.map(c => c.id === contractId ? { ...c, status: '署名待ち' as ContractStatus, sign_requested_at: now } : c))
     setConfirmingExplainId(null)
     setExplainLoading(false)

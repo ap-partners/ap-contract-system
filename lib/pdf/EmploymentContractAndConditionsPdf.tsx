@@ -32,7 +32,7 @@ import {
 } from './documentText'
 import {
   sharedStyles, LabeledRow, SplitLines, BoxedSplitRow, WageGrid, PersonGridRow,
-  COMPANY_SEAL_PATH, AutoFitFreeText,
+  COMPANY_SEAL_PATH, AutoFitFreeText, estimateTextWidthPt,
 } from './pdfShared'
 
 export interface EmploymentContractAndConditionsPdfProps {
@@ -161,7 +161,7 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
             <SplitLines lines={[
               {
                 label: '(雇入れ時)',
-                value: `${p.workLocationName}　${p.workLocationAddress}${p.workLocationTel ? `　TEL ${p.workLocationTel}` : ''}`,
+                value: `${p.workLocationName}　${p.workLocationAddress}${p.workLocationTel ? `　TEL ${p.workLocationTel}` : ''}`,
               },
               { label: '(変更の範囲)', value: '会社の定める事業所' },
             ]} />
@@ -373,14 +373,28 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
             <Text style={{ fontWeight: 'bold' }}>株式会社APパートナーズ</Text>
             {/* 2026-07-08再修正：余白の追加位置を誤り、住所欄と会社名の間に入れていた。
                 正しくは会社名（株式会社APパートナーズ）と代表者名（代表取締役 山田 昌）の間（パターンB同様） */}
-            <Text style={{ marginTop: 6 }}>代表取締役　山田　昌</Text>
-            {p.showSeal && <Image src={COMPANY_SEAL_PATH} style={sharedStyles.companySeal} />}
+            <View style={[sharedStyles.sealLineWrap, { marginTop: 6 }]}>
+              <Text>代表取締役　山田　昌</Text>
+              {p.showSeal && (
+                <Image
+                  src={COMPANY_SEAL_PATH}
+                  style={[sharedStyles.sealOnLine, { left: estimateTextWidthPt('代表取締役　山田　昌', 8.3) - 30 }]}
+                />
+              )}
+            </View>
           </View>
           <View style={sharedStyles.signatureCol}>
             <Text>従業員</Text>
             <Text>住所：{p.employeeAddress || ''}</Text>
-            <Text>氏名：{p.employeeName}</Text>
-            {p.signatureImageDataUrl && <Image src={p.signatureImageDataUrl} style={sharedStyles.signatureImage} />}
+            <View style={sharedStyles.sealLineWrap}>
+              <Text>氏名：{p.employeeName}</Text>
+              {p.signatureImageDataUrl && (
+                <Image
+                  src={p.signatureImageDataUrl}
+                  style={[sharedStyles.sealOnLine, { left: estimateTextWidthPt(`氏名：${p.employeeName}`, 8.3) - 30 }]}
+                />
+              )}
+            </View>
           </View>
         </View>
       </Page>

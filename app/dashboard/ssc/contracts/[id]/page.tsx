@@ -494,32 +494,6 @@ export default function SSCContractDetail() {
 
       <main className="max-w-5xl mx-auto px-6 py-8">
 
-        {/* 処理完了バナー */}
-        {actionDone === 'approved' && (
-          <div className="rounded-xl p-5 mb-6 border-2" style={{ background: '#ECFDF5', borderColor: '#34D399' }}>
-            <p className="text-base font-bold mb-1" style={{ color: '#065F46' }}>✅ 承認しました</p>
-            <p className="text-sm" style={{ color: '#065F46' }}>
-              {(f.closingPattern === 'face' || f.closingPattern === 'print')
-                ? '担当営業のダッシュボードに「説明対応が必要」として表示されます。'
-                : 'スタッフへ署名依頼が自動送信されます。'}
-            </p>
-            <button onClick={() => router.push('/dashboard/ssc')}
-              className="mt-3 text-sm px-4 py-2 rounded-lg text-white" style={{ background: '#1B3A8C' }}>
-              一覧に戻る
-            </button>
-          </div>
-        )}
-        {actionDone === 'rejected' && (
-          <div className="rounded-xl p-5 mb-6 border-2" style={{ background: '#FEF2F2', borderColor: '#F87171' }}>
-            <p className="text-base font-bold mb-1" style={{ color: '#B91C1C' }}>↩ 差し戻しました</p>
-            <p className="text-sm" style={{ color: '#B91C1C' }}>担当営業へ差し戻し理由が通知されます。</p>
-            <button onClick={() => router.push('/dashboard/ssc')}
-              className="mt-3 text-sm px-4 py-2 rounded-lg text-white" style={{ background: '#1B3A8C' }}>
-              一覧に戻る
-            </button>
-          </div>
-        )}
-
         {/* 申請ステータス表示（処理済みの場合） */}
         {isAlreadyProcessed && !actionDone && (
           <div className="rounded-xl p-4 mb-6 border" style={{
@@ -818,9 +792,36 @@ export default function SSCContractDetail() {
         )}
 
         {/* ===== 承認・差し戻しエリア ===== */}
-        {!actionDone && (
-          <div className="bg-white rounded-xl border shadow-sm p-6 mt-6" style={{ borderColor: '#D0DAF0' }}>
-            {isAlreadyProcessed ? (
+        {/* 2026-07-09修正：承認・差し戻し完了後のバナーは、以前は画面最上部に表示していたが、
+            承認ボタンは画面最下部にあるため「ボタンを押した直後、下には何も表示されず
+            結果を見るには一番上までスクロールし直す必要がある」のは不親切という指摘を受け
+            （伊藤さん指摘）、ボタンがあったこのエリア自体に完了バナーを表示する形に変更した。
+            以前は{'{'}!actionDone{'}'}でこのエリア自体を非表示にしていたが、常に表示したうえで
+            中身をactionDoneの状態で出し分ける方式にする。 */}
+        <div className="bg-white rounded-xl border shadow-sm p-6 mt-6" style={{ borderColor: '#D0DAF0' }}>
+          {actionDone === 'approved' ? (
+            <div className="rounded-xl p-5 border-2" style={{ background: '#ECFDF5', borderColor: '#34D399' }}>
+              <p className="text-base font-bold mb-1" style={{ color: '#065F46' }}>✅ 承認しました</p>
+              <p className="text-sm" style={{ color: '#065F46' }}>
+                {(f.closingPattern === 'face' || f.closingPattern === 'print')
+                  ? '担当営業のダッシュボードに「説明対応が必要」として表示されます。'
+                  : 'スタッフへ署名依頼が自動送信されます。'}
+              </p>
+              <button onClick={() => router.push('/dashboard/ssc')}
+                className="mt-3 text-sm px-4 py-2 rounded-lg text-white" style={{ background: '#1B3A8C' }}>
+                一覧に戻る
+              </button>
+            </div>
+          ) : actionDone === 'rejected' ? (
+            <div className="rounded-xl p-5 border-2" style={{ background: '#FEF2F2', borderColor: '#F87171' }}>
+              <p className="text-base font-bold mb-1" style={{ color: '#B91C1C' }}>↩ 差し戻しました</p>
+              <p className="text-sm" style={{ color: '#B91C1C' }}>担当営業へ差し戻し理由が通知されます。</p>
+              <button onClick={() => router.push('/dashboard/ssc')}
+                className="mt-3 text-sm px-4 py-2 rounded-lg text-white" style={{ background: '#1B3A8C' }}>
+                一覧に戻る
+              </button>
+            </div>
+          ) : isAlreadyProcessed ? (
               <p className="text-sm text-center" style={{ color: '#9CA3AF' }}>この申請は処理済みです（ステータス：{contract.status}）</p>
             ) : (
               <>
@@ -946,8 +947,7 @@ export default function SSCContractDetail() {
                 )}
               </>
             )}
-          </div>
-        )}
+        </div>
 
       </main>
     </div>

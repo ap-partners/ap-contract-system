@@ -15,7 +15,7 @@ import {
 } from './documentText'
 import {
   sharedStyles, LabeledRow, SplitLines, BoxedSplitRow, WageGrid,
-  COMPANY_SEAL_PATH,
+  COMPANY_SEAL_PATH, estimateTextWidthPt,
 } from './pdfShared'
 
 export interface EmploymentContractPdfProps {
@@ -201,8 +201,15 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
             <Text>会社</Text>
             {COMPANY_HQ_ADDRESS_LINES.map((line, i) => <Text key={i}>{line}</Text>)}
             <Text style={{ fontWeight: 'bold' }}>株式会社APパートナーズ</Text>
-            <Text>代表取締役　山田　昌</Text>
-            {p.showSeal && <Image src={COMPANY_SEAL_PATH} style={sharedStyles.companySeal} />}
+            <View style={[sharedStyles.sealLineWrap, { marginTop: 6 }]}>
+              <Text>代表取締役　山田　昌</Text>
+              {p.showSeal && (
+                <Image
+                  src={COMPANY_SEAL_PATH}
+                  style={[sharedStyles.sealOnLine, { left: estimateTextWidthPt('代表取締役　山田　昌', 8.3) - 30 }]}
+                />
+              )}
+            </View>
           </View>
           <View style={sharedStyles.signatureCol}>
             <Text>従業員</Text>
@@ -210,8 +217,15 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
                 将来データが入った際、住所が長くて2行になっても崩れないよう、
                 固定高さを設けず自然に折り返す構造に最初からしておく（骨格のみ先行対応）。 */}
             <Text>住所：{p.employeeAddress || ''}</Text>
-            <Text>氏名：{p.employeeName}</Text>
-            {p.signatureImageDataUrl && <Image src={p.signatureImageDataUrl} style={sharedStyles.signatureImage} />}
+            <View style={sharedStyles.sealLineWrap}>
+              <Text>氏名：{p.employeeName}</Text>
+              {p.signatureImageDataUrl && (
+                <Image
+                  src={p.signatureImageDataUrl}
+                  style={[sharedStyles.sealOnLine, { left: estimateTextWidthPt(`氏名：${p.employeeName}`, 8.3) - 30 }]}
+                />
+              )}
+            </View>
           </View>
         </View>
       </Page>

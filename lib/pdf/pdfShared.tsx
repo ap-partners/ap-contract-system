@@ -170,20 +170,26 @@ export const sharedStyles = StyleSheet.create({
     width: '50%',
     position: 'relative',
   },
-  companySeal: {
-    width: 44,
-    height: 44,
-    position: 'absolute',
-    top: 6,
-    left: 128,
+  // 2026-07-09再修正：以前は companySeal / signatureImage をposition:'absolute'＋固定pxオフセット
+  // （列全体の先頭からの距離）で配置していたが、これは「印を重ねたい行（代表取締役名／氏名）の
+  // 手前に何行あるか」に依存する脆い実装だった。実際、同日中に代表者名の前へmarginTopを
+  // 追加する別修正が入った際、オフセットの再調整が漏れて印の位置が意図した行からズレる不具合が
+  // 発生した（伊藤さん指摘・帳票PDFプレビューで角印が代表者名でなく社名・住所欄に重なっていた）。
+  //
+  // 対策：印を重ねたい行（代表取締役名の行・氏名の行）自体を position:'relative' にし、
+  // 印画像はその行だけを基準にposition:'absolute'で配置する（sealLineWrap + sealOnLine）。
+  // 「何行分上に積まれているか」に一切依存しないため、上の行数が変わっても位置がズレない。
+  // 横位置は、その行のテキスト（会社側は固定文言、従業員側は氏名の文字数）から概算の文字幅で
+  // 計算し（estimateTextWidthPt）、名前の右側〜末尾に重なるように配置する。
+  sealLineWrap: {
+    position: 'relative',
   },
-  // 2026-07-09変更：手書きサイン（横長）→ フルネーム入力から生成する丸印鑑（companySealと同サイズ）に変更。
-  signatureImage: {
+  sealOnLine: {
     width: 44,
     height: 44,
     position: 'absolute',
-    top: 14,
-    left: 128,
+    // 行の高さ（本文フォント8.3pt・lineHeight1.32 ≒ 11pt）に対して印を縦中央に重ねる
+    top: -16.5,
   },
   boxedSplitRow: {
     flexDirection: 'row',
@@ -449,6 +455,12 @@ export const estimateWrappedLines = (text: string, fontSize: number, widthPt: nu
   const charsPerLine = Math.max(1, Math.floor(widthPt / fontSize))
   return text.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil((line.length || 1) / charsPerLine)), 0)
 }
+
+// 2026-07-09追加：印鑑の横位置計算専用。AutoFitFreeText同様、IPAex明朝がほぼ等幅である
+// 前提の概算（文字数×フォントサイズ×係数）で、ある1行のテキストの見た目の幅(pt)を推定する。
+// sealLineWrap/sealOnLineで「代表取締役　山田　昌」「氏名：〇〇」の行に印を重ねる際の
+// left値の算出にのみ使う（精緻な計測ではなく概算で十分）。
+export const estimateTextWidthPt = (text: string, fontSize: number): number => (text?.length || 0) * fontSize * 0.98
 
 export const AutoFitFreeText = ({
   text, maxLines, widthPt, sizes,

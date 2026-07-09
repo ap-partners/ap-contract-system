@@ -64,7 +64,8 @@ export default function SignPage() {
         return
       }
       setStaffName(data.staffName)
-      setSealName(data.staffName || '')
+      // 2026-07-09修正：フルネーム欄に最初から本人の名前が自動入力されていると、
+      // 「自分で入力する」という意味が無くなってしまう（伊藤さん指摘）ため、空欄から始める。
       setDocumentLabel(data.documentLabel)
       setSignAction(data.signAction)
       setStage('action')
@@ -201,7 +202,7 @@ export default function SignPage() {
                     onChange={e => setSealName(e.target.value)}
                     className="w-full px-4 py-3 rounded-lg text-sm border focus:outline-none focus:ring-2 transition-all mb-4"
                     style={{ borderColor: '#D0DAF0', background: '#FFFFFF', color: '#1A2340' }}
-                    placeholder="例：山田　太郎"
+                    placeholder={staffName ? `例：${staffName}` : '例：山田　太郎'}
                   />
 
                   <p className="text-sm font-medium mb-2 text-center" style={{ color: '#1A2340' }}>

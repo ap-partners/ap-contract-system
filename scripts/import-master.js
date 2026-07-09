@@ -66,10 +66,22 @@ function normalizeContractCode(value) {
 }
 
 // Excelの日付シリアル値や文字列をYYYY-MM-DD形式に変換
+//
+// 【2026-07-09重大バグ修正】以前は value.toISOString().split('T')[0] としていたが、
+// xlsxライブラリ（cellDates:true）はExcelのシリアル値を「その日の日本時間0時」を表すDate
+// オブジェクトとして生成する。toISOString()はUTCに変換してから文字列化するため、日本時間は
+// UTC+9のぶんだけ巻き戻り、日付が1日早くずれてしまっていた（例：2005/02/13 → 2005-02-12）。
+// 生年月日はスタッフ本人確認（/sign/[id]）に使われるため、実際の生年月日を入力すると
+// 本人確認に失敗する状態になっていた（伊藤さん実機テストで発覚）。
+// 修正：toISOString()（UTC変換）ではなく、Dateオブジェクトのローカルgetter
+// （getFullYear/getMonth/getDate）を使い、タイムゾーン変換を発生させないようにする。
 function excelDateToISO(value) {
   if (!value) return null
   if (value instanceof Date) {
-    return value.toISOString().split('T')[0]
+    const y = value.getFullYear()
+    const mo = String(value.getMonth() + 1).padStart(2, '0')
+    const d = String(value.getDate()).padStart(2, '0')
+    return `${y}-${mo}-${d}`
   }
   // 文字列形式（"20xx/xx/xx" 等）の場合
   const str = String(value).trim()

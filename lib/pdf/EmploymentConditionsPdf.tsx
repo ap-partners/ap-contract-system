@@ -202,9 +202,12 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
               欄の幅ぎりぎりのため「［」の1文字だけが行末に取り残されて改行される
               不自然な折り返しになっていた（伊藤さん指摘・contract20.pdf）。
               「［派遣先］」と「部署名」の意味の切れ目で明示的に改行する。 */}
+          {/* 2026-07-09再修正：以前は「［派遣先］部署名」を2行に明示改行して表示していたが、
+              伊藤さんの意向により1行表示に戻した。改行ではなくフォントサイズを下げて
+              1行に収める（deptLabelFontSize）。 */}
           <LabeledRow label="苦情処理申出先">
-            <PersonGridRow deptLabel={'［派遣先］\n部署名'} deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.compDept} role={p.compRole} name={p.compName} tel={p.compTel} withBorder />
-            <PersonGridRow deptLabel={'［派遣元］\n部署名'} deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.cmpDept} role={p.cmpRole} name={p.cmpName} tel={p.cmpTel} />
+            <PersonGridRow deptLabel="［派遣先］部署名" deptLabelFontSize={5.6} deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.compDept} role={p.compRole} name={p.compName} tel={p.compTel} withBorder />
+            <PersonGridRow deptLabel="［派遣元］部署名" deptLabelFontSize={5.6} deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.cmpDept} role={p.cmpRole} name={p.cmpName} tel={p.cmpTel} />
           </LabeledRow>
 
           <LabeledRow label="苦情処理内容"><Text style={sharedStyles.freeText}>{COMPLAINT_HANDLING_TEXT}</Text></LabeledRow>

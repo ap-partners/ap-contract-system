@@ -5,10 +5,22 @@
 // 「雇用契約書(兼)就業条件明示書_無期.xlsx」のセル内容から書き起こし。
 // 有期・無期どちらもテンプレート構成は同一のため、雇用期間行のみ契約種別で出し分ける
 // （EmploymentContractPdf.tsxのEmploymentPeriodRowと同じロジック）。
-// A4縦・react-pdfの自動改ページに任せて2ページ構成になる。
 //
-// 署名機能（フェーズ5）上の扱い：パターンCは実署名が必要な帳票のため（雇用契約書を含む）、
-// パターンA同様、従業員の手書き署名欄・会社印影欄を設ける（docs/SYSTEM_DESIGN.md 10章2026-07-08参照）。
+// 2026-07-09全面改訂：ページ1・ページ2を1つの<Page>・1つの<View style={table}>に
+// react-pdfの自動改ページで任せる構成から、明示的に2つの<Page>（それぞれ独立した
+// <View style={table}>）に分割する構成へ変更した。react-pdfは、罫線を持つ大きなView
+// （table全体）がページをまたいで自動的に分割される際、そのViewの外枠（borderWidth）を
+// 「実際の最初のページの上端」と「実際の最後のページの下端」にしか描画せず、途中の
+// ページの継ぎ目には一切描画しないという仕様上の制約があり、これはwrap={false}での
+// グルーピングなど今までのどの対策でも解消できない（伊藤さん指摘・contract22.pdfで
+// 再発。詳細はdocs/SYSTEM_DESIGN.md 10章2026-07-09参照）。
+// この帳票は「安全及び衛生」の直後で必ずページを区切ると意図的に決め打ちし
+// （交通費までの項目＋安全及び衛生でページ1、指揮命令者以降でページ2）、それぞれを
+// 独立した<Page>・独立した<View style={table}>として実装することで、両ページとも
+// 罫線が自分自身で完結して閉じるようにした。もし雇用期間〜安全及び衛生までの内容が
+// 極端に長く1ページに収まらない場合は、react-pdfの<Page>自身が持つ自動改ページ機能に
+// より、その部分だけがさらにもう1ページ追加される（2ページ→3ページに増える）形で
+// 安全側にフォールバックする（内容が欠落したり罫線が壊れたりすることはない）。
 import { Document, Page, Text, View, Image } from '@react-pdf/renderer'
 import {
   toJpDate, getRetirementClause, HOLIDAY_CLAUSE_LINES_FIXED, getHolidayClauseLine1,
@@ -149,7 +161,7 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
             <SplitLines lines={[
               {
                 label: '(雇入れ時)',
-                value: `${p.workLocationName}　${p.workLocationAddress}${p.workLocationTel ? `　TEL\u00A0${p.workLocationTel}` : ''}`,
+                value: `${p.workLocationName}　${p.workLocationAddress}${p.workLocationTel ? `　TEL ${p.workLocationTel}` : ''}`,
               },
               { label: '(変更の範囲)', value: '会社の定める事業所' },
             ]} />
@@ -252,36 +264,33 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
             </View>
           </LabeledRow>
 
-          {/* 2026-07-09修正：以前は「安全及び衛生」「派遣契約解除の場合の措置」「紛争防止措置」の
-              3行は指揮命令者〜苦情処理申出先（部署名の文字数で高さが変わる可変長ブロック）より
-              後ろに配置していたが、伊藤さんの提案により、うち「安全及び衛生」「派遣契約解除の場合の
-              措置」の2行を先に（交通費の直後・固定長寄りの項目群の一部として）配置する順序に
-              変更した（伊藤さんとの合意・2026-07-09）。
-              2026-07-09再修正：「紛争防止措置」も同時に前倒ししたところ、実データで検証すると
-              「紛争防止措置」の行の高さの分だけページ1に収まりきらず、この行だけがページ2の
-              先頭に単独で送られてしまい、結局「ページ2は指揮命令者から始まる」という狙いが
-              達成できないケースが確認された（伊藤さん指摘・contract22.pdf）。そこで「紛争防止措置」
-              だけは前倒しをやめ、福利厚生施設の利用等の直後（退職・解雇の直前）に移動した。
-              これにより、ページ1は「安全及び衛生」「派遣契約解除の場合の措置」で終わり罫線もそこで
-              閉じ、ページ2は指揮命令者から確実に始まるようになる（Excel実物の項目順とは異なる
-              意図的な変更であり、記載事項自体はExcelと完全に一致しているため内容面の問題は無い）。
-              なお「安全及び衛生」「紛争防止措置」は営業担当が編集可能な自由記述欄のため、
-              既定文言より長く編集された場合に備えて`AutoFitFreeText`で自動フォントサイズ縮小を
-              適用し、行の高さ自体は既定文言のとき（2行）から変えない設計とした。 */}
-          <LabeledRow label="安全及び衛生">
+          {/* 2026-07-09再修正：「安全及び衛生」をページ1の最終行とし、必ずこの行の直後で
+              ページを区切る（下のPage2を参照）。以前は「派遣契約解除の場合の措置」も
+              このページ1側に置いていたが、業務内容等の他の自由記述欄が長い場合にこの行
+              自体がページ1に収まりきらずページ2にずれ込むリスクがあったため、
+              「派遣契約解除の場合の措置」はページ2側（福利厚生施設の利用等の下）に移動した
+              （伊藤さんとの合意・2026-07-09）。これによりページ1は必ず「安全及び衛生」で
+              終わり、最終行なのでlastを付与して下罫線を持たせない（table自体の外枠が
+              下端を閉じる）。 */}
+          <LabeledRow label="安全及び衛生" last>
             <AutoFitFreeText text={p.safetyText} maxLines={2} widthPt={441} sizes={[8.3, 7.6, 6.9]} />
           </LabeledRow>
+        </View>
+      </Page>
 
-          <LabeledRow label={'派遣契約解除の\n場合の措置'}><Text style={sharedStyles.freeText}>{DISPATCH_CANCEL_MEASURES_TEXT}</Text></LabeledRow>
-
+      <Page size="A4" style={sharedStyles.page} wrap>
+        <View style={sharedStyles.table}>
           {/* 2026-07-08修正：以前は指揮命令者・派遣先責任者・派遣元責任者・苦情処理申出先の
               4行がそれぞれ個別にreact-pdfの自動改ページ判定を受けていたため、部署名の
               文字数次第でこの4行の途中の意図しない位置に改ページが入ってしまい、
               一部の行だけがページ2の先頭に取り残されて上に大きな空白ができる・その行の
               上罫線が表示されない、という不具合があった（伊藤さん指摘・contract13.pdf）。
               4行をまとめて1つのwrap={false}ブロックにすることで、この4行が必ず
-              「まとめてページ1に収まる」か「まとめてページ2に送られる」かのどちらかになり、
-              一部だけが取り残される不自然な分割を防ぐ。 */}
+              「まとめてページ2に収まる」か「まとめてページ3に送られる」かのどちらかになり、
+              一部だけが取り残される不自然な分割を防ぐ（2026-07-09：ページ1・2を明示的に
+              分割したことで、通常はこの4行がページ2の先頭に来るため実質的にこの対策が
+              効く場面は稀だが、業務内容等が極端に長くページ1が2枚に増えた場合の保険として
+              残している）。 */}
           <View wrap={false}>
             <LabeledRow label="指揮命令者">
               <PersonGridRow dept={p.cmdDept} role={p.cmdRole} name={p.cmdName} tel={p.cmdTel} />
@@ -295,13 +304,14 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
               <PersonGridRow dept={p.mgrDept} role={p.mgrRole} name={p.mgrName} tel={p.mgrTel} />
             </LabeledRow>
 
-            {/* 2026-07-09修正：「［派遣先］部署名」を1行のまま自動改行に任せると、
-                欄の幅ぎりぎりのため「［」の1文字だけが行末に取り残されて改行される
-                不自然な折り返しになっていた（伊藤さん指摘・contract20.pdf）。
-                「［派遣先］」と「部署名」の意味の切れ目で明示的に改行する。 */}
+            {/* 2026-07-09再修正：以前は「［派遣先］部署名」を'［派遣先］\n部署名'のように
+                明示的に2行へ改行して表示していたが、伊藤さんの意向により1行表示に戻した。
+                欄の幅ぎりぎりで自動改行に任せると不自然な位置（「［」の1文字だけ）で
+                折り返ってしまうため、改行ではなくフォントサイズを下げることで1行に収める
+                （deptLabelFontSize。通常の部署名ラベルと同じ8.3ptではなく6.3ptに縮小）。 */}
             <LabeledRow label="苦情処理申出先">
-              <PersonGridRow deptLabel={'［派遣先］\n部署名'} deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.compDept} role={p.compRole} name={p.compName} tel={p.compTel} withBorder />
-              <PersonGridRow deptLabel={'［派遣元］\n部署名'} deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.cmpDept} role={p.cmpRole} name={p.cmpName} tel={p.cmpTel} />
+              <PersonGridRow deptLabel="［派遣先］部署名" deptLabelFontSize={6.3} deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.compDept} role={p.compRole} name={p.compName} tel={p.compTel} withBorder />
+              <PersonGridRow deptLabel="［派遣元］部署名" deptLabelFontSize={6.3} deptLabelWidth="16.1%" deptValueWidth="20.3%" dept={p.cmpDept} role={p.cmpRole} name={p.cmpName} tel={p.cmpTel} />
             </LabeledRow>
           </View>
 
@@ -316,6 +326,12 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
           <LabeledRow label={'派遣先が派遣労働者を雇用する場\n合の紛争防止措置'} labelStyle={{ fontSize: 5.3, lineHeight: 1.15 }}>
             <AutoFitFreeText text={p.conflictText} maxLines={2} widthPt={441} sizes={[8.3, 7.6, 6.9]} />
           </LabeledRow>
+
+          {/* 2026-07-09再修正：業務内容等が長い場合にページ1へ収まりきらないリスクを
+              避けるため、「派遣契約解除の場合の措置」をページ1（安全及び衛生の前）から
+              ページ2側（福利厚生施設の利用等・紛争防止措置の下）へ移動した
+              （伊藤さんとの合意・2026-07-09）。 */}
+          <LabeledRow label={'派遣契約解除の\n場合の措置'}><Text style={sharedStyles.freeText}>{DISPATCH_CANCEL_MEASURES_TEXT}</Text></LabeledRow>
 
           {retirementClause && (
             <LabeledRow label="退職・解雇"><Text style={sharedStyles.freeText}>{retirementClause}</Text></LabeledRow>

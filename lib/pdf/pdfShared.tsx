@@ -373,13 +373,19 @@ export const wrappableText = (text: string, chunkSize = 6): string => {
 
 export const PersonGridRow = ({
   deptLabel = '部署名', dept, role, name, tel,
-  deptLabelWidth = '11.0%', deptValueWidth = '25.4%', withBorder,
+  deptLabelWidth = '11.0%', deptValueWidth = '25.4%', withBorder, deptLabelFontSize,
 }: {
   deptLabel?: string; dept: string; role: string; name: string; tel: string
   deptLabelWidth?: string; deptValueWidth?: string; withBorder?: boolean
+  // 2026-07-09追加：「［派遣先］部署名」等、通常の「部署名」より長いラベルを1行で収めたい場合に
+  // フォントサイズを指定する（伊藤さんの意向で、改行ではなくフォントサイズ縮小で対応する方針に
+  // 変更。以前はdeptLabelに'\n'を含めて2行で表示していたが、1行表示に戻したうえでこちらを使う）。
+  deptLabelFontSize?: number
 }) => (
   <View style={withBorder ? personGridStyles.rowWithBorder : personGridStyles.row}>
-    <View style={[personGridStyles.cellLabel, { width: deptLabelWidth }]}><Text style={sharedStyles.labelText}>{deptLabel}</Text></View>
+    <View style={[personGridStyles.cellLabel, { width: deptLabelWidth }]}>
+      <Text style={deptLabelFontSize ? [sharedStyles.labelText, { fontSize: deptLabelFontSize }] as any : sharedStyles.labelText}>{deptLabel}</Text>
+    </View>
     <View style={[personGridStyles.cellValue, { width: deptValueWidth }]}><Text>{wrappableText(dept) || '―'}</Text></View>
     <View style={[personGridStyles.cellLabel, { width: '5.1%' }]}><Text style={sharedStyles.labelText}>役職</Text></View>
     <View style={[personGridStyles.cellValue, { width: '12.7%' }]}><Text>{role || '―'}</Text></View>

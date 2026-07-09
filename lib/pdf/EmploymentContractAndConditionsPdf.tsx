@@ -254,12 +254,17 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
 
           {/* 2026-07-09修正：以前は「安全及び衛生」「派遣契約解除の場合の措置」「紛争防止措置」の
               3行は指揮命令者〜苦情処理申出先（部署名の文字数で高さが変わる可変長ブロック）より
-              後ろに配置していたが、伊藤さんの提案により、この3行を先に（交通費の直後・固定長寄りの
-              項目群の一部として）配置する順序に変更した。これにより、可変長で高さが読みにくい
-              指揮命令者〜苦情処理申出先ブロックを2ページ目の先頭から始められるようになり、
-              ページ1の終わり際の限られた余白でこのブロックの改ページ位置を気にする必要が無くなる
-              （伊藤さんとの合意・2026-07-09。Excel実物の項目順とは異なる意図的な変更であり、
-              記載事項自体はExcelと完全に一致しているため内容面の問題は無い）。
+              後ろに配置していたが、伊藤さんの提案により、うち「安全及び衛生」「派遣契約解除の場合の
+              措置」の2行を先に（交通費の直後・固定長寄りの項目群の一部として）配置する順序に
+              変更した（伊藤さんとの合意・2026-07-09）。
+              2026-07-09再修正：「紛争防止措置」も同時に前倒ししたところ、実データで検証すると
+              「紛争防止措置」の行の高さの分だけページ1に収まりきらず、この行だけがページ2の
+              先頭に単独で送られてしまい、結局「ページ2は指揮命令者から始まる」という狙いが
+              達成できないケースが確認された（伊藤さん指摘・contract22.pdf）。そこで「紛争防止措置」
+              だけは前倒しをやめ、福利厚生施設の利用等の直後（退職・解雇の直前）に移動した。
+              これにより、ページ1は「安全及び衛生」「派遣契約解除の場合の措置」で終わり罫線もそこで
+              閉じ、ページ2は指揮命令者から確実に始まるようになる（Excel実物の項目順とは異なる
+              意図的な変更であり、記載事項自体はExcelと完全に一致しているため内容面の問題は無い）。
               なお「安全及び衛生」「紛争防止措置」は営業担当が編集可能な自由記述欄のため、
               既定文言より長く編集された場合に備えて`AutoFitFreeText`で自動フォントサイズ縮小を
               適用し、行の高さ自体は既定文言のとき（2行）から変えない設計とした。 */}
@@ -268,14 +273,6 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
           </LabeledRow>
 
           <LabeledRow label={'派遣契約解除の\n場合の措置'}><Text style={sharedStyles.freeText}>{DISPATCH_CANCEL_MEASURES_TEXT}</Text></LabeledRow>
-
-          {/* 2026-07-08再修正：ラベル欄を24%に広げる対応は、この行だけ縦罫線の位置が
-              ずれて見た目に違和感が出るため取りやめ（伊藤さん指摘）。標準の17%幅は維持したまま、
-              ラベルのフォントサイズだけを落とし、Excel実物と同じ2行
-              （「…雇用する場」／「合の…措置」で改行）に収める。 */}
-          <LabeledRow label={'派遣先が派遣労働者を雇用する場\n合の紛争防止措置'} labelStyle={{ fontSize: 5.3, lineHeight: 1.15 }}>
-            <AutoFitFreeText text={p.conflictText} maxLines={2} widthPt={441} sizes={[8.3, 7.6, 6.9]} />
-          </LabeledRow>
 
           {/* 2026-07-08修正：以前は指揮命令者・派遣先責任者・派遣元責任者・苦情処理申出先の
               4行がそれぞれ個別にreact-pdfの自動改ページ判定を受けていたため、部署名の
@@ -311,6 +308,14 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
           <LabeledRow label="苦情処理内容"><Text style={sharedStyles.freeText}>{COMPLAINT_HANDLING_TEXT}</Text></LabeledRow>
 
           <LabeledRow label={'福利厚生施設の\n利用等'}><Text style={sharedStyles.freeText}>{p.welfare || '―'}</Text></LabeledRow>
+
+          {/* 2026-07-08再修正：ラベル欄を24%に広げる対応は、この行だけ縦罫線の位置が
+              ずれて見た目に違和感が出るため取りやめ（伊藤さん指摘）。標準の17%幅は維持したまま、
+              ラベルのフォントサイズだけを落とし、Excel実物と同じ2行
+              （「…雇用する場」／「合の…措置」で改行）に収める。 */}
+          <LabeledRow label={'派遣先が派遣労働者を雇用する場\n合の紛争防止措置'} labelStyle={{ fontSize: 5.3, lineHeight: 1.15 }}>
+            <AutoFitFreeText text={p.conflictText} maxLines={2} widthPt={441} sizes={[8.3, 7.6, 6.9]} />
+          </LabeledRow>
 
           {retirementClause && (
             <LabeledRow label="退職・解雇"><Text style={sharedStyles.freeText}>{retirementClause}</Text></LabeledRow>

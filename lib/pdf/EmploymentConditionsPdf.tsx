@@ -16,7 +16,7 @@ import {
   CONFLICT_DATE_NOTICE_TEXT, COMPLAINT_HANDLING_TEXT, DISPATCH_CANCEL_MEASURES_TEXT,
   getAgreementLaborText, getConflictDateText, getDispatchFeeAvgText,
 } from './documentText'
-import { sharedStyles, LabeledRow, SplitLines, BoxedSplitRow, PersonGridRow } from './pdfShared'
+import { sharedStyles, LabeledRow, SplitLines, BoxedSplitRow, PersonGridRow, AutoFitFreeText } from './pdfShared'
 
 export interface EmploymentConditionsPdfProps {
   documentLabel: string
@@ -211,7 +211,12 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
 
           <LabeledRow label={'福利厚生施設の\n利用等'}><Text style={sharedStyles.freeText}>{p.welfare || '―'}</Text></LabeledRow>
 
-          <LabeledRow label="安全及び衛生"><Text style={sharedStyles.freeText}>{p.safetyText || '―'}</Text></LabeledRow>
+          {/* 2026-07-09修正：安全及び衛生・紛争防止措置は営業担当が編集可能な自由記述欄。
+              既定文言より長く編集された場合に備え、行の高さを変えずに文字サイズだけ段階的に
+              縮小するAutoFitFreeTextを適用（パターンCと同じ対応・伊藤さんとの合意・2026-07-09）。 */}
+          <LabeledRow label="安全及び衛生">
+            <AutoFitFreeText text={p.safetyText} maxLines={2} widthPt={459} sizes={[7.4, 6.9, 6.4]} />
+          </LabeledRow>
 
           <LabeledRow label={'派遣契約解除の\n場合の措置'}><Text style={sharedStyles.freeText}>{DISPATCH_CANCEL_MEASURES_TEXT}</Text></LabeledRow>
 
@@ -220,7 +225,7 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
               ラベルのフォントサイズだけを落とし、Excel実物と同じ2行
               （「…雇用する場」／「合の…措置」で改行）に収める。 */}
           <LabeledRow label={'派遣先が派遣労働者を雇用する場\n合の紛争防止措置'} labelStyle={{ fontSize: 5.3, lineHeight: 1.15 }}>
-            <Text style={sharedStyles.freeText}>{p.conflictText || '―'}</Text>
+            <AutoFitFreeText text={p.conflictText} maxLines={2} widthPt={459} sizes={[7.4, 6.9, 6.4]} />
           </LabeledRow>
 
           <LabeledRow label="協定対象派遣労働者であるか否か">

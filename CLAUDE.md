@@ -65,4 +65,4 @@
 
 ---
 
-*詳細
+*詳細・経緯・差分監査表・全PENDINGは `docs/SYSTEM_DESIGN.md` を参照。*

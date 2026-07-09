@@ -426,3 +426,33 @@ export const WageGrid = ({ p, overtimeHoursNote }: { p: WageGridInput; overtimeH
     </>
   )
 }
+
+
+// 2026-07-09追加：安全及び衛生・紛争防止措置は営業担当が編集可能な自由記述欄。通常は
+// 既定文言のまま使われることが多いが、既定文言より長く編集された場合に備え、行の高さ
+// （＝ページ1全体の高さ）を変えずに文字サイズだけを段階的に縮小して収める自動フィット
+// 処理を用意する（伊藤さんとの合意・2026-07-09）。react-pdfでは実際の文字幅を事前に
+// 測定できないため、IPAex明朝が日本語をほぼ等幅で描画する特性を利用し、「文字数×
+// フォントサイズ」を欄の幅と比較する概算ロジックで判定する（精緻な計測ではなく、
+// 安全側に倒した概算）。sizesで渡した候補（基準→縮小1段階→縮小2段階＝下限）を順に試し、
+// 指定行数(maxLines)に収まる最大サイズを採用する。下限でも収まらない極端に長い文章は、
+// 無理に押し込めず下限サイズのまま自然にはみ出す（可読性を優先する）。
+export const estimateWrappedLines = (text: string, fontSize: number, widthPt: number): number => {
+  if (!text) return 1
+  const charsPerLine = Math.max(1, Math.floor(widthPt / fontSize))
+  return text.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil((line.length || 1) / charsPerLine)), 0)
+}
+
+export const AutoFitFreeText = ({
+  text, maxLines, widthPt, sizes,
+}: { text: string; maxLines: number; widthPt: number; sizes: number[] }) => {
+  const value = text || '―'
+  let chosenSize = sizes[sizes.length - 1]
+  for (const size of sizes) {
+    if (estimateWrappedLines(value, size, widthPt) <= maxLines) {
+      chosenSize = size
+      break
+    }
+  }
+  return <Text style={[sharedStyles.freeText, { fontSize: chosenSize }]}>{value}</Text>
+}

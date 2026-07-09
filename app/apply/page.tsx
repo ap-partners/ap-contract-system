@@ -1406,12 +1406,14 @@ function ApplyPageInner() {
       const csvMeta = row.input_data?.csvMeta || {}
 
       // STEP1：対象スタッフ・雇用区分・就業場所区分・書類種別
+      // 2026-07-09追加：住所も他フィールドと同様にスナップショットから復元する（下記staffSnapshotの修正と対）
       setSelectedStaff({
         id: row.staff_id,
         employee_number: staffSnap.employee_number,
         name: staffSnap.name,
         department: staffSnap.department,
         crew_code: staffSnap.crew_code,
+        address: staffSnap.address,
       })
       setSearched(true)
       setContractType(f.contractType || '')
@@ -1794,11 +1796,14 @@ function ApplyPageInner() {
       }
 
       // 申請対象スタッフのスナップショット（後でstaffマスタの情報が変わっても、申請時点の記録が残る）
+      // 2026-07-09追加：帳票PDFの従業員住所欄（employeeAddress）に使うaddressが漏れていたため追加
+      // （staff.addressの取込自体は既に完了していたが、この申請保存側の反映が漏れていたバグの修正）。
       const staffSnapshot = selectedStaff ? {
         employee_number: selectedStaff.employee_number,
         name: selectedStaff.name,
         department: selectedStaff.department,
         crew_code: selectedStaff.crew_code,
+        address: selectedStaff.address || null,
       } : null
 
       // 上長承認が必要だった警告のうち、実際にチェックされたものだけを記録

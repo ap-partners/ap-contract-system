@@ -12,6 +12,16 @@
  *
  * 2. 次にスタッフマスタを取り込む
  *    node scripts/import-master.js staff ./スタッフマスタ.xlsx <アップロードユーザーID>
+ *
+ * 【2026-07-09変更】
+ * ・住所（staff.address）の取込を追加。StaffExpressエクスポートの「現在住所(住所1)」
+ *   「現在住所(住所2)」「現在住所(住所3)」の3列を半角スペースで結合して1つの文字列にする
+ *   （住所2・3は建物名・部屋番号等で空欄のことが多いため、空欄の列は詰めて結合する）。
+ *   docs/SYSTEM_DESIGN.md 6章の確定仕様を「対象外」から「取込む」に変更（伊藤さんの実データ
+ *   確認・承認済み）。
+ * ・クルーコード列のキー名を実データに合わせて修正。旧コードは 'クルーコード' というキーで
+ *   読んでいたが、実際のヘッダーは 'SBクルーコード' だったため、これまでの再インポートでは
+ *   常にnullになり、既存のcrew_codeを意図せず上書きしていた可能性がある不具合を修正。
  */
 
 require('dotenv').config({ path: '.env.local' })
@@ -69,6 +79,14 @@ function excelDateToISO(value) {
     return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`
   }
   return null
+}
+
+// 現在住所(住所1)(住所2)(住所3)の3列を、空欄を詰めて半角スペース区切りで結合する
+function buildAddress(row) {
+  const parts = [row['現在住所(住所1)'], row['現在住所(住所2)'], row['現在住所(住所3)']]
+    .map(v => (v === null || v === undefined ? '' : String(v).trim()))
+    .filter(v => v.length > 0)
+  return parts.length > 0 ? parts.join(' ') : null
 }
 
 function readExcel(filePath) {
@@ -206,10 +224,11 @@ async function importStaff(filePath, uploadedBy) {
       birthday: excelDateToISO(row['生年月日']),
       retired_at: excelDateToISO(row['退職年月日']),
       retirement_scheduled_at: excelDateToISO(row['退職予定日']),
+      address: buildAddress(row),
       // テスト運用中は誤送信防止のため、全スタッフのメールアドレスを管理者アドレスに固定する
       // ※本番運用前には、この固定を解除して実際のメールアドレス（row['メールアドレス１']）に戻すこと
       email: 'ito@appart.co.jp',
-      crew_code: row['クルーコード'] || null,
+      crew_code: row['SBクルーコード'] || null,
     }
 
     const { data: existing } = await supabase

@@ -11,6 +11,11 @@
 //      「SSC承認済み」であれば無条件で「署名待ち」へ遷移してメール送信する。
 // どちらの分岐も「SSC承認済み→署名待ち」という一方向の遷移が前提のため、
 // 二重クリック等で既に「署名待ち」になっている場合は対象外（何もしない＝二重送信防止）。
+//
+// 2026-07-09追加：署名待ちへ遷移する瞬間に、contracts.sign_action_type
+// （signature=手書き署名が必要／confirmation=内容確認のみ）もあわせて確定・保存する。
+// /sign/[id]（app/api/sign/[id]/verify・complete）はこの値を読み、無い場合のみ
+// 同じロジックでフォールバック計算する（docs/SYSTEM_DESIGN.md 10章 2026-07-09決定）。
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendSignRequestMail } from '@/lib/mail'
@@ -51,10 +56,18 @@ export async function POST(
     return NextResponse.json({ sent: false })
   }
 
+  const isConfirmationOnly = contract.document_type === '就業条件明示書'
+  const signActionType: 'signature' | 'confirmation' = isConfirmationOnly ? 'confirmation' : 'signature'
+
   const now = new Date().toISOString()
   const { data: updatedRow, error: updateError } = await supabaseAdmin
     .from('contracts')
-    .update({ status: '署名待ち', sign_requested_at: now, updated_at: now })
+    .update({
+      status: '署名待ち',
+      sign_requested_at: now,
+      sign_action_type: signActionType,
+      updated_at: now,
+    })
     .eq('id', id)
     .eq('status', 'SSC承認済み') // 二重実行の競合を避けるための条件付き更新
     .select()
@@ -78,8 +91,6 @@ export async function POST(
   if (!toEmail) {
     return NextResponse.json({ error: '送信先メールアドレスが取得できませんでした。' }, { status: 400 })
   }
-
-  const isConfirmationOnly = updatedRow.document_type === '就業条件明示書'
 
   try {
     await sendSignRequestMail(toEmail, id, isConfirmationOnly)

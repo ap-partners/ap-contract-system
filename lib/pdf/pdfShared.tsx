@@ -177,9 +177,10 @@ export const sharedStyles = StyleSheet.create({
     top: 6,
     left: 128,
   },
+  // 2026-07-09変更：手書きサイン（横長）→ フルネーム入力から生成する丸印鑑（companySealと同サイズ）に変更。
   signatureImage: {
-    width: 90,
-    height: 34,
+    width: 44,
+    height: 44,
     position: 'absolute',
     top: 14,
     left: 128,

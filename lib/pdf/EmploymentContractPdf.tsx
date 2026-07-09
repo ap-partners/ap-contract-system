@@ -5,7 +5,7 @@
 // 精密化（列比率・罫線・賃金グリッド・始業終業の2行分割・交通費補足注記・自社住所欄等）。
 // 2026-07-08：フォント登録・共通スタイル・LabeledRow等はlib/pdf/pdfShared.tsxへ切り出し
 // （就業条件明示書・兼用版と共通化するため）。
-import { Document, Page, Text, View, Image } from '@react-pdf/renderer'
+import { Document, Page, Text, View } from '@react-pdf/renderer'
 import {
   toJpDate, getRetirementClause, HOLIDAY_CLAUSE_LINES_FIXED, getHolidayClauseLine1,
   WAGE_PAYMENT_TEXT,
@@ -15,7 +15,7 @@ import {
 } from './documentText'
 import {
   sharedStyles, LabeledRow, SplitLines, BoxedSplitRow, WageGrid,
-  COMPANY_SEAL_PATH, estimateTextWidthPt,
+  COMPANY_SEAL_PATH, SealSideBySide,
 } from './pdfShared'
 
 export interface EmploymentContractPdfProps {
@@ -198,34 +198,27 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
 
         <View style={sharedStyles.signatureRow}>
           <View style={sharedStyles.signatureCol}>
-            <Text>会社</Text>
-            {COMPANY_HQ_ADDRESS_LINES.map((line, i) => <Text key={i}>{line}</Text>)}
-            <Text style={{ fontWeight: 'bold' }}>株式会社APパートナーズ</Text>
-            <View style={[sharedStyles.sealLineWrap, { marginTop: 6 }]}>
-              <Text>代表取締役　山田　昌</Text>
-              {p.showSeal && (
-                <Image
-                  src={COMPANY_SEAL_PATH}
-                  style={[sharedStyles.sealOnLine, { left: estimateTextWidthPt('代表取締役　山田　昌', 8.3) - 30 }]}
-                />
-              )}
-            </View>
+            <SealSideBySide showSeal={p.showSeal} sealSrc={COMPANY_SEAL_PATH} textColWidth={98} gap={-12}>
+              <Text>会社</Text>
+              {COMPANY_HQ_ADDRESS_LINES.map((line, i) => <Text key={i}>{line}</Text>)}
+              <Text style={{ fontWeight: 'bold' }}>株式会社APパートナーズ</Text>
+              <Text style={{ marginTop: 6 }}>代表取締役　山田　昌</Text>
+            </SealSideBySide>
           </View>
           <View style={sharedStyles.signatureCol}>
-            <Text>従業員</Text>
-            {/* 2026-07-07：住所データは現時点でstaffテーブルに存在しないため空欄運用。
-                将来データが入った際、住所が長くて2行になっても崩れないよう、
-                固定高さを設けず自然に折り返す構造に最初からしておく（骨格のみ先行対応）。 */}
-            <Text>住所：{p.employeeAddress || ''}</Text>
-            <View style={sharedStyles.sealLineWrap}>
+            <SealSideBySide showSeal={!!p.signatureImageDataUrl} sealSrc={p.signatureImageDataUrl || ''}>
+              <Text>従業員</Text>
+              {/* 2026-07-07：住所データは現時点でstaffテーブルに存在しないため空欄運用。
+                  将来データが入った際、住所が長くて2行になっても崩れないよう、
+                  固定高さを設けず自然に折り返す構造に最初からしておく（骨格のみ先行対応）。
+                  2026-07-09：住所データの反映バグを別途修正済み（申請保存時のスナップショット漏れ）。
+                  2026-07-09再々修正：印の配置を「氏名の行に重ねる」方式から、伊藤さんのサンプル
+                  画像に基づく「テキストブロック全体の右側に固定配置」方式（SealSideBySide）に
+                  変更。住所・氏名がどれだけ長くても、左列（flex:1）の中で自然に折り返すだけで、
+                  右側の印の位置・サイズには一切影響しない。 */}
+              <Text>住所：{p.employeeAddress || ''}</Text>
               <Text>氏名：{p.employeeName}</Text>
-              {p.signatureImageDataUrl && (
-                <Image
-                  src={p.signatureImageDataUrl}
-                  style={[sharedStyles.sealOnLine, { left: estimateTextWidthPt(`氏名：${p.employeeName}`, 8.3) - 30 }]}
-                />
-              )}
-            </View>
+            </SealSideBySide>
           </View>
         </View>
       </Page>

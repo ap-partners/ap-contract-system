@@ -4,7 +4,7 @@
 // 元々はlib/pdf/EmploymentContractPdf.tsxに個別定義していたが、パターンB・C追加にあたり
 // 重複を避けるためこちらへ切り出した。フォント登録はプロセス内で一度だけ行われれば良いため、
 // 各テンプレートファイルはこのモジュールをimportするだけでよい（直接Font.registerしない）。
-import { Text, View, StyleSheet, Font } from '@react-pdf/renderer'
+import { Text, View, Image, StyleSheet, Font } from '@react-pdf/renderer'
 import path from 'path'
 import { formatYen, OVERTIME_RATE_TEXT, formatSalaryType } from './documentText'
 
@@ -170,26 +170,25 @@ export const sharedStyles = StyleSheet.create({
     width: '50%',
     position: 'relative',
   },
-  // 2026-07-09再修正：以前は companySeal / signatureImage をposition:'absolute'＋固定pxオフセット
-  // （列全体の先頭からの距離）で配置していたが、これは「印を重ねたい行（代表取締役名／氏名）の
-  // 手前に何行あるか」に依存する脆い実装だった。実際、同日中に代表者名の前へmarginTopを
-  // 追加する別修正が入った際、オフセットの再調整が漏れて印の位置が意図した行からズレる不具合が
-  // 発生した（伊藤さん指摘・帳票PDFプレビューで角印が代表者名でなく社名・住所欄に重なっていた）。
-  //
-  // 対策：印を重ねたい行（代表取締役名の行・氏名の行）自体を position:'relative' にし、
-  // 印画像はその行だけを基準にposition:'absolute'で配置する（sealLineWrap + sealOnLine）。
-  // 「何行分上に積まれているか」に一切依存しないため、上の行数が変わっても位置がズレない。
-  // 横位置は、その行のテキスト（会社側は固定文言、従業員側は氏名の文字数）から概算の文字幅で
-  // 計算し（estimateTextWidthPt）、名前の右側〜末尾に重なるように配置する。
-  sealLineWrap: {
-    position: 'relative',
+  // 2026-07-09再々修正：伊藤さんが理想とするレイアウトのサンプル画像を提示してもらい判明。
+  // 「特定の1行に印を重ねる」設計そのものが実物のイメージと異なっていた。正しくは、
+  // 住所・社名・代表者名（従業員側は住所・氏名）のテキストブロック全体の右側に、
+  // 印を独立した領域として固定配置する二列レイアウト（テキスト＝flex:1の左列、
+  // 印＝固定サイズの右列）。この方式は氏名や住所の長さに一切依存しないため、
+  // 長い氏名でも印の位置がずれたりページ外にはみ出したりする心配が構造的に無くなる
+  // （sealRow + sealTextCol + sealBoxで実装。旧sealLineWrap/sealOnLine/SealTextLine/
+  // estimateTextWidthPtは廃止）。
+  sealRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  sealOnLine: {
-    width: 44,
-    height: 44,
-    position: 'absolute',
-    // 行の高さ（本文フォント8.3pt・lineHeight1.32 ≒ 11pt）に対して印を縦中央に重ねる
-    top: -16.5,
+  sealTextCol: {
+    flex: 1,
+  },
+  sealBox: {
+    width: 64,
+    height: 64,
+    marginLeft: 8,
   },
   boxedSplitRow: {
     flexDirection: 'row',
@@ -456,11 +455,30 @@ export const estimateWrappedLines = (text: string, fontSize: number, widthPt: nu
   return text.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil((line.length || 1) / charsPerLine)), 0)
 }
 
-// 2026-07-09追加：印鑑の横位置計算専用。AutoFitFreeText同様、IPAex明朝がほぼ等幅である
-// 前提の概算（文字数×フォントサイズ×係数）で、ある1行のテキストの見た目の幅(pt)を推定する。
-// sealLineWrap/sealOnLineで「代表取締役　山田　昌」「氏名：〇〇」の行に印を重ねる際の
-// left値の算出にのみ使う（精緻な計測ではなく概算で十分）。
-export const estimateTextWidthPt = (text: string, fontSize: number): number => (text?.length || 0) * fontSize * 0.98
+// 2026-07-09再々修正：伊藤さんのサンプル画像により判明した正しいレイアウト部品。
+// 住所・社名・代表者名（または住所・氏名）のテキストブロックを左列（flex:1）に、
+// 印を右列（固定サイズ64×64pt）に配置する二列レイアウト。テキストの長さは左列の中で
+// 自然に折り返すだけなので、印の位置・サイズには一切影響しない（旧SealTextLineの
+// 「特定の行に印を重ねる」方式は、伊藤さんの理想イメージと異なっていたため廃止した）。
+// 2026-07-09さらに修正：伊藤さんの指摘で、上記のflex:1方式だと「テキスト列自体が
+// 欄の幅いっぱいに広がり、実際の文字の右端と印の間に余白が大きく空いてしまう」ことが
+// 判明した（住所が長くなる可能性を見越してflex:1にしていたための副作用）。
+// 会社側（住所・社名・代表者名）は毎回同じ固定文言のため、テキスト列の幅を決め打ちの
+// pt値にして文字の右端ぴったりに印を寄せても、可変長データによる破綻の心配が無い。
+// 一方、従業員側（住所・氏名）はスタッフごとに長さが変わるため、textColWidthを指定
+// せずflex:1のまま（欄の外にはみ出さない安全性を優先）にする。
+// 2026-07-09さらに再修正：会社側は、伊藤さんの指摘で「株式会社APパートナーズ」の
+// 「ズ」に印の左罫線が重なるくらいまでさらに詰めてほしいとのことで、marginLeftを
+// 個別に上書きできるgapプロパティを追加した（未指定時はsharedStyles.sealBoxの8ptのまま。
+// 従業員側は指定しないことで、既に伊藤さんが確認済みの見た目を変えないようにする）。
+export const SealSideBySide = ({
+  children, showSeal, sealSrc, size = 64, textColWidth, gap,
+}: { children: React.ReactNode; showSeal: boolean; sealSrc: string; size?: number; textColWidth?: number; gap?: number }) => (
+  <View style={sharedStyles.sealRow}>
+    <View style={textColWidth ? { width: textColWidth } : sharedStyles.sealTextCol}>{children}</View>
+    {showSeal && <Image src={sealSrc} style={[sharedStyles.sealBox, { width: size, height: size }, gap !== undefined ? { marginLeft: gap } : {}]} />}
+  </View>
+)
 
 export const AutoFitFreeText = ({
   text, maxLines, widthPt, sizes,

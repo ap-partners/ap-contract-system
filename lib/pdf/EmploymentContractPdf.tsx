@@ -93,8 +93,13 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
   return (
     <Document>
       <Page size="A4" style={sharedStyles.page}>
-        <Text style={sharedStyles.title}>{p.documentLabel}</Text>
-        <Text style={sharedStyles.intro}>
+        {/* 2026-07-10追加：長い就業場所・業務内容を自動縮小してもなお、極端に長い場合は
+            会社印欄の最後の2行だけがページ2にはみ出すことがあった（伊藤さん報告・0710-03.pdf）。
+            本文の文字サイズには触れず、タイトル・末尾文言・印欄前後の「余白」だけを詰めて
+            吸収する（伊藤さんと合意・2026-07-10）。パターンB・CのsharedStyles.title等の
+            共通スタイルには影響しないよう、このファイル内でのみ上書きする。 */}
+        <Text style={[sharedStyles.title, { marginBottom: 8 }]}>{p.documentLabel}</Text>
+        <Text style={[sharedStyles.intro, { marginBottom: 4 }]}>
           株式会社ＡＰパートナーズ(以下「甲」という)と　{p.employeeName}　(以下「乙」という)は、下記のとおり雇用契約を締結する。
         </Text>
 
@@ -204,11 +209,11 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
           </LabeledRow>
         </View>
 
-        <Text style={sharedStyles.footerText}>
+        <Text style={[sharedStyles.footerText, { marginTop: 4, marginBottom: 6 }]}>
           株式会社APパートナーズは本書にて提示した内容に相違ないことを保証し、従業員は上記提示内容を承諾する。
         </Text>
 
-        <View style={sharedStyles.signatureRow}>
+        <View style={[sharedStyles.signatureRow, { marginTop: 0 }]}>
           <View style={sharedStyles.signatureCol}>
             <SealSideBySide showSeal={p.showSeal} sealSrc={COMPANY_SEAL_PATH} textColWidth={98} gap={-12}>
               <Text>会社</Text>
@@ -223,7 +228,6 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
               {/* 2026-07-07：住所データは現時点でstaffテーブルに存在しないため空欄運用。
                   将来データが入った際、住所が長くて2行になっても崩れないよう、
                   固定高さを設けず自然に折り返す構造に最初からしておく（骨格のみ先行対応）。
-                  2026-07-09：住所データの反映バグを別途修正済み（申請保存時のスナップショット漏れ）。
                   2026-07-09再々修正：印の配置を「氏名の行に重ねる」方式から、伊藤さんのサンプル
                   画像に基づく「テキストブロック全体の右側に固定配置」方式（SealSideBySide）に
                   変更。住所・氏名がどれだけ長くても、左列（flex:1）の中で自然に折り返すだけで、

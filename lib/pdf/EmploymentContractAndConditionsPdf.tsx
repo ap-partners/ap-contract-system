@@ -158,10 +158,18 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
           </LabeledRow>
 
           <LabeledRow label="就業場所">
+            {/* 2026-07-10追加：住所等が長いとページが増えてしまう不具合（伊藤さん報告・
+                0710-02.pdf）への対応で、AutoFitFreeText（安全及び衛生欄等と同じ仕組み）に
+                差し替え、文字数に応じてフォントサイズを自動縮小する。 */}
             <SplitLines lines={[
               {
                 label: '(雇入れ時)',
-                value: `${p.workLocationName}　${p.workLocationAddress}${p.workLocationTel ? `　TEL ${p.workLocationTel}` : ''}`,
+                value: (
+                  <AutoFitFreeText
+                    text={`${p.workLocationName}　${p.workLocationAddress}${p.workLocationTel ? `　TEL ${p.workLocationTel}` : ''}`}
+                    maxLines={2} widthPt={350} sizes={[8.3, 7.6, 6.9, 6.2, 5.6]} lineHeight={1.15}
+                  />
+                ),
               },
               { label: '(変更の範囲)', value: '会社の定める事業所' },
             ]} />
@@ -193,7 +201,9 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
           <LabeledRow label={'従事すべき\n業務内容'}>
             <View wrap={false} style={sharedStyles.splitLineWithBorder}>
               <View style={sharedStyles.splitSubLabel}><Text>(雇入れ時)</Text></View>
-              <View style={sharedStyles.splitSubValue}><Text>{p.businessContent}</Text></View>
+              <View style={sharedStyles.splitSubValue}>
+                <AutoFitFreeText text={p.businessContent} maxLines={2} widthPt={350} sizes={[8.3, 7.6, 6.9, 6.2, 5.6]} lineHeight={1.15} />
+              </View>
             </View>
             <View wrap={false} style={sharedStyles.splitLine}>
               <View style={sharedStyles.splitSubLabel}><Text>(変更の範囲)</Text></View>

@@ -488,8 +488,8 @@ export const SealSideBySide = ({
 )
 
 export const AutoFitFreeText = ({
-  text, maxLines, widthPt, sizes,
-}: { text: string; maxLines: number; widthPt: number; sizes: number[] }) => {
+  text, maxLines, widthPt, sizes, lineHeight, tightPadding,
+}: { text: string; maxLines: number; widthPt: number; sizes: number[]; lineHeight?: number; tightPadding?: boolean }) => {
   const value = text || '―'
   let chosenSize = sizes[sizes.length - 1]
   for (const size of sizes) {
@@ -498,5 +498,12 @@ export const AutoFitFreeText = ({
       break
     }
   }
-  return <Text style={[sharedStyles.freeText, { fontSize: chosenSize }]}>{value}</Text>
+  return (
+    <Text style={[
+      sharedStyles.freeText,
+      { fontSize: chosenSize },
+      lineHeight !== undefined ? { lineHeight } : {},
+      tightPadding ? { padding: '1 5' } : {},
+    ]}>{value}</Text>
+  )
 }

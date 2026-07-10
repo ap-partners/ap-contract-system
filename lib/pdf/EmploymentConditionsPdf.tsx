@@ -100,7 +100,12 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
             <SplitLines lines={[
               {
                 label: '(雇入れ時)',
-                value: `${p.workLocationName}　${p.workLocationAddress}${p.workLocationTel ? `　TEL\u00A0${p.workLocationTel}` : ''}`,
+                value: (
+                  <AutoFitFreeText
+                    text={`${p.workLocationName}　${p.workLocationAddress}${p.workLocationTel ? `　TEL\u00A0${p.workLocationTel}` : ''}`}
+                    maxLines={2} widthPt={370} sizes={[7.4, 6.9, 6.4, 5.9]} lineHeight={1.15}
+                  />
+                ),
               },
               { label: '(変更の範囲)', value: '会社の定める事業所' },
             ]} />
@@ -133,7 +138,9 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
           <LabeledRow label="業務内容">
             <View wrap={false} style={sharedStyles.splitLineWithBorder}>
               <View style={sharedStyles.splitSubLabel}><Text>(雇入れ時)</Text></View>
-              <View style={sharedStyles.splitSubValue}><Text>{p.businessContent}</Text></View>
+              <View style={sharedStyles.splitSubValue}>
+                <AutoFitFreeText text={p.businessContent} maxLines={2} widthPt={370} sizes={[7.4, 6.9, 6.4, 5.9]} lineHeight={1.15} />
+              </View>
             </View>
             <View wrap={false} style={sharedStyles.splitLine}>
               <View style={sharedStyles.splitSubLabel}><Text>(変更の範囲)</Text></View>
@@ -249,7 +256,6 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
         <View style={{ marginTop: 10 }}>
           <Text>会社</Text>
           {COMPANY_HQ_ADDRESS_LINES.map((line, i) => <Text key={i}>{line}</Text>)}
-          <Text style={{ fontWeight: 'bold' }}>株式会社APパートナーズ</Text>
           {/* 2026-07-08再修正：余白の追加位置を誤り、住所欄と会社名の間に入れていた。
               正しくは会社名（株式会社APパートナーズ）と代表者名（代表取締役 山田 昌）の間 */}
           <Text style={{ marginTop: 6 }}>代表取締役　山田　昌</Text>

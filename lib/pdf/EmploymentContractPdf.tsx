@@ -15,7 +15,7 @@ import {
 } from './documentText'
 import {
   sharedStyles, LabeledRow, SplitLines, BoxedSplitRow, WageGrid,
-  COMPANY_SEAL_PATH, SealSideBySide,
+  COMPANY_SEAL_PATH, SealSideBySide, AutoFitFreeText,
 } from './pdfShared'
 
 export interface EmploymentContractPdfProps {
@@ -102,10 +102,19 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
           <EmploymentPeriodRow p={p} />
 
           <LabeledRow label="就業場所">
+            {/* 2026-07-10追加：住所等が長いとページが2枚に増えてしまう不具合（伊藤さん報告・
+                0710-02.pdf）への対応で、AutoFitFreeText（安全及び衛生欄等と同じ仕組み）に
+                差し替え、文字数に応じてフォントサイズを自動縮小しA4 1ページに収まりやすくした。
+                splitSubValueの実効幅（約360pt）を基準にwidthPtを指定。 */}
             <SplitLines lines={[
               {
                 label: '(雇入れ時)',
-                value: `${p.workLocationName}　${p.workLocationAddress}${p.workLocationTel ? `　TEL ${p.workLocationTel}` : ''}`,
+                value: (
+                  <AutoFitFreeText
+                    text={`${p.workLocationName}　${p.workLocationAddress}${p.workLocationTel ? `　TEL ${p.workLocationTel}` : ''}`}
+                    maxLines={2} widthPt={350} sizes={[8.3, 7.6, 6.9, 6.2, 5.6]} lineHeight={1.15}
+                  />
+                ),
               },
               { label: '(変更の範囲)', value: '会社の定める事業所' },
             ]} />
@@ -113,7 +122,10 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
 
           <LabeledRow label={'従事すべき\n業務内容'}>
             <SplitLines lines={[
-              { label: '(雇入れ時)', value: p.businessContent },
+              {
+                label: '(雇入れ時)',
+                value: <AutoFitFreeText text={p.businessContent} maxLines={2} widthPt={350} sizes={[8.3, 7.6, 6.9, 6.2, 5.6]} lineHeight={1.15} />,
+              },
               { label: '(変更の範囲)', value: '会社が指示する業務' },
             ]} />
           </LabeledRow>

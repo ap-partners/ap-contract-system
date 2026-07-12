@@ -206,8 +206,13 @@ export default function SignPage() {
                 href={`/api/contracts/${id}/pdf`}
                 target="_blank"
                 rel="noopener noreferrer"
+                aria-disabled={submitting}
+                onClick={e => { if (submitting) e.preventDefault() }}
                 className="block w-full text-center py-3 rounded-lg text-sm font-semibold mb-6 transition-all"
-                style={{ background: '#EEF2FC', color: '#1B3A8C', border: '1px solid #D0DAF0' }}
+                style={{
+                  background: '#EEF2FC', color: '#1B3A8C', border: '1px solid #D0DAF0',
+                  opacity: submitting ? 0.5 : 1, pointerEvents: submitting ? 'none' : 'auto',
+                }}
               >
                 書類の内容を確認する（PDFが開きます）
               </a>
@@ -221,8 +226,9 @@ export default function SignPage() {
                     type="text"
                     value={sealName}
                     onChange={e => setSealName(e.target.value)}
+                    disabled={submitting}
                     className="w-full px-4 py-3 rounded-lg text-sm border focus:outline-none focus:ring-2 transition-all mb-4"
-                    style={{ borderColor: '#D0DAF0', background: '#FFFFFF', color: '#1A2340' }}
+                    style={{ borderColor: '#D0DAF0', background: submitting ? '#F5F7FC' : '#FFFFFF', color: '#1A2340' }}
                     placeholder={staffName ? `例：${staffName}` : '例：山田　太郎'}
                   />
 
@@ -245,7 +251,7 @@ export default function SignPage() {
                       type="checkbox"
                       checked={sealConfirmed}
                       onChange={e => setSealConfirmed(e.target.checked)}
-                      disabled={sealName.trim().length === 0}
+                      disabled={sealName.trim().length === 0 || submitting}
                       className="mt-1"
                     />
                     <span className="text-sm leading-relaxed" style={{ color: '#1A2340' }}>
@@ -259,6 +265,7 @@ export default function SignPage() {
                     type="checkbox"
                     checked={confirmChecked}
                     onChange={e => setConfirmChecked(e.target.checked)}
+                    disabled={submitting}
                     className="mt-1"
                   />
                   <span className="text-sm leading-relaxed" style={{ color: '#1A2340' }}>
@@ -273,19 +280,39 @@ export default function SignPage() {
                 </div>
               )}
 
+              {/* 2026-07-10追加：署名/確認完了ボタンを押してからAPI応答までPDF再生成・
+                  Google Driveアップロードで数秒かかることがあり、「反応が無いように見えて不安」
+                  との指摘（伊藤さん）を受けた。ボタン自体はdisabled={!canSubmit}（canSubmitに
+                  !submittingが含まれる）で元々連打は防げていたが、処理中であることが視覚的に
+                  伝わりにくかったため、①スピナーアイコンを追加、②処理中のみ「画面を閉じずに
+                  お待ちください」の注意文を表示、③フルネーム欄・PDFリンク・チェックボックスも
+                  処理中は操作不可にして、誤操作の余地を無くした。 */}
               <button
                 type="button"
                 onClick={handleSubmit}
                 disabled={!canSubmit}
-                className="w-full py-3 rounded-lg text-sm font-semibold text-white transition-all"
+                className="w-full py-3 rounded-lg text-sm font-semibold text-white transition-all flex items-center justify-center gap-2"
                 style={{ background: canSubmit ? '#1B3A8C' : '#A8C0E8' }}
               >
+                {submitting && (
+                  <span
+                    className="inline-block w-4 h-4 rounded-full animate-spin"
+                    style={{ border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#FFFFFF' }}
+                  />
+                )}
                 {submitting
-                  ? '送信中...'
+                  ? '送信中です…'
                   : signAction === 'signature'
                     ? '署名する'
                     : '確認する'}
               </button>
+
+              {submitting && (
+                <p className="text-xs text-center mt-3 leading-relaxed" style={{ color: '#5A6A8A' }}>
+                  {signAction === 'signature' ? '署名登録中です。' : '登録処理中です。'}
+                  数秒ほどお時間をいただく場合があります。画面を閉じたり、戻ったりせずそのままお待ちください。
+                </p>
+              )}
             </>
           )}
 

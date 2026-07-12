@@ -19,9 +19,28 @@ export default function SignPage() {
 
   const [stage, setStage] = useState<Stage>('verify')
   const [employeeNumber, setEmployeeNumber] = useState('')
+  // 2026-07-10修正：生年月日は元々<input type="date">（ブラウザ標準のカレンダー入力）だったが、
+  // 「月を入力すると自動で日欄に移るのに、年は4桁入れても月欄に自動移動しない。入力例も無く
+  // 分かりにくい」との指摘（伊藤さん）を受けて見直した。標準date入力はブラウザ/端末ごとに
+  // 挙動・見た目が異なりこちらで制御できないため、「YYYYMMDD」8桁を1つの欄にスラッシュ無しで
+  // 連続入力してもらう方式に変更（伊藤さんの指示・2026-07-10）。数字以外は入力させず、
+  // 8桁を超えても入力できないようにする。birthday（'YYYY-MM-DD'形式、verify・complete APIへの
+  // 送信フォーマット）は下のuseEffectで自動的に組み立てる。
+  const [birthdayDigits, setBirthdayDigits] = useState('')
   const [birthday, setBirthday] = useState('')
   const [verifying, setVerifying] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (birthdayDigits.length === 8) {
+      const yyyy = birthdayDigits.slice(0, 4)
+      const mm = birthdayDigits.slice(4, 6)
+      const dd = birthdayDigits.slice(6, 8)
+      setBirthday(`${yyyy}-${mm}-${dd}`)
+    } else {
+      setBirthday('')
+    }
+  }, [birthdayDigits])
 
   const [staffName, setStaffName] = useState('')
   const [documentLabel, setDocumentLabel] = useState('')
@@ -144,14 +163,16 @@ export default function SignPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1.5" style={{ color: '#1A2340' }}>
-                    生年月日
+                    生年月日（半角数字8桁）
                   </label>
                   <input
-                    type="date"
-                    value={birthday}
-                    onChange={e => setBirthday(e.target.value)}
+                    type="text"
+                    inputMode="numeric"
+                    value={birthdayDigits}
+                    onChange={e => setBirthdayDigits(e.target.value.replace(/[^0-9]/g, '').slice(0, 8))}
                     className="w-full px-4 py-3 rounded-lg text-sm border focus:outline-none focus:ring-2 transition-all"
                     style={{ borderColor: '#D0DAF0', background: '#FFFFFF', color: '#1A2340' }}
+                    placeholder="例：19900705（西暦・月日は0埋め2桁）"
                     required
                   />
                 </div>

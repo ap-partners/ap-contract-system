@@ -104,3 +104,21 @@ export async function uploadSignedPdf(params: UploadSignedPdfParams): Promise<st
   }
   return file.data.id
 }
+
+// 2026-07-10追加：署名済み契約のダッシュボード「帳票PDFプレビュー」から、押印済みの
+// 実際のPDF（署名時にGoogle Driveへ保存したもの）を取得できるようにする。
+// それまではプレビューAPIが毎回未署名の状態で再生成していたため、ダッシュボードから
+// 押印済みPDFを確認する手段が無く、Google Driveのフォルダを直接開くしかなかった
+// （伊藤さん指摘・2026-07-10）。同じサービスアカウント権限でファイル本体を取得し、
+// 呼び出し元（/api/contracts/[id]/pdf）がそのままレスポンスとして返す。
+export async function downloadDriveFile(fileId: string): Promise<Buffer> {
+  const auth = getAuth()
+  const drive = google.drive({ version: 'v3', auth })
+
+  const res = await drive.files.get(
+    { fileId, alt: 'media', supportsAllDrives: true },
+    { responseType: 'arraybuffer' }
+  )
+
+  return Buffer.from(res.data as ArrayBuffer)
+}

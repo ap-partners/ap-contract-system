@@ -223,12 +223,33 @@ export default function SSCDashboard() {
   const handleBulkApprove = async () => {
     if (selectedIds.size === 0) return
     const now = new Date().toISOString()
+    const ids = Array.from(selectedIds)
     const { error } = await supabase
       .from('contracts')
       .update({ status: 'SSC承認済み', approved_by: user.id, approved_at: now, updated_at: now })
-      .in('id', Array.from(selectedIds))
+      .in('id', ids)
     if (error) { alert('一括承認に失敗しました: ' + error.message); return }
-    setContracts(prev => prev.map(c => selectedIds.has(c.id) ? { ...c, status: 'SSC承認済み' as ContractStatus } : c))
+
+    // 個別承認（app/dashboard/ssc/contracts/[id]/page.tsx の handleApprove）と同様、
+    // 承認直後に署名依頼通知APIを呼ぶ。締結パターンが「指定しない（自動送信）」の案件は
+    // ここで「SSC承認済み→署名待ち」へ自動遷移し、従業員へ署名依頼メールが送られる。
+    // 「対面」「印刷」パターンはこのAPI内で何もしない（担当営業の「説明完了」時に送信）。
+    // 通知の失敗は承認自体をブロックしない（個別承認と同じ方針。2026-07-13対応）。
+    await Promise.all(
+      ids.map(id =>
+        fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST' }).catch(() => {})
+      )
+    )
+
+    // 通知APIによる遷移（署名待ちへ進んだ案件がある）を画面に反映するため、対象契約の
+    // 最新ステータスをDBから再取得する（一律「SSC承認済み」にしてしまうと、自動送信パターンの
+    // 案件が実際には署名待ちに進んでいても一覧上は古いステータスのまま表示されてしまうため）。
+    const { data: refreshed } = await supabase
+      .from('contracts')
+      .select('id, status')
+      .in('id', ids)
+    const statusMap = new Map((refreshed || []).map(r => [r.id, r.status as ContractStatus]))
+    setContracts(prev => prev.map(c => statusMap.has(c.id) ? { ...c, status: statusMap.get(c.id)! } : c))
     setSelectedIds(new Set())
   }
 

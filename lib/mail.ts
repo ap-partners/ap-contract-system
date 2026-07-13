@@ -15,23 +15,45 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://ap-contract-system.v
 
 // 署名依頼／確認依頼メールを送信する。
 // isConfirmationOnly=true の場合はパターンB（就業条件明示書のみ）用の文言になる。
+// 2026-07-13追加：本人確認方式を「社員番号＋生年月日」から「社員番号＋6桁認証コード」へ
+// 変更したことに伴い、確認用リンクと同じメールにコード（authCode）も記載する
+// （docs/SYSTEM_DESIGN.md 10章 2026-07-13決定。1通のメールで完結させる方式）。
+// コードは数字6桁のみで氏名・契約内容等の個人情報は含まないため、上記の
+// 「本文に個人情報を含めない」ルールには抵触しない。
+// 2026-07-13追加：プロのUXライター/CRM観点でのレビューを踏まえて件名・本文を改善
+// （docs/SYSTEM_DESIGN.md 10章 2026-07-13参照）。件名には「認証コード在中」を明記し
+// 本文を読み飛ばされるリスクを下げる一方、期限（2日間）はコードの有効期限であって
+// 対応そのものの締切ではない（再発行可能）ため、件名では触れず本文で正確に説明する。
 export async function sendSignRequestMail(
   toEmail: string,
   contractId: string,
-  isConfirmationOnly: boolean
+  isConfirmationOnly: boolean,
+  authCode: string
 ): Promise<void> {
   const url = `${APP_URL}/sign/${contractId}`
-  const subject = isConfirmationOnly ? '【APパートナーズ】書類確認のお願い' : '【APパートナーズ】契約書署名のお願い'
-  const actionLabel = isConfirmationOnly ? '内容のご確認' : 'ご署名'
+  const subject = isConfirmationOnly
+    ? '【APパートナーズ】書類のご確認をお願いします（認証コード在中）'
+    : '【APパートナーズ】契約書のご署名をお願いします（認証コード在中）'
+  const actionLabel = isConfirmationOnly ? 'ご確認' : 'ご署名'
 
   await transporter.sendMail({
     from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
     to: toEmail,
     subject,
     text: [
-      `以下のURLより、書類の${actionLabel}をお願いいたします。`,
+      'お疲れ様です。APパートナーズです。',
       '',
+      `書類の${actionLabel}をお願いいたします。`,
+      '',
+      '①下記URLを開いてください',
       url,
+      '',
+      '②画面で「社員番号」と「認証コード」を入力してください',
+      `　認証コード（6桁）：${authCode}`,
+      '',
+      '※認証コードは本人確認のためのものです。他の方に伝えないようご注意ください。',
+      '※コードの有効期限は2日間です。切れた場合は、画面の「認証コードを再発行する」からいつでも再送できます。',
+      '※操作方法についてご不明な点があれば、担当営業までご連絡ください。',
       '',
       'このメールに心当たりがない場合は、お手数ですが破棄してください。',
     ].join('\n'),

@@ -1334,7 +1334,12 @@ function ApplyPageInner() {
     const checkUser = async () => {
       const { data } = await supabase.auth.getUser()
       if (!data.user) { router.push('/login'); return }
-      if (data.user.user_metadata?.role !== '担当営業') { router.push('/login'); return }
+      // 認証チェック（2026-07-13追記：フェーズ2「/applyのロールゲート緩和」。社内案件は担当営業・SSC・
+      // 管理部のいずれからも申請可能とする方針が確定した（docs/SYSTEM_DESIGN.md 10章参照）。
+      // 就業場所区分（現場／社内）の選択肢は担当営業と全く同じものを見せる（伊藤さん選択：案2＝
+      // 将来SSC・管理部が現場案件を代理申請するケースに備え、選択肢を絞らない）。
+      const role = data.user.user_metadata?.role
+      if (role !== '担当営業' && role !== 'SSC' && role !== '管理部') { router.push('/login'); return }
       setUser(data.user)
     }
     checkUser()

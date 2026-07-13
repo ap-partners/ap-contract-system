@@ -170,6 +170,9 @@ export default function SSCDashboard() {
   // 一括承認の処理中フラグ（2026-07-13追加：承認〜通知APIの呼び出しに数秒かかり、
   // 押せているかどうか分かりにくいとの伊藤さん指摘を受けて、処理中であることを画面に出すようにした）
   const [bulkApproving, setBulkApproving] = useState(false)
+  // 一括承認の完了件数（2026-07-13追加：処理完了後にOKを押すまで完了メッセージを表示し続けるための状態。
+  // nullの間は未完了、数値が入ったら完了メッセージ＋OKボタンを表示する）
+  const [bulkApproveDone, setBulkApproveDone] = useState<number | null>(null)
 
   useEffect(() => {
     const init = async () => {
@@ -261,9 +264,17 @@ export default function SSCDashboard() {
       .in('id', ids)
     const statusMap = new Map((refreshed || []).map(r => [r.id, r.status as ContractStatus]))
     setContracts(prev => prev.map(c => statusMap.has(c.id) ? { ...c, status: statusMap.get(c.id)! } : c))
+    // ここではまだ selectedIds・確認カードを閉じない。伊藤さんの指摘（2026-07-13）を受けて、
+    // 完了メッセージ＋OKボタンをこの後表示し、OKを押した時点で初めて片付ける。
+    setBulkApproving(false)
+    setBulkApproveDone(ids.length)
+  }
+
+  // 一括承認の完了メッセージでOKを押した時のクローズ処理
+  const handleBulkApproveDoneOk = () => {
     setSelectedIds(new Set())
     setShowBulkApproveConfirm(false)
-    setBulkApproving(false)
+    setBulkApproveDone(null)
   }
 
   const tabs: { key: TabType; label: string; count: number; color: string; tint: string }[] = [
@@ -321,7 +332,7 @@ export default function SSCDashboard() {
                 <div className="flex items-center justify-between mt-2.5">
                   <span className="text-2xl font-bold" style={{ color: isActive ? tab.color : '#1A2340' }}>{tab.count}</span>
                   <button
-                    onClick={() => { setActiveTab(tab.key); setSelectedIds(new Set()); setShowBulkApproveConfirm(false) }}
+                    onClick={() => { setActiveTab(tab.key); setSelectedIds(new Set()); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
                     className="flex items-center gap-1 rounded-full transition-all"
                     style={isActive
                       ? { background: tab.color, border: 'none', padding: '6px 13px', cursor: 'pointer' }
@@ -343,7 +354,7 @@ export default function SSCDashboard() {
                 <input
                   type="checkbox"
                   checked={selectedIds.size === bulkTargets.length && bulkTargets.length > 0}
-                  onChange={() => { toggleSelectAll(); setShowBulkApproveConfirm(false) }}
+                  onChange={() => { toggleSelectAll(); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
                   className="w-4 h-4 cursor-pointer"
                   style={{ accentColor: '#1B3A8C' }}
                 />
@@ -363,8 +374,8 @@ export default function SSCDashboard() {
             </div>
 
             {/* 一括承認の確認カード（2026-07-13追加：個別承認画面と同じ確認ステップを挟む。
-                誤操作で即実行されてしまわないようにするための対応） */}
-            {showBulkApproveConfirm && selectedIds.size > 0 && (
+                誤操作で即実行されてしまわないようにするための対応。処理中・完了時は下の全画面オーバーレイに切り替わる） */}
+            {showBulkApproveConfirm && selectedIds.size > 0 && !bulkApproving && bulkApproveDone === null && (
               <div className="mt-3 rounded-xl p-4 border-2" style={{ background: '#ECFDF5', borderColor: '#34D399' }}>
                 <p className="text-sm font-bold mb-2" style={{ color: '#065F46' }}>
                   ✅ 選択中の{selectedIds.size}件を本当に一括承認してよいですか？
@@ -373,30 +384,17 @@ export default function SSCDashboard() {
                   承認すると、各申請の内容変更はできません。内容に誤りがないか今一度ご確認ください。<br />
                   承認後、対象スタッフへ署名依頼が自動送信されます（対面・印刷パターンの案件は担当営業のダッシュボードに表示されます）。
                 </p>
-                {/* 処理中メッセージ（2026-07-13追加：承認〜通知APIの呼び出しに数秒かかり、
-                    押せているか分かりにくいとの伊藤さん指摘を受けて追加） */}
-                {bulkApproving && (
-                  <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg" style={{ background: '#D1FAE5' }}>
-                    <span className="inline-block w-3.5 h-3.5 rounded-full border-2 animate-spin"
-                      style={{ borderColor: '#065F46', borderTopColor: 'transparent' }} />
-                    <span className="text-xs font-medium" style={{ color: '#065F46' }}>
-                      一括承認処理中です。しばらくお待ちください…（画面を閉じたり戻ったりしないでください）
-                    </span>
-                  </div>
-                )}
                 <div className="flex gap-3">
                   <button
                     onClick={handleBulkApprove}
-                    disabled={bulkApproving}
-                    className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white transition-all disabled:opacity-60"
-                    style={{ background: '#1B3A8C', cursor: bulkApproving ? 'not-allowed' : 'pointer' }}>
-                    {bulkApproving ? '処理中...' : `選択中の${selectedIds.size}件を一括承認する`}
+                    className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white transition-all"
+                    style={{ background: '#1B3A8C' }}>
+                    選択中の{selectedIds.size}件を一括承認する
                   </button>
                   <button
                     onClick={() => setShowBulkApproveConfirm(false)}
-                    disabled={bulkApproving}
-                    className="px-4 py-2.5 rounded-lg text-sm border disabled:opacity-60"
-                    style={{ color: '#5A6A8A', borderColor: '#D0DAF0', cursor: bulkApproving ? 'not-allowed' : 'pointer' }}>
+                    className="px-4 py-2.5 rounded-lg text-sm border"
+                    style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
                     キャンセル
                   </button>
                 </div>
@@ -454,7 +452,7 @@ export default function SSCDashboard() {
                           <input
                             type="checkbox"
                             checked={isSelected}
-                            onChange={() => { toggleSelect(contract.id); setShowBulkApproveConfirm(false) }}
+                            onChange={() => { toggleSelect(contract.id); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
                             onClick={e => e.stopPropagation()}
                             className="w-4 h-4 mt-5 flex-shrink-0 cursor-pointer"
                             style={{ accentColor: '#1B3A8C' }}
@@ -579,6 +577,44 @@ export default function SSCDashboard() {
           </div>
         )}
       </main>
+
+      {/* 一括承認：処理中／完了の全画面オーバーレイ（2026-07-13追加：確認カード内の小さい表示だと
+          目立たず進捗が分かりにくいとの伊藤さん指摘を受けて、画面全体を覆う形に変更。完了後はOKを
+          押すまで表示され続ける） */}
+      {(bulkApproving || bulkApproveDone !== null) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,64,0.6)' }}>
+          <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl">
+            {bulkApproving ? (
+              <>
+                <div className="mx-auto mb-5 w-14 h-14 rounded-full border-4 animate-spin"
+                  style={{ borderColor: '#1B3A8C', borderTopColor: 'transparent' }} />
+                <p className="text-lg font-bold mb-2" style={{ color: '#1A2340' }}>一括承認処理中です</p>
+                <p className="text-sm leading-relaxed" style={{ color: '#5A6A8A' }}>
+                  しばらくお待ちください。<br />
+                  画面を閉じたり、戻ったりしないでください。
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-5xl mb-3">✅</p>
+                <p className="text-lg font-bold mb-2" style={{ color: '#065F46' }}>
+                  一括承認が完了しました（{bulkApproveDone}件）
+                </p>
+                <p className="text-sm leading-relaxed mb-6" style={{ color: '#1A2340' }}>
+                  対象スタッフへ署名依頼が自動送信されました。<br />
+                  （対面・印刷パターンの案件は担当営業のダッシュボードに表示されます）
+                </p>
+                <button
+                  onClick={handleBulkApproveDoneOk}
+                  className="w-full py-3 rounded-lg text-base font-bold text-white"
+                  style={{ background: '#1B3A8C' }}>
+                  OK
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

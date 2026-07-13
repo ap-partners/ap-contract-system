@@ -27,7 +27,7 @@ type RequestRow = {
   displayDept?: string | null
 }
 
-type TabType = 'requests' | 'csvImport' | 'csvDiff' | 'renewal'
+type TabType = 'requests' | 'contracts' | 'csvImport' | 'csvDiff' | 'renewal'
 
 const PAGE_SIZE = 50
 
@@ -41,6 +41,124 @@ function formatDate(str: string | null) {
   const d = new Date(str)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`
+}
+
+// ===== 契約一覧タブ（2026-07-13追加：フェーズ1）=====
+// SSCダッシュボード（app/dashboard/ssc/page.tsx）が出来ることを管理部でも出来るようにする方針
+// （docs/SYSTEM_DESIGN.md 10章2026-07-13参照）に基づき、契約一覧・ステータス確認（確認済み日時を
+// 含む）をSSCの表示ロジックをそのまま流用して追加した。今回のフェーズ1は「閲覧のみ」であり、
+// 承認操作（個別承認・一括承認）は含まない（承認を管理部が行うかどうかは別途整理・別タスク）。
+type ContractStatus = '申請中' | 'SSC承認済み' | '差し戻し中' | '署名待ち' | '署名済み' | '完了' | '取り下げ'
+type WarningLevel = 'none' | 'yellow' | 'red'
+type Contract = {
+  id: string
+  pattern: string
+  contract_type: string
+  document_type: string
+  work_place: string
+  status: ContractStatus
+  created_by: string
+  created_at: string
+  rejection_reason: string | null
+  signed_at: string | null
+  warning_confirmations: { type: string; confirmed_at: string }[]
+  warning_level: WarningLevel
+  input_data: {
+    staff?: { name?: string; employee_number?: string; department?: string }
+    fields?: {
+      contractType?: string
+      workPlace?: string
+      workLocationName?: string
+      employStart?: string
+      employEnd?: string
+      contractStartDate?: string
+      dispatchStart?: string
+      dispatchEnd?: string
+      period?: string
+    }
+  }
+}
+type ContractSubTab = '承認待ち' | '差し戻し中' | '承認済み'
+
+const getDocumentLabel = (documentType: string, pattern: string) => {
+  if (pattern === 'C') return '雇用契約書＋明示書'
+  if (pattern === 'B') return '明示書'
+  return '雇用契約書'
+}
+
+const ContractTypeBadge = ({ contractType, workPlace }: { contractType: string; workPlace: string }) => {
+  const isInternal = workPlace === '社内'
+  if (isInternal) {
+    return <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: '#EEF2FA', color: '#1B3A8C' }}>{contractType || '―'}</span>
+  }
+  const map: Record<string, { bg: string; color: string }> = {
+    '正社員':   { bg: '#ECFDF5', color: '#15803D' },
+    '有期契約': { bg: '#ECFDF5', color: '#15803D' },
+    '無期契約': { bg: '#ECFDF5', color: '#15803D' },
+    'アルバイト': { bg: '#FFF7ED', color: '#C2410C' },
+  }
+  const c = map[contractType] || { bg: '#F3F4F6', color: '#6B7280' }
+  return <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: c.bg, color: c.color }}>{contractType || '―'}</span>
+}
+
+const WorkPlaceBadge = ({ workPlace }: { workPlace: string }) => {
+  const isInternal = workPlace === '社内'
+  return (
+    <span className="text-xs font-medium px-2 py-0.5 rounded"
+      style={{ background: isInternal ? '#EEF2FA' : '#ECFDF5', color: isInternal ? '#1B3A8C' : '#15803D' }}>
+      {workPlace || '現場'}
+    </span>
+  )
+}
+
+const ContractStatusBadge = ({ status }: { status: ContractStatus }) => {
+  const map: Record<string, { bg: string; label: string }> = {
+    '申請中':     { bg: '#1D4ED8', label: '申請中' },
+    'SSC承認済み': { bg: '#065F46', label: 'SSC承認済み' },
+    '差し戻し中': { bg: '#B91C1C', label: '差し戻し中' },
+    '署名待ち':   { bg: '#92400E', label: '署名待ち' },
+    '署名済み':   { bg: '#3730A3', label: '署名済み' },
+    '完了':       { bg: '#374151', label: '完了' },
+    '取り下げ':   { bg: '#9CA3AF', label: '取り下げ' },
+  }
+  const s = map[status] || { bg: '#9CA3AF', label: status }
+  return <span className="text-xs font-medium px-2.5 py-0.5 rounded" style={{ background: s.bg, color: 'white' }}>{s.label}</span>
+}
+
+const ConfirmedBadge = ({ signedAt }: { signedAt: string | null }) => {
+  if (!signedAt) return null
+  return (
+    <span className="text-[10.5px] font-medium px-2 py-0.5 rounded whitespace-nowrap" style={{ background: '#D1FAE5', color: '#065F46' }}>
+      ✓ 確認済み：{formatDateTime(signedAt)}
+    </span>
+  )
+}
+
+const getDeadlineAlert = (contract: Contract): { type: 'overdue' | 'urgent' | null; label: string } => {
+  const f = contract.input_data?.fields
+  if (!f) return { type: null, label: '' }
+  const startDate = f.employStart || f.contractStartDate || f.dispatchStart
+  if (!startDate) return { type: null, label: '' }
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const start = new Date(startDate); start.setHours(0, 0, 0, 0)
+  const diffDays = Math.floor((start.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+  if (diffDays < 0) return { type: 'overdue', label: '開始日超過' }
+  if (diffDays <= 3) return { type: 'urgent', label: `開始まで${diffDays}日` }
+  return { type: null, label: '' }
+}
+
+const hasWarning = (contract: Contract): boolean => contract.warning_confirmations && contract.warning_confirmations.length > 0
+const hasAutoCheckWarning = (contract: Contract): boolean => !!contract.warning_level && contract.warning_level !== 'none'
+
+const getEmployPeriodLabel = (contract: Contract): string => {
+  const f = contract.input_data?.fields
+  if (!f) return '―'
+  const contractType = f.contractType || ''
+  const isSeishain = contractType === '正社員'
+  const isMusei = contractType === '無期契約' || f.period === '無期'
+  if (isSeishain || isMusei) return f.contractStartDate ? `${f.contractStartDate} 〜 期間の定めなし` : '―'
+  if (f.employStart && f.employEnd) return `${f.employStart} 〜 ${f.employEnd}`
+  return '―'
 }
 
 // この依頼行が「未対応のタスクを1つでも持っているか」（一覧のステータス絞り込みに使う）
@@ -73,6 +191,12 @@ export default function AdminDashboard() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
 
+  // 契約一覧タブ（2026-07-13追加：フェーズ1・閲覧専用）
+  const [contracts, setContracts] = useState<Contract[]>([])
+  const [contractsLoading, setContractsLoading] = useState(true)
+  const [contractsError, setContractsError] = useState('')
+  const [contractsSubTab, setContractsSubTab] = useState<ContractSubTab>('承認待ち')
+
   useEffect(() => {
     const checkUser = async () => {
       const { data } = await supabase.auth.getUser()
@@ -83,6 +207,26 @@ export default function AdminDashboard() {
     }
     checkUser()
   }, [])
+
+  // 契約一覧の取得（SSCダッシュボードと同じクエリ・同じ「社内除外」条件。フェーズ1では
+  // 管理部もSSCと同じ範囲＝社内以外の契約を閲覧できるようにする。社内案件の可視化は
+  // 「社内承認」タブ実装（次フェーズ）とあわせて別途対応する）
+  useEffect(() => {
+    if (!user) return
+    const loadContracts = async () => {
+      setContractsLoading(true)
+      setContractsError('')
+      const { data, error } = await supabase
+        .from('contracts')
+        .select('id, pattern, contract_type, document_type, work_place, status, created_by, created_at, rejection_reason, signed_at, warning_confirmations, warning_level, input_data')
+        .neq('work_place', '社内')
+        .order('created_at', { ascending: false })
+      if (error) { setContractsError('契約一覧の取得に失敗しました。（' + error.message + '）'); setContractsLoading(false); return }
+      setContracts((data || []) as Contract[])
+      setContractsLoading(false)
+    }
+    loadContracts()
+  }, [user])
 
   // 依頼一覧の取得（絞り込み条件が変わるたびに再取得。件数はもっと見るで増やす）
   useEffect(() => {
@@ -178,10 +322,21 @@ export default function AdminDashboard() {
 
   const tabs: { key: TabType; label: string }[] = [
     { key: 'requests', label: '依頼管理' },
+    { key: 'contracts', label: '契約一覧' },
     { key: 'csvImport', label: 'CSVインポート' },
     { key: 'csvDiff', label: 'CSV差異アラート' },
     { key: 'renewal', label: '更新期限管理' },
   ]
+
+  const filteredContracts = contracts.filter(c => {
+    if (contractsSubTab === '承認待ち') return c.status === '申請中'
+    if (contractsSubTab === '差し戻し中') return c.status === '差し戻し中'
+    if (contractsSubTab === '承認済み') return ['SSC承認済み', '署名待ち', '署名済み', '完了'].includes(c.status)
+    return false
+  })
+  const contractsPendingCount = contracts.filter(c => c.status === '申請中').length
+  const contractsRejectedCount = contracts.filter(c => c.status === '差し戻し中').length
+  const contractsApprovedCount = contracts.filter(c => ['SSC承認済み', '署名待ち', '署名済み', '完了'].includes(c.status)).length
 
   return (
     <div className="min-h-screen" style={{ background: '#F5F7FC' }}>
@@ -304,6 +459,128 @@ export default function AdminDashboard() {
                   </button>
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === 'contracts' && (
+            <div>
+              <p className="text-xs mb-4" style={{ color: '#5A6A8A' }}>
+                SSCダッシュボードと同じ範囲（社内案件を除く）の契約状況を閲覧できます。承認操作はこの画面では行えません。
+              </p>
+
+              {/* サブタブ */}
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                {([
+                  { key: '承認待ち' as ContractSubTab, count: contractsPendingCount, color: '#1D4ED8', tint: '#EEF0F5' },
+                  { key: '差し戻し中' as ContractSubTab, count: contractsRejectedCount, color: '#B91C1C', tint: '#FEE2E2' },
+                  { key: '承認済み' as ContractSubTab, count: contractsApprovedCount, color: '#065F46', tint: '#D1FAE5' },
+                ]).map(tab => {
+                  const isActive = contractsSubTab === tab.key
+                  return (
+                    <button key={tab.key} onClick={() => setContractsSubTab(tab.key)}
+                      className="text-left rounded-xl px-4 py-3.5 transition-all"
+                      style={isActive
+                        ? { background: tab.tint, borderLeft: `3px solid ${tab.color}`, borderTop: '0.5px solid #D0DAF0', borderRight: '0.5px solid #D0DAF0', borderBottom: '0.5px solid #D0DAF0' }
+                        : { background: 'white', border: '0.5px solid #D0DAF0' }}>
+                      <p className="text-xs font-medium" style={{ color: isActive ? tab.color : '#5A6A8A' }}>{tab.key}</p>
+                      <span className="text-2xl font-bold" style={{ color: isActive ? tab.color : '#1A2340' }}>{tab.count}</span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {contractsError && <p className="text-xs mb-3" style={{ color: '#DC2626' }}>{contractsError}</p>}
+              {contractsLoading && <p className="text-xs" style={{ color: '#5A6A8A' }}>読み込み中...</p>}
+
+              {!contractsLoading && !contractsError && filteredContracts.length === 0 && (
+                <div className="bg-white rounded-xl border p-12 text-center" style={{ borderColor: '#D0DAF0' }}>
+                  <p className="text-sm font-medium" style={{ color: '#1A2340' }}>該当する契約はありません</p>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-3">
+                {filteredContracts.map(contract => {
+                  const staff = contract.input_data?.staff || {}
+                  const f = contract.input_data?.fields || {}
+                  const deadline = getDeadlineAlert(contract)
+                  const warning = hasWarning(contract)
+                  const autoWarning = hasAutoCheckWarning(contract)
+                  const isConfirmed = contract.status === '署名済み' || contract.status === '完了'
+                  const leftBorderColor = deadline.type === 'overdue' ? '#EA580C' : deadline.type === 'urgent' ? '#F97316' : 'transparent'
+
+                  return (
+                    <div key={contract.id} className="bg-white rounded-xl overflow-hidden"
+                      style={{ border: '0.5px solid #D0DAF0', borderLeft: deadline.type ? `4px solid ${leftBorderColor}` : '0.5px solid #D0DAF0' }}>
+                      <div className="px-5 py-4">
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div>
+                            <p className="text-xs mb-1" style={{ color: '#5A6A8A' }}>{staff.department || '―'}</p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <ContractTypeBadge contractType={f.contractType || contract.contract_type} workPlace={f.workPlace || contract.work_place} />
+                              <span className="text-xs" style={{ color: '#5A6A8A' }}>{staff.employee_number || '―'}</span>
+                              <span className="text-base font-bold" style={{ color: '#1A2340' }}>{staff.name || '―'}</span>
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                            <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                              <WorkPlaceBadge workPlace={f.workPlace || contract.work_place} />
+                              <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: '#EEF2FA', color: '#1B3A8C' }}>
+                                {getDocumentLabel(contract.document_type, contract.pattern)}
+                              </span>
+                              <span style={{ display: 'inline-block', width: '1px', height: '14px', background: '#D0DAF0', margin: '0 2px' }} />
+                              <ContractStatusBadge status={contract.status} />
+                            </div>
+                            {isConfirmed && <ConfirmedBadge signedAt={contract.signed_at} />}
+                            {(warning || autoWarning) && (
+                              <span className="text-xs font-medium px-2 py-0.5 rounded"
+                                style={{ background: (warning || contract.warning_level === 'red') ? '#DC2626' : '#D97706', color: 'white' }}>
+                                {(warning || contract.warning_level === 'red') ? '🔴' : '🟡'} 要確認
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 mb-3" style={{ background: '#F5F7FC' }}>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-sm flex-shrink-0" style={{ color: '#1B3A8C' }}>📍</span>
+                            <span className="text-sm" style={{ color: '#1A2340', wordBreak: 'break-all' }}>{f.workLocationName || '―'}</span>
+                          </div>
+                          {deadline.type && (
+                            <span className="text-xs font-medium px-2 py-0.5 rounded flex-shrink-0"
+                              style={{ background: deadline.type === 'overdue' ? '#FFEDD5' : '#FFF7ED', color: deadline.type === 'overdue' ? '#9A3412' : '#C2410C' }}>
+                              ⚠ {deadline.label}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-start gap-6 flex-wrap">
+                          <div>
+                            <p className="text-xs mb-0.5" style={{ color: '#5A6A8A' }}>申請日時</p>
+                            <p className="text-xs" style={{ color: '#1A2340' }}>{formatDateTime(contract.created_at)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs mb-0.5" style={{ color: '#5A6A8A' }}>雇用期間</p>
+                            <p className="text-xs" style={{ color: '#1A2340' }}>{getEmployPeriodLabel(contract)}</p>
+                          </div>
+                          {(contract.pattern === 'B' || contract.pattern === 'C') && f.dispatchStart && f.dispatchEnd && (
+                            <div>
+                              <p className="text-xs mb-0.5" style={{ color: '#5A6A8A' }}>派遣期間</p>
+                              <p className="text-xs" style={{ color: '#1A2340' }}>{f.dispatchStart} 〜 {f.dispatchEnd}</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {contract.status === '差し戻し中' && contract.rejection_reason && (
+                          <div className="mt-3 rounded-lg px-3 py-2 border-l-4" style={{ background: '#FEF2F2', borderColor: '#B91C1C' }}>
+                            <p className="text-xs font-medium mb-0.5" style={{ color: '#B91C1C' }}>差し戻し理由</p>
+                            <p className="text-xs leading-relaxed" style={{ color: '#1A2340' }}>{contract.rejection_reason}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           )}
 
@@ -439,4 +716,3 @@ function StatusRow({ label, status, cancelReason, onCancel }: {
     </div>
   )
 }
-

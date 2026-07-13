@@ -507,18 +507,34 @@ export default function AdminDashboard() {
                   const autoWarning = hasAutoCheckWarning(contract)
                   const isConfirmed = contract.status === '署名済み' || contract.status === '完了'
                   const leftBorderColor = deadline.type === 'overdue' ? '#EA580C' : deadline.type === 'urgent' ? '#F97316' : 'transparent'
+                  // SSCダッシュボードと表示内容を完全一致させる（2026-07-13追記：伊藤さん指摘。
+                  // 管理部はSSCより上位の立場であり、SSCに見えている情報は同じように見えるべき）
+                  const hasAnyWarning = warning || autoWarning
+                  const warningColor = (warning || contract.warning_level === 'red') ? '#DC2626' : '#D97706'
 
                   return (
                     <div key={contract.id} className="bg-white rounded-xl overflow-hidden"
                       style={{ border: '0.5px solid #D0DAF0', borderLeft: deadline.type ? `4px solid ${leftBorderColor}` : '0.5px solid #D0DAF0' }}>
                       <div className="px-5 py-4">
                         <div className="flex items-start justify-between gap-3 mb-3">
-                          <div>
-                            <p className="text-xs mb-1" style={{ color: '#5A6A8A' }}>{staff.department || '―'}</p>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <ContractTypeBadge contractType={f.contractType || contract.contract_type} workPlace={f.workPlace || contract.work_place} />
-                              <span className="text-xs" style={{ color: '#5A6A8A' }}>{staff.employee_number || '―'}</span>
-                              <span className="text-base font-bold" style={{ color: '#1A2340' }}>{staff.name || '―'}</span>
+                          <div className="flex items-start gap-3">
+                            {/* 警告アイコン（SSCダッシュボードと同じ位置・サイズ。管理部は一括承認チェックボックスが
+                                無いため、警告の有無にかかわらずこの位置にアイコンまたは余白を置く） */}
+                            {hasAnyWarning && (
+                              <span
+                                title="警告あり"
+                                className="w-4 h-4 mt-5 flex-shrink-0 rounded flex items-center justify-center"
+                                style={{ background: warningColor }}>
+                                <span style={{ color: 'white', fontSize: '10px', fontWeight: 700, lineHeight: 1 }}>!</span>
+                              </span>
+                            )}
+                            <div>
+                              <p className="text-xs mb-1" style={{ color: '#5A6A8A' }}>{staff.department || '―'}</p>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <ContractTypeBadge contractType={f.contractType || contract.contract_type} workPlace={f.workPlace || contract.work_place} />
+                                <span className="text-xs" style={{ color: '#5A6A8A' }}>{staff.employee_number || '―'}</span>
+                                <span className="text-base font-bold" style={{ color: '#1A2340' }}>{staff.name || '―'}</span>
+                              </div>
                             </div>
                           </div>
                           <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
@@ -531,12 +547,21 @@ export default function AdminDashboard() {
                               <ContractStatusBadge status={contract.status} />
                             </div>
                             {isConfirmed && <ConfirmedBadge signedAt={contract.signed_at} />}
-                            {(warning || autoWarning) && (
-                              <span className="text-xs font-medium px-2 py-0.5 rounded"
-                                style={{ background: (warning || contract.warning_level === 'red') ? '#DC2626' : '#D97706', color: 'white' }}>
-                                {(warning || contract.warning_level === 'red') ? '🔴' : '🟡'} 要確認
-                              </span>
-                            )}
+                            <div className="flex items-center gap-2">
+                              {warning && (
+                                <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: '#DC2626', color: 'white' }}>
+                                  🔴 個別確認が必要（一括承認対象外）
+                                </span>
+                              )}
+                              {autoWarning && (
+                                <span className="text-xs font-medium px-2 py-0.5 rounded"
+                                  style={{ background: contract.warning_level === 'red' ? '#DC2626' : '#D97706', color: 'white' }}>
+                                  {contract.warning_level === 'red' ? '🔴' : '🟡'} 自動チェック要確認（一括承認対象外）
+                                </span>
+                              )}
+                              {/* 申請者名（フェーズ2で氏名表示に切り替え予定。SSCと同じ暫定表示） */}
+                              <span className="text-xs" style={{ color: '#5A6A8A' }}>申請者：{contract.created_by.slice(0, 8)}…</span>
+                            </div>
                           </div>
                         </div>
 
@@ -576,6 +601,17 @@ export default function AdminDashboard() {
                             <p className="text-xs leading-relaxed" style={{ color: '#1A2340' }}>{contract.rejection_reason}</p>
                           </div>
                         )}
+
+                        {/* 詳細を見る（2026-07-13追加：SSCの契約詳細画面を管理部にも開放したため、
+                            そこへ遷移するボタンを追加。管理部が開いた場合はその画面側で閲覧専用に
+                            切り替わる＝承認・差し戻しボタンは出ない） */}
+                        <button
+                          className="mt-3.5 flex items-center gap-1.5 rounded-full transition-all"
+                          style={{ background: '#1B3A8C', border: 'none', padding: '7px 16px', cursor: 'pointer' }}
+                          onClick={() => router.push(`/dashboard/ssc/contracts/${contract.id}`)}>
+                          <span className="text-xs font-medium text-white">詳細を見る</span>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18" /></svg>
+                        </button>
                       </div>
                     </div>
                   )

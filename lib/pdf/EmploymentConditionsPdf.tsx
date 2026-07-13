@@ -109,7 +109,7 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
                 label: '(雇入れ時)',
                 value: (
                   <AutoFitFreeText
-                    text={`${p.workLocationName}　${p.workLocationAddress}${p.workLocationTel ? `　TEL ${p.workLocationTel}` : ''}`}
+                    text={`${p.workLocationName}　${p.workLocationAddress}${p.workLocationTel ? `　TEL ${p.workLocationTel}` : ''}`}
                     maxLines={2} widthPt={370} sizes={[7.4, 6.9, 6.4, 5.9]} lineHeight={1.15}
                   />
                 ),
@@ -262,12 +262,16 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
 
         <View style={{ marginTop: 10 }}>
           {/* 2026-07-13追加：雇用契約書・兼用版と同じSealSideBySideで角印を表示する。
-              パターンBは従業員側の署名欄が無いため、会社側のみの単独ブロックとして扱う。 */}
+              パターンBは従業員側の署名欄が無いため、会社側のみの単独ブロックとして扱う。
+              2026-07-13再修正：角印追加時、雇用契約書・兼用版と中身を完全一致させるべき
+              だったところ、「株式会社APパートナーズ」の社名行が元々このコンポーネントに
+              存在していなかった（コメントに言及はあるが実際の行が無かった）ことに気づかず
+              見落としていた。伊藤さん指摘により、雇用契約書側のブロックをそのまま流用する
+              形で追記し、表示内容を完全一致させた。 */}
           <SealSideBySide showSeal={p.showSeal} sealSrc={COMPANY_SEAL_PATH} textColWidth={98} gap={-12}>
             <Text>会社</Text>
             {COMPANY_HQ_ADDRESS_LINES.map((line, i) => <Text key={i}>{line}</Text>)}
-            {/* 2026-07-08再修正：余白の追加位置を誤り、住所欄と会社名の間に入れていた。
-                正しくは会社名（株式会社APパートナーズ）と代表者名（代表取締役 山田 昌）の間 */}
+            <Text style={{ fontWeight: 'bold' }}>株式会社APパートナーズ</Text>
             <Text style={{ marginTop: 6 }}>代表取締役　山田　昌</Text>
           </SealSideBySide>
         </View>

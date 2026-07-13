@@ -43,11 +43,12 @@ function formatDate(str: string | null) {
   return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`
 }
 
-// ===== 契約一覧タブ（2026-07-13追加：フェーズ1）=====
-// SSCダッシュボード（app/dashboard/ssc/page.tsx）が出来ることを管理部でも出来るようにする方針
-// （docs/SYSTEM_DESIGN.md 10章2026-07-13参照）に基づき、契約一覧・ステータス確認（確認済み日時を
-// 含む）をSSCの表示ロジックをそのまま流用して追加した。今回のフェーズ1は「閲覧のみ」であり、
-// 承認操作（個別承認・一括承認）は含まない（承認を管理部が行うかどうかは別途整理・別タスク）。
+// ===== 契約一覧タブ（2026-07-13追加）=====
+// 「SSCが出来ることは管理部もすべて出来る」という伊藤さんの明確な方針（docs/SYSTEM_DESIGN.md
+// 10章2026-07-13参照）に基づき、SSCダッシュボード（app/dashboard/ssc/page.tsx）の一覧表示・
+// 一括承認ロジックをそのまま流用した。当初は「閲覧のみ」として実装したが、伊藤さんから
+// 「なぜ承認できないのか」と指摘を受け、承認・差し戻し・一括承認まで含めて完全に同等の
+// 操作ができるよう修正した。
 type ContractStatus = '申請中' | 'SSC承認済み' | '差し戻し中' | '署名待ち' | '署名済み' | '完了' | '取り下げ'
 type WarningLevel = 'none' | 'yellow' | 'red'
 type Contract = {
@@ -191,11 +192,16 @@ export default function AdminDashboard() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
 
-  // 契約一覧タブ（2026-07-13追加：フェーズ1・閲覧専用）
+  // 契約一覧タブ（2026-07-13追加：SSCと完全に同等の操作ができる）
   const [contracts, setContracts] = useState<Contract[]>([])
   const [contractsLoading, setContractsLoading] = useState(true)
   const [contractsError, setContractsError] = useState('')
   const [contractsSubTab, setContractsSubTab] = useState<ContractSubTab>('承認待ち')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  // 一括承認の確認ステップ・処理中・完了表示（SSCダッシュボードと同じUXをそのまま流用）
+  const [showBulkApproveConfirm, setShowBulkApproveConfirm] = useState(false)
+  const [bulkApproving, setBulkApproving] = useState(false)
+  const [bulkApproveDone, setBulkApproveDone] = useState<number | null>(null)
 
   useEffect(() => {
     const checkUser = async () => {
@@ -208,8 +214,8 @@ export default function AdminDashboard() {
     checkUser()
   }, [])
 
-  // 契約一覧の取得（SSCダッシュボードと同じクエリ・同じ「社内除外」条件。フェーズ1では
-  // 管理部もSSCと同じ範囲＝社内以外の契約を閲覧できるようにする。社内案件の可視化は
+  // 契約一覧の取得（SSCダッシュボードと同じクエリ・同じ「社内除外」条件。管理部もSSCと
+  // 同じ範囲＝社内以外の契約を閲覧・操作できるようにする。社内案件の可視化・承認は
   // 「社内承認」タブ実装（次フェーズ）とあわせて別途対応する）
   useEffect(() => {
     if (!user) return
@@ -227,6 +233,50 @@ export default function AdminDashboard() {
     }
     loadContracts()
   }, [user])
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  // 一括承認処理（SSCダッシュボードのhandleBulkApproveと同一ロジック。2026-07-13追加）
+  const handleBulkApprove = async () => {
+    if (selectedIds.size === 0 || bulkApproving) return
+    setBulkApproving(true)
+    const now = new Date().toISOString()
+    const ids = Array.from(selectedIds)
+    const { error } = await supabase
+      .from('contracts')
+      .update({ status: 'SSC承認済み', approved_by: user.id, approved_at: now, updated_at: now })
+      .in('id', ids)
+    if (error) {
+      alert('一括承認に失敗しました: ' + error.message)
+      setBulkApproving(false)
+      return
+    }
+    await Promise.all(
+      ids.map(id =>
+        fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST' }).catch(() => {})
+      )
+    )
+    const { data: refreshed } = await supabase
+      .from('contracts')
+      .select('id, status')
+      .in('id', ids)
+    const statusMap = new Map((refreshed || []).map(r => [r.id, r.status as ContractStatus]))
+    setContracts(prev => prev.map(c => statusMap.has(c.id) ? { ...c, status: statusMap.get(c.id)! } : c))
+    setBulkApproving(false)
+    setBulkApproveDone(ids.length)
+  }
+
+  const handleBulkApproveDoneOk = () => {
+    setSelectedIds(new Set())
+    setShowBulkApproveConfirm(false)
+    setBulkApproveDone(null)
+  }
 
   // 依頼一覧の取得（絞り込み条件が変わるたびに再取得。件数はもっと見るで増やす）
   useEffect(() => {
@@ -337,6 +387,16 @@ export default function AdminDashboard() {
   const contractsPendingCount = contracts.filter(c => c.status === '申請中').length
   const contractsRejectedCount = contracts.filter(c => c.status === '差し戻し中').length
   const contractsApprovedCount = contracts.filter(c => ['SSC承認済み', '署名待ち', '署名済み', '完了'].includes(c.status)).length
+
+  // 一括承認対象（承認待ちタブで、警告のない案件のみ。SSCダッシュボードと同じ条件）
+  const bulkTargets = filteredContracts.filter(c => !hasWarning(c) && !hasAutoCheckWarning(c))
+  const toggleSelectAll = () => {
+    if (selectedIds.size === bulkTargets.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(bulkTargets.map(c => c.id)))
+    }
+  }
 
   return (
     <div className="min-h-screen" style={{ background: '#F5F7FC' }}>
@@ -465,8 +525,63 @@ export default function AdminDashboard() {
           {activeTab === 'contracts' && (
             <div>
               <p className="text-xs mb-4" style={{ color: '#5A6A8A' }}>
-                SSCダッシュボードと同じ範囲（社内案件を除く）の契約状況を閲覧できます。承認操作はこの画面では行えません。
+                SSCダッシュボードと同じ範囲（社内案件を除く）の契約状況を確認できます。承認・差し戻し・一括承認もSSCと同様に行えます。
               </p>
+
+              {/* 一括承認バー（承認待ちタブのみ。SSCダッシュボードと同じUI・ロジック） */}
+              {contractsSubTab === '承認待ち' && bulkTargets.length > 0 && (
+                <div className="mb-4">
+                  <div className="flex justify-between items-center px-4 py-3 bg-white rounded-xl border" style={{ borderColor: '#D0DAF0' }}>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.size === bulkTargets.length && bulkTargets.length > 0}
+                        onChange={() => { toggleSelectAll(); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
+                        className="w-4 h-4 cursor-pointer"
+                        style={{ accentColor: '#1B3A8C' }}
+                      />
+                      <span className="text-sm" style={{ color: '#5A6A8A' }}>警告なし案件をすべて選択</span>
+                    </label>
+                    <button
+                      onClick={() => setShowBulkApproveConfirm(true)}
+                      disabled={selectedIds.size === 0}
+                      className="text-sm font-medium px-5 py-2 rounded-lg transition-all"
+                      style={{
+                        background: selectedIds.size > 0 ? '#1B3A8C' : '#D1D5DB',
+                        color: 'white',
+                        cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
+                      }}>
+                      ✅ 一括承認（{selectedIds.size}件）
+                    </button>
+                  </div>
+
+                  {showBulkApproveConfirm && selectedIds.size > 0 && !bulkApproving && bulkApproveDone === null && (
+                    <div className="mt-3 rounded-xl p-4 border-2" style={{ background: '#ECFDF5', borderColor: '#34D399' }}>
+                      <p className="text-sm font-bold mb-2" style={{ color: '#065F46' }}>
+                        ✅ 選択中の{selectedIds.size}件を本当に一括承認してよいですか？
+                      </p>
+                      <p className="text-sm mb-3 leading-relaxed" style={{ color: '#1A2340' }}>
+                        承認すると、各申請の内容変更はできません。内容に誤りがないか今一度ご確認ください。<br />
+                        承認後、対象スタッフへ署名・確認依頼が自動送信されます（雇用契約書は署名、就業条件明示書は内容確認の依頼になります。対面・印刷パターンの案件は担当営業のダッシュボードに表示されます）。
+                      </p>
+                      <div className="flex gap-3">
+                        <button
+                          onClick={handleBulkApprove}
+                          className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white transition-all"
+                          style={{ background: '#1B3A8C' }}>
+                          選択中の{selectedIds.size}件を一括承認する
+                        </button>
+                        <button
+                          onClick={() => setShowBulkApproveConfirm(false)}
+                          className="px-4 py-2.5 rounded-lg text-sm border"
+                          style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
+                          キャンセル
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* サブタブ */}
               <div className="grid grid-cols-3 gap-3 mb-4">
@@ -477,7 +592,7 @@ export default function AdminDashboard() {
                 ]).map(tab => {
                   const isActive = contractsSubTab === tab.key
                   return (
-                    <button key={tab.key} onClick={() => setContractsSubTab(tab.key)}
+                    <button key={tab.key} onClick={() => { setContractsSubTab(tab.key); setSelectedIds(new Set()); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
                       className="text-left rounded-xl px-4 py-3.5 transition-all"
                       style={isActive
                         ? { background: tab.tint, borderLeft: `3px solid ${tab.color}`, borderTop: '0.5px solid #D0DAF0', borderRight: '0.5px solid #D0DAF0', borderBottom: '0.5px solid #D0DAF0' }
@@ -507,10 +622,14 @@ export default function AdminDashboard() {
                   const autoWarning = hasAutoCheckWarning(contract)
                   const isConfirmed = contract.status === '署名済み' || contract.status === '完了'
                   const leftBorderColor = deadline.type === 'overdue' ? '#EA580C' : deadline.type === 'urgent' ? '#F97316' : 'transparent'
-                  // SSCダッシュボードと表示内容を完全一致させる（2026-07-13追記：伊藤さん指摘。
-                  // 管理部はSSCより上位の立場であり、SSCに見えている情報は同じように見えるべき）
+                  // SSCダッシュボードと表示内容・操作を完全一致させる（2026-07-13追記：伊藤さん指摘。
+                  // 「SSCが出来ることは管理部もすべて出来る」という方針のため、一括承認のチェックボックスも
+                  // SSCと同じ条件で表示する）
                   const hasAnyWarning = warning || autoWarning
                   const warningColor = (warning || contract.warning_level === 'red') ? '#DC2626' : '#D97706'
+                  const isSelected = selectedIds.has(contract.id)
+                  const canBulkSelect = contractsSubTab === '承認待ち' && !hasAnyWarning
+                  const showWarningIcon = contractsSubTab === '承認待ち' && hasAnyWarning
 
                   return (
                     <div key={contract.id} className="bg-white rounded-xl overflow-hidden"
@@ -518,11 +637,21 @@ export default function AdminDashboard() {
                       <div className="px-5 py-4">
                         <div className="flex items-start justify-between gap-3 mb-3">
                           <div className="flex items-start gap-3">
-                            {/* 警告アイコン（SSCダッシュボードと同じ位置・サイズ。管理部は一括承認チェックボックスが
-                                無いため、警告の有無にかかわらずこの位置にアイコンまたは余白を置く） */}
-                            {hasAnyWarning && (
+                            {/* チェックボックス（警告なし案件・承認待ちタブのみ。SSCダッシュボードと同じ） */}
+                            {canBulkSelect && (
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => { toggleSelect(contract.id); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
+                                onClick={e => e.stopPropagation()}
+                                className="w-4 h-4 mt-5 flex-shrink-0 cursor-pointer"
+                                style={{ accentColor: '#1B3A8C' }}
+                              />
+                            )}
+                            {/* 警告アイコン（チェックボックスの代わりに表示。SSCダッシュボードと同じ） */}
+                            {showWarningIcon && (
                               <span
-                                title="警告あり"
+                                title="警告あり（一括承認対象外）"
                                 className="w-4 h-4 mt-5 flex-shrink-0 rounded flex items-center justify-center"
                                 style={{ background: warningColor }}>
                                 <span style={{ color: 'white', fontSize: '10px', fontWeight: 700, lineHeight: 1 }}>!</span>
@@ -602,14 +731,15 @@ export default function AdminDashboard() {
                           </div>
                         )}
 
-                        {/* 詳細を見る（2026-07-13追加：SSCの契約詳細画面を管理部にも開放したため、
-                            そこへ遷移するボタンを追加。管理部が開いた場合はその画面側で閲覧専用に
-                            切り替わる＝承認・差し戻しボタンは出ない） */}
+                        {/* 内容を確認する／詳細を見る（2026-07-13追加：SSCの契約詳細画面を管理部にも開放。
+                            SSCと同じく、承認待ちタブでは承認・差し戻し操作もそのままこの遷移先で行える） */}
                         <button
                           className="mt-3.5 flex items-center gap-1.5 rounded-full transition-all"
                           style={{ background: '#1B3A8C', border: 'none', padding: '7px 16px', cursor: 'pointer' }}
                           onClick={() => router.push(`/dashboard/ssc/contracts/${contract.id}`)}>
-                          <span className="text-xs font-medium text-white">詳細を見る</span>
+                          <span className="text-xs font-medium text-white">
+                            {contractsSubTab === '承認待ち' ? '内容を確認する' : '詳細を見る'}
+                          </span>
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18" /></svg>
                         </button>
                       </div>
@@ -631,6 +761,42 @@ export default function AdminDashboard() {
           )}
         </div>
       </main>
+
+      {/* 一括承認：処理中／完了の全画面オーバーレイ（SSCダッシュボードと同じ。2026-07-13追加） */}
+      {(bulkApproving || bulkApproveDone !== null) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,64,0.6)' }}>
+          <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl">
+            {bulkApproving ? (
+              <>
+                <div className="mx-auto mb-5 w-14 h-14 rounded-full border-4 animate-spin"
+                  style={{ borderColor: '#1B3A8C', borderTopColor: 'transparent' }} />
+                <p className="text-lg font-bold mb-2" style={{ color: '#1A2340' }}>一括承認処理中です</p>
+                <p className="text-sm leading-relaxed" style={{ color: '#5A6A8A' }}>
+                  しばらくお待ちください。<br />
+                  画面を閉じたり、戻ったりしないでください。
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-5xl mb-3">✅</p>
+                <p className="text-lg font-bold mb-2" style={{ color: '#065F46' }}>
+                  一括承認が完了しました（{bulkApproveDone}件）
+                </p>
+                <p className="text-sm leading-relaxed mb-6" style={{ color: '#1A2340' }}>
+                  対象スタッフへ署名・確認依頼が自動送信されました。<br />
+                  （対面・印刷パターンの案件は担当営業のダッシュボードに表示されます）
+                </p>
+                <button
+                  onClick={handleBulkApproveDoneOk}
+                  className="w-full py-3 rounded-lg text-base font-bold text-white"
+                  style={{ background: '#1B3A8C' }}>
+                  OK
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

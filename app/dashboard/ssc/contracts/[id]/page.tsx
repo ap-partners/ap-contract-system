@@ -281,11 +281,10 @@ export default function SSCContractDetail() {
 
   useEffect(() => {
     const init = async () => {
-      // 認証チェック（2026-07-13追記：管理部がSSCと同じ内容を閲覧できるようにする方針のため、
-      // 管理部ロールにもこの画面へのアクセスを許可する。ただし承認・差し戻し操作は
-      // 引き続きSSCのみが行えるようにし、管理部で開いた場合はボタン自体を出さない＝閲覧専用にする
-      // （docs/SYSTEM_DESIGN.md 10章2026-07-13「社内案件の申請可能ロール」の議論とセットで検討中の
-      // 「承認を管理部が行うかどうか」は未確定のため、今回は閲覧のみに留める）
+      // 認証チェック（2026-07-13追記：「SSCが出来ることは管理部もすべて出来る」という伊藤さんの
+      // 明確な方針のため、管理部ロールにもこの画面へのフルアクセス（承認・強制承認・差し戻しを含む）
+      // を許可する。閲覧専用に制限する案を一度実装したが、伊藤さんから「なぜ制限するのか」と
+      // 指摘を受け、承認権限も含めて完全に同等にする方針に修正した）
       const { data } = await supabase.auth.getUser()
       if (!data.user) { router.push('/login'); return }
       const role = data.user.user_metadata?.role
@@ -423,7 +422,8 @@ export default function SSCContractDetail() {
 
   if (!contract) return null
 
-  // 管理部が閲覧している場合のフラグ（2026-07-13追加：閲覧専用アクセスの出し分けに使う）
+  // 管理部が開いている場合のフラグ（2026-07-13追加：ヘッダー表示・戻り先の出し分けにのみ使用。
+  // 承認・差し戻し等の操作権限はSSCと完全に同じで、ここでは制限しない）
   const isAdmin = user?.user_metadata?.role === '管理部'
   const backPath = isAdmin ? '/dashboard/admin' : '/dashboard/ssc'
 
@@ -485,7 +485,7 @@ export default function SSCContractDetail() {
             <Image src="/logo.png" alt="APパートナーズ" width={60} height={35} />
             <div className="border-l pl-3" style={{ borderColor: '#D0DAF0' }}>
               <p className="text-sm font-bold" style={{ color: '#1A2340' }}>契約書管理システム</p>
-              <p className="text-xs" style={{ color: '#5A6A8A' }}>{isAdmin ? '契約詳細（管理部・閲覧専用）' : 'SSC確認画面'}</p>
+              <p className="text-xs" style={{ color: '#5A6A8A' }}>{isAdmin ? '契約確認画面（管理部）' : 'SSC確認画面'}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -808,13 +808,7 @@ export default function SSCContractDetail() {
             以前は{'{'}!actionDone{'}'}でこのエリア自体を非表示にしていたが、常に表示したうえで
             中身をactionDoneの状態で出し分ける方式にする。 */}
         <div className="bg-white rounded-xl border shadow-sm p-6 mt-6" style={{ borderColor: '#D0DAF0' }}>
-          {isAdmin ? (
-            // 管理部は閲覧専用（2026-07-13追加）。承認・差し戻し操作はSSCのみが行う運用のため、
-            // ボタン自体を出さずステータスのみを案内する。
-            <p className="text-sm text-center" style={{ color: '#9CA3AF' }}>
-              この画面は閲覧専用です。承認・差し戻しの操作はSSCが行います。（現在のステータス：{contract.status}）
-            </p>
-          ) : actionDone === 'approved' ? (
+          {actionDone === 'approved' ? (
             <div className="rounded-xl p-5 border-2" style={{ background: '#ECFDF5', borderColor: '#34D399' }}>
               <p className="text-base font-bold mb-1" style={{ color: '#065F46' }}>✅ 承認しました</p>
               <p className="text-sm" style={{ color: '#065F46' }}>
@@ -824,7 +818,7 @@ export default function SSCContractDetail() {
                   ? 'スタッフへ確認依頼が自動送信されます。'
                   : 'スタッフへ署名依頼が自動送信されます。'}
               </p>
-              <button onClick={() => router.push('/dashboard/ssc')}
+              <button onClick={() => router.push(backPath)}
                 className="mt-3 text-sm px-4 py-2 rounded-lg text-white" style={{ background: '#1B3A8C' }}>
                 一覧に戻る
               </button>
@@ -833,7 +827,7 @@ export default function SSCContractDetail() {
             <div className="rounded-xl p-5 border-2" style={{ background: '#FEF2F2', borderColor: '#F87171' }}>
               <p className="text-base font-bold mb-1" style={{ color: '#B91C1C' }}>↩ 差し戻しました</p>
               <p className="text-sm" style={{ color: '#B91C1C' }}>担当営業へ差し戻し理由が通知されます。</p>
-              <button onClick={() => router.push('/dashboard/ssc')}
+              <button onClick={() => router.push(backPath)}
                 className="mt-3 text-sm px-4 py-2 rounded-lg text-white" style={{ background: '#1B3A8C' }}>
                 一覧に戻る
               </button>

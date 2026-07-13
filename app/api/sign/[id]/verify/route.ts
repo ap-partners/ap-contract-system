@@ -56,7 +56,7 @@ export async function POST(
   // コードの失効判定（5回間違えると失効。再発行が必要）
   if ((contract.sign_auth_attempts || 0) >= SIGN_AUTH_MAX_ATTEMPTS) {
     return NextResponse.json(
-      { error: '認証コードの入力回数が上限を超えました。「認証コードを再発行する」からやり直してください。', reason: 'locked' },
+      { error: '認証コードの入力回数が上限を超えました。\n「認証コードを再発行する」からやり直してください。', reason: 'locked' },
       { status: 423 }
     )
   }
@@ -64,7 +64,7 @@ export async function POST(
   // コードの有効期限判定（発行から2日間）
   if (!contract.sign_auth_code || !contract.sign_auth_code_expires_at || new Date(contract.sign_auth_code_expires_at).getTime() < Date.now()) {
     return NextResponse.json(
-      { error: '認証コードの有効期限が切れています。「認証コードを再発行する」から新しいコードを取得してください。', reason: 'expired' },
+      { error: '認証コードの有効期限が切れています。\n「認証コードを再発行する」から新しいコードを取得してください。', reason: 'expired' },
       { status: 410 }
     )
   }
@@ -82,12 +82,12 @@ export async function POST(
     const remaining = SIGN_AUTH_MAX_ATTEMPTS - nextAttempts
     if (remaining <= 0) {
       return NextResponse.json(
-        { error: '認証コードの入力回数が上限を超えました。「認証コードを再発行する」からやり直してください。', reason: 'locked' },
+        { error: '認証コードの入力回数が上限を超えました。\n「認証コードを再発行する」からやり直してください。', reason: 'locked' },
         { status: 423 }
       )
     }
     return NextResponse.json(
-      { error: `確認できませんでした。入力内容をご確認ください。（あと${remaining}回間違えると再発行が必要になります）`, reason: 'invalid' },
+      { error: `確認できませんでした。入力内容をご確認ください。\nあと${remaining}回間違えると、認証コードの再発行が必要になります。`, reason: 'invalid' },
       { status: 401 }
     )
   }

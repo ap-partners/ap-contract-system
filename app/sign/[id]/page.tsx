@@ -54,7 +54,7 @@ export default function SignPage() {
       setErrorReason('')
       setAuthCode('')
     } catch {
-      setError('通信エラーが発生しました。電波状況をご確認の上、再度お試しください。')
+      setError('通信エラーが発生しました。\n電波状況をご確認の上、再度お試しください。')
     } finally {
       setReissuing(false)
     }
@@ -110,7 +110,7 @@ export default function SignPage() {
       setSignAction(data.signAction)
       setStage('action')
     } catch {
-      setError('通信エラーが発生しました。電波状況をご確認の上、再度お試しください。')
+      setError('通信エラーが発生しました。\n電波状況をご確認の上、再度お試しください。')
     } finally {
       setVerifying(false)
     }
@@ -134,12 +134,12 @@ export default function SignPage() {
       })
       const data = await res.json()
       if (!res.ok) {
-        setError(data.error || '処理に失敗しました。時間をおいて再度お試しください。')
+        setError(data.error || '処理に失敗しました。\n時間をおいて再度お試しください。')
         return
       }
       setStage('done')
     } catch {
-      setError('通信エラーが発生しました。電波状況をご確認の上、再度お試しください。')
+      setError('通信エラーが発生しました。\n電波状況をご確認の上、再度お試しください。')
     } finally {
       setSubmitting(false)
     }
@@ -200,12 +200,14 @@ export default function SignPage() {
 
                 {reissueSent && (
                   <div className="rounded-lg px-4 py-3 text-sm leading-relaxed" style={{ background: '#ECFEFF', color: '#0E7490', border: '1px solid #A5F3FC' }}>
-                    新しい認証コードをメールで送信しました。メールをご確認のうえ、新しいコードを入力してください。
+                    新しい認証コードをメールで送信しました。
+                    <br />
+                    メールをご確認のうえ、新しいコードを入力してください。
                   </div>
                 )}
 
                 {error && (
-                  <div className="rounded-lg px-4 py-3 text-sm leading-relaxed" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+                  <div className="rounded-lg px-4 py-3 text-sm leading-relaxed whitespace-pre-line" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
                     {error}
                   </div>
                 )}
@@ -314,7 +316,7 @@ export default function SignPage() {
               )}
 
               {error && (
-                <div className="rounded-lg px-4 py-3 text-sm leading-relaxed mb-4" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+                <div className="rounded-lg px-4 py-3 text-sm leading-relaxed mb-4 whitespace-pre-line" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
                   {error}
                 </div>
               )}
@@ -349,7 +351,10 @@ export default function SignPage() {
               {submitting && (
                 <p className="text-xs text-center mt-3 leading-relaxed" style={{ color: '#5A6A8A' }}>
                   {signAction === 'signature' ? '署名登録中です。' : '登録処理中です。'}
-                  数秒ほどお時間をいただく場合があります。画面を閉じたり、戻ったりせずそのままお待ちください。
+                  <br />
+                  数秒ほどお時間をいただく場合があります。
+                  <br />
+                  画面を閉じたり、戻ったりせずそのままお待ちください。
                 </p>
               )}
             </>

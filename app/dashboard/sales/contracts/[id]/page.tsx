@@ -60,7 +60,7 @@ const formatDateTime = (iso: string | null) => {
 const formatDate = (d: Date) => `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
 
 const CLOSING_PATTERNS = [
-  { id: 'auto',  label: '指定しない',           desc: 'SSC承認が完了すると、システムが従業員へ確認用URLを自動送信します。' },
+  { id: 'auto',  label: '指定しない',           desc: '承認が完了すると、システムが従業員へ確認用URLを自動送信します。' },
   { id: 'face',  label: '対面でその場説明',      desc: '担当営業が端末画面を見せながら説明し、「説明完了」を押すと従業員へ確認用URLが自動送信されます。' },
   { id: 'print', label: '印刷して説明後にリンク送付', desc: '担当営業が印刷した資料を用いて説明し、「説明完了」を押すと従業員へ確認用URLが自動送信されます。' },
 ]
@@ -341,8 +341,8 @@ export default function SalesContractDetail() {
 
   // ステータスに応じた表示情報
   const statusBanner: Record<string, { bg: string; border: string; color: string; label: string }> = {
-    '申請中':      { bg: '#EEF2FA', border: '#D0DAF0', color: '#1B3A8C', label: '📤 申請中（SSCの確認待ちです）' },
-    'SSC承認済み':  { bg: '#ECFDF5', border: '#34D399', color: '#065F46', label: `✅ SSC承認済み（${formatDateTime(contract.approved_at)}）` },
+    '申請中':      { bg: '#EEF2FA', border: '#D0DAF0', color: '#1B3A8C', label: contract.work_place === '社内' ? '📤 申請中（管理部の確認待ちです）' : '📤 申請中（SSCの確認待ちです）' },
+    'SSC承認済み':  { bg: '#ECFDF5', border: '#34D399', color: '#065F46', label: contract.work_place === '社内' ? `✅ 承認済み（${formatDateTime(contract.approved_at)}）` : `✅ SSC承認済み（${formatDateTime(contract.approved_at)}）` },
     '差し戻し中':  { bg: '#FEF2F2', border: '#F87171', color: '#B91C1C', label: `↩ 差し戻し中（${formatDateTime(contract.rejected_at)}）` },
     '署名待ち':    { bg: '#FFFBEB', border: '#FBBF24', color: '#92400E', label: '✍️ 署名待ち（従業員の署名確認待ちです）' },
     '署名済み':    { bg: '#EEF2FA', border: '#818CF8', color: '#3730A3', label: '📝 署名済み' },

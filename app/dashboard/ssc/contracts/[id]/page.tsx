@@ -60,7 +60,7 @@ const formatDateTime = (iso: string | null) => {
 }
 
 const CLOSING_PATTERNS = [
-  { id: 'auto',  label: '指定しない',           desc: 'SSC承認が完了すると、システムが従業員へ確認用URLを自動送信します。' },
+  { id: 'auto',  label: '指定しない',           desc: '承認が完了すると、システムが従業員へ確認用URLを自動送信します。' },
   { id: 'face',  label: '対面でその場説明',      desc: '担当営業が端末画面を見せながら説明し、「説明完了」を押すと従業員へ確認用URLが自動送信されます。' },
   { id: 'print', label: '印刷して説明後にリンク送付', desc: '担当営業が印刷した資料を用いて説明し、「説明完了」を押すと従業員へ確認用URLが自動送信されます。' },
 ]

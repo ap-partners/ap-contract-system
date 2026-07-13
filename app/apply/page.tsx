@@ -63,7 +63,7 @@ const CLOSING_PATTERNS = [
   {
     id: 'auto',
     label: '指定しない',
-    desc: 'SSC承認が完了すると、システムが従業員へ確認用URLを自動送信します。',
+    desc: '承認が完了すると、システムが従業員へ確認用URLを自動送信します。',
     icon: '/icons/pattern-auto.png',
   },
   {
@@ -3977,12 +3977,20 @@ function ApplyPageInner() {
                   <div className="text-5xl mb-4">✅</div>
                   <h2 className="text-lg font-bold mb-2" style={{ color: '#1A2340' }}>申請が完了しました</h2>
                   <p className="text-sm leading-relaxed mb-6" style={{ color: '#5A6A8A' }}>
-                    {closingPattern === 'auto'
-                      ? 'SSCの承認をお待ちください。承認後、スタッフへ署名依頼が自動送信されます。'
-                      : 'SSCの承認をお待ちください。承認後、ダッシュボードから説明手続きを行ってください。'}
+                    {workPlace === '社内'
+                      ? (closingPattern === 'auto'
+                        ? '管理部（社内承認者）の承認をお待ちください。承認後、スタッフへ署名依頼が自動送信されます。'
+                        : '管理部（社内承認者）の承認をお待ちください。承認後、ダッシュボードから説明手続きを行ってください。')
+                      : (closingPattern === 'auto'
+                        ? 'SSCの承認をお待ちください。承認後、スタッフへ署名依頼が自動送信されます。'
+                        : 'SSCの承認をお待ちください。承認後、ダッシュボードから説明手続きを行ってください。')}
                   </p>
                   <button
-                    onClick={() => router.push('/dashboard/sales')}
+                    onClick={() => {
+                      // フェーズ2でSSC・管理部も/applyを使えるようになったため、戻り先もロールに応じて出し分ける（2026-07-13追加）
+                      const role = user?.user_metadata?.role
+                      router.push(role === 'SSC' ? '/dashboard/ssc' : role === '管理部' ? '/dashboard/admin' : '/dashboard/sales')
+                    }}
                     className="px-8 py-3 rounded-lg text-white font-bold text-sm" style={{ background: '#1B3A8C' }}>
                     ダッシュボードに戻る
                   </button>
@@ -3990,9 +3998,13 @@ function ApplyPageInner() {
               ) : (
               <div className="bg-white rounded-xl border shadow-sm p-6 mt-4" style={{ borderColor: '#D0DAF0' }}>
                 <div className="rounded-lg px-4 py-3 mb-4 text-sm leading-relaxed border-l-4" style={{ background: '#EEF2FA', color: '#5A6A8A', borderColor: '#1B3A8C' }}>
-                  {closingPattern === 'auto'
-                    ? '申請後はSSCの承認をお待ちください。承認後、スタッフへ署名依頼が自動送信されます。'
-                    : '申請後はSSCの承認をお待ちください。承認後、ダッシュボードから説明手続きを行ってください。'}
+                  {workPlace === '社内'
+                    ? (closingPattern === 'auto'
+                      ? '申請後は管理部（社内承認者）の承認をお待ちください。承認後、スタッフへ署名依頼が自動送信されます。'
+                      : '申請後は管理部（社内承認者）の承認をお待ちください。承認後、ダッシュボードから説明手続きを行ってください。')
+                    : (closingPattern === 'auto'
+                      ? '申請後はSSCの承認をお待ちください。承認後、スタッフへ署名依頼が自動送信されます。'
+                      : '申請後はSSCの承認をお待ちください。承認後、ダッシュボードから説明手続きを行ってください。')}
                 </div>
 
                 {/* CSV反映項目が修正されている場合の注意（2026-07-02追加） */}
@@ -4063,7 +4075,9 @@ function ApplyPageInner() {
                       </div>
                     </div>
                     <p className="text-xs leading-relaxed mb-5" style={{ color: '#5A6A8A' }}>
-                      申請後はSSCの承認が必要となり、申請内容の変更はできません。<br />内容に誤りがないか今一度ご確認ください。
+                      {workPlace === '社内'
+                        ? '申請後は管理部（社内承認者）の承認が必要となり、申請内容の変更はできません。'
+                        : '申請後はSSCの承認が必要となり、申請内容の変更はできません。'}<br />内容に誤りがないか今一度ご確認ください。
                     </p>
                     <div className="flex gap-3">
                       <button

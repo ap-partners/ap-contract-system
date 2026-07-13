@@ -425,7 +425,9 @@ export default function SalesDashboard() {
           {isExplain && contract.status === 'SSC承認済み' && (
             <div className="mt-3 rounded-lg px-3 py-2" style={{ background: '#ECFEFF' }}>
               <p className="text-xs leading-relaxed" style={{ color: '#0E7490' }}>
-                ℹ️ SSC承認済みです。従業員への説明が完了したら「説明完了」を押してください。押すと従業員が署名待ちの状態になります。
+                {contract.work_place === '社内'
+                  ? 'ℹ️ 承認済みです。従業員への説明が完了したら「説明完了」を押してください。押すと従業員が署名待ちの状態になります。'
+                  : 'ℹ️ SSC承認済みです。従業員への説明が完了したら「説明完了」を押してください。押すと従業員が署名待ちの状態になります。'}
               </p>
             </div>
           )}

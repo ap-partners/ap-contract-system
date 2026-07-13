@@ -112,10 +112,12 @@ const WorkPlaceBadge = ({ workPlace }: { workPlace: string }) => {
   )
 }
 
-const ContractStatusBadge = ({ status }: { status: ContractStatus }) => {
+const ContractStatusBadge = ({ status, isInternal }: { status: ContractStatus; isInternal?: boolean }) => {
   const map: Record<string, { bg: string; label: string }> = {
     '申請中':     { bg: '#1D4ED8', label: '申請中' },
-    'SSC承認済み': { bg: '#065F46', label: 'SSC承認済み' },
+    // 社内承認タブ（社内案件のみ）ではSSCではなく社内承認者が承認しているため、
+    // バッジ表示も「SSC承認済み」ではなく「承認済み」にする（2026-07-13追加。データ上のstatus値自体は変更しない）
+    'SSC承認済み': { bg: '#065F46', label: isInternal ? '承認済み' : 'SSC承認済み' },
     '差し戻し中': { bg: '#B91C1C', label: '差し戻し中' },
     '署名待ち':   { bg: '#92400E', label: '署名待ち' },
     '署名済み':   { bg: '#3730A3', label: '署名済み' },
@@ -531,6 +533,9 @@ export default function AdminDashboard() {
               {t.label}
               {t.key === 'requests' && pendingTotalCount > 0 && (
                 <span className="text-white text-xs rounded-full px-2 py-0.5" style={{ background: '#DC2626' }}>{pendingTotalCount}</span>
+              )}
+              {t.key === 'internal' && internalPendingCount > 0 && (
+                <span className="text-white text-xs rounded-full px-2 py-0.5" style={{ background: '#DC2626' }}>{internalPendingCount}</span>
               )}
             </button>
           ))}
@@ -996,7 +1001,7 @@ export default function AdminDashboard() {
                                 {getDocumentLabel(contract.document_type, contract.pattern)}
                               </span>
                               <span style={{ display: 'inline-block', width: '1px', height: '14px', background: '#D0DAF0', margin: '0 2px' }} />
-                              <ContractStatusBadge status={contract.status} />
+                              <ContractStatusBadge status={contract.status} isInternal />
                             </div>
                             {isConfirmed && <ConfirmedBadge signedAt={contract.signed_at} />}
                             <div className="flex items-center gap-2">

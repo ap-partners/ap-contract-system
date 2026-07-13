@@ -167,6 +167,9 @@ export default function SSCDashboard() {
   // 一括承認の確認ステップ（2026-07-13追加：確認なしで即実行されてしまい、誤操作時に取り返しが
   // つかないとの伊藤さん指摘を受けて、個別承認画面と同じ確認カードを挟むようにした）
   const [showBulkApproveConfirm, setShowBulkApproveConfirm] = useState(false)
+  // 一括承認の処理中フラグ（2026-07-13追加：承認〜通知APIの呼び出しに数秒かかり、
+  // 押せているかどうか分かりにくいとの伊藤さん指摘を受けて、処理中であることを画面に出すようにした）
+  const [bulkApproving, setBulkApproving] = useState(false)
 
   useEffect(() => {
     const init = async () => {
@@ -224,14 +227,19 @@ export default function SSCDashboard() {
   }
 
   const handleBulkApprove = async () => {
-    if (selectedIds.size === 0) return
+    if (selectedIds.size === 0 || bulkApproving) return
+    setBulkApproving(true)
     const now = new Date().toISOString()
     const ids = Array.from(selectedIds)
     const { error } = await supabase
       .from('contracts')
       .update({ status: 'SSC承認済み', approved_by: user.id, approved_at: now, updated_at: now })
       .in('id', ids)
-    if (error) { alert('一括承認に失敗しました: ' + error.message); return }
+    if (error) {
+      alert('一括承認に失敗しました: ' + error.message)
+      setBulkApproving(false)
+      return
+    }
 
     // 個別承認（app/dashboard/ssc/contracts/[id]/page.tsx の handleApprove）と同様、
     // 承認直後に署名依頼通知APIを呼ぶ。締結パターンが「指定しない（自動送信）」の案件は
@@ -255,6 +263,7 @@ export default function SSCDashboard() {
     setContracts(prev => prev.map(c => statusMap.has(c.id) ? { ...c, status: statusMap.get(c.id)! } : c))
     setSelectedIds(new Set())
     setShowBulkApproveConfirm(false)
+    setBulkApproving(false)
   }
 
   const tabs: { key: TabType; label: string; count: number; color: string; tint: string }[] = [
@@ -364,16 +373,30 @@ export default function SSCDashboard() {
                   承認すると、各申請の内容変更はできません。内容に誤りがないか今一度ご確認ください。<br />
                   承認後、対象スタッフへ署名依頼が自動送信されます（対面・印刷パターンの案件は担当営業のダッシュボードに表示されます）。
                 </p>
+                {/* 処理中メッセージ（2026-07-13追加：承認〜通知APIの呼び出しに数秒かかり、
+                    押せているか分かりにくいとの伊藤さん指摘を受けて追加） */}
+                {bulkApproving && (
+                  <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg" style={{ background: '#D1FAE5' }}>
+                    <span className="inline-block w-3.5 h-3.5 rounded-full border-2 animate-spin"
+                      style={{ borderColor: '#065F46', borderTopColor: 'transparent' }} />
+                    <span className="text-xs font-medium" style={{ color: '#065F46' }}>
+                      一括承認処理中です。しばらくお待ちください…（画面を閉じたり戻ったりしないでください）
+                    </span>
+                  </div>
+                )}
                 <div className="flex gap-3">
                   <button
                     onClick={handleBulkApprove}
-                    className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white transition-all"
-                    style={{ background: '#1B3A8C' }}>
-                    選択中の{selectedIds.size}件を一括承認する
+                    disabled={bulkApproving}
+                    className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white transition-all disabled:opacity-60"
+                    style={{ background: '#1B3A8C', cursor: bulkApproving ? 'not-allowed' : 'pointer' }}>
+                    {bulkApproving ? '処理中...' : `選択中の${selectedIds.size}件を一括承認する`}
                   </button>
                   <button
                     onClick={() => setShowBulkApproveConfirm(false)}
-                    className="px-4 py-2.5 rounded-lg text-sm border" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
+                    disabled={bulkApproving}
+                    className="px-4 py-2.5 rounded-lg text-sm border disabled:opacity-60"
+                    style={{ color: '#5A6A8A', borderColor: '#D0DAF0', cursor: bulkApproving ? 'not-allowed' : 'pointer' }}>
                     キャンセル
                   </button>
                 </div>

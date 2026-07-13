@@ -27,7 +27,7 @@ type RequestRow = {
   displayDept?: string | null
 }
 
-type TabType = 'requests' | 'contracts' | 'csvImport' | 'csvDiff' | 'renewal'
+type TabType = 'requests' | 'contracts' | 'internal' | 'csvImport' | 'csvDiff' | 'renewal'
 
 const PAGE_SIZE = 50
 
@@ -203,6 +203,19 @@ export default function AdminDashboard() {
   const [bulkApproving, setBulkApproving] = useState(false)
   const [bulkApproveDone, setBulkApproveDone] = useState<number | null>(null)
 
+  // 社内承認タブ（2026-07-13追加：フェーズ3）。管理部の中でも「社内承認者」フラグ
+  // （user_metadata.is_internal_approver === true）を持つ人にだけ表示・利用させる。
+  // staff_rolesテーブル本格実装（フェーズ2.5）を待たず、伊藤さんと相談のうえ、
+  // 既存のuser_metadataに軽量なフラグを追加する方式を採用した（10章2026-07-13参照）。
+  const [internalContracts, setInternalContracts] = useState<Contract[]>([])
+  const [internalContractsLoading, setInternalContractsLoading] = useState(true)
+  const [internalContractsError, setInternalContractsError] = useState('')
+  const [internalContractsSubTab, setInternalContractsSubTab] = useState<ContractSubTab>('承認待ち')
+  const [internalSelectedIds, setInternalSelectedIds] = useState<Set<string>>(new Set())
+  const [internalShowBulkApproveConfirm, setInternalShowBulkApproveConfirm] = useState(false)
+  const [internalBulkApproving, setInternalBulkApproving] = useState(false)
+  const [internalBulkApproveDone, setInternalBulkApproveDone] = useState<number | null>(null)
+
   useEffect(() => {
     const checkUser = async () => {
       const { data } = await supabase.auth.getUser()
@@ -276,6 +289,71 @@ export default function AdminDashboard() {
     setSelectedIds(new Set())
     setShowBulkApproveConfirm(false)
     setBulkApproveDone(null)
+  }
+
+  // 社内承認タブ：社内案件（work_place='社内'）の取得。フラグを持つ人のみ取得する
+  // （画面側での制御。contractsテーブルのRLSは現状「認証済みなら誰でも」のままなので、
+  // DBレベルの制限ではない点は他のロール分けと同じ。10章2026-07-13参照）
+  useEffect(() => {
+    if (!user) return
+    if (user.user_metadata?.is_internal_approver !== true) { setInternalContractsLoading(false); return }
+    const loadInternalContracts = async () => {
+      setInternalContractsLoading(true)
+      setInternalContractsError('')
+      const { data, error } = await supabase
+        .from('contracts')
+        .select('id, pattern, contract_type, document_type, work_place, status, created_by, created_at, rejection_reason, signed_at, warning_confirmations, warning_level, input_data')
+        .eq('work_place', '社内')
+        .order('created_at', { ascending: false })
+      if (error) { setInternalContractsError('社内案件の取得に失敗しました。（' + error.message + '）'); setInternalContractsLoading(false); return }
+      setInternalContracts((data || []) as Contract[])
+      setInternalContractsLoading(false)
+    }
+    loadInternalContracts()
+  }, [user])
+
+  const toggleSelectInternal = (id: string) => {
+    setInternalSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  // 社内案件の一括承認（雇用契約書＝パターンAのみのため、確認文言はSSC/契約一覧タブより単純化）
+  const handleBulkApproveInternal = async () => {
+    if (internalSelectedIds.size === 0 || internalBulkApproving) return
+    setInternalBulkApproving(true)
+    const now = new Date().toISOString()
+    const ids = Array.from(internalSelectedIds)
+    const { error } = await supabase
+      .from('contracts')
+      .update({ status: 'SSC承認済み', approved_by: user.id, approved_at: now, updated_at: now })
+      .in('id', ids)
+    if (error) {
+      alert('一括承認に失敗しました: ' + error.message)
+      setInternalBulkApproving(false)
+      return
+    }
+    await Promise.all(
+      ids.map(id =>
+        fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST' }).catch(() => {})
+      )
+    )
+    const { data: refreshed } = await supabase
+      .from('contracts')
+      .select('id, status')
+      .in('id', ids)
+    const statusMap = new Map((refreshed || []).map(r => [r.id, r.status as ContractStatus]))
+    setInternalContracts(prev => prev.map(c => statusMap.has(c.id) ? { ...c, status: statusMap.get(c.id)! } : c))
+    setInternalBulkApproving(false)
+    setInternalBulkApproveDone(ids.length)
+  }
+
+  const handleBulkApproveInternalDoneOk = () => {
+    setInternalSelectedIds(new Set())
+    setInternalShowBulkApproveConfirm(false)
+    setInternalBulkApproveDone(null)
   }
 
   // 依頼一覧の取得（絞り込み条件が変わるたびに再取得。件数はもっと見るで増やす）
@@ -370,9 +448,12 @@ export default function AdminDashboard() {
 
   if (!user) return <div className="p-8">読み込み中...</div>
 
+  const isInternalApprover = user.user_metadata?.is_internal_approver === true
+
   const tabs: { key: TabType; label: string }[] = [
     { key: 'requests', label: '依頼管理' },
     { key: 'contracts', label: '契約一覧' },
+    ...(isInternalApprover ? [{ key: 'internal' as TabType, label: '社内承認' }] : []),
     { key: 'csvImport', label: 'CSVインポート' },
     { key: 'csvDiff', label: 'CSV差異アラート' },
     { key: 'renewal', label: '更新期限管理' },
@@ -395,6 +476,25 @@ export default function AdminDashboard() {
       setSelectedIds(new Set())
     } else {
       setSelectedIds(new Set(bulkTargets.map(c => c.id)))
+    }
+  }
+
+  // 社内承認タブ用の集計（契約一覧タブと同じロジックをinternalContractsに対して適用）
+  const filteredInternalContracts = internalContracts.filter(c => {
+    if (internalContractsSubTab === '承認待ち') return c.status === '申請中'
+    if (internalContractsSubTab === '差し戻し中') return c.status === '差し戻し中'
+    if (internalContractsSubTab === '承認済み') return ['SSC承認済み', '署名待ち', '署名済み', '完了'].includes(c.status)
+    return false
+  })
+  const internalPendingCount = internalContracts.filter(c => c.status === '申請中').length
+  const internalRejectedCount = internalContracts.filter(c => c.status === '差し戻し中').length
+  const internalApprovedCount = internalContracts.filter(c => ['SSC承認済み', '署名待ち', '署名済み', '完了'].includes(c.status)).length
+  const internalBulkTargets = filteredInternalContracts.filter(c => !hasWarning(c) && !hasAutoCheckWarning(c))
+  const toggleSelectAllInternal = () => {
+    if (internalSelectedIds.size === internalBulkTargets.length) {
+      setInternalSelectedIds(new Set())
+    } else {
+      setInternalSelectedIds(new Set(internalBulkTargets.map(c => c.id)))
     }
   }
 
@@ -750,6 +850,220 @@ export default function AdminDashboard() {
             </div>
           )}
 
+          {activeTab === 'internal' && isInternalApprover && (
+            <div>
+              <p className="text-xs mb-4" style={{ color: '#5A6A8A' }}>
+                社内案件（APパートナーズ自社スタッフの雇用契約書）のみを表示します。SSCを通さず、社内承認者がここで直接承認・差し戻しを行います。
+              </p>
+
+              {/* 一括承認バー（承認待ちタブのみ） */}
+              {internalContractsSubTab === '承認待ち' && internalBulkTargets.length > 0 && (
+                <div className="mb-4">
+                  <div className="flex justify-between items-center px-4 py-3 bg-white rounded-xl border" style={{ borderColor: '#D0DAF0' }}>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={internalSelectedIds.size === internalBulkTargets.length && internalBulkTargets.length > 0}
+                        onChange={() => { toggleSelectAllInternal(); setInternalShowBulkApproveConfirm(false); setInternalBulkApproveDone(null) }}
+                        className="w-4 h-4 cursor-pointer"
+                        style={{ accentColor: '#1B3A8C' }}
+                      />
+                      <span className="text-sm" style={{ color: '#5A6A8A' }}>警告なし案件をすべて選択</span>
+                    </label>
+                    <button
+                      onClick={() => setInternalShowBulkApproveConfirm(true)}
+                      disabled={internalSelectedIds.size === 0}
+                      className="text-sm font-medium px-5 py-2 rounded-lg transition-all"
+                      style={{
+                        background: internalSelectedIds.size > 0 ? '#1B3A8C' : '#D1D5DB',
+                        color: 'white',
+                        cursor: internalSelectedIds.size > 0 ? 'pointer' : 'not-allowed',
+                      }}>
+                      ✅ 一括承認（{internalSelectedIds.size}件）
+                    </button>
+                  </div>
+
+                  {internalShowBulkApproveConfirm && internalSelectedIds.size > 0 && !internalBulkApproving && internalBulkApproveDone === null && (
+                    <div className="mt-3 rounded-xl p-4 border-2" style={{ background: '#ECFDF5', borderColor: '#34D399' }}>
+                      <p className="text-sm font-bold mb-2" style={{ color: '#065F46' }}>
+                        ✅ 選択中の{internalSelectedIds.size}件を本当に一括承認してよいですか？
+                      </p>
+                      <p className="text-sm mb-3 leading-relaxed" style={{ color: '#1A2340' }}>
+                        承認すると、各申請の内容変更はできません。内容に誤りがないか今一度ご確認ください。<br />
+                        承認後、対象スタッフへ署名依頼が自動送信されます。
+                      </p>
+                      <div className="flex gap-3">
+                        <button
+                          onClick={handleBulkApproveInternal}
+                          className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white transition-all"
+                          style={{ background: '#1B3A8C' }}>
+                          選択中の{internalSelectedIds.size}件を一括承認する
+                        </button>
+                        <button
+                          onClick={() => setInternalShowBulkApproveConfirm(false)}
+                          className="px-4 py-2.5 rounded-lg text-sm border"
+                          style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
+                          キャンセル
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* サブタブ */}
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                {([
+                  { key: '承認待ち' as ContractSubTab, count: internalPendingCount, color: '#1D4ED8', tint: '#EEF0F5' },
+                  { key: '差し戻し中' as ContractSubTab, count: internalRejectedCount, color: '#B91C1C', tint: '#FEE2E2' },
+                  { key: '承認済み' as ContractSubTab, count: internalApprovedCount, color: '#065F46', tint: '#D1FAE5' },
+                ]).map(tab => {
+                  const isActive = internalContractsSubTab === tab.key
+                  return (
+                    <button key={tab.key} onClick={() => { setInternalContractsSubTab(tab.key); setInternalSelectedIds(new Set()); setInternalShowBulkApproveConfirm(false); setInternalBulkApproveDone(null) }}
+                      className="text-left rounded-xl px-4 py-3.5 transition-all"
+                      style={isActive
+                        ? { background: tab.tint, borderLeft: `3px solid ${tab.color}`, borderTop: '0.5px solid #D0DAF0', borderRight: '0.5px solid #D0DAF0', borderBottom: '0.5px solid #D0DAF0' }
+                        : { background: 'white', border: '0.5px solid #D0DAF0' }}>
+                      <p className="text-xs font-medium" style={{ color: isActive ? tab.color : '#5A6A8A' }}>{tab.key}</p>
+                      <span className="text-2xl font-bold" style={{ color: isActive ? tab.color : '#1A2340' }}>{tab.count}</span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {internalContractsError && <p className="text-xs mb-3" style={{ color: '#DC2626' }}>{internalContractsError}</p>}
+              {internalContractsLoading && <p className="text-xs" style={{ color: '#5A6A8A' }}>読み込み中...</p>}
+
+              {!internalContractsLoading && !internalContractsError && filteredInternalContracts.length === 0 && (
+                <div className="bg-white rounded-xl border p-12 text-center" style={{ borderColor: '#D0DAF0' }}>
+                  <p className="text-sm font-medium" style={{ color: '#1A2340' }}>該当する社内案件はありません</p>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-3">
+                {filteredInternalContracts.map(contract => {
+                  const staff = contract.input_data?.staff || {}
+                  const f = contract.input_data?.fields || {}
+                  const deadline = getDeadlineAlert(contract)
+                  const warning = hasWarning(contract)
+                  const autoWarning = hasAutoCheckWarning(contract)
+                  const isConfirmed = contract.status === '署名済み' || contract.status === '完了'
+                  const leftBorderColor = deadline.type === 'overdue' ? '#EA580C' : deadline.type === 'urgent' ? '#F97316' : 'transparent'
+                  const hasAnyWarning = warning || autoWarning
+                  const warningColor = (warning || contract.warning_level === 'red') ? '#DC2626' : '#D97706'
+                  const isSelected = internalSelectedIds.has(contract.id)
+                  const canBulkSelect = internalContractsSubTab === '承認待ち' && !hasAnyWarning
+                  const showWarningIcon = internalContractsSubTab === '承認待ち' && hasAnyWarning
+
+                  return (
+                    <div key={contract.id} className="bg-white rounded-xl overflow-hidden"
+                      style={{ border: '0.5px solid #D0DAF0', borderLeft: deadline.type ? `4px solid ${leftBorderColor}` : '0.5px solid #D0DAF0' }}>
+                      <div className="px-5 py-4">
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div className="flex items-start gap-3">
+                            {canBulkSelect && (
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => { toggleSelectInternal(contract.id); setInternalShowBulkApproveConfirm(false); setInternalBulkApproveDone(null) }}
+                                onClick={e => e.stopPropagation()}
+                                className="w-4 h-4 mt-5 flex-shrink-0 cursor-pointer"
+                                style={{ accentColor: '#1B3A8C' }}
+                              />
+                            )}
+                            {showWarningIcon && (
+                              <span
+                                title="警告あり（一括承認対象外）"
+                                className="w-4 h-4 mt-5 flex-shrink-0 rounded flex items-center justify-center"
+                                style={{ background: warningColor }}>
+                                <span style={{ color: 'white', fontSize: '10px', fontWeight: 700, lineHeight: 1 }}>!</span>
+                              </span>
+                            )}
+                            <div>
+                              <p className="text-xs mb-1" style={{ color: '#5A6A8A' }}>{staff.department || '―'}</p>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <ContractTypeBadge contractType={f.contractType || contract.contract_type} workPlace={f.workPlace || contract.work_place} />
+                                <span className="text-xs" style={{ color: '#5A6A8A' }}>{staff.employee_number || '―'}</span>
+                                <span className="text-base font-bold" style={{ color: '#1A2340' }}>{staff.name || '―'}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                            <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                              <WorkPlaceBadge workPlace={f.workPlace || contract.work_place} />
+                              <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: '#EEF2FA', color: '#1B3A8C' }}>
+                                {getDocumentLabel(contract.document_type, contract.pattern)}
+                              </span>
+                              <span style={{ display: 'inline-block', width: '1px', height: '14px', background: '#D0DAF0', margin: '0 2px' }} />
+                              <ContractStatusBadge status={contract.status} />
+                            </div>
+                            {isConfirmed && <ConfirmedBadge signedAt={contract.signed_at} />}
+                            <div className="flex items-center gap-2">
+                              {warning && (
+                                <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: '#DC2626', color: 'white' }}>
+                                  🔴 個別確認が必要（一括承認対象外）
+                                </span>
+                              )}
+                              {autoWarning && (
+                                <span className="text-xs font-medium px-2 py-0.5 rounded"
+                                  style={{ background: contract.warning_level === 'red' ? '#DC2626' : '#D97706', color: 'white' }}>
+                                  {contract.warning_level === 'red' ? '🔴' : '🟡'} 自動チェック要確認（一括承認対象外）
+                                </span>
+                              )}
+                              <span className="text-xs" style={{ color: '#5A6A8A' }}>申請者：{contract.created_by.slice(0, 8)}…</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 mb-3" style={{ background: '#F5F7FC' }}>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-sm flex-shrink-0" style={{ color: '#1B3A8C' }}>📍</span>
+                            <span className="text-sm" style={{ color: '#1A2340', wordBreak: 'break-all' }}>{f.workLocationName || '―'}</span>
+                          </div>
+                          {deadline.type && (
+                            <span className="text-xs font-medium px-2 py-0.5 rounded flex-shrink-0"
+                              style={{ background: deadline.type === 'overdue' ? '#FFEDD5' : '#FFF7ED', color: deadline.type === 'overdue' ? '#9A3412' : '#C2410C' }}>
+                              ⚠ {deadline.label}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-start gap-6 flex-wrap">
+                          <div>
+                            <p className="text-xs mb-0.5" style={{ color: '#5A6A8A' }}>申請日時</p>
+                            <p className="text-xs" style={{ color: '#1A2340' }}>{formatDateTime(contract.created_at)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs mb-0.5" style={{ color: '#5A6A8A' }}>雇用期間</p>
+                            <p className="text-xs" style={{ color: '#1A2340' }}>{getEmployPeriodLabel(contract)}</p>
+                          </div>
+                        </div>
+
+                        {contract.status === '差し戻し中' && contract.rejection_reason && (
+                          <div className="mt-3 rounded-lg px-3 py-2 border-l-4" style={{ background: '#FEF2F2', borderColor: '#B91C1C' }}>
+                            <p className="text-xs font-medium mb-0.5" style={{ color: '#B91C1C' }}>差し戻し理由</p>
+                            <p className="text-xs leading-relaxed" style={{ color: '#1A2340' }}>{contract.rejection_reason}</p>
+                          </div>
+                        )}
+
+                        <button
+                          className="mt-3.5 flex items-center gap-1.5 rounded-full transition-all"
+                          style={{ background: '#1B3A8C', border: 'none', padding: '7px 16px', cursor: 'pointer' }}
+                          onClick={() => router.push(`/dashboard/ssc/contracts/${contract.id}`)}>
+                          <span className="text-xs font-medium text-white">
+                            {internalContractsSubTab === '承認待ち' ? '内容を確認する' : '詳細を見る'}
+                          </span>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18" /></svg>
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {activeTab === 'csvImport' && (
             <p className="text-sm" style={{ color: '#5A6A8A' }}>CSVインポートタブは未実装です（次のフェーズで実装予定）。</p>
           )}
@@ -788,6 +1102,41 @@ export default function AdminDashboard() {
                 </p>
                 <button
                   onClick={handleBulkApproveDoneOk}
+                  className="w-full py-3 rounded-lg text-base font-bold text-white"
+                  style={{ background: '#1B3A8C' }}>
+                  OK
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 社内承認タブの一括承認：処理中／完了の全画面オーバーレイ（2026-07-13追加・フェーズ3） */}
+      {(internalBulkApproving || internalBulkApproveDone !== null) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,64,0.6)' }}>
+          <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl">
+            {internalBulkApproving ? (
+              <>
+                <div className="mx-auto mb-5 w-14 h-14 rounded-full border-4 animate-spin"
+                  style={{ borderColor: '#1B3A8C', borderTopColor: 'transparent' }} />
+                <p className="text-lg font-bold mb-2" style={{ color: '#1A2340' }}>一括承認処理中です</p>
+                <p className="text-sm leading-relaxed" style={{ color: '#5A6A8A' }}>
+                  しばらくお待ちください。<br />
+                  画面を閉じたり、戻ったりしないでください。
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-5xl mb-3">✅</p>
+                <p className="text-lg font-bold mb-2" style={{ color: '#065F46' }}>
+                  一括承認が完了しました（{internalBulkApproveDone}件）
+                </p>
+                <p className="text-sm leading-relaxed mb-6" style={{ color: '#1A2340' }}>
+                  対象スタッフへ署名依頼が自動送信されました。
+                </p>
+                <button
+                  onClick={handleBulkApproveInternalDoneOk}
                   className="w-full py-3 rounded-lg text-base font-bold text-white"
                   style={{ background: '#1B3A8C' }}>
                   OK

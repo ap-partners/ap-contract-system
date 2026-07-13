@@ -301,9 +301,12 @@ export default function SSCContractDetail() {
         .single()
 
       if (error || !row) { setNotFound(true); setLoading(false); return }
-      // 社内案件はSSCの閲覧対象外（一覧画面と同じ制限。URL直打ちでの閲覧を防ぐ）。
+      // 社内案件は原則SSC・管理部の閲覧対象外（一覧画面と同じ制限。URL直打ちでの閲覧を防ぐ）。
       // 存在しない申請と同じ表示にすることで、社内案件が存在すること自体も分からないようにする。
-      if ((row as any).work_place === '社内') { setNotFound(true); setLoading(false); return }
+      // 例外（2026-07-13追加・フェーズ3）：管理部の中でも「社内承認者」フラグ
+      // （user_metadata.is_internal_approver === true）を持つ人だけは、社内案件も閲覧・承認できる。
+      const isInternalApprover = role === '管理部' && data.user.user_metadata?.is_internal_approver === true
+      if ((row as any).work_place === '社内' && !isInternalApprover) { setNotFound(true); setLoading(false); return }
       setContract(row as ContractDetail)
       setLoading(false)
     }
@@ -426,6 +429,8 @@ export default function SSCContractDetail() {
   // 承認・差し戻し等の操作権限はSSCと完全に同じで、ここでは制限しない）
   const isAdmin = user?.user_metadata?.role === '管理部'
   const backPath = isAdmin ? '/dashboard/admin' : '/dashboard/ssc'
+  // 社内案件を管理部（社内承認者）が開いている場合のフラグ（2026-07-13追加・フェーズ3。表示文言の出し分けのみ）
+  const isInternalApproval = isAdmin && contract.work_place === '社内'
 
   // input_data から各フィールドを取り出す
   const staffSnap = contract.input_data?.staff || {}
@@ -485,7 +490,7 @@ export default function SSCContractDetail() {
             <Image src="/logo.png" alt="APパートナーズ" width={60} height={35} />
             <div className="border-l pl-3" style={{ borderColor: '#D0DAF0' }}>
               <p className="text-sm font-bold" style={{ color: '#1A2340' }}>契約書管理システム</p>
-              <p className="text-xs" style={{ color: '#5A6A8A' }}>{isAdmin ? '契約確認画面（管理部）' : 'SSC確認画面'}</p>
+              <p className="text-xs" style={{ color: '#5A6A8A' }}>{isInternalApproval ? '契約確認画面（社内承認）' : isAdmin ? '契約確認画面（管理部）' : 'SSC確認画面'}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">

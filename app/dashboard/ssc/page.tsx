@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import type { ReactElement } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
@@ -24,6 +25,120 @@ type Contract = ContractForDisplay
 
 type TabType = '承認待ち' | '差し戻し中' | '承認済み'
 
+type IconName =
+  | 'home'
+  | 'file'
+  | 'search'
+  | 'filter'
+  | 'clock'
+  | 'check'
+  | 'refresh'
+  | 'arrow'
+  | 'alert'
+  | 'map'
+  | 'logout'
+  | 'bell'
+
+const Icon = ({ name, className = '' }: { name: IconName; className?: string }) => {
+  const paths: Record<IconName, ReactElement> = {
+    home: (
+      <>
+        <path d="m3 10.5 9-7 9 7" />
+        <path d="M5 9.5V21h14V9.5" />
+        <path d="M9 21v-6h6v6" />
+      </>
+    ),
+    file: (
+      <>
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <path d="M14 2v6h6" />
+        <path d="M8 13h8" />
+        <path d="M8 17h5" />
+      </>
+    ),
+    search: (
+      <>
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.5-3.5" />
+      </>
+    ),
+    filter: (
+      <>
+        <path d="M3 5h18" />
+        <path d="M7 12h10" />
+        <path d="M10 19h4" />
+      </>
+    ),
+    clock: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
+      </>
+    ),
+    check: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="m8 12 3 3 5-6" />
+      </>
+    ),
+    refresh: (
+      <>
+        <path d="M21 12a9 9 0 0 1-15.5 6.2" />
+        <path d="M3 12A9 9 0 0 1 18.5 5.8" />
+        <path d="M18 2v4h4" />
+        <path d="M6 22v-4H2" />
+      </>
+    ),
+    arrow: (
+      <>
+        <path d="M5 12h14" />
+        <path d="m13 6 6 6-6 6" />
+      </>
+    ),
+    alert: (
+      <>
+        <path d="M10.3 3.9 2.5 17.4A2 2 0 0 0 4.2 20h15.6a2 2 0 0 0 1.7-2.6L13.7 3.9a2 2 0 0 0-3.4 0z" />
+        <path d="M12 8v5" />
+        <path d="M12 17h.01" />
+      </>
+    ),
+    map: (
+      <>
+        <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0z" />
+        <circle cx="12" cy="10" r="3" />
+      </>
+    ),
+    logout: (
+      <>
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+        <path d="m16 17 5-5-5-5" />
+        <path d="M21 12H9" />
+      </>
+    ),
+    bell: (
+      <>
+        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+        <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+      </>
+    ),
+  }
+
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {paths[name]}
+    </svg>
+  )
+}
+
 export default function SSCDashboard() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
@@ -31,14 +146,8 @@ export default function SSCDashboard() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabType>('承認待ち')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  // 一括承認の確認ステップ（2026-07-13追加：確認なしで即実行されてしまい、誤操作時に取り返しが
-  // つかないとの伊藤さん指摘を受けて、個別承認画面と同じ確認カードを挟むようにした）
   const [showBulkApproveConfirm, setShowBulkApproveConfirm] = useState(false)
-  // 一括承認の処理中フラグ（2026-07-13追加：承認〜通知APIの呼び出しに数秒かかり、
-  // 押せているかどうか分かりにくいとの伊藤さん指摘を受けて、処理中であることを画面に出すようにした）
   const [bulkApproving, setBulkApproving] = useState(false)
-  // 一括承認の完了件数（2026-07-13追加：処理完了後にOKを押すまで完了メッセージを表示し続けるための状態。
-  // nullの間は未完了、数値が入ったら完了メッセージ＋OKボタンを表示する）
   const [bulkApproveDone, setBulkApproveDone] = useState<number | null>(null)
 
   useEffect(() => {
@@ -73,11 +182,6 @@ export default function SSCDashboard() {
     return false
   })
 
-  // 2026-07-14追加：「承認済み・完了」タブに案件が蓄積すると、署名待ち／署名済みが混在して
-  // 分かりづらい・目当ての案件を探しにくい、との伊藤さんの指摘を受けて、絞り込み・並び替え・
-  // テキスト検索を共通部品（useContractListToolbar）で追加した（docs/SYSTEM_DESIGN.md 10章
-  // 2026-07-14参照）。承認待ち・差し戻し中タブはステータスが1種類のみのため、ピルボタンは
-  // 出さず検索・並び替えのみ表示する（statusOptionsを空配列にすると自動的にピル行が消える）。
   const statusOptionsByTab: Record<TabType, { value: string; label: string }[]> = {
     '承認待ち': [],
     '差し戻し中': [],
@@ -100,9 +204,6 @@ export default function SSCDashboard() {
     resetKey: activeTab,
   })
 
-  // 承認待ちタブで一括承認対象となるのは「担当営業の自己申告警告」も「自動チェック警告」もない案件のみ
-  // （絞り込み・検索後の一覧＝画面に見えている案件を対象にする。見えていない案件が選択されると
-  // 分かりにくいため）
   const bulkTargets = visibleContracts.filter(c => !hasWarning(c) && !hasAutoCheckWarning(c))
 
   const pendingCount = contracts.filter(c => c.status === '申請中').length
@@ -140,191 +241,236 @@ export default function SSCDashboard() {
       return
     }
 
-    // 個別承認（app/dashboard/ssc/contracts/[id]/page.tsx の handleApprove）と同様、
-    // 承認直後に署名依頼通知APIを呼ぶ。締結パターンが「指定しない（自動送信）」の案件は
-    // ここで「SSC承認済み→署名待ち」へ自動遷移し、従業員へ署名依頼メールが送られる。
-    // 「対面」「印刷」パターンはこのAPI内で何もしない（担当営業の「説明完了」時に送信）。
-    // 通知の失敗は承認自体をブロックしない（個別承認と同じ方針。2026-07-13対応）。
     await Promise.all(
       ids.map(id =>
         fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST' }).catch(() => {})
       )
     )
 
-    // 通知APIによる遷移（署名待ちへ進んだ案件がある）を画面に反映するため、対象契約の
-    // 最新ステータスをDBから再取得する（一律「SSC承認済み」にしてしまうと、自動送信パターンの
-    // 案件が実際には署名待ちに進んでいても一覧上は古いステータスのまま表示されてしまうため）。
     const { data: refreshed } = await supabase
       .from('contracts')
       .select('id, status')
       .in('id', ids)
     const statusMap = new Map((refreshed || []).map(r => [r.id, r.status as ContractStatus]))
     setContracts(prev => prev.map(c => statusMap.has(c.id) ? { ...c, status: statusMap.get(c.id)! } : c))
-    // ここではまだ selectedIds・確認カードを閉じない。伊藤さんの指摘（2026-07-13）を受けて、
-    // 完了メッセージ＋OKボタンをこの後表示し、OKを押した時点で初めて片付ける。
     setBulkApproving(false)
     setBulkApproveDone(ids.length)
   }
 
-  // 一括承認の完了メッセージでOKを押した時のクローズ処理
   const handleBulkApproveDoneOk = () => {
     setSelectedIds(new Set())
     setShowBulkApproveConfirm(false)
     setBulkApproveDone(null)
   }
 
-  const tabs: { key: TabType; label: string; count: number; color: string; tint: string }[] = [
-    { key: '承認待ち', label: '承認待ち', count: pendingCount, color: '#1D4ED8', tint: '#EEF0F5' },
-    { key: '差し戻し中', label: '差し戻し中', count: rejectedCount, color: '#B91C1C', tint: '#FEE2E2' },
-    { key: '承認済み', label: '承認済み・署名状況', count: approvedCount, color: '#065F46', tint: '#D1FAE5' },
+  const tabs: { key: TabType; label: string; count: number }[] = [
+    { key: '承認待ち', label: '承認待ち', count: pendingCount },
+    { key: '差し戻し中', label: '差し戻し', count: rejectedCount },
+    { key: '承認済み', label: '承認済み・署名状況', count: approvedCount },
+  ]
+
+  const summaryCards = [
+    { label: '承認待ち', value: pendingCount, tone: 'text-[#2F5FD0]', icon: 'clock' as const, bar: 'bg-[#2F5FD0]' },
+    { label: '差し戻し', value: rejectedCount, tone: 'text-[#E74C3C]', icon: 'refresh' as const, bar: 'bg-[#E74C3C]' },
+    { label: '承認済み・署名状況', value: approvedCount, tone: 'text-[#4CAF50]', icon: 'check' as const, bar: 'bg-[#4CAF50]' },
   ]
 
   if (!user) return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: '#F5F7FC' }}>
-      <p className="text-sm" style={{ color: '#5A6A8A' }}>読み込み中...</p>
+    <div className="flex min-h-screen items-center justify-center bg-[#F8FAFD]">
+      <p className="text-sm font-medium text-[#6B7280]">読み込み中</p>
     </div>
   )
 
   return (
-    <div className="min-h-screen" style={{ background: '#F5F7FC' }}>
-      {/* ヘッダー */}
-      <header className="bg-white border-b" style={{ borderColor: '#D0DAF0' }}>
-        <div className="max-w-5xl mx-auto px-6 py-3 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <Image src="/logo.png" alt="APパートナーズ" width={60} height={35} />
-            <div className="border-l pl-3" style={{ borderColor: '#D0DAF0' }}>
-              <p className="text-sm font-bold" style={{ color: '#1A2340' }}>契約書管理システム</p>
-              <p className="text-xs" style={{ color: '#5A6A8A' }}>SSCダッシュボード</p>
+    <div className="min-h-screen bg-[#F8FAFD] text-[#1F2937]">
+      <header className="border-b border-[#E8EDF5] bg-white/90 backdrop-blur">
+        <div className="mx-auto flex max-w-[1600px] items-center justify-between px-6 py-5 lg:px-8">
+          <div className="flex items-center gap-5">
+            <div className="flex items-center gap-3">
+              <Image src="/logo.png" alt="APパートナーズ" width={64} height={38} className="h-auto w-[64px]" />
+              <div>
+                <p className="text-sm font-semibold text-[#1F2937]">APパートナーズ</p>
+                <p className="text-xs font-medium text-[#6B7280]">SSCダッシュボード</p>
+              </div>
+            </div>
+            <div className="hidden h-8 w-px bg-[#E8EDF5] md:block" />
+            <div className="hidden md:block">
+              <h1 className="text-2xl font-semibold tracking-normal text-[#1F2937]">契約書管理システム</h1>
+              <p className="mt-1 text-sm font-medium text-[#6B7280]">承認状況を確認し、必要な申請を処理できます</p>
             </div>
           </div>
-          <button onClick={handleLogout}
-            className="text-sm px-4 py-2 rounded-lg border"
-            style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
-            ログアウト
-          </button>
+
+          <div className="flex items-center gap-3">
+            <button className="hidden h-12 w-12 items-center justify-center rounded-2xl border border-[#E8EDF5] bg-white text-[#6B7280] shadow-[0_10px_30px_rgba(15,23,42,.04)] transition hover:-translate-y-0.5 hover:text-[#2F5FD0] hover:shadow-[0_15px_40px_rgba(15,23,42,.08)] sm:flex">
+              <Icon name="bell" className="h-5 w-5" />
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex h-12 items-center gap-2 rounded-2xl border border-[#E8EDF5] bg-white px-4 text-sm font-semibold text-[#1F2937] shadow-[0_10px_30px_rgba(15,23,42,.04)] transition hover:-translate-y-0.5 hover:border-[#2F5FD0] hover:text-[#2F5FD0] hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]"
+            >
+              <Icon name="logout" className="h-4 w-4" />
+              ログアウト
+            </button>
+          </div>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-6 py-8">
-        {/* タブ型サマリーカード（クリックで絞り込み） */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          {tabs.map(tab => {
-            const isActive = activeTab === tab.key
-            const icon = tab.key === '承認待ち'
-              ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={isActive ? tab.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><rect x="4" y="4" width="16" height="16" rx="2" /><line x1="8" y1="10" x2="16" y2="10" /><line x1="8" y1="14" x2="13" y2="14" /></svg>
-              : tab.key === '差し戻し中'
-              ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={isActive ? tab.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></svg>
-              : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={isActive ? tab.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12" /></svg>
-            return (
-              <div key={tab.key}
-                className="rounded-xl px-4 py-3.5 transition-all"
-                style={isActive
-                  ? { background: tab.tint, borderLeft: `3px solid ${tab.color}`, borderTop: '0.5px solid #D0DAF0', borderRight: '0.5px solid #D0DAF0', borderBottom: '0.5px solid #D0DAF0' }
-                  : { background: 'white', border: '0.5px solid #D0DAF0' }}>
-                <div className="flex items-center gap-1.5">
-                  {icon}
-                  <p className="text-xs font-medium" style={{ color: isActive ? tab.color : '#5A6A8A' }}>{tab.label}</p>
-                </div>
-                <div className="flex items-center justify-between mt-2.5">
-                  <span className="text-2xl font-bold" style={{ color: isActive ? tab.color : '#1A2340' }}>{tab.count}</span>
-                  <button
-                    onClick={() => { setActiveTab(tab.key); setSelectedIds(new Set()); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
-                    className="flex items-center gap-1 rounded-full transition-all"
-                    style={isActive
-                      ? { background: tab.color, border: 'none', padding: '6px 13px', cursor: 'pointer' }
-                      : { background: 'white', border: `1px solid ${tab.color}`, padding: '5px 12px', cursor: 'pointer' }}>
-                    <span className="text-xs font-medium" style={{ color: isActive ? 'white' : tab.color }}>一覧を見る</span>
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={isActive ? 'white' : tab.color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18" /></svg>
-                  </button>
-                </div>
+      <main className="mx-auto max-w-[1600px] px-6 py-8 lg:px-8">
+        <section className="overflow-hidden rounded-[18px] border border-[#E8EDF5] bg-[radial-gradient(circle_at_20%_15%,rgba(47,95,208,.14),transparent_32%),linear-gradient(135deg,#F7FBFF_0%,#EEF5FF_48%,#FFFFFF_100%)] p-6 shadow-[0_10px_30px_rgba(15,23,42,.05)] md:p-8">
+          <div className="grid gap-6 xl:grid-cols-[1.05fr_1.45fr] xl:items-center">
+            <div className="flex items-start gap-5">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#DDE8FF] text-[#2F5FD0]">
+                <Icon name="file" className="h-8 w-8" />
               </div>
-            )
-          })}
-        </div>
+              <div>
+                <p className="text-sm font-semibold text-[#1F2937]">本日の承認状況</p>
+                <h2 className="mt-2 text-4xl font-semibold tracking-normal text-[#2F5FD0] md:text-5xl">
+                  承認待ち {pendingCount}件
+                </h2>
+                <p className="mt-4 text-sm font-medium leading-6 text-[#1F2937]">
+                  期限超過や個別確認が必要な案件を優先して確認してください。
+                </p>
+                <button
+                  onClick={() => { setActiveTab('承認待ち'); setSelectedIds(new Set()); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
+                  className="mt-6 inline-flex h-[52px] items-center gap-3 rounded-2xl bg-[#2F5FD0] px-6 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(47,95,208,.22)] transition hover:-translate-y-0.5 hover:bg-[#244CB3] hover:shadow-[0_15px_34px_rgba(47,95,208,.26)]"
+                >
+                  すべての承認待ちを確認する
+                  <Icon name="arrow" className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
 
-        {/* 一括承認バー（承認待ちタブのみ） */}
+            <div className="grid gap-4 md:grid-cols-3">
+              {summaryCards.map(card => (
+                <div key={card.label} className="rounded-[18px] border border-[#E8EDF5] bg-white/86 p-6 shadow-[0_10px_30px_rgba(15,23,42,.05)] backdrop-blur transition hover:-translate-y-0.5 hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]">
+                  <div className="flex items-start justify-between gap-4">
+                    <p className="text-sm font-semibold text-[#1F2937]">{card.label}</p>
+                    <Icon name={card.icon} className="h-6 w-6 text-[#1F2937]" />
+                  </div>
+                  <div className="mt-6 flex items-end gap-2">
+                    <span className={`text-4xl font-semibold tracking-normal ${card.tone}`}>{card.value}</span>
+                    <span className={`pb-1 text-base font-semibold ${card.tone}`}>件</span>
+                  </div>
+                  <div className="mt-6 h-1 rounded-full bg-[#E8EDF5]">
+                    <div className={`h-1 w-8 rounded-full ${card.bar}`} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <nav className="mt-6 border-b border-[#E8EDF5]">
+          <div className="flex gap-8 overflow-x-auto">
+            {tabs.map(tab => {
+              const isActive = activeTab === tab.key
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => { setActiveTab(tab.key); setSelectedIds(new Set()); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
+                  className={`group relative whitespace-nowrap px-1 pb-4 text-sm font-semibold transition ${isActive ? 'text-[#2F5FD0]' : 'text-[#1F2937] hover:text-[#2F5FD0]'}`}
+                >
+                  {tab.label}
+                  <span className="ml-2 text-[#6B7280]">({tab.count})</span>
+                  <span className={`absolute bottom-[-1px] left-0 h-0.5 rounded-full bg-[#2F5FD0] transition-all duration-300 ${isActive ? 'w-full' : 'w-0 group-hover:w-full'}`} />
+                </button>
+              )
+            })}
+          </div>
+        </nav>
+
+        {!loading && filtered.length > 0 && (
+          <section className="mt-5 rounded-[18px] border border-[#E8EDF5] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)]">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <Icon name="filter" className="h-5 w-5 text-[#1F2937]" />
+                <h2 className="text-base font-semibold text-[#1F2937]">絞り込み条件</h2>
+              </div>
+              <Icon name="search" className="h-5 w-5 text-[#6B7280]" />
+            </div>
+            <div className="[&_button]:rounded-[14px] [&_button]:font-semibold [&_input]:rounded-[14px] [&_input]:border-[#E8EDF5] [&_input]:transition [&_input:focus]:border-[#2F5FD0] [&_select]:rounded-[14px] [&_select]:border-[#E8EDF5]">
+              {listToolbar}
+            </div>
+          </section>
+        )}
+
         {activeTab === '承認待ち' && bulkTargets.length > 0 && (
-          <div className="mb-4">
-            <div className="flex justify-between items-center px-4 py-3 bg-white rounded-xl border" style={{ borderColor: '#D0DAF0' }}>
-              <label className="flex items-center gap-2 cursor-pointer">
+          <section className="mt-5">
+            <div className="flex flex-col gap-4 rounded-[18px] border border-[#E8EDF5] bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,.05)] sm:flex-row sm:items-center sm:justify-between">
+              <label className="flex cursor-pointer items-center gap-3 text-sm font-semibold text-[#1F2937]">
                 <input
                   type="checkbox"
                   checked={selectedIds.size === bulkTargets.length && bulkTargets.length > 0}
                   onChange={() => { toggleSelectAll(); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
-                  className="w-4 h-4 cursor-pointer"
-                  style={{ accentColor: '#1B3A8C' }}
+                  className="h-5 w-5 rounded border-[#E8EDF5] accent-[#2F5FD0]"
                 />
-                <span className="text-sm" style={{ color: '#5A6A8A' }}>警告なし案件をすべて選択</span>
+                警告のない案件をすべて選択
               </label>
               <button
                 onClick={() => setShowBulkApproveConfirm(true)}
                 disabled={selectedIds.size === 0}
-                className="text-sm font-medium px-5 py-2 rounded-lg transition-all"
-                style={{
-                  background: selectedIds.size > 0 ? '#1B3A8C' : '#D1D5DB',
-                  color: 'white',
-                  cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
-                }}>
-                ✅ 一括承認（{selectedIds.size}件）
+                className="inline-flex h-[52px] items-center justify-center gap-3 rounded-2xl bg-[#F59E42] px-6 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(245,158,66,.2)] transition hover:-translate-y-0.5 hover:bg-[#E88525] hover:shadow-[0_15px_34px_rgba(245,158,66,.28)] disabled:cursor-not-allowed disabled:bg-[#D1D5DB] disabled:shadow-none disabled:hover:translate-y-0"
+              >
+                <Icon name="check" className="h-5 w-5" />
+                一括承認する（{selectedIds.size}件選択中）
               </button>
             </div>
 
-            {/* 一括承認の確認カード（2026-07-13追加：個別承認画面と同じ確認ステップを挟む。
-                誤操作で即実行されてしまわないようにするための対応。処理中・完了時は下の全画面オーバーレイに切り替わる） */}
             {showBulkApproveConfirm && selectedIds.size > 0 && !bulkApproving && bulkApproveDone === null && (
-              <div className="mt-3 rounded-xl p-4 border-2" style={{ background: '#ECFDF5', borderColor: '#34D399' }}>
-                <p className="text-sm font-bold mb-2" style={{ color: '#065F46' }}>
-                  ✅ 選択中の{selectedIds.size}件を本当に一括承認してよいですか？
+              <div className="mt-4 rounded-[18px] border border-[#BFE7CF] bg-[#F0FBF4] p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)]">
+                <p className="text-base font-semibold text-[#1F2937]">
+                  選択中の{selectedIds.size}件を一括承認しますか
                 </p>
-                <p className="text-sm mb-3 leading-relaxed" style={{ color: '#1A2340' }}>
-                  承認すると、各申請の内容変更はできません。内容に誤りがないか今一度ご確認ください。<br />
-                  承認後、対象スタッフへ署名・確認依頼が自動送信されます（雇用契約書は署名、就業条件明示書は内容確認の依頼になります。対面・印刷パターンの案件は担当営業のダッシュボードに表示されます）。
+                <p className="mt-2 text-sm font-medium leading-6 text-[#6B7280]">
+                  承認後は申請内容を変更できません。対象スタッフへ署名依頼の通知が送信されます。
                 </p>
-                <div className="flex gap-3">
+                <div className="mt-5 flex flex-col gap-3 sm:flex-row">
                   <button
                     onClick={handleBulkApprove}
-                    className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white transition-all"
-                    style={{ background: '#1B3A8C' }}>
+                    className="inline-flex h-[52px] flex-1 items-center justify-center rounded-2xl bg-[#2F5FD0] px-6 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-[#244CB3]"
+                  >
                     選択中の{selectedIds.size}件を一括承認する
                   </button>
                   <button
                     onClick={() => setShowBulkApproveConfirm(false)}
-                    className="px-4 py-2.5 rounded-lg text-sm border"
-                    style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
+                    className="inline-flex h-[52px] items-center justify-center rounded-2xl border border-[#E8EDF5] bg-white px-6 text-sm font-semibold text-[#1F2937] transition hover:-translate-y-0.5 hover:border-[#2F5FD0] hover:text-[#2F5FD0]"
+                  >
                     キャンセル
                   </button>
                 </div>
               </div>
             )}
-          </div>
+          </section>
         )}
 
-        {/* 絞り込み・並び替え・検索（2026-07-14追加） */}
-        {!loading && filtered.length > 0 && listToolbar}
+        <div className="mt-7 flex items-center justify-between gap-4">
+          <p className="text-sm font-medium text-[#6B7280]">
+            <span className="font-semibold text-[#1F2937]">{visibleContracts.length}</span>件の申請が見つかりました
+          </p>
+        </div>
 
-        {/* 申請カード一覧 */}
         {loading ? (
-          <div className="text-center py-16">
-            <p className="text-sm" style={{ color: '#5A6A8A' }}>読み込み中...</p>
+          <div className="py-16 text-center">
+            <p className="text-sm font-medium text-[#6B7280]">読み込み中</p>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="bg-white rounded-xl border p-12 text-center" style={{ borderColor: '#D0DAF0' }}>
-            <p className="text-2xl mb-3">📋</p>
-            <p className="text-sm font-medium" style={{ color: '#1A2340' }}>
+          <div className="mt-5 rounded-[18px] border border-[#E8EDF5] bg-white p-12 text-center shadow-[0_10px_30px_rgba(15,23,42,.05)]">
+            <Icon name="file" className="mx-auto h-10 w-10 text-[#6B7280]" />
+            <p className="mt-4 text-sm font-semibold text-[#1F2937]">
               {activeTab === '承認待ち' && '承認待ちの申請はありません'}
               {activeTab === '差し戻し中' && '差し戻し中の申請はありません'}
               {activeTab === '承認済み' && '承認済みの申請はありません'}
             </p>
           </div>
         ) : visibleContracts.length === 0 ? (
-          <div className="bg-white rounded-xl border p-12 text-center" style={{ borderColor: '#D0DAF0' }}>
-            <p className="text-2xl mb-3">🔍</p>
-            <p className="text-sm font-medium" style={{ color: '#1A2340' }}>
+          <div className="mt-5 rounded-[18px] border border-[#E8EDF5] bg-white p-12 text-center shadow-[0_10px_30px_rgba(15,23,42,.05)]">
+            <Icon name="search" className="mx-auto h-10 w-10 text-[#6B7280]" />
+            <p className="mt-4 text-sm font-semibold text-[#1F2937]">
               条件に一致する申請が見つかりませんでした
             </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
+          <div className="mt-4 grid gap-3">
             {visibleContracts.map(contract => {
               const staff = contract.input_data?.staff || {}
               const f = contract.input_data?.fields || {}
@@ -335,187 +481,145 @@ export default function SSCDashboard() {
               const isConfirmed = contract.status === '署名済み' || contract.status === '完了'
               const hasAnyWarning = warning || autoWarning
               const canBulkSelect = activeTab === '承認待ち' && !hasAnyWarning
-              // 承認待ちタブでチェックボックスの代わりに警告アイコンを出す条件（2026-07-02追加）
               const showWarningIcon = activeTab === '承認待ち' && hasAnyWarning
-              // アイコン・バッジの色（自己申告警告 or 自動チェック赤 → 赤、自動チェック黄のみ → 黄）
-              const warningColor = (warning || contract.warning_level === 'red') ? '#DC2626' : '#D97706'
-
-              // 期日アラートに応じた左ボーダー色（赤は警告系の色として予約しているため、期日はオレンジ系で統一）
-              const leftBorderColor = deadline.type === 'overdue' ? '#EA580C' : deadline.type === 'urgent' ? '#F97316' : 'transparent'
+              // 自動チェック警告の重要度で色を出し分ける（red＝赤、それ以外（yellow）＝青）。
+              // 以前の一覧では🔴／🟡で重要度を区別していたため、その差が消えないようにする。
+              const autoWarningTone = contract.warning_level === 'red'
+                ? 'bg-[#FDECEC] text-[#E74C3C]'
+                : 'bg-[#EAF1FF] text-[#2F5FD0]'
 
               return (
-                <div key={contract.id}
-                  className="bg-white rounded-xl overflow-hidden transition-all hover:shadow-md"
-                  style={{
-                    border: '0.5px solid #D0DAF0',
-                    borderLeft: deadline.type ? `4px solid ${leftBorderColor}` : '0.5px solid #D0DAF0',
-                  }}>
-                  <div className="px-5 py-4">
-                    {/* 上段：チェックボックス＋スタッフ情報 ／ バッジ群 */}
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <div className="flex items-start gap-3">
-                        {/* チェックボックス（警告なし案件・承認待ちタブのみ） */}
-                        {canBulkSelect && (
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => { toggleSelect(contract.id); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
-                            onClick={e => e.stopPropagation()}
-                            className="w-4 h-4 mt-5 flex-shrink-0 cursor-pointer"
-                            style={{ accentColor: '#1B3A8C' }}
-                          />
-                        )}
-                        {/* 警告アイコン（チェックボックスと同じ位置・サイズに表示。2026-07-02追加）
-                            警告がある案件は一括承認の対象外になるため、チェックボックスの代わりにここへ表示し、
-                            「なぜチェックボックスが無いのか」がその場で分かるようにする。 */}
-                        {showWarningIcon && (
-                          <span
-                            title="警告あり（一括承認対象外）"
-                            className="w-4 h-4 mt-5 flex-shrink-0 rounded flex items-center justify-center"
-                            style={{ background: warningColor }}>
-                            <span style={{ color: 'white', fontSize: '10px', fontWeight: 700, lineHeight: 1 }}>!</span>
-                          </span>
-                        )}
-                        {/* スタッフ情報 */}
-                        <div className={(canBulkSelect || showWarningIcon) ? '' : 'pl-0'}>
-                          <p className="text-xs mb-1" style={{ color: '#5A6A8A' }}>{staff.department || '―'}</p>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <ContractTypeBadge contractType={f.contractType || contract.contract_type} workPlace={f.workPlace || contract.work_place} />
-                            <span className="text-xs" style={{ color: '#5A6A8A' }}>{staff.employee_number || '―'}</span>
-                            <span className="text-base font-bold" style={{ color: '#1A2340' }}>{staff.name || '―'}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* 右側：バッジ群＋申請者名 */}
-                      <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                        <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                          <WorkPlaceBadge workPlace={f.workPlace || contract.work_place} />
-                          <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: '#EEF2FA', color: '#1B3A8C' }}>
-                            {getDocumentLabel(contract.document_type, contract.pattern)}
-                          </span>
-                          {/* 縦区切り */}
-                          <span style={{ display: 'inline-block', width: '1px', height: '14px', background: '#D0DAF0', margin: '0 2px' }} />
-                          <ContractStatusBadge status={contract.status} />
-                        </div>
-                        {isConfirmed && <ConfirmedBadge signedAt={contract.signed_at} />}
-                        {/* 申請者名 ＋ 警告バッジ */}
-                        <div className="flex items-center gap-2">
-                          {warning && (
-                            <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: '#DC2626', color: 'white' }}>
-                              🔴 個別確認が必要（一括承認対象外）
-                            </span>
-                          )}
-                          {/* 自動チェック警告バッジ（2026-07-02追加：中身の判定ロジック実装後に表示され始める） */}
-                          {autoWarning && (
-                            <span className="text-xs font-medium px-2 py-0.5 rounded"
-                              style={{
-                                background: contract.warning_level === 'red' ? '#DC2626' : '#D97706',
-                                color: 'white',
-                              }}>
-                              {contract.warning_level === 'red' ? '🔴' : '🟡'} 自動チェック要確認（一括承認対象外）
-                            </span>
-                          )}
-                          {/* フェーズ2で申請者氏名に切り替え予定。現在はIDの先頭8文字 */}
-                          <span className="text-xs" style={{ color: '#5A6A8A' }}>申請者：{contract.created_by.slice(0, 8)}…</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 就業場所名エリア */}
-                    <div className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 mb-3" style={{ background: '#F5F7FC' }}>
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-sm flex-shrink-0" style={{ color: '#1B3A8C' }}>📍</span>
-                        <span className="text-sm" style={{ color: '#1A2340', wordBreak: 'break-all' }}>
-                          {f.workLocationName || '―'}
-                        </span>
-                      </div>
-                      {/* 期日アラートバッジ（就業場所名の右） */}
-                      {deadline.type && (
-                        <span className="text-xs font-medium px-2 py-0.5 rounded flex-shrink-0"
-                          style={{
-                            background: deadline.type === 'overdue' ? '#FFEDD5' : '#FFF7ED',
-                            color: deadline.type === 'overdue' ? '#9A3412' : '#C2410C',
-                          }}>
-                          ⚠ {deadline.label}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* 申請日時・雇用期間・派遣期間 */}
-                    <div className="flex items-start gap-6 flex-wrap">
-                      <div>
-                        <p className="text-xs mb-0.5" style={{ color: '#5A6A8A' }}>申請日時</p>
-                        <p className="text-xs" style={{ color: '#1A2340' }}>{formatDateTime(contract.created_at)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs mb-0.5" style={{ color: '#5A6A8A' }}>雇用期間</p>
-                        <p className="text-xs" style={{ color: '#1A2340' }}>{getEmployPeriodLabel(contract)}</p>
-                      </div>
-                      {(contract.pattern === 'B' || contract.pattern === 'C') && f.dispatchStart && f.dispatchEnd && (
-                        <div>
-                          <p className="text-xs mb-0.5" style={{ color: '#5A6A8A' }}>派遣期間</p>
-                          <p className="text-xs" style={{ color: '#1A2340' }}>{f.dispatchStart} 〜 {f.dispatchEnd}</p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* 差し戻し理由（差し戻し中タブのみ） */}
-                    {contract.status === '差し戻し中' && contract.rejection_reason && (
-                      <div className="mt-3 rounded-lg px-3 py-2 border-l-4" style={{ background: '#FEF2F2', borderColor: '#B91C1C' }}>
-                        <p className="text-xs font-medium mb-0.5" style={{ color: '#B91C1C' }}>差し戻し理由</p>
-                        <p className="text-xs leading-relaxed" style={{ color: '#1A2340' }}>{contract.rejection_reason}</p>
-                      </div>
+                <article
+                  key={contract.id}
+                  className="grid gap-4 rounded-[18px] border border-[#E8EDF5] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)] transition hover:-translate-y-0.5 hover:shadow-[0_15px_40px_rgba(15,23,42,.08)] lg:grid-cols-[36px_minmax(220px,1.3fr)_minmax(220px,1.2fr)_minmax(180px,.9fr)_minmax(170px,.85fr)_minmax(160px,.75fr)_auto] lg:items-center"
+                >
+                  <div className="flex items-center">
+                    {canBulkSelect && (
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => { toggleSelect(contract.id); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
+                        onClick={e => e.stopPropagation()}
+                        className="h-5 w-5 rounded border-[#E8EDF5] accent-[#2F5FD0]"
+                      />
                     )}
-
-                    {/* 確認ボタン（2026-07-02改訂：左揃えピル形） */}
-                    <button
-                      className="mt-3.5 flex items-center gap-1.5 rounded-full transition-all"
-                      style={{ background: '#1B3A8C', border: 'none', padding: '7px 16px', cursor: 'pointer' }}
-                      onClick={() => router.push(`/dashboard/ssc/contracts/${contract.id}`)}>
-                      <span className="text-xs font-medium text-white">
-                        {activeTab === '承認待ち' ? '内容を確認する' : '詳細を見る'}
+                    {showWarningIcon && (
+                      <span title="警告あり" className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FFF3E8] text-[#F59E42]">
+                        <Icon name="alert" className="h-5 w-5" />
                       </span>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18" /></svg>
+                    )}
+                  </div>
+
+                  <div className="min-w-0">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      {deadline.type && (
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${deadline.type === 'overdue' ? 'bg-[#FDECEC] text-[#E74C3C]' : 'bg-[#FFF3E8] text-[#F59E42]'}`}>
+                          {deadline.label}
+                        </span>
+                      )}
+                      {warning && (
+                        <span className="rounded-full bg-[#FFF3E8] px-3 py-1 text-xs font-semibold text-[#F59E42]">
+                          個別確認が必要
+                        </span>
+                      )}
+                      {autoWarning && (
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${autoWarningTone}`}>
+                          自動チェック要確認
+                        </span>
+                      )}
+                    </div>
+                    <p className="break-words text-[21px] font-semibold leading-7 text-[#1F2937]">{staff.name || '-'}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-medium text-[#6B7280]">
+                      <span>{staff.employee_number || '-'}</span>
+                      <span className="h-3 w-px bg-[#E8EDF5]" />
+                      <span className="break-words">{staff.department || '-'}</span>
+                    </div>
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="mb-2 text-xs font-semibold text-[#6B7280]">勤務先</p>
+                    <div className="flex items-start gap-2">
+                      <Icon name="map" className="mt-0.5 h-4 w-4 shrink-0 text-[#2F5FD0]" />
+                      <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{f.workLocationName || '-'}</p>
+                    </div>
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="mb-2 text-xs font-semibold text-[#6B7280]">ステータス</p>
+                    <div className="flex flex-wrap gap-2">
+                      <ContractStatusBadge status={contract.status} />
+                      <ContractTypeBadge contractType={f.contractType || contract.contract_type} workPlace={f.workPlace || contract.work_place} />
+                      <WorkPlaceBadge workPlace={f.workPlace || contract.work_place} />
+                      <span className="rounded-full bg-[#F3F5F8] px-3 py-1 text-xs font-semibold text-[#6B7280]">
+                        {getDocumentLabel(contract.document_type, contract.pattern)}
+                      </span>
+                      {isConfirmed && <ConfirmedBadge signedAt={contract.signed_at} />}
+                    </div>
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="mb-2 text-xs font-semibold text-[#6B7280]">契約期間</p>
+                    <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{getEmployPeriodLabel(contract)}</p>
+                    {(contract.pattern === 'B' || contract.pattern === 'C') && f.dispatchStart && f.dispatchEnd && (
+                      <p className="mt-1 break-words text-xs font-medium leading-5 text-[#6B7280]">{f.dispatchStart} 〜 {f.dispatchEnd}</p>
+                    )}
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="mb-2 text-xs font-semibold text-[#6B7280]">申請日時</p>
+                    <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{formatDateTime(contract.created_at)}</p>
+                    <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {contract.created_by.slice(0, 8)}</p>
+                  </div>
+
+                  <div className="flex items-center justify-start lg:justify-end">
+                    <button
+                      className="inline-flex h-[52px] items-center justify-center gap-2 rounded-2xl bg-[#EEF4FF] px-5 text-sm font-semibold text-[#2F5FD0] transition hover:-translate-y-0.5 hover:bg-[#DFEAFE]"
+                      onClick={() => router.push(`/dashboard/ssc/contracts/${contract.id}`)}
+                    >
+                      {activeTab === '承認待ち' ? '申請詳細へ' : '詳細を見る'}
+                      <Icon name="arrow" className="h-4 w-4" />
                     </button>
                   </div>
-                </div>
+
+                  {contract.status === '差し戻し中' && contract.rejection_reason && (
+                    <div className="rounded-2xl border border-[#FFE2C7] bg-[#FFF8F1] p-4 lg:col-span-7">
+                      <p className="text-xs font-semibold text-[#F59E42]">差し戻し理由</p>
+                      <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.rejection_reason}</p>
+                    </div>
+                  )}
+                </article>
               )
             })}
           </div>
         )}
       </main>
 
-      {/* 一括承認：処理中／完了の全画面オーバーレイ（2026-07-13追加：確認カード内の小さい表示だと
-          目立たず進捗が分かりにくいとの伊藤さん指摘を受けて、画面全体を覆う形に変更。完了後はOKを
-          押すまで表示され続ける） */}
       {(bulkApproving || bulkApproveDone !== null) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,64,0.6)' }}>
-          <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(31,41,55,.52)] p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-[18px] border border-[#E8EDF5] bg-white p-8 text-center shadow-[0_24px_80px_rgba(15,23,42,.18)]">
             {bulkApproving ? (
               <>
-                <div className="mx-auto mb-5 w-14 h-14 rounded-full border-4 animate-spin"
-                  style={{ borderColor: '#1B3A8C', borderTopColor: 'transparent' }} />
-                <p className="text-lg font-bold mb-2" style={{ color: '#1A2340' }}>一括承認処理中です</p>
-                <p className="text-sm leading-relaxed" style={{ color: '#5A6A8A' }}>
-                  しばらくお待ちください。<br />
-                  画面を閉じたり、戻ったりしないでください。
+                <div className="mx-auto mb-6 h-14 w-14 animate-spin rounded-full border-4 border-[#DDE8FF] border-t-[#2F5FD0]" />
+                <p className="text-lg font-semibold text-[#1F2937]">一括承認を処理しています</p>
+                <p className="mt-3 text-sm font-medium leading-6 text-[#6B7280]">
+                  完了までしばらくお待ちください。画面を閉じずにお待ちください。
                 </p>
               </>
             ) : (
               <>
-                <p className="text-5xl mb-3">✅</p>
-                <p className="text-lg font-bold mb-2" style={{ color: '#065F46' }}>
+                <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-[#EAF8EE] text-[#4CAF50]">
+                  <Icon name="check" className="h-7 w-7" />
+                </div>
+                <p className="text-lg font-semibold text-[#1F2937]">
                   一括承認が完了しました（{bulkApproveDone}件）
                 </p>
-                <p className="text-sm leading-relaxed mb-6" style={{ color: '#1A2340' }}>
-                  対象スタッフへ署名・確認依頼が自動送信されました。<br />
-                  （対面・印刷パターンの案件は担当営業のダッシュボードに表示されます）
+                <p className="mt-3 text-sm font-medium leading-6 text-[#6B7280]">
+                  対象スタッフへ署名の確認依頼を送信しました。
                 </p>
                 <button
                   onClick={handleBulkApproveDoneOk}
-                  className="w-full py-3 rounded-lg text-base font-bold text-white"
-                  style={{ background: '#1B3A8C' }}>
+                  className="mt-7 inline-flex h-[52px] w-full items-center justify-center rounded-2xl bg-[#2F5FD0] px-6 text-sm font-semibold text-white transition hover:bg-[#244CB3]"
+                >
                   OK
                 </button>
               </>

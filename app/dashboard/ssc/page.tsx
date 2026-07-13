@@ -85,7 +85,6 @@ export default function SSCDashboard() {
       { value: 'SSC承認済み', label: 'SSC承認済み' },
       { value: '署名待ち', label: '署名待ち' },
       { value: '署名済み', label: '署名済み' },
-      { value: '完了', label: '完了' },
     ],
   }
 
@@ -177,7 +176,7 @@ export default function SSCDashboard() {
   const tabs: { key: TabType; label: string; count: number; color: string; tint: string }[] = [
     { key: '承認待ち', label: '承認待ち', count: pendingCount, color: '#1D4ED8', tint: '#EEF0F5' },
     { key: '差し戻し中', label: '差し戻し中', count: rejectedCount, color: '#B91C1C', tint: '#FEE2E2' },
-    { key: '承認済み', label: '承認済み・完了', count: approvedCount, color: '#065F46', tint: '#D1FAE5' },
+    { key: '承認済み', label: '承認済み・署名状況', count: approvedCount, color: '#065F46', tint: '#D1FAE5' },
   ]
 
   if (!user) return (

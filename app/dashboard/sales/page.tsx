@@ -209,10 +209,7 @@ export default function SalesDashboard() {
     explain: [],
     rejected: [],
     waiting: [],
-    completed: [
-      { value: '署名済み', label: '署名済み' },
-      { value: '完了', label: '完了' },
-    ],
+    completed: [],
     other: [],
   }
 

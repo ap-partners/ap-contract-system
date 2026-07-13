@@ -369,7 +369,6 @@ export default function AdminDashboard() {
           { value: 'SSC承認済み', label: 'SSC承認済み' },
           { value: '署名待ち', label: '署名待ち' },
           { value: '署名済み', label: '署名済み' },
-          { value: '完了', label: '完了' },
         ]
       : [],
     sortOptions: buildDateSortOptions<Contract>(),
@@ -410,7 +409,6 @@ export default function AdminDashboard() {
           { value: 'SSC承認済み', label: 'SSC承認済み' },
           { value: '署名待ち', label: '署名待ち' },
           { value: '署名済み', label: '署名済み' },
-          { value: '完了', label: '完了' },
         ]
       : [],
     sortOptions: buildDateSortOptions<Contract>(),
@@ -636,9 +634,9 @@ export default function AdminDashboard() {
               {/* サブタブ */}
               <div className="grid grid-cols-3 gap-3 mb-4">
                 {([
-                  { key: '承認待ち' as ContractSubTab, count: contractsPendingCount, color: '#1D4ED8', tint: '#EEF0F5' },
-                  { key: '差し戻し中' as ContractSubTab, count: contractsRejectedCount, color: '#B91C1C', tint: '#FEE2E2' },
-                  { key: '承認済み' as ContractSubTab, count: contractsApprovedCount, color: '#065F46', tint: '#D1FAE5' },
+                  { key: '承認待ち' as ContractSubTab, label: '承認待ち', count: contractsPendingCount, color: '#1D4ED8', tint: '#EEF0F5' },
+                  { key: '差し戻し中' as ContractSubTab, label: '差し戻し中', count: contractsRejectedCount, color: '#B91C1C', tint: '#FEE2E2' },
+                  { key: '承認済み' as ContractSubTab, label: '承認済み・署名状況', count: contractsApprovedCount, color: '#065F46', tint: '#D1FAE5' },
                 ]).map(tab => {
                   const isActive = contractsSubTab === tab.key
                   return (
@@ -647,7 +645,7 @@ export default function AdminDashboard() {
                       style={isActive
                         ? { background: tab.tint, borderLeft: `3px solid ${tab.color}`, borderTop: '0.5px solid #D0DAF0', borderRight: '0.5px solid #D0DAF0', borderBottom: '0.5px solid #D0DAF0' }
                         : { background: 'white', border: '0.5px solid #D0DAF0' }}>
-                      <p className="text-xs font-medium" style={{ color: isActive ? tab.color : '#5A6A8A' }}>{tab.key}</p>
+                      <p className="text-xs font-medium" style={{ color: isActive ? tab.color : '#5A6A8A' }}>{tab.label}</p>
                       <span className="text-2xl font-bold" style={{ color: isActive ? tab.color : '#1A2340' }}>{tab.count}</span>
                     </button>
                   )
@@ -872,9 +870,9 @@ export default function AdminDashboard() {
               {/* サブタブ */}
               <div className="grid grid-cols-3 gap-3 mb-4">
                 {([
-                  { key: '承認待ち' as ContractSubTab, count: internalPendingCount, color: '#1D4ED8', tint: '#EEF0F5' },
-                  { key: '差し戻し中' as ContractSubTab, count: internalRejectedCount, color: '#B91C1C', tint: '#FEE2E2' },
-                  { key: '承認済み' as ContractSubTab, count: internalApprovedCount, color: '#065F46', tint: '#D1FAE5' },
+                  { key: '承認待ち' as ContractSubTab, label: '承認待ち', count: internalPendingCount, color: '#1D4ED8', tint: '#EEF0F5' },
+                  { key: '差し戻し中' as ContractSubTab, label: '差し戻し中', count: internalRejectedCount, color: '#B91C1C', tint: '#FEE2E2' },
+                  { key: '承認済み' as ContractSubTab, label: '承認済み・署名状況', count: internalApprovedCount, color: '#065F46', tint: '#D1FAE5' },
                 ]).map(tab => {
                   const isActive = internalContractsSubTab === tab.key
                   return (
@@ -883,7 +881,7 @@ export default function AdminDashboard() {
                       style={isActive
                         ? { background: tab.tint, borderLeft: `3px solid ${tab.color}`, borderTop: '0.5px solid #D0DAF0', borderRight: '0.5px solid #D0DAF0', borderBottom: '0.5px solid #D0DAF0' }
                         : { background: 'white', border: '0.5px solid #D0DAF0' }}>
-                      <p className="text-xs font-medium" style={{ color: isActive ? tab.color : '#5A6A8A' }}>{tab.key}</p>
+                      <p className="text-xs font-medium" style={{ color: isActive ? tab.color : '#5A6A8A' }}>{tab.label}</p>
                       <span className="text-2xl font-bold" style={{ color: isActive ? tab.color : '#1A2340' }}>{tab.count}</span>
                     </button>
                   )

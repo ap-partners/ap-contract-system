@@ -4,6 +4,21 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
+import {
+  ContractStatus,
+  ContractForDisplay,
+  formatDateTime,
+  getDocumentLabel,
+  ContractTypeBadge,
+  WorkPlaceBadge,
+  ContractStatusBadge,
+  ConfirmedBadge,
+  getDeadlineAlert,
+  hasWarning,
+  hasAutoCheckWarning,
+  getEmployPeriodLabel,
+} from '../_shared/contractDisplay'
+import { useContractListToolbar, buildDateSortOptions } from '../_shared/useContractListToolbar'
 
 type RequestRow = {
   id: string
@@ -31,11 +46,6 @@ type TabType = 'requests' | 'contracts' | 'internal' | 'csvImport' | 'csvDiff' |
 
 const PAGE_SIZE = 50
 
-function formatDateTime(iso: string) {
-  const d = new Date(iso)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
 function formatDate(str: string | null) {
   if (!str) return ''
   const d = new Date(str)
@@ -49,120 +59,10 @@ function formatDate(str: string | null) {
 // 一括承認ロジックをそのまま流用した。当初は「閲覧のみ」として実装したが、伊藤さんから
 // 「なぜ承認できないのか」と指摘を受け、承認・差し戻し・一括承認まで含めて完全に同等の
 // 操作ができるよう修正した。
-type ContractStatus = '申請中' | 'SSC承認済み' | '差し戻し中' | '署名待ち' | '署名済み' | '完了' | '取り下げ'
-type WarningLevel = 'none' | 'yellow' | 'red'
-type Contract = {
-  id: string
-  pattern: string
-  contract_type: string
-  document_type: string
-  work_place: string
-  status: ContractStatus
-  created_by: string
-  created_at: string
-  rejection_reason: string | null
-  signed_at: string | null
-  warning_confirmations: { type: string; confirmed_at: string }[]
-  warning_level: WarningLevel
-  input_data: {
-    staff?: { name?: string; employee_number?: string; department?: string }
-    fields?: {
-      contractType?: string
-      workPlace?: string
-      workLocationName?: string
-      employStart?: string
-      employEnd?: string
-      contractStartDate?: string
-      dispatchStart?: string
-      dispatchEnd?: string
-      period?: string
-    }
-  }
-}
+// 2026-07-14追加：バッジ・日付フォーマット・警告判定等はSSC・担当営業ダッシュボードと
+// 完全に重複していたため、共通部品（../_shared/contractDisplay）に切り出した。
+type Contract = ContractForDisplay
 type ContractSubTab = '承認待ち' | '差し戻し中' | '承認済み'
-
-const getDocumentLabel = (documentType: string, pattern: string) => {
-  if (pattern === 'C') return '雇用契約書＋明示書'
-  if (pattern === 'B') return '明示書'
-  return '雇用契約書'
-}
-
-const ContractTypeBadge = ({ contractType, workPlace }: { contractType: string; workPlace: string }) => {
-  const isInternal = workPlace === '社内'
-  if (isInternal) {
-    return <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: '#EEF2FA', color: '#1B3A8C' }}>{contractType || '―'}</span>
-  }
-  const map: Record<string, { bg: string; color: string }> = {
-    '正社員':   { bg: '#ECFDF5', color: '#15803D' },
-    '有期契約': { bg: '#ECFDF5', color: '#15803D' },
-    '無期契約': { bg: '#ECFDF5', color: '#15803D' },
-    'アルバイト': { bg: '#FFF7ED', color: '#C2410C' },
-  }
-  const c = map[contractType] || { bg: '#F3F4F6', color: '#6B7280' }
-  return <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: c.bg, color: c.color }}>{contractType || '―'}</span>
-}
-
-const WorkPlaceBadge = ({ workPlace }: { workPlace: string }) => {
-  const isInternal = workPlace === '社内'
-  return (
-    <span className="text-xs font-medium px-2 py-0.5 rounded"
-      style={{ background: isInternal ? '#EEF2FA' : '#ECFDF5', color: isInternal ? '#1B3A8C' : '#15803D' }}>
-      {workPlace || '現場'}
-    </span>
-  )
-}
-
-const ContractStatusBadge = ({ status, isInternal }: { status: ContractStatus; isInternal?: boolean }) => {
-  const map: Record<string, { bg: string; label: string }> = {
-    '申請中':     { bg: '#1D4ED8', label: '申請中' },
-    // 社内承認タブ（社内案件のみ）ではSSCではなく社内承認者が承認しているため、
-    // バッジ表示も「SSC承認済み」ではなく「承認済み」にする（2026-07-13追加。データ上のstatus値自体は変更しない）
-    'SSC承認済み': { bg: '#065F46', label: isInternal ? '承認済み' : 'SSC承認済み' },
-    '差し戻し中': { bg: '#B91C1C', label: '差し戻し中' },
-    '署名待ち':   { bg: '#92400E', label: '署名待ち' },
-    '署名済み':   { bg: '#3730A3', label: '署名済み' },
-    '完了':       { bg: '#374151', label: '完了' },
-    '取り下げ':   { bg: '#9CA3AF', label: '取り下げ' },
-  }
-  const s = map[status] || { bg: '#9CA3AF', label: status }
-  return <span className="text-xs font-medium px-2.5 py-0.5 rounded" style={{ background: s.bg, color: 'white' }}>{s.label}</span>
-}
-
-const ConfirmedBadge = ({ signedAt }: { signedAt: string | null }) => {
-  if (!signedAt) return null
-  return (
-    <span className="text-[10.5px] font-medium px-2 py-0.5 rounded whitespace-nowrap" style={{ background: '#D1FAE5', color: '#065F46' }}>
-      ✓ 確認済み：{formatDateTime(signedAt)}
-    </span>
-  )
-}
-
-const getDeadlineAlert = (contract: Contract): { type: 'overdue' | 'urgent' | null; label: string } => {
-  const f = contract.input_data?.fields
-  if (!f) return { type: null, label: '' }
-  const startDate = f.employStart || f.contractStartDate || f.dispatchStart
-  if (!startDate) return { type: null, label: '' }
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  const start = new Date(startDate); start.setHours(0, 0, 0, 0)
-  const diffDays = Math.floor((start.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-  if (diffDays < 0) return { type: 'overdue', label: '開始日超過' }
-  if (diffDays <= 3) return { type: 'urgent', label: `開始まで${diffDays}日` }
-  return { type: null, label: '' }
-}
-
-const hasWarning = (contract: Contract): boolean => contract.warning_confirmations && contract.warning_confirmations.length > 0
-const hasAutoCheckWarning = (contract: Contract): boolean => !!contract.warning_level && contract.warning_level !== 'none'
-
-const getEmployPeriodLabel = (contract: Contract): string => {
-  const f = contract.input_data?.fields
-  if (!f) return '―'
-  const contractType = f.contractType || ''
-  const isSeishain = contractType === '正社員'
-  const isMusei = contractType === '無期契約' || f.period === '無期'
-  if (isSeishain || isMusei) return f.contractStartDate ? `${f.contractStartDate} 〜 期間の定めなし` : '―'
-  if (f.employStart && f.employEnd) return `${f.employStart} 〜 ${f.employEnd}`
-  return '―'
-}
 
 // この依頼行が「未対応のタスクを1つでも持っているか」（一覧のステータス絞り込みに使う）
 function isPending(r: RequestRow) {
@@ -448,19 +348,11 @@ export default function AdminDashboard() {
     router.push('/login')
   }
 
-  if (!user) return <div className="p-8">読み込み中...</div>
-
-  const isInternalApprover = user.user_metadata?.is_internal_approver === true
-
-  const tabs: { key: TabType; label: string }[] = [
-    { key: 'requests', label: '依頼管理' },
-    { key: 'contracts', label: '契約一覧' },
-    ...(isInternalApprover ? [{ key: 'internal' as TabType, label: '社内承認' }] : []),
-    { key: 'csvImport', label: 'CSVインポート' },
-    { key: 'csvDiff', label: 'CSV差異アラート' },
-    { key: 'renewal', label: '更新期限管理' },
-  ]
-
+  // 2026-07-14追加：「承認済み」に案件が蓄積すると署名待ち・署名済みが混在して分かりづらい、
+  // 絞り込み・並び替えが無く目当ての案件を探しにくい、という伊藤さんの指摘を受けて、共通部品
+  // （useContractListToolbar）による絞り込み・並び替え・検索を追加した（docs/SYSTEM_DESIGN.md
+  // 10章2026-07-14参照）。Hooksはルール上、早期return（if (!user) return、この少し下にある）より
+  // 前で呼ぶ必要があるため、この位置に置く。
   const filteredContracts = contracts.filter(c => {
     if (contractsSubTab === '承認待ち') return c.status === '申請中'
     if (contractsSubTab === '差し戻し中') return c.status === '差し戻し中'
@@ -471,8 +363,28 @@ export default function AdminDashboard() {
   const contractsRejectedCount = contracts.filter(c => c.status === '差し戻し中').length
   const contractsApprovedCount = contracts.filter(c => ['SSC承認済み', '署名待ち', '署名済み', '完了'].includes(c.status)).length
 
-  // 一括承認対象（承認待ちタブで、警告のない案件のみ。SSCダッシュボードと同じ条件）
-  const bulkTargets = filteredContracts.filter(c => !hasWarning(c) && !hasAutoCheckWarning(c))
+  const { result: visibleContracts, toolbar: contractsToolbar } = useContractListToolbar(filteredContracts, {
+    statusOptions: contractsSubTab === '承認済み'
+      ? [
+          { value: 'SSC承認済み', label: 'SSC承認済み' },
+          { value: '署名待ち', label: '署名待ち' },
+          { value: '署名済み', label: '署名済み' },
+          { value: '完了', label: '完了' },
+        ]
+      : [],
+    sortOptions: buildDateSortOptions<Contract>(),
+    getSearchText: c => {
+      const staff = c.input_data?.staff || {}
+      const f = c.input_data?.fields || {}
+      return [staff.name, staff.employee_number, f.workLocationName].filter(Boolean).join(' ')
+    },
+    searchPlaceholder: '氏名・社員番号・就業先で検索',
+    resetKey: contractsSubTab,
+  })
+
+  // 一括承認対象（承認待ちタブで、警告のない案件のみ。SSCダッシュボードと同じ条件。
+  // 絞り込み・検索後の一覧＝画面に見えている案件を対象にする）
+  const bulkTargets = visibleContracts.filter(c => !hasWarning(c) && !hasAutoCheckWarning(c))
   const toggleSelectAll = () => {
     if (selectedIds.size === bulkTargets.length) {
       setSelectedIds(new Set())
@@ -491,7 +403,27 @@ export default function AdminDashboard() {
   const internalPendingCount = internalContracts.filter(c => c.status === '申請中').length
   const internalRejectedCount = internalContracts.filter(c => c.status === '差し戻し中').length
   const internalApprovedCount = internalContracts.filter(c => ['SSC承認済み', '署名待ち', '署名済み', '完了'].includes(c.status)).length
-  const internalBulkTargets = filteredInternalContracts.filter(c => !hasWarning(c) && !hasAutoCheckWarning(c))
+
+  const { result: visibleInternalContracts, toolbar: internalToolbar } = useContractListToolbar(filteredInternalContracts, {
+    statusOptions: internalContractsSubTab === '承認済み'
+      ? [
+          { value: 'SSC承認済み', label: 'SSC承認済み' },
+          { value: '署名待ち', label: '署名待ち' },
+          { value: '署名済み', label: '署名済み' },
+          { value: '完了', label: '完了' },
+        ]
+      : [],
+    sortOptions: buildDateSortOptions<Contract>(),
+    getSearchText: c => {
+      const staff = c.input_data?.staff || {}
+      const f = c.input_data?.fields || {}
+      return [staff.name, staff.employee_number, f.workLocationName].filter(Boolean).join(' ')
+    },
+    searchPlaceholder: '氏名・社員番号・就業先で検索',
+    resetKey: internalContractsSubTab,
+  })
+
+  const internalBulkTargets = visibleInternalContracts.filter(c => !hasWarning(c) && !hasAutoCheckWarning(c))
   const toggleSelectAllInternal = () => {
     if (internalSelectedIds.size === internalBulkTargets.length) {
       setInternalSelectedIds(new Set())
@@ -499,6 +431,19 @@ export default function AdminDashboard() {
       setInternalSelectedIds(new Set(internalBulkTargets.map(c => c.id)))
     }
   }
+
+  if (!user) return <div className="p-8">読み込み中...</div>
+
+  const isInternalApprover = user.user_metadata?.is_internal_approver === true
+
+  const tabs: { key: TabType; label: string }[] = [
+    { key: 'requests', label: '依頼管理' },
+    { key: 'contracts', label: '契約一覧' },
+    ...(isInternalApprover ? [{ key: 'internal' as TabType, label: '社内承認' }] : []),
+    { key: 'csvImport', label: 'CSVインポート' },
+    { key: 'csvDiff', label: 'CSV差異アラート' },
+    { key: 'renewal', label: '更新期限管理' },
+  ]
 
   return (
     <div className="min-h-screen" style={{ background: '#F5F7FC' }}>
@@ -712,14 +657,22 @@ export default function AdminDashboard() {
               {contractsError && <p className="text-xs mb-3" style={{ color: '#DC2626' }}>{contractsError}</p>}
               {contractsLoading && <p className="text-xs" style={{ color: '#5A6A8A' }}>読み込み中...</p>}
 
+              {/* 絞り込み・並び替え・検索（2026-07-14追加） */}
+              {!contractsLoading && !contractsError && filteredContracts.length > 0 && contractsToolbar}
+
               {!contractsLoading && !contractsError && filteredContracts.length === 0 && (
                 <div className="bg-white rounded-xl border p-12 text-center" style={{ borderColor: '#D0DAF0' }}>
                   <p className="text-sm font-medium" style={{ color: '#1A2340' }}>該当する契約はありません</p>
                 </div>
               )}
+              {!contractsLoading && !contractsError && filteredContracts.length > 0 && visibleContracts.length === 0 && (
+                <div className="bg-white rounded-xl border p-12 text-center" style={{ borderColor: '#D0DAF0' }}>
+                  <p className="text-sm font-medium" style={{ color: '#1A2340' }}>条件に一致する契約が見つかりませんでした</p>
+                </div>
+              )}
 
               <div className="flex flex-col gap-3">
-                {filteredContracts.map(contract => {
+                {visibleContracts.map(contract => {
                   const staff = contract.input_data?.staff || {}
                   const f = contract.input_data?.fields || {}
                   const deadline = getDeadlineAlert(contract)
@@ -940,14 +893,22 @@ export default function AdminDashboard() {
               {internalContractsError && <p className="text-xs mb-3" style={{ color: '#DC2626' }}>{internalContractsError}</p>}
               {internalContractsLoading && <p className="text-xs" style={{ color: '#5A6A8A' }}>読み込み中...</p>}
 
+              {/* 絞り込み・並び替え・検索（2026-07-14追加） */}
+              {!internalContractsLoading && !internalContractsError && filteredInternalContracts.length > 0 && internalToolbar}
+
               {!internalContractsLoading && !internalContractsError && filteredInternalContracts.length === 0 && (
                 <div className="bg-white rounded-xl border p-12 text-center" style={{ borderColor: '#D0DAF0' }}>
                   <p className="text-sm font-medium" style={{ color: '#1A2340' }}>該当する社内案件はありません</p>
                 </div>
               )}
+              {!internalContractsLoading && !internalContractsError && filteredInternalContracts.length > 0 && visibleInternalContracts.length === 0 && (
+                <div className="bg-white rounded-xl border p-12 text-center" style={{ borderColor: '#D0DAF0' }}>
+                  <p className="text-sm font-medium" style={{ color: '#1A2340' }}>条件に一致する社内案件が見つかりませんでした</p>
+                </div>
+              )}
 
               <div className="flex flex-col gap-3">
-                {filteredInternalContracts.map(contract => {
+                {visibleInternalContracts.map(contract => {
                   const staff = contract.input_data?.staff || {}
                   const f = contract.input_data?.fields || {}
                   const deadline = getDeadlineAlert(contract)
@@ -1154,6 +1115,7 @@ export default function AdminDashboard() {
     </div>
   )
 }
+
 
 function RequestCard({ r, onCancel }: {
   r: RequestRow

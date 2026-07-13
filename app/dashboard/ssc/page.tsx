@@ -4,171 +4,25 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
+import {
+  ContractStatus,
+  ContractForDisplay,
+  formatDateTime,
+  getDocumentLabel,
+  ContractTypeBadge,
+  WorkPlaceBadge,
+  ContractStatusBadge,
+  ConfirmedBadge,
+  getDeadlineAlert,
+  hasWarning,
+  hasAutoCheckWarning,
+  getEmployPeriodLabel,
+} from '../_shared/contractDisplay'
+import { useContractListToolbar, buildDateSortOptions } from '../_shared/useContractListToolbar'
 
-type ContractStatus = '申請中' | 'SSC承認済み' | '差し戻し中' | '署名待ち' | '署名済み' | '完了' | '取り下げ'
-
-// 自動チェックの警告レベル（2026-07-02追加：7-5章の骨格実装）
-type WarningLevel = 'none' | 'yellow' | 'red'
-
-type Contract = {
-  id: string
-  pattern: string
-  contract_type: string
-  document_type: string
-  work_place: string
-  status: ContractStatus
-  created_by: string
-  created_at: string
-  rejection_reason: string | null
-  signed_at: string | null
-  warning_confirmations: { type: string; confirmed_at: string }[]
-  warning_level: WarningLevel
-  input_data: {
-    staff?: {
-      name?: string
-      employee_number?: string
-      department?: string
-    }
-    fields?: {
-      contractType?: string
-      workPlace?: string
-      workLocationName?: string
-      employStart?: string
-      employEnd?: string
-      contractStartDate?: string
-      dispatchStart?: string
-      dispatchEnd?: string
-      period?: string
-    }
-  }
-}
+type Contract = ContractForDisplay
 
 type TabType = '承認待ち' | '差し戻し中' | '承認済み'
-
-// 日時を「YYYY/MM/DD HH:mm」形式に変換
-const formatDateTime = (iso: string) => {
-  if (!iso) return '―'
-  const d = new Date(iso)
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-
-// 帳票種別の省略表示
-const getDocumentLabel = (documentType: string, pattern: string) => {
-  if (pattern === 'C') return '雇用契約書＋明示書'
-  if (pattern === 'B') return '明示書'
-  return '雇用契約書'
-}
-
-// 雇用形態バッジ
-const ContractTypeBadge = ({ contractType, workPlace }: { contractType: string; workPlace: string }) => {
-  const isInternal = workPlace === '社内'
-  if (isInternal) {
-    const map: Record<string, { bg: string; color: string }> = {
-      '正社員':   { bg: '#EEF2FA', color: '#1B3A8C' },
-      '有期契約': { bg: '#EEF2FA', color: '#1B3A8C' },
-      '無期契約': { bg: '#EEF2FA', color: '#1B3A8C' },
-    }
-    const c = map[contractType] || { bg: '#EEF2FA', color: '#1B3A8C' }
-    return <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: c.bg, color: c.color }}>{contractType || '―'}</span>
-  }
-  const map: Record<string, { bg: string; color: string }> = {
-    '正社員':   { bg: '#ECFDF5', color: '#15803D' },
-    '有期契約': { bg: '#ECFDF5', color: '#15803D' },
-    '無期契約': { bg: '#ECFDF5', color: '#15803D' },
-    'アルバイト': { bg: '#FFF7ED', color: '#C2410C' },
-  }
-  const c = map[contractType] || { bg: '#F3F4F6', color: '#6B7280' }
-  return <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: c.bg, color: c.color }}>{contractType || '―'}</span>
-}
-
-// 就業場所区分バッジ
-const WorkPlaceBadge = ({ workPlace }: { workPlace: string }) => {
-  const isInternal = workPlace === '社内'
-  return (
-    <span className="text-xs font-medium px-2 py-0.5 rounded"
-      style={{ background: isInternal ? '#EEF2FA' : '#ECFDF5', color: isInternal ? '#1B3A8C' : '#15803D' }}>
-      {workPlace || '現場'}
-    </span>
-  )
-}
-
-// ステータスバッジ（塗りつぶし）
-const StatusBadge = ({ status }: { status: ContractStatus }) => {
-  const map: Record<string, { bg: string; label: string }> = {
-    '申請中':     { bg: '#1D4ED8', label: '申請中' },
-    'SSC承認済み': { bg: '#065F46', label: 'SSC承認済み' },
-    '差し戻し中': { bg: '#B91C1C', label: '差し戻し中' },
-    '署名待ち':   { bg: '#92400E', label: '署名待ち' },
-    '署名済み':   { bg: '#3730A3', label: '署名済み' },
-    '完了':       { bg: '#374151', label: '完了' },
-    '取り下げ':   { bg: '#9CA3AF', label: '取り下げ' },
-  }
-  const s = map[status] || { bg: '#9CA3AF', label: status }
-  return (
-    <span className="text-xs font-medium px-2.5 py-0.5 rounded" style={{ background: s.bg, color: 'white' }}>
-      {s.label}
-    </span>
-  )
-}
-
-// 確認済みバッジ（2026-07-13追加：担当営業ダッシュボードと同様、署名済み／完了の案件に
-// いつ従業員が確認・署名したかを表示する。SSCは未確認分の後追い管理を担うため、伊藤さんの
-// 指示によりこちらにも追加した。デザインは担当営業ダッシュボードのConfirmedBadgeと統一）
-const ConfirmedBadge = ({ signedAt }: { signedAt: string | null }) => {
-  if (!signedAt) return null
-  return (
-    <span className="text-[10.5px] font-medium px-2 py-0.5 rounded whitespace-nowrap" style={{ background: '#D1FAE5', color: '#065F46' }}>
-      ✓ 確認済み：{formatDateTime(signedAt)}
-    </span>
-  )
-}
-
-// 期日アラートの判定（雇用開始日ベース）
-const getDeadlineAlert = (contract: Contract): { type: 'overdue' | 'urgent' | null; label: string } => {
-  const f = contract.input_data?.fields
-  if (!f) return { type: null, label: '' }
-
-  // 雇用開始日を取得（パターンにより異なるフィールドを使う）
-  const startDate = f.employStart || f.contractStartDate || f.dispatchStart
-  if (!startDate) return { type: null, label: '' }
-
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const start = new Date(startDate)
-  start.setHours(0, 0, 0, 0)
-  const diffDays = Math.floor((start.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-
-  if (diffDays < 0) return { type: 'overdue', label: '開始日超過' }
-  if (diffDays <= 3) return { type: 'urgent', label: `開始まで${diffDays}日` }
-  return { type: null, label: '' }
-}
-
-// 警告ありかどうかの判定（担当営業がSTEP8で確認・申告した警告）
-const hasWarning = (contract: Contract): boolean => {
-  return contract.warning_confirmations && contract.warning_confirmations.length > 0
-}
-
-// 自動チェックの警告ありかどうかの判定（2026-07-02追加：7-5章の骨格実装）
-// 中身の判定ロジック未実装のため、現状は全案件 warning_level='none' で false になる。
-// 将来チェックロジックが実装され warning_level が yellow/red で入るようになった時点で
-// このまま自動的に一括承認対象外・バッジ表示が有効になる。
-const hasAutoCheckWarning = (contract: Contract): boolean => {
-  return !!contract.warning_level && contract.warning_level !== 'none'
-}
-
-// 雇用期間の表示文字列
-const getEmployPeriodLabel = (contract: Contract): string => {
-  const f = contract.input_data?.fields
-  if (!f) return '―'
-  const contractType = f.contractType || ''
-  const isSeishain = contractType === '正社員'
-  const isMusei = contractType === '無期契約' || f.period === '無期'
-  if (isSeishain || isMusei) {
-    return f.contractStartDate ? `${f.contractStartDate} 〜 期間の定めなし` : '―'
-  }
-  if (f.employStart && f.employEnd) return `${f.employStart} 〜 ${f.employEnd}`
-  return '―'
-}
 
 export default function SSCDashboard() {
   const router = useRouter()
@@ -219,8 +73,38 @@ export default function SSCDashboard() {
     return false
   })
 
+  // 2026-07-14追加：「承認済み・完了」タブに案件が蓄積すると、署名待ち／署名済みが混在して
+  // 分かりづらい・目当ての案件を探しにくい、との伊藤さんの指摘を受けて、絞り込み・並び替え・
+  // テキスト検索を共通部品（useContractListToolbar）で追加した（docs/SYSTEM_DESIGN.md 10章
+  // 2026-07-14参照）。承認待ち・差し戻し中タブはステータスが1種類のみのため、ピルボタンは
+  // 出さず検索・並び替えのみ表示する（statusOptionsを空配列にすると自動的にピル行が消える）。
+  const statusOptionsByTab: Record<TabType, { value: string; label: string }[]> = {
+    '承認待ち': [],
+    '差し戻し中': [],
+    '承認済み': [
+      { value: 'SSC承認済み', label: 'SSC承認済み' },
+      { value: '署名待ち', label: '署名待ち' },
+      { value: '署名済み', label: '署名済み' },
+      { value: '完了', label: '完了' },
+    ],
+  }
+
+  const { result: visibleContracts, toolbar: listToolbar } = useContractListToolbar(filtered, {
+    statusOptions: statusOptionsByTab[activeTab],
+    sortOptions: buildDateSortOptions<Contract>(),
+    getSearchText: c => {
+      const staff = c.input_data?.staff || {}
+      const f = c.input_data?.fields || {}
+      return [staff.name, staff.employee_number, f.workLocationName].filter(Boolean).join(' ')
+    },
+    searchPlaceholder: '氏名・社員番号・就業先で検索',
+    resetKey: activeTab,
+  })
+
   // 承認待ちタブで一括承認対象となるのは「担当営業の自己申告警告」も「自動チェック警告」もない案件のみ
-  const bulkTargets = filtered.filter(c => !hasWarning(c) && !hasAutoCheckWarning(c))
+  // （絞り込み・検索後の一覧＝画面に見えている案件を対象にする。見えていない案件が選択されると
+  // 分かりにくいため）
+  const bulkTargets = visibleContracts.filter(c => !hasWarning(c) && !hasAutoCheckWarning(c))
 
   const pendingCount = contracts.filter(c => c.status === '申請中').length
   const rejectedCount = contracts.filter(c => c.status === '差し戻し中').length
@@ -416,6 +300,9 @@ export default function SSCDashboard() {
           </div>
         )}
 
+        {/* 絞り込み・並び替え・検索（2026-07-14追加） */}
+        {!loading && filtered.length > 0 && listToolbar}
+
         {/* 申請カード一覧 */}
         {loading ? (
           <div className="text-center py-16">
@@ -430,9 +317,16 @@ export default function SSCDashboard() {
               {activeTab === '承認済み' && '承認済みの申請はありません'}
             </p>
           </div>
+        ) : visibleContracts.length === 0 ? (
+          <div className="bg-white rounded-xl border p-12 text-center" style={{ borderColor: '#D0DAF0' }}>
+            <p className="text-2xl mb-3">🔍</p>
+            <p className="text-sm font-medium" style={{ color: '#1A2340' }}>
+              条件に一致する申請が見つかりませんでした
+            </p>
+          </div>
         ) : (
           <div className="flex flex-col gap-3">
-            {filtered.map(contract => {
+            {visibleContracts.map(contract => {
               const staff = contract.input_data?.staff || {}
               const f = contract.input_data?.fields || {}
               const deadline = getDeadlineAlert(contract)
@@ -503,7 +397,7 @@ export default function SSCDashboard() {
                           </span>
                           {/* 縦区切り */}
                           <span style={{ display: 'inline-block', width: '1px', height: '14px', background: '#D0DAF0', margin: '0 2px' }} />
-                          <StatusBadge status={contract.status} />
+                          <ContractStatusBadge status={contract.status} />
                         </div>
                         {isConfirmed && <ConfirmedBadge signedAt={contract.signed_at} />}
                         {/* 申請者名 ＋ 警告バッジ */}

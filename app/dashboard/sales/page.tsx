@@ -4,41 +4,25 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
+import {
+  ContractStatus,
+  ContractForDisplay,
+  formatDateTime,
+  getDocumentLabel,
+  ContractTypeBadge,
+  ContractStatusBadge,
+  ConfirmedBadge,
+  getDeadlineAlert,
+  getEmployPeriodLabel,
+} from '../_shared/contractDisplay'
+import { useContractListToolbar, buildDateSortOptions } from '../_shared/useContractListToolbar'
 
-type ContractStatus = '申請中' | 'SSC承認済み' | '差し戻し中' | '署名待ち' | '署名済み' | '完了' | '取り下げ'
-
-type Contract = {
-  id: string
-  pattern: string
-  contract_type: string
-  document_type: string
-  work_place: string
-  status: ContractStatus
-  created_by: string
+// 2026-07-14追加：バッジ・日付フォーマット・警告判定等はSSC・管理部ダッシュボードと重複していた
+// ため共通部品（../_shared/contractDisplay）に切り出した。担当営業固有の created_by_dept_no・
+// sign_requested_at はここで拡張する。
+type Contract = ContractForDisplay & {
   created_by_dept_no: number | null
-  created_at: string
-  rejection_reason: string | null
   sign_requested_at: string | null
-  signed_at: string | null
-  input_data: {
-    staff?: {
-      name?: string
-      employee_number?: string
-      department?: string
-    }
-    fields?: {
-      contractType?: string
-      workPlace?: string
-      workLocationName?: string
-      employStart?: string
-      employEnd?: string
-      contractStartDate?: string
-      dispatchStart?: string
-      dispatchEnd?: string
-      period?: string
-      closingPattern?: string
-    }
-  }
 }
 
 type MyRequest = {
@@ -65,55 +49,9 @@ const CLOSING_PATTERN_LABEL: Record<string, string> = {
   print: '印刷して説明後にリンク送付',
 }
 
-// 日時を「YYYY/MM/DD HH:mm」形式に変換
-const formatDateTime = (iso: string) => {
-  if (!iso) return '―'
-  const d = new Date(iso)
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
+// formatDateはDateオブジェクトを直接受け取る担当営業固有の実装（署名期日バッジの計算で使う）ため
+// 共通部品には切り出さず、そのままここに残す（共通部品のformatDateはiso文字列を受け取る別物）。
 const formatDate = (d: Date) => `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
-
-// 帳票種別の省略表示
-const getDocumentLabel = (documentType: string, pattern: string) => {
-  if (pattern === 'C') return '雇用契約書＋明示書'
-  if (pattern === 'B') return '明示書'
-  return '雇用契約書'
-}
-
-// 雇用形態バッジ
-const ContractTypeBadge = ({ contractType, workPlace }: { contractType: string; workPlace: string }) => {
-  const isInternal = workPlace === '社内'
-  if (isInternal) {
-    return <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: '#EEF2FA', color: '#1B3A8C' }}>{contractType || '―'}</span>
-  }
-  const map: Record<string, { bg: string; color: string }> = {
-    '正社員':   { bg: '#ECFDF5', color: '#15803D' },
-    '有期契約': { bg: '#ECFDF5', color: '#15803D' },
-    '無期契約': { bg: '#ECFDF5', color: '#15803D' },
-    'アルバイト': { bg: '#FFF7ED', color: '#C2410C' },
-  }
-  const c = map[contractType] || { bg: '#F3F4F6', color: '#6B7280' }
-  return <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: c.bg, color: c.color }}>{contractType || '―'}</span>
-}
-
-// ステータスバッジ（塗りつぶし）
-const StatusBadge = ({ status, label }: { status: ContractStatus; label?: string }) => {
-  const map: Record<string, { bg: string; label: string }> = {
-    '申請中':     { bg: '#1D4ED8', label: '申請中' },
-    'SSC承認済み': { bg: '#065F46', label: 'SSC承認済み' },
-    '差し戻し中': { bg: '#B91C1C', label: '差し戻し中' },
-    '署名待ち':   { bg: '#92400E', label: '署名待ち' },
-    '署名済み':   { bg: '#3730A3', label: '署名済み' },
-    '完了':       { bg: '#374151', label: '完了' },
-    '取り下げ':   { bg: '#9CA3AF', label: '取り下げ' },
-  }
-  const s = map[status] || { bg: '#9CA3AF', label: status }
-  return (
-    <span className="text-xs font-medium px-2 py-0.5 rounded whitespace-nowrap" style={{ background: s.bg, color: 'white' }}>
-      {label || s.label}
-    </span>
-  )
-}
 
 // 署名期日バッジ（通常／期日間近／期日超過の3段階）
 const SignDeadlineBadge = ({ signRequestedAt }: { signRequestedAt: string | null }) => {
@@ -137,45 +75,7 @@ const SignDeadlineBadge = ({ signRequestedAt }: { signRequestedAt: string | null
   )
 }
 
-// 確認済みバッジ（2026-07-13追加：署名済み／完了の案件に、いつ従業員が確認・署名したかを表示する。
-// 以前はsigned_atがDBに保存されるだけで画面のどこにも表示されていなかったため、伊藤さんの
-// 指摘を受けて追加した。SignDeadlineBadgeと同じ位置に、ステータスに応じて出し分ける）
-const ConfirmedBadge = ({ signedAt }: { signedAt: string | null }) => {
-  if (!signedAt) return null
-  return (
-    <span className="text-[10.5px] font-medium px-2 py-0.5 rounded whitespace-nowrap" style={{ background: '#D1FAE5', color: '#065F46' }}>
-      ✓ 確認済み：{formatDateTime(signedAt)}
-    </span>
-  )
-}
-
-// 期日アラートの判定（雇用開始日ベース）
-const getDeadlineAlert = (contract: Contract): { type: 'overdue' | 'urgent' | null; label: string } => {
-  const f = contract.input_data?.fields
-  if (!f) return { type: null, label: '' }
-  const startDate = f.employStart || f.contractStartDate || f.dispatchStart
-  if (!startDate) return { type: null, label: '' }
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  const start = new Date(startDate); start.setHours(0, 0, 0, 0)
-  const diffDays = Math.floor((start.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-  if (diffDays < 0) return { type: 'overdue', label: '開始日超過' }
-  if (diffDays <= 3) return { type: 'urgent', label: `開始まで${diffDays}日` }
-  return { type: null, label: '' }
-}
-
-// 雇用期間の表示文字列
-const getEmployPeriodLabel = (contract: Contract): string => {
-  const f = contract.input_data?.fields
-  if (!f) return '―'
-  const contractType = f.contractType || ''
-  const isMusei = contractType === '正社員' || contractType === '無期契約' || f.period === '無期'
-  if (isMusei) return f.contractStartDate ? `${f.contractStartDate} 〜 期間の定めなし` : '―'
-  if (f.employStart && f.employEnd) return `${f.employStart} 〜 ${f.employEnd}`
-  return '―'
-}
-
 type FilterKey = 'pending' | 'explain' | 'rejected' | 'waiting' | 'completed' | 'other'
-type SubFilter = 'all' | '申請中' | 'SSC承認済み' | '署名済み' | '完了'
 
 export default function SalesDashboard() {
   const router = useRouter()
@@ -184,7 +84,6 @@ export default function SalesDashboard() {
   const [contracts, setContracts] = useState<Contract[]>([])
   const [loading, setLoading] = useState(true)
   const [activeFilter, setActiveFilter] = useState<FilterKey>('pending')
-  const [subFilter, setSubFilter] = useState<SubFilter>('all')
   const [confirmingExplainId, setConfirmingExplainId] = useState<string | null>(null)
   const [explainLoading, setExplainLoading] = useState(false)
   const [myRequests, setMyRequests] = useState<MyRequest[]>([])
@@ -269,9 +168,6 @@ export default function SalesDashboard() {
   const waitingList = contracts.filter(c => c.status === '署名待ち')
   const completedList = contracts.filter(c => ['署名済み', '完了'].includes(c.status))
 
-  const pendingListFiltered = subFilter === 'all' ? pendingList : pendingList.filter(c => c.status === subFilter)
-  const completedListFiltered = subFilter === 'all' ? completedList : completedList.filter(c => c.status === subFilter)
-
   // 「依頼状況」：デフォルトでは完了したタスクを持つだけの行は表示しない
   // （未対応・取消済みのタスクが1つでもあれば表示する）
   const hasVisibleTask = (r: MyRequest, includeCompleted: boolean) => {
@@ -290,16 +186,47 @@ export default function SalesDashboard() {
     { key: 'other',     label: '依頼状況',   count: visibleMyRequests.length, color: '#5A6A8A' },
   ]
 
-  const listForFilter: Record<FilterKey, Contract[]> = {
-    pending: pendingListFiltered,
+  // 2026-07-14追加：案件が蓄積すると目当ての案件を探しにくい、というSSCダッシュボードでの
+  // 指摘を受け、担当営業側の一覧にも同じ共通部品（絞り込み・並び替え・検索）を適用した
+  // （docs/SYSTEM_DESIGN.md 10章2026-07-14参照）。以前は「進行中」「完了」タブにのみ、
+  // 簡易なステータス別ピルボタン（subFilter）があったが、共通部品に置き換えた。
+  const baseListForFilter: Record<FilterKey, Contract[]> = {
+    pending: pendingList,
     explain: explainList,
     rejected: rejectedList,
     waiting: waitingList,
-    completed: completedListFiltered,
+    completed: completedList,
     other: [],
   }
-  const currentList = listForFilter[activeFilter]
+  const baseCurrentList = baseListForFilter[activeFilter]
   const currentLabel = filterCards.find(c => c.key === activeFilter)?.label || ''
+
+  const statusOptionsForFilter: Record<FilterKey, { value: string; label: string }[]> = {
+    pending: [
+      { value: '申請中', label: '申請中' },
+      { value: 'SSC承認済み', label: 'SSC承認済み' },
+    ],
+    explain: [],
+    rejected: [],
+    waiting: [],
+    completed: [
+      { value: '署名済み', label: '署名済み' },
+      { value: '完了', label: '完了' },
+    ],
+    other: [],
+  }
+
+  const { result: currentList, toolbar: listToolbar } = useContractListToolbar(baseCurrentList, {
+    statusOptions: statusOptionsForFilter[activeFilter],
+    sortOptions: buildDateSortOptions<Contract>(),
+    getSearchText: c => {
+      const staff = c.input_data?.staff || {}
+      const f = c.input_data?.fields || {}
+      return [staff.name, staff.employee_number, f.workLocationName].filter(Boolean).join(' ')
+    },
+    searchPlaceholder: '氏名・社員番号・就業先で検索',
+    resetKey: activeFilter,
+  })
 
   // 「説明完了」ボタン処理：ステータスを署名待ちに進め、通知日時を記録する
   // ステータス更新・sign_requested_atの記録・従業員への署名依頼メール送信は
@@ -363,7 +290,7 @@ export default function SalesDashboard() {
                 <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: '#EEF2FA', color: '#1B3A8C' }}>
                   {getDocumentLabel(contract.document_type, contract.pattern)}
                 </span>
-                <StatusBadge status={contract.status} label={isExplain ? '説明対応が必要' : undefined} />
+                <ContractStatusBadge status={contract.status} overrideLabel={isExplain ? '説明対応が必要' : undefined} />
               </div>
               {isWaitingSign && <SignDeadlineBadge signRequestedAt={contract.sign_requested_at} />}
               {isConfirmed && <ConfirmedBadge signedAt={contract.signed_at} />}
@@ -544,7 +471,7 @@ export default function SalesDashboard() {
             return (
               <button
                 key={card.key}
-                onClick={() => { if (isDisabled) return; setActiveFilter(card.key); setSubFilter('all') }}
+                onClick={() => { if (isDisabled) return; setActiveFilter(card.key) }}
                 disabled={isDisabled}
                 className="flex items-center gap-2 pb-3 relative transition-all"
                 style={{ background: 'none', border: 'none', cursor: isDisabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', flexShrink: 0, opacity: isDisabled ? 0.55 : 1 }}>
@@ -571,27 +498,10 @@ export default function SalesDashboard() {
           })}
         </div>
 
-        {/* サブフィルター（進行中・完了のみ） */}
-        {(activeFilter === 'pending' || activeFilter === 'completed') && (
-          <div className="flex items-center gap-2 mb-4 mt-4">
-            <span className="text-xs" style={{ color: '#5A6A8A' }}>絞り込み：</span>
-            {(activeFilter === 'pending'
-              ? ([['all', 'すべて'], ['申請中', '申請中'], ['SSC承認済み', 'SSC承認済み']] as [SubFilter, string][])
-              : ([['all', 'すべて'], ['署名済み', '署名済み'], ['完了', '完了']] as [SubFilter, string][])
-            ).map(([key, label]) => {
-              const isActive = subFilter === key
-              return (
-                <button
-                  key={key}
-                  onClick={() => setSubFilter(key)}
-                  className="text-xs px-3.5 py-1.5 rounded-full transition-all"
-                  style={isActive
-                    ? { background: '#1B3A8C', color: 'white', border: '1px solid #1B3A8C' }
-                    : { background: 'white', color: '#1A2340', border: '1px solid #D0DAF0' }}>
-                  {label}
-                </button>
-              )
-            })}
+        {/* 絞り込み・並び替え・検索（2026-07-14追加：以前のサブフィルターピルを共通部品に置き換え） */}
+        {activeFilter !== 'other' && (
+          <div className="mt-4">
+            {listToolbar}
           </div>
         )}
 

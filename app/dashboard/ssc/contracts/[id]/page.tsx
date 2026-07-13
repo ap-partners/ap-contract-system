@@ -805,6 +805,8 @@ export default function SSCContractDetail() {
               <p className="text-sm" style={{ color: '#065F46' }}>
                 {(f.closingPattern === 'face' || f.closingPattern === 'print')
                   ? '担当営業のダッシュボードに「説明対応が必要」として表示されます。'
+                  : contract.document_type === '就業条件明示書'
+                  ? 'スタッフへ確認依頼が自動送信されます。'
                   : 'スタッフへ署名依頼が自動送信されます。'}
               </p>
               <button onClick={() => router.push('/dashboard/ssc')}
@@ -900,6 +902,8 @@ export default function SSCContractDetail() {
                       承認すると、申請内容の変更はできません。内容に誤りがないか今一度ご確認ください。<br />
                       {(f.closingPattern === 'face' || f.closingPattern === 'print')
                         ? '承認後、担当営業のダッシュボードに「説明対応が必要」として表示されます。'
+                        : contract.document_type === '就業条件明示書'
+                        ? '承認後、スタッフへ確認依頼が自動送信されます。'
                         : '承認後、スタッフへ署名依頼が自動送信されます。'}
                     </p>
                     <div className="flex gap-3">

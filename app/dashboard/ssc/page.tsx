@@ -395,7 +395,7 @@ export default function SSCDashboard() {
                 </p>
                 <p className="text-sm mb-3 leading-relaxed" style={{ color: '#1A2340' }}>
                   承認すると、各申請の内容変更はできません。内容に誤りがないか今一度ご確認ください。<br />
-                  承認後、対象スタッフへ署名依頼が自動送信されます（対面・印刷パターンの案件は担当営業のダッシュボードに表示されます）。
+                  承認後、対象スタッフへ署名・確認依頼が自動送信されます（雇用契約書は署名、就業条件明示書は内容確認の依頼になります。対面・印刷パターンの案件は担当営業のダッシュボードに表示されます）。
                 </p>
                 <div className="flex gap-3">
                   <button
@@ -616,7 +616,7 @@ export default function SSCDashboard() {
                   一括承認が完了しました（{bulkApproveDone}件）
                 </p>
                 <p className="text-sm leading-relaxed mb-6" style={{ color: '#1A2340' }}>
-                  対象スタッフへ署名依頼が自動送信されました。<br />
+                  対象スタッフへ署名・確認依頼が自動送信されました。<br />
                   （対面・印刷パターンの案件は担当営業のダッシュボードに表示されます）
                 </p>
                 <button

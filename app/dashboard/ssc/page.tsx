@@ -164,6 +164,9 @@ export default function SSCDashboard() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabType>('承認待ち')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  // 一括承認の確認ステップ（2026-07-13追加：確認なしで即実行されてしまい、誤操作時に取り返しが
+  // つかないとの伊藤さん指摘を受けて、個別承認画面と同じ確認カードを挟むようにした）
+  const [showBulkApproveConfirm, setShowBulkApproveConfirm] = useState(false)
 
   useEffect(() => {
     const init = async () => {
@@ -251,6 +254,7 @@ export default function SSCDashboard() {
     const statusMap = new Map((refreshed || []).map(r => [r.id, r.status as ContractStatus]))
     setContracts(prev => prev.map(c => statusMap.has(c.id) ? { ...c, status: statusMap.get(c.id)! } : c))
     setSelectedIds(new Set())
+    setShowBulkApproveConfirm(false)
   }
 
   const tabs: { key: TabType; label: string; count: number; color: string; tint: string }[] = [
@@ -308,7 +312,7 @@ export default function SSCDashboard() {
                 <div className="flex items-center justify-between mt-2.5">
                   <span className="text-2xl font-bold" style={{ color: isActive ? tab.color : '#1A2340' }}>{tab.count}</span>
                   <button
-                    onClick={() => { setActiveTab(tab.key); setSelectedIds(new Set()) }}
+                    onClick={() => { setActiveTab(tab.key); setSelectedIds(new Set()); setShowBulkApproveConfirm(false) }}
                     className="flex items-center gap-1 rounded-full transition-all"
                     style={isActive
                       ? { background: tab.color, border: 'none', padding: '6px 13px', cursor: 'pointer' }
@@ -324,28 +328,57 @@ export default function SSCDashboard() {
 
         {/* 一括承認バー（承認待ちタブのみ） */}
         {activeTab === '承認待ち' && bulkTargets.length > 0 && (
-          <div className="flex justify-between items-center mb-4 px-4 py-3 bg-white rounded-xl border" style={{ borderColor: '#D0DAF0' }}>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={selectedIds.size === bulkTargets.length && bulkTargets.length > 0}
-                onChange={toggleSelectAll}
-                className="w-4 h-4 cursor-pointer"
-                style={{ accentColor: '#1B3A8C' }}
-              />
-              <span className="text-sm" style={{ color: '#5A6A8A' }}>警告なし案件をすべて選択</span>
-            </label>
-            <button
-              onClick={handleBulkApprove}
-              disabled={selectedIds.size === 0}
-              className="text-sm font-medium px-5 py-2 rounded-lg transition-all"
-              style={{
-                background: selectedIds.size > 0 ? '#1B3A8C' : '#D1D5DB',
-                color: 'white',
-                cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
-              }}>
-              ✅ 一括承認（{selectedIds.size}件）
-            </button>
+          <div className="mb-4">
+            <div className="flex justify-between items-center px-4 py-3 bg-white rounded-xl border" style={{ borderColor: '#D0DAF0' }}>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.size === bulkTargets.length && bulkTargets.length > 0}
+                  onChange={() => { toggleSelectAll(); setShowBulkApproveConfirm(false) }}
+                  className="w-4 h-4 cursor-pointer"
+                  style={{ accentColor: '#1B3A8C' }}
+                />
+                <span className="text-sm" style={{ color: '#5A6A8A' }}>警告なし案件をすべて選択</span>
+              </label>
+              <button
+                onClick={() => setShowBulkApproveConfirm(true)}
+                disabled={selectedIds.size === 0}
+                className="text-sm font-medium px-5 py-2 rounded-lg transition-all"
+                style={{
+                  background: selectedIds.size > 0 ? '#1B3A8C' : '#D1D5DB',
+                  color: 'white',
+                  cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
+                }}>
+                ✅ 一括承認（{selectedIds.size}件）
+              </button>
+            </div>
+
+            {/* 一括承認の確認カード（2026-07-13追加：個別承認画面と同じ確認ステップを挟む。
+                誤操作で即実行されてしまわないようにするための対応） */}
+            {showBulkApproveConfirm && selectedIds.size > 0 && (
+              <div className="mt-3 rounded-xl p-4 border-2" style={{ background: '#ECFDF5', borderColor: '#34D399' }}>
+                <p className="text-sm font-bold mb-2" style={{ color: '#065F46' }}>
+                  ✅ 選択中の{selectedIds.size}件を本当に一括承認してよいですか？
+                </p>
+                <p className="text-sm mb-3 leading-relaxed" style={{ color: '#1A2340' }}>
+                  承認すると、各申請の内容変更はできません。内容に誤りがないか今一度ご確認ください。<br />
+                  承認後、対象スタッフへ署名依頼が自動送信されます（対面・印刷パターンの案件は担当営業のダッシュボードに表示されます）。
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleBulkApprove}
+                    className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white transition-all"
+                    style={{ background: '#1B3A8C' }}>
+                    選択中の{selectedIds.size}件を一括承認する
+                  </button>
+                  <button
+                    onClick={() => setShowBulkApproveConfirm(false)}
+                    className="px-4 py-2.5 rounded-lg text-sm border" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
+                    キャンセル
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -398,7 +431,7 @@ export default function SSCDashboard() {
                           <input
                             type="checkbox"
                             checked={isSelected}
-                            onChange={() => toggleSelect(contract.id)}
+                            onChange={() => { toggleSelect(contract.id); setShowBulkApproveConfirm(false) }}
                             onClick={e => e.stopPropagation()}
                             className="w-4 h-4 mt-5 flex-shrink-0 cursor-pointer"
                             style={{ accentColor: '#1B3A8C' }}

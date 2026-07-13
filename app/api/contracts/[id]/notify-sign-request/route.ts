@@ -47,10 +47,15 @@ export async function POST(
     return NextResponse.json({ sent: false })
   }
 
+  // 2026-07-13修正：就業条件明示書（パターンB）は締結パターンを選ぶSTEP自体が無いため、
+  // contracts.closing_pattern は常にnullで保存される（3-6章の仕様どおり）。この修正前は
+  // auto_approveトリガーがclosing_pattern==='auto'だけを見ていたため、パターンBの案件は
+  // SSC承認後どこにも進めなくなっていた（docs/SYSTEM_DESIGN.md 10章 2026-07-13参照）。
+  // パターンBは実質的に常に「指定しない（自動送信）」と同じ扱いなので、nullもauto側に含める。
   const shouldTransition =
     trigger === 'explain'
-      ? contract.closing_pattern !== 'auto' // 対面・印刷パターンのみ
-      : contract.closing_pattern === 'auto' // 指定しない（自動送信）のみ
+      ? (contract.closing_pattern === 'face' || contract.closing_pattern === 'print') // 対面・印刷パターンのみ
+      : (contract.closing_pattern === 'auto' || contract.closing_pattern === null) // 指定しない（自動送信）、およびパターンB（締結パターン選択が無いため常にこちら扱い）
 
   if (!shouldTransition) {
     return NextResponse.json({ sent: false })

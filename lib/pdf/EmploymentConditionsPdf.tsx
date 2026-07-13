@@ -16,7 +16,10 @@ import {
   CONFLICT_DATE_NOTICE_TEXT, COMPLAINT_HANDLING_TEXT, DISPATCH_CANCEL_MEASURES_TEXT,
   getAgreementLaborText, getConflictDateText, getDispatchFeeAvgText,
 } from './documentText'
-import { sharedStyles, LabeledRow, SplitLines, BoxedSplitRow, PersonGridRow, AutoFitFreeText } from './pdfShared'
+import {
+  sharedStyles, LabeledRow, SplitLines, BoxedSplitRow, PersonGridRow, AutoFitFreeText,
+  COMPANY_SEAL_PATH, SealSideBySide,
+} from './pdfShared'
 
 export interface EmploymentConditionsPdfProps {
   documentLabel: string
@@ -68,6 +71,10 @@ export interface EmploymentConditionsPdfProps {
   dispatchFeeOfficeName?: string
   dispatchFeeAmount?: number | null
   dispatchFeeFiscalYear?: string
+  // 2026-07-13追加：会社の角印。雇用契約書・兼用版と同じ仕組み（申請中・差し戻し中・
+  // 取り下げ以外＝SSC承認後から表示）。これまでこのpropが無く、就業条件明示書のPDFには
+  // 角印がどのステータスでも一切表示されない状態だった（伊藤さん指摘・2026-07-13）。
+  showSeal: boolean
 }
 
 export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
@@ -102,7 +109,7 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
                 label: '(雇入れ時)',
                 value: (
                   <AutoFitFreeText
-                    text={`${p.workLocationName}　${p.workLocationAddress}${p.workLocationTel ? `　TEL\u00A0${p.workLocationTel}` : ''}`}
+                    text={`${p.workLocationName}　${p.workLocationAddress}${p.workLocationTel ? `　TEL ${p.workLocationTel}` : ''}`}
                     maxLines={2} widthPt={370} sizes={[7.4, 6.9, 6.4, 5.9]} lineHeight={1.15}
                   />
                 ),
@@ -254,11 +261,15 @@ export const EmploymentConditionsPdf = (p: EmploymentConditionsPdfProps) => {
         </View>
 
         <View style={{ marginTop: 10 }}>
-          <Text>会社</Text>
-          {COMPANY_HQ_ADDRESS_LINES.map((line, i) => <Text key={i}>{line}</Text>)}
-          {/* 2026-07-08再修正：余白の追加位置を誤り、住所欄と会社名の間に入れていた。
-              正しくは会社名（株式会社APパートナーズ）と代表者名（代表取締役 山田 昌）の間 */}
-          <Text style={{ marginTop: 6 }}>代表取締役　山田　昌</Text>
+          {/* 2026-07-13追加：雇用契約書・兼用版と同じSealSideBySideで角印を表示する。
+              パターンBは従業員側の署名欄が無いため、会社側のみの単独ブロックとして扱う。 */}
+          <SealSideBySide showSeal={p.showSeal} sealSrc={COMPANY_SEAL_PATH} textColWidth={98} gap={-12}>
+            <Text>会社</Text>
+            {COMPANY_HQ_ADDRESS_LINES.map((line, i) => <Text key={i}>{line}</Text>)}
+            {/* 2026-07-08再修正：余白の追加位置を誤り、住所欄と会社名の間に入れていた。
+                正しくは会社名（株式会社APパートナーズ）と代表者名（代表取締役 山田 昌）の間 */}
+            <Text style={{ marginTop: 6 }}>代表取締役　山田　昌</Text>
+          </SealSideBySide>
         </View>
       </Page>
     </Document>

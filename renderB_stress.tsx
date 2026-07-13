@@ -44,6 +44,7 @@ async function main() {
       dispatchFeeOfficeName: '東北営業所',
       dispatchFeeAmount: 17762,
       dispatchFeeFiscalYear: 'R6',
+      showSeal: true,
     })
   )
   fs.mkdirSync('/tmp/pdftest', { recursive: true })

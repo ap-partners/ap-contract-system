@@ -157,6 +157,7 @@ export async function renderContractPdfBuffer(
         dispatchFeeOfficeName,
         dispatchFeeAmount,
         dispatchFeeFiscalYear,
+        showSeal: shouldShowSeal(contract.status),
       })
     )
   }

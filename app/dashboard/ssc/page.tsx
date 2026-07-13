@@ -20,6 +20,7 @@ type Contract = {
   created_by: string
   created_at: string
   rejection_reason: string | null
+  signed_at: string | null
   warning_confirmations: { type: string; confirmed_at: string }[]
   warning_level: WarningLevel
   input_data: {
@@ -110,6 +111,18 @@ const StatusBadge = ({ status }: { status: ContractStatus }) => {
   )
 }
 
+// 確認済みバッジ（2026-07-13追加：担当営業ダッシュボードと同様、署名済み／完了の案件に
+// いつ従業員が確認・署名したかを表示する。SSCは未確認分の後追い管理を担うため、伊藤さんの
+// 指示によりこちらにも追加した。デザインは担当営業ダッシュボードのConfirmedBadgeと統一）
+const ConfirmedBadge = ({ signedAt }: { signedAt: string | null }) => {
+  if (!signedAt) return null
+  return (
+    <span className="text-[10.5px] font-medium px-2 py-0.5 rounded whitespace-nowrap" style={{ background: '#D1FAE5', color: '#065F46' }}>
+      ✓ 確認済み：{formatDateTime(signedAt)}
+    </span>
+  )
+}
+
 // 期日アラートの判定（雇用開始日ベース）
 const getDeadlineAlert = (contract: Contract): { type: 'overdue' | 'urgent' | null; label: string } => {
   const f = contract.input_data?.fields
@@ -183,7 +196,7 @@ export default function SSCDashboard() {
 
       const { data: rows, error } = await supabase
         .from('contracts')
-        .select('id, pattern, contract_type, document_type, work_place, status, created_by, created_at, rejection_reason, warning_confirmations, warning_level, input_data')
+        .select('id, pattern, contract_type, document_type, work_place, status, created_by, created_at, rejection_reason, signed_at, warning_confirmations, warning_level, input_data')
         .neq('work_place', '社内')
         .order('created_at', { ascending: false })
 
@@ -426,6 +439,7 @@ export default function SSCDashboard() {
               const warning = hasWarning(contract)
               const autoWarning = hasAutoCheckWarning(contract)
               const isSelected = selectedIds.has(contract.id)
+              const isConfirmed = contract.status === '署名済み' || contract.status === '完了'
               const hasAnyWarning = warning || autoWarning
               const canBulkSelect = activeTab === '承認待ち' && !hasAnyWarning
               // 承認待ちタブでチェックボックスの代わりに警告アイコンを出す条件（2026-07-02追加）
@@ -491,6 +505,7 @@ export default function SSCDashboard() {
                           <span style={{ display: 'inline-block', width: '1px', height: '14px', background: '#D0DAF0', margin: '0 2px' }} />
                           <StatusBadge status={contract.status} />
                         </div>
+                        {isConfirmed && <ConfirmedBadge signedAt={contract.signed_at} />}
                         {/* 申請者名 ＋ 警告バッジ */}
                         <div className="flex items-center gap-2">
                           {warning && (

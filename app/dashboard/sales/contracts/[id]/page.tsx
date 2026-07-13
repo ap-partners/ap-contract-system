@@ -20,6 +20,7 @@ type ContractDetail = {
   closing_pattern: string | null
   created_by_dept_no: number | null
   sign_requested_at: string | null
+  signed_at: string | null
   input_data: {
     staff?: { name?: string; employee_number?: string; department?: string; crew_code?: string }
     fields?: Record<string, any>
@@ -439,6 +440,21 @@ export default function SalesContractDetail() {
               ) : (
                 <p className="text-sm" style={{ color: '#5A6A8A' }}>通知日時の記録がまだありません。</p>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* 確認・署名日時（2026-07-13追加：署名済み／完了の案件で、いつ従業員が確認・署名したかを
+            表示する。以前はsigned_atがDBに保存されるだけで画面のどこにも表示されていなかったため、
+            伊藤さんの指摘を受けて追加した） */}
+        {(contract.status === '署名済み' || contract.status === '完了') && (
+          <div className="bg-white rounded-xl border shadow-sm mb-6 overflow-hidden" style={{ borderColor: '#D0DAF0' }}>
+            <div className="px-5 py-3" style={{ background: '#3730A3' }}>
+              <p className="text-sm font-bold text-white">確認・署名状況</p>
+            </div>
+            <div className="p-5">
+              <p className="text-xs mb-1" style={{ color: '#5A6A8A' }}>内容確認・署名日時</p>
+              <p className="text-sm font-medium" style={{ color: '#1A2340' }}>{formatDateTime(contract.signed_at)}</p>
             </div>
           </div>
         )}

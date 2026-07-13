@@ -19,6 +19,7 @@ type Contract = {
   created_at: string
   rejection_reason: string | null
   sign_requested_at: string | null
+  signed_at: string | null
   input_data: {
     staff?: {
       name?: string
@@ -136,6 +137,18 @@ const SignDeadlineBadge = ({ signRequestedAt }: { signRequestedAt: string | null
   )
 }
 
+// 確認済みバッジ（2026-07-13追加：署名済み／完了の案件に、いつ従業員が確認・署名したかを表示する。
+// 以前はsigned_atがDBに保存されるだけで画面のどこにも表示されていなかったため、伊藤さんの
+// 指摘を受けて追加した。SignDeadlineBadgeと同じ位置に、ステータスに応じて出し分ける）
+const ConfirmedBadge = ({ signedAt }: { signedAt: string | null }) => {
+  if (!signedAt) return null
+  return (
+    <span className="text-[10.5px] font-medium px-2 py-0.5 rounded whitespace-nowrap" style={{ background: '#D1FAE5', color: '#065F46' }}>
+      ✓ 確認済み：{formatDateTime(signedAt)}
+    </span>
+  )
+}
+
 // 期日アラートの判定（雇用開始日ベース）
 const getDeadlineAlert = (contract: Contract): { type: 'overdue' | 'urgent' | null; label: string } => {
   const f = contract.input_data?.fields
@@ -231,7 +244,7 @@ export default function SalesDashboard() {
   const loadContracts = async (deptNo: number) => {
     const { data: rows, error } = await supabase
       .from('contracts')
-      .select('id, pattern, contract_type, document_type, work_place, status, created_by, created_by_dept_no, created_at, rejection_reason, sign_requested_at, input_data')
+      .select('id, pattern, contract_type, document_type, work_place, status, created_by, created_by_dept_no, created_at, rejection_reason, sign_requested_at, signed_at, input_data')
       .eq('created_by_dept_no', deptNo)
       .order('created_at', { ascending: false })
 
@@ -320,6 +333,7 @@ export default function SalesDashboard() {
     const f = contract.input_data?.fields || {}
     const deadline = getDeadlineAlert(contract)
     const isWaitingSign = contract.status === '署名待ち'
+    const isConfirmed = contract.status === '署名済み' || contract.status === '完了'
     const isExplain = isExplainNeeded(contract)
     const leftBorderColor = deadline.type === 'overdue' ? '#DC2626' : deadline.type === 'urgent' ? '#F97316' : 'transparent'
 
@@ -343,6 +357,7 @@ export default function SalesDashboard() {
             <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
               <StatusBadge status={contract.status} label={isExplain ? '説明対応が必要' : undefined} />
               {isWaitingSign && <SignDeadlineBadge signRequestedAt={contract.sign_requested_at} />}
+              {isConfirmed && <ConfirmedBadge signedAt={contract.signed_at} />}
             </div>
           </div>
 

@@ -355,7 +355,16 @@ export default function SalesDashboard() {
               </div>
             </div>
             <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-              <StatusBadge status={contract.status} label={isExplain ? '説明対応が必要' : undefined} />
+              {/* 2026-07-13追加：帳票種別バッジ（SSCダッシュボードと同じgetDocumentLabelを表示）。
+                  以前はgetDocumentLabel関数自体はあったが実際の画面に出しておらず、担当営業が
+                  一覧だけでは書類の種類（雇用契約書／明示書／兼用）を判断できなかった
+                  （伊藤さん指摘・2026-07-13）。 */}
+              <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: '#EEF2FA', color: '#1B3A8C' }}>
+                  {getDocumentLabel(contract.document_type, contract.pattern)}
+                </span>
+                <StatusBadge status={contract.status} label={isExplain ? '説明対応が必要' : undefined} />
+              </div>
               {isWaitingSign && <SignDeadlineBadge signRequestedAt={contract.sign_requested_at} />}
               {isConfirmed && <ConfirmedBadge signedAt={contract.signed_at} />}
             </div>
@@ -388,6 +397,16 @@ export default function SalesDashboard() {
               <p className="text-xs mb-0.5" style={{ color: '#5A6A8A' }}>雇用期間</p>
               <p className="text-xs" style={{ color: '#1A2340' }}>{getEmployPeriodLabel(contract)}</p>
             </div>
+            {/* 2026-07-13追加：派遣期間（パターンB・Cのみ、SSCダッシュボードと同じ表示条件）。
+                明示書（パターンB）は雇用期間欄に情報が無く、この派遣期間が実質的な契約期間の
+                目安になるため、一覧に無いと「いつまでの契約か」が全く分からない状態だった
+                （伊藤さん指摘・2026-07-13）。 */}
+            {(contract.pattern === 'B' || contract.pattern === 'C') && f.dispatchStart && f.dispatchEnd && (
+              <div>
+                <p className="text-xs mb-0.5" style={{ color: '#5A6A8A' }}>派遣期間</p>
+                <p className="text-xs" style={{ color: '#1A2340' }}>{f.dispatchStart} 〜 {f.dispatchEnd}</p>
+              </div>
+            )}
             {isExplain && f.closingPattern && (
               <div>
                 <p className="text-xs mb-0.5" style={{ color: '#5A6A8A' }}>締結パターン</p>

@@ -2,7 +2,10 @@
 
 // ===== 従業員向け署名・確認画面（フェーズ5・2026-07-09実装、同日 丸印鑑方式に変更） =====
 // ログイン画面を介さず、署名依頼メールの /sign/[id] リンクから直接アクセスする
-// （docs/SYSTEM_DESIGN.md 7-2章）。本人確認は社員番号＋生年月日。
+// （docs/SYSTEM_DESIGN.md 7-2章）。本人確認は社員番号＋認証コード
+// （2026-07-13：生年月日方式から変更。コードは通知メールに記載される6桁の数字。
+// 5回間違えると失効し、その場合は再発行ボタンから新しいコードを送信できる。
+// docs/SYSTEM_DESIGN.md 10章 2026-07-13決定）。
 // パターンA・C（雇用契約書を含む）→ フルネームをテキスト入力し、丸印鑑（横書き・クラウドサイン方式）
 // をリアルタイム生成してPDFに埋め込む（過去のトーク履歴の確定仕様。手書きサインではない）。
 // パターンB（就業条件明示書のみ）→ 内容確認ボタンのみ。
@@ -12,6 +15,7 @@ import { drawSeal } from './seal'
 
 type Stage = 'verify' | 'action' | 'done'
 type SignAction = 'signature' | 'confirmation'
+type ErrorReason = 'invalid' | 'expired' | 'locked' | ''
 
 export default function SignPage() {
   const params = useParams<{ id: string }>()
@@ -19,28 +23,42 @@ export default function SignPage() {
 
   const [stage, setStage] = useState<Stage>('verify')
   const [employeeNumber, setEmployeeNumber] = useState('')
-  // 2026-07-10修正：生年月日は元々<input type="date">（ブラウザ標準のカレンダー入力）だったが、
-  // 「月を入力すると自動で日欄に移るのに、年は4桁入れても月欄に自動移動しない。入力例も無く
-  // 分かりにくい」との指摘（伊藤さん）を受けて見直した。標準date入力はブラウザ/端末ごとに
-  // 挙動・見た目が異なりこちらで制御できないため、「YYYYMMDD」8桁を1つの欄にスラッシュ無しで
-  // 連続入力してもらう方式に変更（伊藤さんの指示・2026-07-10）。数字以外は入力させず、
-  // 8桁を超えても入力できないようにする。birthday（'YYYY-MM-DD'形式、verify・complete APIへの
-  // 送信フォーマット）は下のuseEffectで自動的に組み立てる。
-  const [birthdayDigits, setBirthdayDigits] = useState('')
-  const [birthday, setBirthday] = useState('')
+  // 2026-07-13：生年月日入力（8桁連続入力方式）を廃止し、通知メールに記載される
+  // 6桁の認証コードの入力に置き換えた。
+  const [authCode, setAuthCode] = useState('')
   const [verifying, setVerifying] = useState(false)
   const [error, setError] = useState('')
+  const [errorReason, setErrorReason] = useState<ErrorReason>('')
+  const [reissuing, setReissuing] = useState(false)
+  const [reissueSent, setReissueSent] = useState(false)
 
-  useEffect(() => {
-    if (birthdayDigits.length === 8) {
-      const yyyy = birthdayDigits.slice(0, 4)
-      const mm = birthdayDigits.slice(4, 6)
-      const dd = birthdayDigits.slice(6, 8)
-      setBirthday(`${yyyy}-${mm}-${dd}`)
-    } else {
-      setBirthday('')
+  const handleReissue = async () => {
+    if (!employeeNumber.trim()) {
+      setError('社員番号を入力してから再発行してください。')
+      return
     }
-  }, [birthdayDigits])
+    setReissuing(true)
+    setError('')
+    try {
+      const res = await fetch(`/api/sign/${id}/reissue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeNumber: employeeNumber.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error || '再発行に失敗しました。')
+        return
+      }
+      setReissueSent(true)
+      setErrorReason('')
+      setAuthCode('')
+    } catch {
+      setError('通信エラーが発生しました。電波状況をご確認の上、再度お試しください。')
+    } finally {
+      setReissuing(false)
+    }
+  }
 
   const [staffName, setStaffName] = useState('')
   const [documentLabel, setDocumentLabel] = useState('')
@@ -71,15 +89,18 @@ export default function SignPage() {
     e.preventDefault()
     setVerifying(true)
     setError('')
+    setErrorReason('')
+    setReissueSent(false)
     try {
       const res = await fetch(`/api/sign/${id}/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employeeNumber: employeeNumber.trim(), birthday }),
+        body: JSON.stringify({ employeeNumber: employeeNumber.trim(), authCode: authCode.trim() }),
       })
       const data = await res.json()
       if (!res.ok) {
         setError(data.error || '確認できませんでした。')
+        setErrorReason(data.reason || 'invalid')
         return
       }
       setStaffName(data.staffName)
@@ -107,7 +128,7 @@ export default function SignPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           employeeNumber: employeeNumber.trim(),
-          birthday,
+          authCode: authCode.trim(),
           signatureImageDataUrl,
         }),
       })
@@ -143,7 +164,7 @@ export default function SignPage() {
             <>
               <h2 className="text-xl font-bold mb-2" style={{ color: '#1A2340' }}>本人確認</h2>
               <p className="text-sm mb-6 leading-relaxed" style={{ color: '#5A6A8A' }}>
-                社員番号と生年月日を入力してください。
+                社員番号と、通知メールに記載の認証コードを入力してください。
               </p>
               <form onSubmit={handleVerify} className="space-y-5">
                 <div>
@@ -163,24 +184,42 @@ export default function SignPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1.5" style={{ color: '#1A2340' }}>
-                    生年月日（半角数字8桁）
+                    認証コード（半角数字6桁）
                   </label>
                   <input
                     type="text"
                     inputMode="numeric"
-                    value={birthdayDigits}
-                    onChange={e => setBirthdayDigits(e.target.value.replace(/[^0-9]/g, '').slice(0, 8))}
+                    value={authCode}
+                    onChange={e => setAuthCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
                     className="w-full px-4 py-3 rounded-lg text-sm border focus:outline-none focus:ring-2 transition-all"
                     style={{ borderColor: '#D0DAF0', background: '#FFFFFF', color: '#1A2340' }}
-                    placeholder="例：19900705（西暦・月日は0埋め2桁）"
+                    placeholder="例：482913（メールに記載の6桁の数字）"
                     required
                   />
                 </div>
+
+                {reissueSent && (
+                  <div className="rounded-lg px-4 py-3 text-sm leading-relaxed" style={{ background: '#ECFEFF', color: '#0E7490', border: '1px solid #A5F3FC' }}>
+                    新しい認証コードをメールで送信しました。メールをご確認のうえ、新しいコードを入力してください。
+                  </div>
+                )}
 
                 {error && (
                   <div className="rounded-lg px-4 py-3 text-sm leading-relaxed" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
                     {error}
                   </div>
+                )}
+
+                {(errorReason === 'expired' || errorReason === 'locked') && (
+                  <button
+                    type="button"
+                    onClick={handleReissue}
+                    disabled={reissuing}
+                    className="w-full py-3 rounded-lg text-sm font-semibold transition-all"
+                    style={{ background: '#EEF2FC', color: '#1B3A8C', border: '1px solid #D0DAF0' }}
+                  >
+                    {reissuing ? '再発行中...' : '認証コードを再発行する'}
+                  </button>
                 )}
 
                 <button

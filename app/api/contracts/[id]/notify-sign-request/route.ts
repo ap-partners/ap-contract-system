@@ -19,6 +19,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendSignRequestMail } from '@/lib/mail'
+import { generateSignAuthCode, computeSignAuthCodeExpiry } from '@/lib/signAuthCode'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -64,6 +65,10 @@ export async function POST(
   const isConfirmationOnly = contract.document_type === '就業条件明示書'
   const signActionType: 'signature' | 'confirmation' = isConfirmationOnly ? 'confirmation' : 'signature'
 
+  // 2026-07-13追加：ここで初回の6桁認証コードを発行する（社員番号＋コードでの本人確認方式）。
+  const authCode = generateSignAuthCode()
+  const authCodeExpiresAt = computeSignAuthCodeExpiry()
+
   const now = new Date().toISOString()
   const { data: updatedRow, error: updateError } = await supabaseAdmin
     .from('contracts')
@@ -71,6 +76,9 @@ export async function POST(
       status: '署名待ち',
       sign_requested_at: now,
       sign_action_type: signActionType,
+      sign_auth_code: authCode,
+      sign_auth_code_expires_at: authCodeExpiresAt,
+      sign_auth_attempts: 0,
       updated_at: now,
     })
     .eq('id', id)
@@ -98,7 +106,7 @@ export async function POST(
   }
 
   try {
-    await sendSignRequestMail(toEmail, id, isConfirmationOnly)
+    await sendSignRequestMail(toEmail, id, isConfirmationOnly, authCode)
   } catch (e: any) {
     return NextResponse.json({ error: 'メール送信に失敗しました：' + (e?.message || '') }, { status: 500 })
   }

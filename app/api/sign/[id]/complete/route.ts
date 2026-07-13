@@ -1,10 +1,13 @@
 // ===== 署名画面：署名／内容確認 完了API =====
 // /sign/[id] で本人確認後に表示される「署名する」（パターンA・C）または
 // 「内容を確認しました」（パターンB）ボタン押下時に呼ばれる。
-// 2026-07-09実装（フェーズ5）。
+// 2026-07-09実装（フェーズ5）。2026-07-13：本人確認方式を社員番号＋6桁認証コードに変更
+// （docs/SYSTEM_DESIGN.md 10章 2026-07-13決定）。
 //
 // 本人確認はverify APIと独立して、このAPIでも必ず再検証する
 // （verify API呼び出しとこのAPI呼び出しの間に永続的な認証セッションを発行していないため）。
+// なお、ここでの再検証失敗は試行回数にカウントしない（既にverifyで正しいコードが確認できて
+// action画面まで進んでいるため、その後の通信エラー等での再送を誤って失効させないようにする）。
 //
 // 処理の流れ：①本人確認・状態再検証 → ②sign_action_typeに応じてPDF再生成
 // （署名の場合は署名画像を埋め込み、確認のみの場合はそのまま）→ ③Google Driveへアップロード
@@ -18,8 +21,6 @@ const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
-
-const SIGN_URL_EXPIRY_DAYS = 7
 
 const getDocumentLabel = (documentType: string, contractType: string): string => {
   const suffix = contractType === 'アルバイト' ? '（アルバイト）' : contractType === '無期契約' ? '（無期）' : ''
@@ -46,11 +47,11 @@ export async function POST(
   const { id } = await context.params
   const body = await req.json().catch(() => null)
   const employeeNumber = (body?.employeeNumber || '').trim()
-  const birthday = (body?.birthday || '').trim()
+  const authCode = (body?.authCode || '').trim()
   const signatureImageDataUrl: string | undefined = body?.signatureImageDataUrl || undefined
 
-  if (!employeeNumber || !birthday) {
-    return NextResponse.json({ error: '社員番号と生年月日を入力してください。' }, { status: 400 })
+  if (!employeeNumber || !authCode) {
+    return NextResponse.json({ error: '社員番号と認証コードを入力してください。' }, { status: 400 })
   }
 
   const { data: contract, error } = await supabaseAdmin
@@ -70,25 +71,21 @@ export async function POST(
     return NextResponse.json({ error: '現在この書類は署名・確認待ちの状態ではありません。' }, { status: 409 })
   }
 
-  if (contract.sign_requested_at) {
-    const expiresAt = new Date(contract.sign_requested_at)
-    expiresAt.setDate(expiresAt.getDate() + SIGN_URL_EXPIRY_DAYS)
-    if (expiresAt.getTime() < Date.now()) {
-      return NextResponse.json(
-        { error: 'このリンクの有効期限が切れています。お手数ですが、担当営業までご連絡ください。' },
-        { status: 410 }
-      )
-    }
+  if (!contract.sign_auth_code || !contract.sign_auth_code_expires_at || new Date(contract.sign_auth_code_expires_at).getTime() < Date.now()) {
+    return NextResponse.json(
+      { error: '認証コードの有効期限が切れています。お手数ですが、最初の画面からやり直してください。', reason: 'expired' },
+      { status: 410 }
+    )
   }
 
   const { data: staff } = await supabaseAdmin
     .from('staff')
-    .select('id, name, employee_number, birthday, dept_no')
+    .select('id, name, employee_number, dept_no')
     .eq('id', contract.staff_id)
     .maybeSingle()
 
-  if (!staff || staff.employee_number !== employeeNumber || staff.birthday !== birthday) {
-    return NextResponse.json({ error: '確認できませんでした。入力内容をご確認ください。' }, { status: 401 })
+  if (!staff || staff.employee_number !== employeeNumber || contract.sign_auth_code !== authCode) {
+    return NextResponse.json({ error: '確認できませんでした。お手数ですが、最初の画面からやり直してください。', reason: 'invalid' }, { status: 401 })
   }
 
   const signAction: 'signature' | 'confirmation' =

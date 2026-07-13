@@ -1,20 +1,20 @@
 // ===== 署名画面：本人確認API =====
-// /sign/[id] の入口で、社員番号＋生年月日による本人確認を行う（7-2章：ログイン画面は使わない方式）。
-// 2026-07-09実装（フェーズ5）。試行回数制限は今回のスコープ外（次チャット以降で検討。
-// docs/SYSTEM_DESIGN.md 10章 2026-07-09の優先順位メモ参照）。
+// /sign/[id] の入口で、社員番号＋6桁認証コードによる本人確認を行う（7-2章：ログイン画面は
+// 使わない方式）。2026-07-09実装（フェーズ5）、2026-07-13に本人確認方式を「社員番号＋生年月日」
+// から「社員番号＋メール記載の6桁認証コード」へ変更（docs/SYSTEM_DESIGN.md 10章 2026-07-13決定）。
+// これに伴い、旧「URL有効期限7日間固定」はコード自体の2日間有効期限に一本化され廃止した。
 //
-// セキュリティ上の理由から、エラーメッセージは「社員番号が違うのか生年月日が違うのか」を
+// セキュリティ上の理由から、エラーメッセージは「社員番号が違うのかコードが違うのか」を
 // 区別しない（総当たり攻撃のヒントを与えないため）。
+// コードは5回間違えると失効し、以後は再発行（/api/sign/[id]/reissue）が必要になる。
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { SIGN_AUTH_MAX_ATTEMPTS } from '@/lib/signAuthCode'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
-
-// URL有効期限：送信から7日間固定（2026-07-08以前に確定済みの仕様。例外なし）
-const SIGN_URL_EXPIRY_DAYS = 7
 
 const PATTERN_C_DOCUMENT_TYPE = '雇用契約書 兼\n就業条件明示書'
 
@@ -30,15 +30,15 @@ export async function POST(
   const { id } = await context.params
   const body = await req.json().catch(() => null)
   const employeeNumber = (body?.employeeNumber || '').trim()
-  const birthday = (body?.birthday || '').trim()
+  const authCode = (body?.authCode || '').trim()
 
-  if (!employeeNumber || !birthday) {
-    return NextResponse.json({ error: '社員番号と生年月日を入力してください。' }, { status: 400 })
+  if (!employeeNumber || !authCode) {
+    return NextResponse.json({ error: '社員番号と認証コードを入力してください。' }, { status: 400 })
   }
 
   const { data: contract, error } = await supabaseAdmin
     .from('contracts')
-    .select('id, staff_id, status, document_type, contract_type, pattern, sign_requested_at, sign_action_type')
+    .select('id, staff_id, status, document_type, contract_type, pattern, sign_requested_at, sign_action_type, sign_auth_code, sign_auth_code_expires_at, sign_auth_attempts')
     .eq('id', id)
     .maybeSingle()
 
@@ -53,25 +53,43 @@ export async function POST(
     return NextResponse.json({ error: '現在この書類は署名・確認待ちの状態ではありません。' }, { status: 409 })
   }
 
-  if (contract.sign_requested_at) {
-    const expiresAt = new Date(contract.sign_requested_at)
-    expiresAt.setDate(expiresAt.getDate() + SIGN_URL_EXPIRY_DAYS)
-    if (expiresAt.getTime() < Date.now()) {
-      return NextResponse.json(
-        { error: 'このリンクの有効期限が切れています。お手数ですが、担当営業までご連絡ください。' },
-        { status: 410 }
-      )
-    }
+  // コードの失効判定（5回間違えると失効。再発行が必要）
+  if ((contract.sign_auth_attempts || 0) >= SIGN_AUTH_MAX_ATTEMPTS) {
+    return NextResponse.json(
+      { error: '認証コードの入力回数が上限を超えました。「認証コードを再発行する」からやり直してください。', reason: 'locked' },
+      { status: 423 }
+    )
+  }
+
+  // コードの有効期限判定（発行から2日間）
+  if (!contract.sign_auth_code || !contract.sign_auth_code_expires_at || new Date(contract.sign_auth_code_expires_at).getTime() < Date.now()) {
+    return NextResponse.json(
+      { error: '認証コードの有効期限が切れています。「認証コードを再発行する」から新しいコードを取得してください。', reason: 'expired' },
+      { status: 410 }
+    )
   }
 
   const { data: staff } = await supabaseAdmin
     .from('staff')
-    .select('name, employee_number, birthday')
+    .select('name, employee_number')
     .eq('id', contract.staff_id)
     .maybeSingle()
 
-  if (!staff || staff.employee_number !== employeeNumber || staff.birthday !== birthday) {
-    return NextResponse.json({ error: '確認できませんでした。入力内容をご確認ください。' }, { status: 401 })
+  if (!staff || staff.employee_number !== employeeNumber || contract.sign_auth_code !== authCode) {
+    // 失敗した試行回数を1つ加算する（5回で失効）
+    const nextAttempts = (contract.sign_auth_attempts || 0) + 1
+    await supabaseAdmin.from('contracts').update({ sign_auth_attempts: nextAttempts }).eq('id', id)
+    const remaining = SIGN_AUTH_MAX_ATTEMPTS - nextAttempts
+    if (remaining <= 0) {
+      return NextResponse.json(
+        { error: '認証コードの入力回数が上限を超えました。「認証コードを再発行する」からやり直してください。', reason: 'locked' },
+        { status: 423 }
+      )
+    }
+    return NextResponse.json(
+      { error: `確認できませんでした。入力内容をご確認ください。（あと${remaining}回間違えると再発行が必要になります）`, reason: 'invalid' },
+      { status: 401 }
+    )
   }
 
   // sign_action_typeがまだ書き込まれていない古いデータ向けのフォールバック

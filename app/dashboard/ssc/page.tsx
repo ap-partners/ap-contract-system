@@ -419,7 +419,8 @@ export default function SSCDashboard() {
                   選択中の{selectedIds.size}件を一括承認しますか
                 </p>
                 <p className="mt-2 text-sm font-medium leading-6 text-[#6B7280]">
-                  承認後は申請内容を変更できません。対象スタッフへ署名依頼の通知が送信されます。
+                  承認すると、各申請の内容変更はできません。内容に誤りがないか今一度ご確認ください。<br />
+                  承認後、対象スタッフへ署名・確認依頼が自動送信されます（雇用契約書は署名、就業条件明示書は内容確認の依頼になります。対面・印刷パターンの案件は担当営業のダッシュボードに表示されます）。
                 </p>
                 <div className="mt-5 flex flex-col gap-3 sm:flex-row">
                   <button
@@ -516,12 +517,12 @@ export default function SSCDashboard() {
                       )}
                       {warning && (
                         <span className="rounded-full bg-[#FFF3E8] px-3 py-1 text-xs font-semibold text-[#F59E42]">
-                          個別確認が必要
+                          🔴 個別確認が必要（一括承認対象外）
                         </span>
                       )}
                       {autoWarning && (
                         <span className={`rounded-full px-3 py-1 text-xs font-semibold ${autoWarningTone}`}>
-                          自動チェック要確認
+                          {contract.warning_level === 'red' ? '🔴' : '🟡'} 自動チェック要確認（一括承認対象外）
                         </span>
                       )}
                     </div>

@@ -586,6 +586,9 @@ export default function AdminDashboard() {
     const isSelected = selectedIdsSet.has(contract.id)
     const canBulkSelect = subTab === '承認待ち' && !hasAnyWarning
     const showWarningIcon = subTab === '承認待ち' && hasAnyWarning
+    // 自動チェック警告の重要度で色を出し分ける（red＝赤、それ以外（yellow）＝青）。
+    // SSCダッシュボードと同じ考え方（2026-07-14修正）で、管理部側にも合わせる。
+    const autoWarningTone: 'red' | 'blue' = contract.warning_level === 'red' ? 'red' : 'blue'
 
     return (
       <article className={`${cardBase} grid gap-4 p-5 lg:grid-cols-[36px_minmax(220px,1.3fr)_minmax(220px,1.2fr)_minmax(180px,.9fr)_minmax(170px,.85fr)_minmax(160px,.75fr)_auto] lg:items-center`}>
@@ -609,8 +612,8 @@ export default function AdminDashboard() {
         <div className="min-w-0">
           <div className="mb-2 flex flex-wrap items-center gap-2">
             {deadline.type && <Pill tone={deadline.type === 'overdue' ? 'red' : 'orange'}>{deadline.label}</Pill>}
-            {warning && <Pill tone="orange">個別確認が必要</Pill>}
-            {autoWarning && <Pill tone="blue">自動チェック要確認</Pill>}
+            {warning && <Pill tone="orange">🔴 個別確認が必要（一括承認対象外）</Pill>}
+            {autoWarning && <Pill tone={autoWarningTone}>{contract.warning_level === 'red' ? '🔴' : '🟡'} 自動チェック要確認（一括承認対象外）</Pill>}
           </div>
           <p className="break-words text-[22px] font-semibold leading-7 text-[#1F2937]">{staff.name || '-'}</p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-medium text-[#6B7280]">
@@ -753,7 +756,8 @@ export default function AdminDashboard() {
           <div className="mt-4 rounded-[18px] border border-[#BFE7CF] bg-[#F0FBF4] p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)]">
             <p className="text-base font-semibold text-[#1F2937]">選択中の{selectedSize}件を一括承認しますか</p>
             <p className="mt-2 text-sm font-medium leading-6 text-[#6B7280]">
-              承認後は申請内容を変更できません。対象スタッフへ署名依頼の通知が送信されます。
+              承認すると、各申請の内容変更はできません。内容に誤りがないか今一度ご確認ください。<br />
+              承認後、対象スタッフへ署名・確認依頼が自動送信されます（雇用契約書は署名、就業条件明示書は内容確認の依頼になります。対面・印刷パターンの案件は担当営業のダッシュボードに表示されます）。
             </p>
             <div className="mt-5 flex flex-col gap-3 sm:flex-row">
               <button onClick={onApprove} className={`${primaryButton} flex-1`}>

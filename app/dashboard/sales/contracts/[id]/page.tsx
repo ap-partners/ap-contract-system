@@ -459,21 +459,6 @@ export default function SalesContractDetail() {
           </div>
         )}
 
-        {/* 署名済みの場合：PDF表示ボタン（準備中） */}
-        {contract.status === '署名済み' && (
-          <div className="bg-white rounded-xl border shadow-sm mb-6 p-5 flex items-center justify-between" style={{ borderColor: '#D0DAF0' }}>
-            <div>
-              <p className="text-sm font-bold" style={{ color: '#1A2340' }}>署名済み帳票（PDF）</p>
-              <p className="text-xs mt-1" style={{ color: '#9CA3AF' }}>この機能は準備中です。スタッフ署名機能の実装後に利用可能になります。</p>
-            </div>
-            <button disabled
-              className="text-sm px-4 py-2 rounded-lg font-medium cursor-not-allowed"
-              style={{ background: '#F3F4F6', color: '#9CA3AF' }}>
-              PDFを表示（準備中）
-            </button>
-          </div>
-        )}
-
         {/* 申請概要カード */}
         <div className="bg-white rounded-xl border shadow-sm mb-6 overflow-hidden" style={{ borderColor: '#D0DAF0' }}>
           <div className="px-5 py-3" style={{ background: '#1B3A8C' }}>
@@ -492,7 +477,22 @@ export default function SalesContractDetail() {
             </div>
             <div className="grid" style={{ gridTemplateColumns: '160px 1fr' }}>
               <div className="px-4 py-3 text-xs font-medium" style={{ background: '#EEF2FA', color: '#5A6A8A' }}>書類種別</div>
-              <div className="px-4 py-3 text-sm" style={{ color: '#1A2340' }}>{contract.document_type}</div>
+              <div className="px-4 py-3 text-sm flex items-center gap-3" style={{ color: '#1A2340' }}>
+                {contract.document_type}
+                {/* 帳票PDFプレビュー（SSC詳細画面と同じ実装。2026-07-07/08にSSC側で実装されたが、
+                    担当営業側の詳細画面には反映されていなかったため追加。伊藤さんの指摘を受けて対応） */}
+                {(contract.document_type === '雇用契約書' || contract.document_type === '就業条件明示書' || contract.document_type === '雇用契約書 兼\n就業条件明示書') && (
+                  <a
+                    href={`/api/contracts/${contract.id}/pdf`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-medium px-3 py-1 rounded-full border"
+                    style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: '#EEF2FA' }}
+                  >
+                    📄 帳票PDFプレビュー
+                  </a>
+                )}
+              </div>
             </div>
             <div className="grid" style={{ gridTemplateColumns: '160px 1fr' }}>
               <div className="px-4 py-3 text-xs font-medium" style={{ background: '#EEF2FA', color: '#5A6A8A' }}>パターン / 雇用区分</div>

@@ -34,6 +34,11 @@ function ApplyPageInner() {
   const [editLoading, setEditLoading] = useState(!!editContractId)
   const [editNotFound, setEditNotFound] = useState(false)
   const [user, setUser] = useState<any>(null)
+  // STEP1スタッフ検索の自部門制限用：担当営業自身の部門番号。
+  // undefined=まだ取得していない／null=担当営業だが部門が特定できない（staffテーブルに一致行なし）
+  // （2026-07-14〜 [DECISION]：制限対象は担当営業ロールのみ。SSC・管理部は横断的な代理申請・確認業務を
+  //   担うため、従来通り全部門のスタッフを検索できる。docs/SYSTEM_DESIGN.md 10章参照）
+  const [myDeptNo, setMyDeptNo] = useState<any>(undefined)
   const [currentStep, setCurrentStep] = useState(1)
   const [searched, setSearched] = useState(false)
   const [searchResults, setSearchResults] = useState<any[]>([])
@@ -374,6 +379,24 @@ function ApplyPageInner() {
     }
     checkUser()
   }, [])
+
+  // STEP1スタッフ検索の自部門制限用：担当営業自身の部門番号をstaffテーブル（email一致）から取得する。
+  // SSC・管理部は制限対象外のため取得不要（nullのままにし、handleSearch側で分岐する）
+  useEffect(() => {
+    if (!user) return
+    const role = user.user_metadata?.role
+    if (role !== '担当営業') { setMyDeptNo(null); return }
+    const loadMyDeptNo = async () => {
+      const { data } = await supabase
+        .from('staff')
+        .select('dept_no')
+        .eq('email', user.email)
+        .limit(1)
+        .maybeSingle()
+      setMyDeptNo(data?.dept_no ?? null)
+    }
+    loadMyDeptNo()
+  }, [user])
 
   // company_masterから派遣元責任者・苦情処理申出先（派遣元）を読み込む処理。
   // 初回ページ読み込み時と、入力方法を「手動」に切り替えてリセットする時の両方で使う
@@ -728,13 +751,33 @@ function ApplyPageInner() {
     if (!query.trim()) { setSearchResults([]); setSearched(false); return }
     const normalized = query.replace(/[\s　]+/g, '')
     const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD（検索した瞬間の日付）
+
+    // STEP1スタッフ検索の自部門制限（2026-07-14〜）：担当営業ロールのみ、自分の所属部門（dept_no）の
+    // スタッフしか検索・選択できないようにする（他部門スタッフの住所・給与関連情報等の閲覧を防止）。
+    // SSC・管理部は横断的な代理申請・確認業務のため対象外（従来通り全部門を検索可能）。
+    const role = user?.user_metadata?.role
+    const restrictToOwnDept = role === '担当営業'
+    if (restrictToOwnDept && (myDeptNo === undefined)) {
+      // 自部門情報がまだ取得できていない（読み込み中）。安全側に倒し、今回の検索は行わない
+      setSearchResults([]); setSearched(true)
+      return
+    }
+    if (restrictToOwnDept && myDeptNo === null) {
+      // 担当営業だがstaffテーブルに自分の行が見つからず、部門を特定できない → 検索させない
+      setSearchResults([]); setSearched(true)
+      return
+    }
+
     // 社員番号での検索と氏名での検索を別クエリに分け、結果をマージする。
     // （.or()にqueryを直接埋め込むと、入力に「,」や「(」「)」が含まれた場合にフィルタ構文が壊れたり、
     //   意図しない条件が注入される可能性があるため、.ilike()の値として安全に渡せる形に分離している）
-    const [byNumber, byName] = await Promise.all([
-      supabase.from('staff').select('*, department_master(dept_name)').ilike('employee_number', `%${query}%`).limit(20),
-      supabase.from('staff').select('*, department_master(dept_name)').ilike('name', `%${normalized}%`).limit(20),
-    ])
+    let byNumberQuery = supabase.from('staff').select('*, department_master(dept_name)').ilike('employee_number', `%${query}%`).limit(20)
+    let byNameQuery = supabase.from('staff').select('*, department_master(dept_name)').ilike('name', `%${normalized}%`).limit(20)
+    if (restrictToOwnDept) {
+      byNumberQuery = byNumberQuery.eq('dept_no', myDeptNo)
+      byNameQuery = byNameQuery.eq('dept_no', myDeptNo)
+    }
+    const [byNumber, byName] = await Promise.all([byNumberQuery, byNameQuery])
     const merged = [...(byNumber.data || []), ...(byName.data || [])]
     const data = Array.from(new Map(merged.map((s: any) => [s.employee_number, s])).values()) // employee_number/nameの両方に一致した場合の重複を除去
     // department_master(dept_name) は { department_master: { dept_name: '...' } } の形で返るため、
@@ -764,7 +807,7 @@ function ApplyPageInner() {
     setReqWithCsv(false)
     setReqCsvSystem('')
     setReqDispatchStart('')
-  }, [])
+  }, [user, myDeptNo])
 
   const handleLogout = async () => {
     if (!confirm('ログアウトしますか？')) return

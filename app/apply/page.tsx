@@ -774,7 +774,8 @@ function ApplyPageInner() {
 
   const handleCancel = () => {
     if (!confirm('入力中の申請を中断します。入力した内容は保存されません。よろしいですか？')) return
-    router.push('/dashboard/sales')
+    const role = user?.user_metadata?.role
+    router.push(role === 'SSC' ? '/dashboard/ssc' : role === '管理部' ? '/dashboard/admin' : '/dashboard/sales')
   }
 
   // ===== 申請データの保存処理 =====
@@ -956,7 +957,10 @@ function ApplyPageInner() {
   if (editNotFound) return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ background: '#F5F7FC' }}>
       <p className="text-lg font-bold" style={{ color: '#1A2340' }}>再申請する差し戻し案件が見つかりませんでした</p>
-      <button onClick={() => router.push('/dashboard/sales')}
+      <button onClick={() => {
+        const role = user?.user_metadata?.role
+        router.push(role === 'SSC' ? '/dashboard/ssc' : role === '管理部' ? '/dashboard/admin' : '/dashboard/sales')
+      }}
         className="text-sm px-4 py-2 rounded-lg text-white" style={{ background: '#1B3A8C' }}>
         ダッシュボードに戻る
       </button>

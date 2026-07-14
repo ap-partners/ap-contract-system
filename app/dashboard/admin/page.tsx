@@ -41,10 +41,10 @@ type RequestRow = {
   displayDept?: string | null
 }
 
-type TabType = 'requests' | 'contracts' | 'internal' | 'csvImport' | 'csvDiff' | 'renewal'
+type TabType = 'overview' | 'requests' | 'contracts' | 'internal' | 'csvImport' | 'csvDiff' | 'renewal'
 type Contract = ContractForDisplay
 type ContractSubTab = '承認待ち' | '差し戻し中' | '承認済み'
-type IconName = 'file' | 'list' | 'shield' | 'upload' | 'alert' | 'clock' | 'search' | 'refresh' | 'check' | 'arrow' | 'logout' | 'map' | 'user' | 'building' | 'plus'
+type IconName = 'file' | 'list' | 'shield' | 'upload' | 'alert' | 'clock' | 'search' | 'refresh' | 'check' | 'arrow' | 'logout' | 'map' | 'user' | 'building' | 'plus' | 'grid'
 
 const PAGE_SIZE = 50
 const cardBase = 'rounded-[18px] border border-[#E8EDF5] bg-white shadow-[0_10px_30px_rgba(15,23,42,.05)] transition hover:-translate-y-0.5 hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]'
@@ -168,6 +168,14 @@ const Icon = ({ name, className = '' }: { name: IconName; className?: string }) 
         <path d="M9.5 14.5h5" />
       </>
     ),
+    grid: (
+      <>
+        <rect x="4" y="4" width="7" height="7" rx="1.5" />
+        <rect x="13" y="4" width="7" height="7" rx="1.5" />
+        <rect x="4" y="13" width="7" height="7" rx="1.5" />
+        <rect x="13" y="13" width="7" height="7" rx="1.5" />
+      </>
+    ),
   }
 
   return (
@@ -200,7 +208,7 @@ function hasCancelled(r: RequestRow) {
 export default function AdminDashboard() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
-  const [activeTab, setActiveTab] = useState<TabType>('requests')
+  const [activeTab, setActiveTab] = useState<TabType>('overview')
 
   const [requests, setRequests] = useState<RequestRow[]>([])
   const [reqLoading, setReqLoading] = useState(true)
@@ -544,6 +552,7 @@ export default function AdminDashboard() {
   const isInternalApprover = user.user_metadata?.is_internal_approver === true
 
   const tabs: { key: TabType; label: string; icon: IconName; count?: number }[] = [
+    { key: 'overview', label: 'サマリー', icon: 'grid' },
     { key: 'requests', label: '依頼管理', icon: 'file', count: pendingTotalCount },
     { key: 'contracts', label: '契約一覧', icon: 'list' },
     ...(isInternalApprover ? [{ key: 'internal' as TabType, label: '社内承認', icon: 'shield' as IconName, count: internalPendingCount }] : []),
@@ -552,11 +561,24 @@ export default function AdminDashboard() {
     { key: 'renewal', label: '更新期限管理', icon: 'clock' },
   ]
 
+  // サマリータブ用：ドメイン横断で「今どこに未対応があるか」を一目で見せるカード（2026-07-14新設）。
+  // 実データのある3枚（依頼・契約・社内承認）はクリックで該当タブへ切り替わる。
+  // CSV差異・更新期限はまだ機能自体が未実装のため「準備中」の非活性カードとして枠だけ用意しておく
+  // （CLAUDE.md運用ルール10番：将来の完成形を見据えた骨格を先に作っておく）。
+  const overviewCards: { key: TabType; label: string; value: number; icon: IconName }[] = [
+    { key: 'requests', label: '依頼 未対応', value: pendingTotalCount, icon: 'file' },
+    { key: 'contracts', label: '契約 承認待ち', value: contractsPendingCount, icon: 'list' },
+    ...(isInternalApprover ? [{ key: 'internal' as TabType, label: '社内承認待ち', value: internalPendingCount, icon: 'shield' as IconName }] : []),
+  ]
+  const overviewPlaceholders: { label: string; icon: IconName }[] = [
+    { label: 'CSV差異', icon: 'alert' },
+    { label: '更新期限', icon: 'clock' },
+  ]
+
   const requestSummary = [
     { label: '総依頼件数', value: requests.length, color: '#2F5FD0', tone: 'blue' as const, icon: 'file' as const },
     { label: '未対応', value: requests.filter(isPending).length, color: '#E74C3C', tone: 'red' as const, icon: 'alert' as const },
     { label: '対応中', value: requests.filter(r => r.staff_register_status === 'in_progress' || r.csv_import_status === 'in_progress').length, color: '#F59E42', tone: 'orange' as const, icon: 'refresh' as const },
-    { label: '承認待ち', value: contractsPendingCount, color: '#2F5FD0', tone: 'blue' as const, icon: 'clock' as const },
     { label: '完了', value: requests.filter(r => !isPending(r) && !hasCancelled(r)).length, color: '#4CAF50', tone: 'green' as const, icon: 'check' as const },
     { label: '取消済み', value: requests.filter(hasCancelled).length, color: '#6B7280', tone: 'gray' as const, icon: 'refresh' as const },
   ]
@@ -835,10 +857,45 @@ export default function AdminDashboard() {
           </div>
         </nav>
 
+        {activeTab === 'overview' && (
+          <div className="space-y-6">
+            <section className="overflow-hidden rounded-[18px] border border-[#E8EDF5] bg-[radial-gradient(circle_at_20%_15%,rgba(47,95,208,.14),transparent_32%),linear-gradient(135deg,#F7FBFF_0%,#EEF5FF_48%,#FFFFFF_100%)] p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)] md:p-6">
+              <p className="mb-4 text-sm font-semibold text-[#1F2937]">対応が必要な件数（ドメイン横断）</p>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                {overviewCards.map(card => (
+                  <button
+                    key={card.key}
+                    onClick={() => setActiveTab(card.key)}
+                    className="rounded-[18px] border border-[#E8EDF5] bg-white/86 p-5 text-left backdrop-blur transition hover:-translate-y-0.5 hover:border-[#2F5FD0] hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Icon name={card.icon} className="h-4 w-4 text-[#6B7280]" />
+                      <p className="text-sm font-semibold text-[#1F2937]">{card.label}</p>
+                    </div>
+                    <div className="mt-5 flex items-end gap-1">
+                      <span className="text-4xl font-semibold tracking-normal text-[#2F5FD0]">{card.value}</span>
+                      <span className="pb-1 text-sm font-semibold text-[#2F5FD0]">件</span>
+                    </div>
+                  </button>
+                ))}
+                {overviewPlaceholders.map(item => (
+                  <div key={item.label} className="rounded-[18px] border border-[#E8EDF5] bg-white/60 p-5 opacity-60">
+                    <div className="flex items-center gap-2">
+                      <Icon name={item.icon} className="h-4 w-4 text-[#6B7280]" />
+                      <p className="text-sm font-semibold text-[#1F2937]">{item.label}</p>
+                    </div>
+                    <p className="mt-5 text-base font-semibold text-[#6B7280]">準備中</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        )}
+
         {activeTab === 'requests' && (
           <div className="space-y-6">
             <section className="overflow-hidden rounded-[18px] border border-[#E8EDF5] bg-[radial-gradient(circle_at_20%_15%,rgba(47,95,208,.14),transparent_32%),linear-gradient(135deg,#F7FBFF_0%,#EEF5FF_48%,#FFFFFF_100%)] p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)] md:p-6">
-              <div className="grid gap-4 md:grid-cols-[1.2fr_repeat(5,1fr)]">
+              <div className="grid gap-4 md:grid-cols-[1.2fr_repeat(4,1fr)]">
                 {requestSummary.map((item, index) => (
                   <div key={item.label} className={`${index === 0 ? 'md:col-span-1' : ''} rounded-[18px] border border-[#E8EDF5] bg-white/86 p-5 backdrop-blur`}>
                     <div className="flex items-start justify-between gap-3">

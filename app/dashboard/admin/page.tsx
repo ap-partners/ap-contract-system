@@ -47,6 +47,9 @@ type ContractSubTab = '承認待ち' | '差し戻し中' | '承認済み'
 type IconName = 'file' | 'list' | 'shield' | 'upload' | 'alert' | 'clock' | 'search' | 'refresh' | 'check' | 'arrow' | 'logout' | 'map' | 'user' | 'building' | 'plus' | 'grid'
 
 const PAGE_SIZE = 50
+// 依頼一覧（「すべて／完了済みのみ／取消済みのみ」表示時）の既定絞り込み日数。
+// 「未対応のみ」表示は対応漏れ発見のため常に全期間対象（2026-07-14）
+const REQUEST_WINDOW_DAYS = 45
 const cardBase = 'rounded-[18px] border border-[#E8EDF5] bg-white shadow-[0_10px_30px_rgba(15,23,42,.05)] transition hover:-translate-y-0.5 hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]'
 const primaryButton = 'inline-flex h-[52px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-[#2F5FD0] px-6 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(47,95,208,.22)] transition hover:-translate-y-0.5 hover:bg-[#244CB3] hover:shadow-[0_15px_34px_rgba(47,95,208,.26)]'
 const secondaryButton = 'inline-flex h-[52px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-2xl border border-[#E8EDF5] bg-white px-6 text-sm font-semibold text-[#1F2937] transition hover:-translate-y-0.5 hover:border-[#2F5FD0] hover:text-[#2F5FD0]'
@@ -399,6 +402,15 @@ export default function AdminDashboard() {
         if (requesterFilter) query = query.ilike('requested_by_name', `%${requesterFilter}%`)
         if (dateFrom) query = query.gte('requested_at', `${dateFrom}T00:00:00`)
         if (dateTo) query = query.lte('requested_at', `${dateTo}T23:59:59`)
+        // 依頼日を明示的に指定していない場合、未対応(pending)だけを見ている時は
+        // （対応漏れの発見のため）全期間を対象にするが、それ以外（すべて／完了済みのみ／取消済みのみ）
+        // は蓄積し続けて意味が薄れていくため、既定で直近REQUEST_WINDOW_DAYS日に絞る
+        // （伊藤さん指摘・2026-07-14：contracts側で先に対応した設計を依頼側にも適用）
+        if (!dateFrom && !dateTo && statusFilter !== 'pending') {
+          const windowStart = new Date()
+          windowStart.setDate(windowStart.getDate() - REQUEST_WINDOW_DAYS)
+          query = query.gte('requested_at', windowStart.toISOString())
+        }
 
         const { data, error } = await query
         if (error) { setReqError('依頼一覧の取得に失敗しました: ' + error.message); setReqLoading(false); return }
@@ -969,6 +981,12 @@ export default function AdminDashboard() {
                 <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
                   className="h-12 rounded-2xl border border-[#E8EDF5] bg-white px-4 text-sm font-medium text-[#1F2937] outline-none transition focus:border-[#2F5FD0]" />
               </div>
+
+              {statusFilter !== 'pending' && !dateFrom && !dateTo && (
+                <p className="mt-3 text-xs font-medium text-[#6B7280]">
+                  表示は直近{REQUEST_WINDOW_DAYS}日分です。それより前を見るには、上の「依頼日」で期間を指定してください。
+                </p>
+              )}
             </section>
 
             {reqError && <p className="text-sm font-semibold text-[#E74C3C]">{reqError}</p>}

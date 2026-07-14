@@ -46,6 +46,7 @@ type FilterKey = 'pending' | 'explain' | 'rejected' | 'waiting' | 'completed' | 
 type IconName = 'file' | 'message' | 'refresh' | 'pen' | 'check' | 'mail' | 'search' | 'filter' | 'map' | 'arrow' | 'logout' | 'plus' | 'alert' | 'clock'
 
 const SIGN_DEADLINE_DAYS = 7 // 署名期日＝通知から7日（初期値。将来アラート日数マスタで変更可能にする予定）
+const REQUEST_WINDOW_DAYS = 45 // 依頼状況タブの既定表示期間（2026-07-14。契約側と同じ考え方）
 const CLOSING_PATTERN_LABEL: Record<string, string> = {
   auto: '指定なし',
   face: '対面でその場説明',
@@ -207,6 +208,11 @@ export default function SalesDashboard() {
   const [myRequests, setMyRequests] = useState<MyRequest[]>([])
   const [myRequestsLoading, setMyRequestsLoading] = useState(true)
   const [includeCompletedRequests, setIncludeCompletedRequests] = useState(false)
+  // 依頼状況タブも、契約側と同じ理由（年数が経つとどんどん蓄積し件数が意味を持たなくなる）で
+  // 既定は直近REQUEST_WINDOW_DAYS日のみ取得し、「全期間で表示」を押した時だけ全件取得する
+  // （伊藤さん指摘・2026-07-14）
+  const deptNameRef = useRef<string | null>(null)
+  const [myRequestsWindowMode, setMyRequestsWindowMode] = useState<'recent' | 'all'>('recent')
 
   useEffect(() => {
     const init = async () => {
@@ -233,6 +239,7 @@ export default function SalesDashboard() {
 
       const deptName = (staffRow as any)?.department_master?.dept_name || null
       deptNoRef.current = staffRow.dept_no
+      deptNameRef.current = deptName
 
       await Promise.all([
         loadContracts(staffRow.dept_no),
@@ -245,16 +252,25 @@ export default function SalesDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router])
 
-  const loadMyRequests = async (deptName: string | null) => {
+  const loadMyRequests = async (deptName: string | null, windowMode: 'recent' | 'all' = 'recent') => {
     setMyRequestsLoading(true)
     if (!deptName) { setMyRequests([]); setMyRequestsLoading(false); return }
-    const { data: rows, error } = await supabase
+    let query = supabase
       .from('requests')
       .select('id, request_type, staff_name, staff_code, staff_dept, staff_hire_date, client_name, system_type, dispatch_start_date, staff_register_status, csv_import_status, staff_register_cancel_reason, csv_import_cancel_reason, requested_by_name, requested_by_dept, requested_at')
       .eq('requested_by_dept', deptName)
       .order('requested_at', { ascending: false })
+    if (windowMode === 'recent') {
+      const windowStart = new Date()
+      windowStart.setDate(windowStart.getDate() - REQUEST_WINDOW_DAYS)
+      query = query.gte('requested_at', windowStart.toISOString())
+    } else {
+      query = query.limit(300)
+    }
+    const { data: rows, error } = await query
     if (error) { console.error('requests取得エラー:', error); setMyRequestsLoading(false); return }
     setMyRequests((rows || []) as MyRequest[])
+    setMyRequestsWindowMode(windowMode)
     setMyRequestsLoading(false)
   }
 
@@ -615,17 +631,38 @@ export default function SalesDashboard() {
         ) : (
           <section className={`${cardBase} mt-5 p-6`}>
             {activeFilter === 'other' ? (
-              <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <h2 className="text-lg font-semibold text-[#1F2937]">依頼状況一覧（{visibleMyRequests.length}件）</h2>
-                <label className="flex items-center gap-2 text-sm font-medium text-[#6B7280]">
-                  <input
-                    type="checkbox"
-                    checked={includeCompletedRequests}
-                    onChange={e => setIncludeCompletedRequests(e.target.checked)}
-                    className="h-4 w-4 rounded border-[#E8EDF5] accent-[#2F5FD0]"
-                  />
-                  完了したものも表示する
-                </label>
+              <div className="mb-5 flex flex-col gap-3">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <h2 className="text-lg font-semibold text-[#1F2937]">依頼状況一覧（{visibleMyRequests.length}件）</h2>
+                  <label className="flex items-center gap-2 text-sm font-medium text-[#6B7280]">
+                    <input
+                      type="checkbox"
+                      checked={includeCompletedRequests}
+                      onChange={e => setIncludeCompletedRequests(e.target.checked)}
+                      className="h-4 w-4 rounded border-[#E8EDF5] accent-[#2F5FD0]"
+                    />
+                    完了したものも表示する
+                  </label>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  {myRequestsWindowMode === 'recent' ? (
+                    <>
+                      <p className="text-xs font-medium text-[#6B7280]">表示は直近{REQUEST_WINDOW_DAYS}日分です。それより前は全期間で表示してください。</p>
+                      <button onClick={() => loadMyRequests(deptNameRef.current, 'all')}
+                        className="rounded-[14px] border border-[#D0DAF0] bg-white px-4 py-2 text-xs font-semibold text-[#2F5FD0]">
+                        全期間で表示
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs font-medium text-[#6B7280]">全期間の依頼を表示しています。</p>
+                      <button onClick={() => loadMyRequests(deptNameRef.current, 'recent')}
+                        className="rounded-[14px] border border-[#D0DAF0] bg-white px-4 py-2 text-xs font-semibold text-[#2F5FD0]">
+                        直近{REQUEST_WINDOW_DAYS}日の表示に戻す
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             ) : (
               <h2 className="mb-5 text-lg font-semibold text-[#1F2937]">{currentLabel}（{currentList.length}件）</h2>

@@ -20,6 +20,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendSignRequestMail } from '@/lib/mail'
 import { generateSignAuthCode, computeSignAuthCodeExpiry } from '@/lib/signAuthCode'
+import { getAuthenticatedStaff } from '@/lib/apiAuth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -30,6 +31,14 @@ export async function POST(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
+  // 総合レビュー指摘4対応（2026-07-15）：契約IDさえ分かれば未ログインでも
+  // 「SSC承認済み→署名待ち」遷移＋メール送信を発火できてしまっていた問題を修正。
+  // 社内（担当営業・SSC・管理部）のログイン済みユーザーのみ呼び出せるようにする。
+  const staffAuth = await getAuthenticatedStaff(req)
+  if (!staffAuth || !staffAuth.role) {
+    return NextResponse.json({ error: 'ログインが必要です。' }, { status: 401 })
+  }
+
   const { id } = await context.params
   const trigger = req.nextUrl.searchParams.get('trigger') || 'auto_approve'
 
@@ -94,6 +103,27 @@ export async function POST(
     return NextResponse.json({ sent: false })
   }
 
+  // 総合レビュー指摘10対応（2026-07-15）：この条件付きUPDATE自体は同時実行時の二重遷移・
+  // 二重送信を防ぐための唯一の排他制御なので順序はそのまま維持する。ただし、この後の
+  // メール送信先取得・送信のいずれかに失敗した場合、以前は契約が「署名待ち」のまま
+  // 誰にもコードが届かない状態で座礁していた（従業員はURL自体を知らないため実質復旧不能）。
+  // 失敗時はここで「SSC承認済み」へ戻し、届いていない認証コードも破棄することで、
+  // 承認待ちの一覧に再び現れ、担当者が気づいて再実行できるようにする。
+  const rollbackToApproved = async () => {
+    await supabaseAdmin
+      .from('contracts')
+      .update({
+        status: 'SSC承認済み',
+        sign_requested_at: null,
+        sign_auth_code: null,
+        sign_auth_code_expires_at: null,
+        sign_auth_attempts: 0,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .eq('status', '署名待ち')
+  }
+
   const { data: staffRow } = await supabaseAdmin
     .from('staff')
     .select('email')
@@ -102,13 +132,21 @@ export async function POST(
 
   const toEmail = staffRow?.email
   if (!toEmail) {
-    return NextResponse.json({ error: '送信先メールアドレスが取得できませんでした。' }, { status: 400 })
+    await rollbackToApproved()
+    return NextResponse.json(
+      { error: '送信先メールアドレスが取得できませんでした。ステータスは「SSC承認済み」に戻しました。スタッフのメールアドレス登録をご確認のうえ、もう一度お試しください。' },
+      { status: 400 }
+    )
   }
 
   try {
     await sendSignRequestMail(toEmail, id, isConfirmationOnly, authCode)
   } catch (e: any) {
-    return NextResponse.json({ error: 'メール送信に失敗しました：' + (e?.message || '') }, { status: 500 })
+    await rollbackToApproved()
+    return NextResponse.json(
+      { error: 'メール送信に失敗しました。ステータスは「SSC承認済み」に戻しましたので、もう一度お試しください：' + (e?.message || '') },
+      { status: 500 }
+    )
   }
 
   return NextResponse.json({ sent: true })

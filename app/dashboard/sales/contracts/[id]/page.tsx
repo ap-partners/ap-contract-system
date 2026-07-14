@@ -482,15 +482,21 @@ export default function SalesContractDetail() {
                 {/* 帳票PDFプレビュー（SSC詳細画面と同じ実装。2026-07-07/08にSSC側で実装されたが、
                     担当営業側の詳細画面には反映されていなかったため追加。伊藤さんの指摘を受けて対応） */}
                 {(contract.document_type === '雇用契約書' || contract.document_type === '就業条件明示書' || contract.document_type === '雇用契約書 兼\n就業条件明示書') && (
-                  <a
-                    href={`/api/contracts/${contract.id}/pdf`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      // 総合レビュー指摘1対応（2026-07-15）：PDF取得APIがログイン確認を
+                      // 必須にしたため、単なる<a href>ではなく認証ヘッダー付きfetchで取得する。
+                      const res = await fetch(`/api/contracts/${contract.id}/pdf`, { headers: await getAuthHeader() })
+                      if (!res.ok) { alert('PDFの取得に失敗しました。'); return }
+                      const blobUrl = URL.createObjectURL(await res.blob())
+                      window.open(blobUrl, '_blank')
+                    }}
                     className="text-xs font-medium px-3 py-1 rounded-full border"
                     style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: '#EEF2FA' }}
                   >
                     📄 帳票PDFプレビュー
-                  </a>
+                  </button>
                 )}
               </div>
             </div>

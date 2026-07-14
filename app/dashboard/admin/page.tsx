@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, type ReactNode } from 'react'
-import { supabase } from '@/lib/supabase'
+import { supabase, getAuthHeader } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import {
@@ -326,9 +326,10 @@ export default function AdminDashboard() {
       setBulkApproving(false)
       return
     }
+    const notifyAuthHeader = await getAuthHeader()
     await Promise.all(
       ids.map(id =>
-        fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST' }).catch(() => {})
+        fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST', headers: notifyAuthHeader }).catch(() => {})
       )
     )
     setFlowContracts(prev => prev.filter(c => !ids.includes(c.id)))
@@ -386,9 +387,10 @@ export default function AdminDashboard() {
       setInternalBulkApproving(false)
       return
     }
+    const notifyAuthHeader = await getAuthHeader()
     await Promise.all(
       ids.map(id =>
-        fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST' }).catch(() => {})
+        fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST', headers: notifyAuthHeader }).catch(() => {})
       )
     )
     setInternalFlowContracts(prev => prev.filter(c => !ids.includes(c.id)))

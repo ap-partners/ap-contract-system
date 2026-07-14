@@ -13,6 +13,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { renderContractPdfBuffer } from '@/lib/pdf/renderContractPdf'
 import { downloadDriveFile } from '@/lib/googleDrive'
+import { getAuthenticatedStaff } from '@/lib/apiAuth'
+import { verifyPdfAccessToken } from '@/lib/pdfAccessToken'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -20,7 +22,7 @@ const supabaseAdmin = createClient(
 )
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params
@@ -33,6 +35,28 @@ export async function GET(
 
   if (error || !contract) {
     return NextResponse.json({ error: '契約データが見つかりませんでした。' }, { status: 404 })
+  }
+
+  // 総合レビュー指摘1対応（2026-07-15）：契約UUIDさえ分かれば未ログインでも氏名・住所・
+  // 給与を含むPDFを取得できてしまっていた問題を修正。以下のいずれかを満たさない場合は403。
+  // ①署名画面（/sign/[id]）で本人確認済みの短命トークン（?t=...）を持っている
+  // ②社内ダッシュボードにログイン済みで、かつ自分が閲覧してよい契約である
+  //   （管理部＝全件／SSC＝社内案件を除く全件／担当営業＝自部門のみ。RLSの閲覧範囲と同じ考え方）
+  const token = req.nextUrl.searchParams.get('t') || ''
+  const hasValidToken = !!token && verifyPdfAccessToken(token, id)
+
+  if (!hasValidToken) {
+    const staffAuth = await getAuthenticatedStaff(req)
+    const allowed =
+      !!staffAuth &&
+      (
+        staffAuth.role === '管理部' ||
+        (staffAuth.role === 'SSC' && contract.work_place !== '社内') ||
+        (staffAuth.role === '担当営業' && contract.created_by_dept_no != null && contract.created_by_dept_no === staffAuth.deptNo)
+      )
+    if (!allowed) {
+      return NextResponse.json({ error: 'この書類を閲覧する権限がありません。' }, { status: 403 })
+    }
   }
 
   let buffer: Buffer

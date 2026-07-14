@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { SIGN_AUTH_MAX_ATTEMPTS } from '@/lib/signAuthCode'
+import { createPdfAccessToken } from '@/lib/pdfAccessToken'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -107,5 +108,8 @@ export async function POST(
     documentLabel: getDocumentLabel(contract.document_type, contract.contract_type),
     signAction,
     isPatternC: contract.document_type === PATTERN_C_DOCUMENT_TYPE,
+    // 総合レビュー指摘1対応（2026-07-15）：本人確認できたこの契約についてだけ、
+    // PDFプレビュー用の短命トークンを発行する（/api/contracts/[id]/pdf?t=...）。
+    pdfToken: createPdfAccessToken(id),
   })
 }

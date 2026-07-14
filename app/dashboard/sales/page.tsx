@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { supabase } from '@/lib/supabase'
+import { supabase, getAuthHeader } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import {
@@ -368,7 +368,7 @@ export default function SalesDashboard() {
   const handleExplainDone = async (contractId: string) => {
     if (explainLoading) return
     setExplainLoading(true)
-    const res = await fetch(`/api/contracts/${contractId}/notify-sign-request?trigger=explain`, { method: 'POST' })
+    const res = await fetch(`/api/contracts/${contractId}/notify-sign-request?trigger=explain`, { method: 'POST', headers: await getAuthHeader() })
     const result = await res.json().catch(() => ({}))
     if (!res.ok) {
       alert('更新に失敗しました: ' + (result.error || '不明なエラー'))

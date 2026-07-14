@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
-import { supabase } from '@/lib/supabase'
+import { supabase, getAuthHeader } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import {
@@ -266,9 +266,10 @@ export default function SSCDashboard() {
       return
     }
 
+    const notifyAuthHeader = await getAuthHeader()
     await Promise.all(
       ids.map(id =>
-        fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST' }).catch(() => {})
+        fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST', headers: notifyAuthHeader }).catch(() => {})
       )
     )
 

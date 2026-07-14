@@ -63,6 +63,7 @@ export default function SignPage() {
   const [staffName, setStaffName] = useState('')
   const [documentLabel, setDocumentLabel] = useState('')
   const [signAction, setSignAction] = useState<SignAction>('confirmation')
+  const [pdfToken, setPdfToken] = useState('')
   const [confirmChecked, setConfirmChecked] = useState(false)
 
   const [submitting, setSubmitting] = useState(false)
@@ -108,6 +109,7 @@ export default function SignPage() {
       // 「自分で入力する」という意味が無くなってしまう（伊藤さん指摘）ため、空欄から始める。
       setDocumentLabel(data.documentLabel)
       setSignAction(data.signAction)
+      setPdfToken(data.pdfToken || '')
       setStage('action')
     } catch {
       setError('通信エラーが発生しました。\n電波状況をご確認の上、再度お試しください。')
@@ -244,7 +246,7 @@ export default function SignPage() {
               <p className="text-sm mb-6" style={{ color: '#5A6A8A' }}>{documentLabel}</p>
 
               <a
-                href={`/api/contracts/${id}/pdf`}
+                href={`/api/contracts/${id}/pdf?t=${encodeURIComponent(pdfToken)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-disabled={submitting}

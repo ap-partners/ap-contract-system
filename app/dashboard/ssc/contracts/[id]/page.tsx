@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { supabase, getAuthHeader } from '@/lib/supabase'
 import { useRouter, useParams } from 'next/navigation'
 import Image from 'next/image'
 
@@ -336,7 +336,7 @@ export default function SSCContractDetail() {
     // 従業員への署名依頼メール送信を行う（対面・印刷パターンは担当営業の「説明完了」時に送信）。
     // メール送信に失敗しても承認自体は完了しているので、承認フロー自体は止めない。
     try {
-      await fetch(`/api/contracts/${contract.id}/notify-sign-request`, { method: 'POST' })
+      await fetch(`/api/contracts/${contract.id}/notify-sign-request`, { method: 'POST', headers: await getAuthHeader() })
     } catch {
       // 通知の失敗は承認をブロックしない（ログのみ・UIには表示しない）
     }
@@ -367,7 +367,7 @@ export default function SSCContractDetail() {
       return
     }
     try {
-      await fetch(`/api/contracts/${contract.id}/notify-sign-request`, { method: 'POST' })
+      await fetch(`/api/contracts/${contract.id}/notify-sign-request`, { method: 'POST', headers: await getAuthHeader() })
     } catch {
       // 通知の失敗は承認をブロックしない
     }
@@ -551,15 +551,21 @@ export default function SSCContractDetail() {
                     実装済みのため、全document_typeで表示するよう対応を拡大。
                     未対応の書類種別があれば/api/contracts/[id]/pdf側が501エラーを返す） */}
                 {(contract.document_type === '雇用契約書' || contract.document_type === '就業条件明示書' || contract.document_type === '雇用契約書 兼\n就業条件明示書') && (
-                  <a
-                    href={`/api/contracts/${contract.id}/pdf`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      // 総合レビュー指摘1対応（2026-07-15）：PDF取得APIがログイン確認を
+                      // 必須にしたため、単なる<a href>ではなく認証ヘッダー付きfetchで取得する。
+                      const res = await fetch(`/api/contracts/${contract.id}/pdf`, { headers: await getAuthHeader() })
+                      if (!res.ok) { alert('PDFの取得に失敗しました。'); return }
+                      const blobUrl = URL.createObjectURL(await res.blob())
+                      window.open(blobUrl, '_blank')
+                    }}
                     className="text-xs font-medium px-3 py-1 rounded-full border"
                     style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: '#EEF2FA' }}
                   >
                     📄 帳票PDFプレビュー
-                  </a>
+                  </button>
                 )}
               </div>
             </div>

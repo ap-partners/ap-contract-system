@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
@@ -17,9 +17,6 @@ import {
 } from '../_shared/contractDisplay'
 import { useContractListToolbar, buildDateSortOptions } from '../_shared/useContractListToolbar'
 
-// 2026-07-14追加：バッジ・日付フォーマット・警告判定等はSSC・管理部ダッシュボードと重複していた
-// ため共通部品（../_shared/contractDisplay）に切り出した。担当営業固有の created_by_dept_no・
-// sign_requested_at はここで拡張する。
 type Contract = ContractForDisplay & {
   created_by_dept_no: number | null
   sign_requested_at: string | null
@@ -41,19 +38,137 @@ type MyRequest = {
   requested_at: string
 }
 
-const SIGN_DEADLINE_DAYS = 7 // 署名期日＝通知から7日（初期値。将来アラート日数マスタで変更可能にする予定）
+type FilterKey = 'pending' | 'explain' | 'rejected' | 'waiting' | 'completed' | 'other'
+type IconName = 'file' | 'message' | 'refresh' | 'pen' | 'check' | 'mail' | 'search' | 'filter' | 'map' | 'arrow' | 'logout' | 'plus' | 'alert' | 'clock'
 
+const SIGN_DEADLINE_DAYS = 7 // 署名期日＝通知から7日（初期値。将来アラート日数マスタで変更可能にする予定）
 const CLOSING_PATTERN_LABEL: Record<string, string> = {
-  auto: '指定しない',
+  auto: '指定なし',
   face: '対面でその場説明',
   print: '印刷して説明後にリンク送付',
 }
 
-// formatDateはDateオブジェクトを直接受け取る担当営業固有の実装（署名期日バッジの計算で使う）ため
-// 共通部品には切り出さず、そのままここに残す（共通部品のformatDateはiso文字列を受け取る別物）。
+const cardBase = 'rounded-[18px] border border-[#E8EDF5] bg-white shadow-[0_10px_30px_rgba(15,23,42,.05)] transition hover:-translate-y-0.5 hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]'
+const primaryButton = 'inline-flex h-[52px] items-center justify-center gap-2 rounded-2xl bg-[#2F5FD0] px-6 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(47,95,208,.22)] transition hover:-translate-y-0.5 hover:bg-[#244CB3] hover:shadow-[0_15px_34px_rgba(47,95,208,.26)]'
+const secondaryButton = 'inline-flex h-[52px] items-center justify-center gap-2 rounded-2xl border border-[#E8EDF5] bg-white px-6 text-sm font-semibold text-[#1F2937] transition hover:-translate-y-0.5 hover:border-[#2F5FD0] hover:text-[#2F5FD0]'
+const accentButton = 'inline-flex h-[52px] items-center justify-center gap-2 rounded-2xl bg-[#F59E42] px-6 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(245,158,66,.2)] transition hover:-translate-y-0.5 hover:bg-[#E88525] hover:shadow-[0_15px_34px_rgba(245,158,66,.28)]'
+
 const formatDate = (d: Date) => `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
 
-// 署名期日バッジ（通常／期日間近／期日超過の3段階）
+const Icon = ({ name, className = '' }: { name: IconName; className?: string }) => {
+  const paths: Record<IconName, ReactNode> = {
+    file: (
+      <>
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <path d="M14 2v6h6" />
+        <path d="M8 13h8" />
+        <path d="M8 17h5" />
+      </>
+    ),
+    message: (
+      <>
+        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 8.5-8.5h.5a8.48 8.48 0 0 1 8 8v.5z" />
+      </>
+    ),
+    refresh: (
+      <>
+        <path d="M21 12a9 9 0 0 1-15.5 6.2" />
+        <path d="M3 12A9 9 0 0 1 18.5 5.8" />
+        <path d="M18 2v4h4" />
+        <path d="M6 22v-4H2" />
+      </>
+    ),
+    pen: (
+      <>
+        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+      </>
+    ),
+    check: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="m8 12 3 3 5-6" />
+      </>
+    ),
+    mail: (
+      <>
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="m3 7 9 6 9-6" />
+      </>
+    ),
+    search: (
+      <>
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.5-3.5" />
+      </>
+    ),
+    filter: (
+      <>
+        <path d="M3 5h18" />
+        <path d="M7 12h10" />
+        <path d="M10 19h4" />
+      </>
+    ),
+    map: (
+      <>
+        <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0z" />
+        <circle cx="12" cy="10" r="3" />
+      </>
+    ),
+    arrow: (
+      <>
+        <path d="M5 12h14" />
+        <path d="m13 6 6 6-6 6" />
+      </>
+    ),
+    logout: (
+      <>
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+        <path d="m16 17 5-5-5-5" />
+        <path d="M21 12H9" />
+      </>
+    ),
+    plus: (
+      <>
+        <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+        <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" />
+        <path d="M12 12v5" />
+        <path d="M9.5 14.5h5" />
+      </>
+    ),
+    alert: (
+      <>
+        <path d="M10.3 3.9 2.5 17.4A2 2 0 0 0 4.2 20h15.6a2 2 0 0 0 1.7-2.6L13.7 3.9a2 2 0 0 0-3.4 0z" />
+        <path d="M12 8v5" />
+        <path d="M12 17h.01" />
+      </>
+    ),
+    clock: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
+      </>
+    ),
+  }
+
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {paths[name]}
+    </svg>
+  )
+}
+
+const Pill = ({ children, tone = 'gray' }: { children: ReactNode; tone?: 'blue' | 'orange' | 'red' | 'green' | 'gray' | 'purple' }) => {
+  const tones = {
+    blue: 'bg-[#EAF1FF] text-[#2F5FD0]',
+    orange: 'bg-[#FFF3E8] text-[#F59E42]',
+    red: 'bg-[#FDECEC] text-[#E74C3C]',
+    green: 'bg-[#EAF8EE] text-[#4CAF50]',
+    gray: 'bg-[#F3F5F8] text-[#6B7280]',
+    purple: 'bg-[#F3ECFF] text-[#7C3AED]',
+  }
+  return <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${tones[tone]}`}>{children}</span>
+}
+
 const SignDeadlineBadge = ({ signRequestedAt }: { signRequestedAt: string | null }) => {
   if (!signRequestedAt) return null
   const notified = new Date(signRequestedAt)
@@ -63,19 +178,10 @@ const SignDeadlineBadge = ({ signRequestedAt }: { signRequestedAt: string | null
   const remain = Math.floor((deadlineDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
   const overdue = remain < 0
   const urgent = !overdue && remain <= 2
+  const label = overdue ? `期限超過${Math.abs(remain)}日（${formatDate(deadline)}）` : `期限まで${remain}日（${formatDate(deadline)}）`
 
-  let tone = { bg: '#EEF2FA', color: '#1B3A8C', label: `期日まで${remain}日（${formatDate(deadline)}）` }
-  if (overdue) tone = { bg: '#FEE2E2', color: '#B91C1C', label: `期日超過${Math.abs(remain)}日（${formatDate(deadline)}）` }
-  else if (urgent) tone = { bg: '#FFF7ED', color: '#C2410C', label: `期日まで${remain}日（${formatDate(deadline)}）` }
-
-  return (
-    <span className="text-[10.5px] font-medium px-2 py-0.5 rounded whitespace-nowrap" style={{ background: tone.bg, color: tone.color }}>
-      {tone.label}
-    </span>
-  )
+  return <Pill tone={overdue ? 'red' : urgent ? 'orange' : 'blue'}>{label}</Pill>
 }
-
-type FilterKey = 'pending' | 'explain' | 'rejected' | 'waiting' | 'completed' | 'other'
 
 export default function SalesDashboard() {
   const router = useRouter()
@@ -98,7 +204,6 @@ export default function SalesDashboard() {
       if (role !== '担当営業') { router.push('/login'); return }
       setUser(data.user)
 
-      // ログインユーザーのメールアドレスから所属部門NO・部門名を取得
       const email = data.user.email
       const { data: staffRow, error: staffError } = await supabase
         .from('staff')
@@ -108,7 +213,7 @@ export default function SalesDashboard() {
         .maybeSingle()
 
       if (staffError || !staffRow || staffRow.dept_no === null) {
-        setDeptLookupError('ログインユーザーの所属部門が特定できませんでした。管理部にご確認ください。')
+        setDeptLookupError('ログインユーザーの所属部門を特定できませんでした。管理部にご確認ください。')
         setLoading(false)
         setMyRequestsLoading(false)
         return
@@ -116,7 +221,6 @@ export default function SalesDashboard() {
 
       const deptName = (staffRow as any)?.department_master?.dept_name || null
 
-      // 契約一覧と依頼一覧は互いに依存しないため並列で取得する
       await Promise.all([
         loadContracts(staffRow.dept_no),
         loadMyRequests(deptName),
@@ -126,7 +230,6 @@ export default function SalesDashboard() {
     init()
   }, [router])
 
-  // 自分の部門全体が送った依頼（スタッフマスタ登録・CSVインポート）の状況を取得
   const loadMyRequests = async (deptName: string | null) => {
     setMyRequestsLoading(true)
     if (!deptName) { setMyRequests([]); setMyRequestsLoading(false); return }
@@ -156,7 +259,6 @@ export default function SalesDashboard() {
     router.push('/login')
   }
 
-  // 「要説明」：SSC承認済み かつ 締結パターンが対面／印刷（担当営業のアクション待ち）
   const isExplainNeeded = (c: Contract) => {
     const cp = c.input_data?.fields?.closingPattern
     return c.status === 'SSC承認済み' && (cp === 'face' || cp === 'print')
@@ -168,8 +270,6 @@ export default function SalesDashboard() {
   const waitingList = contracts.filter(c => c.status === '署名待ち')
   const completedList = contracts.filter(c => ['署名済み', '完了'].includes(c.status))
 
-  // 「依頼状況」：デフォルトでは完了したタスクを持つだけの行は表示しない
-  // （未対応・取消済みのタスクが1つでもあれば表示する）
   const hasVisibleTask = (r: MyRequest, includeCompleted: boolean) => {
     const srVisible = !!r.staff_register_status && (r.staff_register_status !== 'completed' || includeCompleted)
     const csvVisible = !!r.csv_import_status && r.csv_import_status !== 'not_required' && (r.csv_import_status !== 'completed' || includeCompleted)
@@ -177,19 +277,15 @@ export default function SalesDashboard() {
   }
   const visibleMyRequests = myRequests.filter(r => hasVisibleTask(r, includeCompletedRequests))
 
-  const filterCards: { key: FilterKey; label: string; count: number | null; color: string }[] = [
-    { key: 'pending',   label: '進行中',     count: pendingList.length,       color: '#1B3A8C' },
-    { key: 'explain',   label: '要説明',     count: explainList.length,       color: '#0E7490' },
-    { key: 'rejected',  label: '差し戻し',   count: rejectedList.length,      color: '#DC2626' },
-    { key: 'waiting',   label: '署名待ち',   count: waitingList.length,       color: '#92400E' },
-    { key: 'completed', label: '完了',       count: completedList.length,     color: '#0D9488' },
-    { key: 'other',     label: '依頼状況',   count: visibleMyRequests.length, color: '#5A6A8A' },
+  const filterCards: { key: FilterKey; label: string; count: number | null; color: string; tone: 'blue' | 'orange' | 'red' | 'green' | 'gray' | 'purple'; icon: IconName }[] = [
+    { key: 'pending', label: '進行中', count: pendingList.length, color: '#2F5FD0', tone: 'blue', icon: 'file' },
+    { key: 'explain', label: '要説明', count: explainList.length, color: '#6B7280', tone: 'gray', icon: 'message' },
+    { key: 'rejected', label: '差し戻し', count: rejectedList.length, color: '#E74C3C', tone: 'red', icon: 'refresh' },
+    { key: 'waiting', label: '署名待ち', count: waitingList.length, color: '#F59E42', tone: 'orange', icon: 'pen' },
+    { key: 'completed', label: '完了', count: completedList.length, color: '#4CAF50', tone: 'green', icon: 'check' },
+    { key: 'other', label: '依頼状況', count: visibleMyRequests.length, color: '#7C3AED', tone: 'purple', icon: 'mail' },
   ]
 
-  // 2026-07-14追加：案件が蓄積すると目当ての案件を探しにくい、というSSCダッシュボードでの
-  // 指摘を受け、担当営業側の一覧にも同じ共通部品（絞り込み・並び替え・検索）を適用した
-  // （docs/SYSTEM_DESIGN.md 10章2026-07-14参照）。以前は「進行中」「完了」タブにのみ、
-  // 簡易なステータス別ピルボタン（subFilter）があったが、共通部品に置き換えた。
   const baseListForFilter: Record<FilterKey, Contract[]> = {
     pending: pendingList,
     explain: explainList,
@@ -225,17 +321,13 @@ export default function SalesDashboard() {
     resetKey: activeFilter,
   })
 
-  // 「説明完了」ボタン処理：ステータスを署名待ちに進め、通知日時を記録する
-  // ステータス更新・sign_requested_atの記録・従業員への署名依頼メール送信は
-  // /api/contracts/[id]/notify-sign-request（trigger=explain）にまとめて行わせる
-  // （2026-07-08フェーズ5・9-1章タスク8対応）。
   const handleExplainDone = async (contractId: string) => {
     if (explainLoading) return
     setExplainLoading(true)
     const res = await fetch(`/api/contracts/${contractId}/notify-sign-request?trigger=explain`, { method: 'POST' })
     const result = await res.json().catch(() => ({}))
     if (!res.ok) {
-      alert('更新に失敗しました：' + (result.error || '不明なエラー'))
+      alert('更新に失敗しました: ' + (result.error || '不明なエラー'))
       setExplainLoading(false)
       return
     }
@@ -246,12 +338,11 @@ export default function SalesDashboard() {
   }
 
   if (!user) return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: '#F5F7FC' }}>
-      <p className="text-sm" style={{ color: '#5A6A8A' }}>読み込み中...</p>
+    <div className="flex min-h-screen items-center justify-center bg-[#F8FAFD]">
+      <p className="text-sm font-medium text-[#6B7280]">読み込み中</p>
     </div>
   )
 
-  // カード（一覧内の1件表示）
   const ContractCard = ({ contract }: { contract: Contract }) => {
     const staff = contract.input_data?.staff || {}
     const f = contract.input_data?.fields || {}
@@ -259,294 +350,275 @@ export default function SalesDashboard() {
     const isWaitingSign = contract.status === '署名待ち'
     const isConfirmed = contract.status === '署名済み' || contract.status === '完了'
     const isExplain = isExplainNeeded(contract)
-    const leftBorderColor = deadline.type === 'overdue' ? '#DC2626' : deadline.type === 'urgent' ? '#F97316' : 'transparent'
 
     return (
-      <div key={contract.id}
-        className="bg-white rounded-xl overflow-hidden transition-all hover:shadow-md"
-        style={{
-          border: '0.5px solid #D0DAF0',
-          borderLeft: deadline.type ? `4px solid ${leftBorderColor}` : '0.5px solid #D0DAF0',
-        }}>
-        <div className="px-5 py-4">
-          <div className="flex items-start justify-between gap-3 mb-3">
-            <div className="min-w-0">
-              <p className="text-xs mb-1" style={{ color: '#5A6A8A' }}>{staff.department || '―'}</p>
-              <div className="flex items-center gap-2 flex-wrap">
-                <ContractTypeBadge contractType={f.contractType || contract.contract_type} workPlace={f.workPlace || contract.work_place} />
-                <span className="text-xs" style={{ color: '#5A6A8A' }}>{staff.employee_number || '―'}</span>
-                <span className="text-base font-bold" style={{ color: '#1A2340' }}>{staff.name || '―'}</span>
-              </div>
-            </div>
-            <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-              {/* 2026-07-13追加：帳票種別バッジ（SSCダッシュボードと同じgetDocumentLabelを表示）。
-                  以前はgetDocumentLabel関数自体はあったが実際の画面に出しておらず、担当営業が
-                  一覧だけでは書類の種類（雇用契約書／明示書／兼用）を判断できなかった
-                  （伊藤さん指摘・2026-07-13）。 */}
-              <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: '#EEF2FA', color: '#1B3A8C' }}>
-                  {getDocumentLabel(contract.document_type, contract.pattern)}
-                </span>
-                <ContractStatusBadge status={contract.status} overrideLabel={isExplain ? '説明対応が必要' : undefined} />
-              </div>
-              {isWaitingSign && <SignDeadlineBadge signRequestedAt={contract.sign_requested_at} />}
-              {isConfirmed && <ConfirmedBadge signedAt={contract.signed_at} />}
-            </div>
+      <article className={`${cardBase} grid gap-4 p-5 lg:grid-cols-[minmax(220px,1.25fr)_minmax(220px,1.15fr)_minmax(190px,.95fr)_minmax(170px,.85fr)_minmax(160px,.75fr)_auto] lg:items-center`}>
+        <div className="min-w-0">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            {deadline.type && !isWaitingSign && (
+              <Pill tone={deadline.type === 'overdue' ? 'red' : 'orange'}>{deadline.label}</Pill>
+            )}
+            {isExplain && <Pill tone="orange">説明対応が必要</Pill>}
           </div>
-
-          <div className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 mb-3" style={{ background: '#F5F7FC' }}>
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="text-sm flex-shrink-0" style={{ color: '#1B3A8C' }}>📍</span>
-              <span className="text-sm" style={{ color: '#1A2340', wordBreak: 'break-all' }}>
-                {f.workLocationName || '―'}
-              </span>
-            </div>
-            {!isWaitingSign && deadline.type && (
-              <span className="text-xs font-medium px-2 py-0.5 rounded flex-shrink-0"
-                style={{
-                  background: deadline.type === 'overdue' ? '#FEE2E2' : '#FFF7ED',
-                  color: deadline.type === 'overdue' ? '#B91C1C' : '#C2410C',
-                }}>
-                {deadline.type === 'overdue' ? '🔴' : '⚠'} {deadline.label}
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-start gap-6 flex-wrap">
-            <div>
-              <p className="text-xs mb-0.5" style={{ color: '#5A6A8A' }}>申請日時</p>
-              <p className="text-xs" style={{ color: '#1A2340' }}>{formatDateTime(contract.created_at)}</p>
-            </div>
-            <div>
-              <p className="text-xs mb-0.5" style={{ color: '#5A6A8A' }}>雇用期間</p>
-              <p className="text-xs" style={{ color: '#1A2340' }}>{getEmployPeriodLabel(contract)}</p>
-            </div>
-            {/* 2026-07-13追加：派遣期間（パターンB・Cのみ、SSCダッシュボードと同じ表示条件）。
-                明示書（パターンB）は雇用期間欄に情報が無く、この派遣期間が実質的な契約期間の
-                目安になるため、一覧に無いと「いつまでの契約か」が全く分からない状態だった
-                （伊藤さん指摘・2026-07-13）。 */}
-            {(contract.pattern === 'B' || contract.pattern === 'C') && f.dispatchStart && f.dispatchEnd && (
-              <div>
-                <p className="text-xs mb-0.5" style={{ color: '#5A6A8A' }}>派遣期間</p>
-                <p className="text-xs" style={{ color: '#1A2340' }}>{f.dispatchStart} 〜 {f.dispatchEnd}</p>
-              </div>
-            )}
-            {isExplain && f.closingPattern && (
-              <div>
-                <p className="text-xs mb-0.5" style={{ color: '#5A6A8A' }}>締結パターン</p>
-                <p className="text-xs" style={{ color: '#1A2340' }}>{CLOSING_PATTERN_LABEL[f.closingPattern] || f.closingPattern}</p>
-              </div>
-            )}
-          </div>
-
-          {contract.status === '差し戻し中' && contract.rejection_reason && (
-            <div className="mt-3 rounded-lg px-3 py-2 border-l-4" style={{ background: '#FEF2F2', borderColor: '#B91C1C' }}>
-              <p className="text-xs font-medium mb-0.5" style={{ color: '#B91C1C' }}>差し戻し理由</p>
-              <p className="text-xs leading-relaxed" style={{ color: '#1A2340' }}>{contract.rejection_reason}</p>
-            </div>
-          )}
-
-          {isExplain && contract.status === 'SSC承認済み' && (
-            <div className="mt-3 rounded-lg px-3 py-2" style={{ background: '#ECFEFF' }}>
-              <p className="text-xs leading-relaxed" style={{ color: '#0E7490' }}>
-                {contract.work_place === '社内'
-                  ? 'ℹ️ 承認済みです。従業員への説明が完了したら「説明完了」を押してください。押すと従業員が署名待ちの状態になります。'
-                  : 'ℹ️ SSC承認済みです。従業員への説明が完了したら「説明完了」を押してください。押すと従業員が署名待ちの状態になります。'}
-              </p>
-            </div>
-          )}
-
-          {/* 説明完了の確認 */}
-          {isExplain && confirmingExplainId === contract.id && (
-            <div className="mt-3 rounded-lg p-3 border-2" style={{ background: '#ECFEFF', borderColor: '#0E7490' }}>
-              <p className="text-xs font-bold mb-2" style={{ color: '#0E7490' }}>従業員への説明は完了しましたか？</p>
-              <p className="text-xs mb-3" style={{ color: '#1A2340' }}>押すと、従業員が署名待ちの状態に切り替わります。</p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleExplainDone(contract.id)}
-                  disabled={explainLoading}
-                  className="flex-1 py-2 rounded-lg text-xs font-bold text-white disabled:opacity-50"
-                  style={{ background: '#0E7490' }}>
-                  {explainLoading ? '処理中...' : '✅ 説明完了'}
-                </button>
-                <button
-                  onClick={() => setConfirmingExplainId(null)}
-                  className="px-3 py-2 rounded-lg text-xs border" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
-                  キャンセル
-                </button>
-              </div>
-            </div>
-          )}
-          {/* 確認ボタン（2026-07-02改訂：左揃えピル形に統一。複数アクションがある場合は主アクションを塗りつぶし、詳細を見るは輪郭線に） */}
-          <div className="flex items-center gap-2 mt-3.5 flex-wrap">
-            <button
-              className="flex items-center gap-1.5 rounded-full transition-all"
-              style={(isExplain || contract.status === '差し戻し中')
-                ? { background: 'white', border: '1px solid #1B3A8C', padding: '6px 15px', cursor: 'pointer' }
-                : { background: '#1B3A8C', border: 'none', padding: '7px 16px', cursor: 'pointer' }}
-              onClick={() => router.push(`/dashboard/sales/contracts/${contract.id}`)}>
-              <span className="text-xs font-medium" style={{ color: (isExplain || contract.status === '差し戻し中') ? '#1B3A8C' : 'white' }}>詳細を見る</span>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={(isExplain || contract.status === '差し戻し中') ? '#1B3A8C' : 'white'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18" /></svg>
-            </button>
-            {isExplain && confirmingExplainId !== contract.id && (
-              <button
-                className="flex items-center gap-1.5 rounded-full transition-all"
-                style={{ background: '#0E7490', border: 'none', padding: '7px 16px', cursor: 'pointer' }}
-                onClick={() => setConfirmingExplainId(contract.id)}>
-                <span className="text-xs font-medium text-white">✅ 説明完了</span>
-              </button>
-            )}
-            {contract.status === '差し戻し中' && (
-              <button
-                className="flex items-center gap-1.5 rounded-full transition-all"
-                style={{ background: '#B91C1C', border: 'none', padding: '7px 16px', cursor: 'pointer' }}
-                onClick={() => router.push(`/apply?edit=${contract.id}`)}>
-                <span className="text-xs font-medium text-white">↩ 再申請する</span>
-              </button>
-            )}
+          <p className="break-words text-[22px] font-semibold leading-7 text-[#1F2937]">{staff.name || '-'}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-medium text-[#6B7280]">
+            <span className="break-words">{staff.department || '-'}</span>
+            <span className="h-3 w-px bg-[#E8EDF5]" />
+            <span>{staff.employee_number || '-'}</span>
+            <ContractTypeBadge contractType={f.contractType || contract.contract_type} workPlace={f.workPlace || contract.work_place} />
           </div>
         </div>
-      </div>
+
+        <div className="min-w-0">
+          <p className="mb-2 text-xs font-semibold text-[#6B7280]">就業先</p>
+          <div className="flex items-start gap-2">
+            <Icon name="map" className="mt-0.5 h-4 w-4 shrink-0 text-[#2F5FD0]" />
+            <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{f.workLocationName || '-'}</p>
+          </div>
+        </div>
+
+        <div className="min-w-0">
+          <p className="mb-2 text-xs font-semibold text-[#6B7280]">ステータス</p>
+          <div className="flex flex-wrap gap-2">
+            <Pill tone="blue">{getDocumentLabel(contract.document_type, contract.pattern)}</Pill>
+            <ContractStatusBadge status={contract.status} overrideLabel={isExplain ? '説明対応が必要' : undefined} />
+            {isWaitingSign && <SignDeadlineBadge signRequestedAt={contract.sign_requested_at} />}
+            {isConfirmed && <ConfirmedBadge signedAt={contract.signed_at} />}
+          </div>
+        </div>
+
+        <div className="min-w-0">
+          <p className="mb-2 text-xs font-semibold text-[#6B7280]">雇用期間</p>
+          <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{getEmployPeriodLabel(contract)}</p>
+          {(contract.pattern === 'B' || contract.pattern === 'C') && f.dispatchStart && f.dispatchEnd && (
+            <p className="mt-1 break-words text-xs font-medium leading-5 text-[#6B7280]">派遣期間 {f.dispatchStart} 〜 {f.dispatchEnd}</p>
+          )}
+          {isExplain && f.closingPattern && (
+            <p className="mt-1 break-words text-xs font-medium leading-5 text-[#6B7280]">締結パターン {CLOSING_PATTERN_LABEL[f.closingPattern] || f.closingPattern}</p>
+          )}
+        </div>
+
+        <div className="min-w-0">
+          <p className="mb-2 text-xs font-semibold text-[#6B7280]">申請日時</p>
+          <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{formatDateTime(contract.created_at)}</p>
+        </div>
+
+        <div className="flex flex-col gap-2 lg:items-end">
+          <button
+            className={isExplain || contract.status === '差し戻し中' ? secondaryButton : primaryButton}
+            onClick={() => router.push(`/dashboard/sales/contracts/${contract.id}`)}
+          >
+            詳細を見る
+            <Icon name="arrow" className="h-4 w-4" />
+          </button>
+          {isExplain && confirmingExplainId !== contract.id && (
+            <button className={primaryButton} onClick={() => setConfirmingExplainId(contract.id)}>
+              <Icon name="check" className="h-4 w-4" />
+              説明完了
+            </button>
+          )}
+          {contract.status === '差し戻し中' && (
+            <button className={accentButton} onClick={() => router.push(`/apply?edit=${contract.id}`)}>
+              再申請する
+            </button>
+          )}
+        </div>
+
+        {contract.status === '差し戻し中' && contract.rejection_reason && (
+          <div className="rounded-2xl border border-[#FFE2C7] bg-[#FFF8F1] p-4 lg:col-span-6">
+            <p className="text-xs font-semibold text-[#F59E42]">差し戻し理由</p>
+            <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.rejection_reason}</p>
+          </div>
+        )}
+
+        {isExplain && contract.status === 'SSC承認済み' && (
+          <div className="rounded-2xl border border-[#D7E5FF] bg-[#F5F9FF] p-4 lg:col-span-6">
+            <p className="text-sm font-medium leading-6 text-[#2F5FD0]">
+              {contract.work_place === '社内'
+                ? '承認済みです。従業員への説明が完了したら「説明完了」を押してください。押すと従業員が署名待ちの状態になります。'
+                : 'SSC承認済みです。従業員への説明が完了したら「説明完了」を押してください。押すと従業員が署名待ちの状態になります。'}
+            </p>
+          </div>
+        )}
+
+        {isExplain && confirmingExplainId === contract.id && (
+          <div className="rounded-2xl border border-[#D7E5FF] bg-[#F5F9FF] p-4 lg:col-span-6">
+            <p className="text-sm font-semibold text-[#1F2937]">従業員への説明は完了しましたか？</p>
+            <p className="mt-2 text-sm font-medium leading-6 text-[#6B7280]">押すと、従業員が署名待ちの状態に切り替わります。</p>
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+              <button
+                onClick={() => handleExplainDone(contract.id)}
+                disabled={explainLoading}
+                className={`${primaryButton} flex-1 disabled:cursor-not-allowed disabled:opacity-50`}
+              >
+                {explainLoading ? '処理中...' : '説明完了'}
+              </button>
+              <button onClick={() => setConfirmingExplainId(null)} className={secondaryButton}>
+                キャンセル
+              </button>
+            </div>
+          </div>
+        )}
+      </article>
     )
   }
 
   return (
-    <div className="min-h-screen" style={{ background: '#F5F7FC' }}>
-      {/* ヘッダー */}
-      <header className="bg-white border-b" style={{ borderColor: '#D0DAF0' }}>
-        <div className="max-w-4xl mx-auto px-6 py-3 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <Image src="/logo.png" alt="APパートナーズ" width={60} height={35} />
-            <div className="border-l pl-3" style={{ borderColor: '#D0DAF0' }}>
-              <p className="text-sm font-bold" style={{ color: '#1A2340' }}>契約書管理システム</p>
-              <p className="text-xs" style={{ color: '#5A6A8A' }}>担当営業ダッシュボード</p>
+    <div className="min-h-screen bg-[#F8FAFD] text-[#1F2937]">
+      <header className="border-b border-[#E8EDF5] bg-white/90 backdrop-blur">
+        <div className="mx-auto flex max-w-[1600px] items-center justify-between px-6 py-5 lg:px-8">
+          <div className="flex items-center gap-5">
+            <Image src="/logo.png" alt="APパートナーズ" width={64} height={38} className="h-auto w-[64px]" />
+            <div className="h-8 w-px bg-[#E8EDF5]" />
+            <div>
+              <h1 className="text-2xl font-semibold tracking-normal text-[#1F2937]">契約書管理システム</h1>
+              <p className="mt-1 text-sm font-medium text-[#6B7280]">担当営業ダッシュボード</p>
             </div>
           </div>
-          <div className="flex items-center gap-2.5 flex-shrink-0">
-            {/* 新規発行申請ボタン（2026-07-02改訂：ヘッダー内・ログアウトの左に移動、アイコンを書類＋プラスに変更） */}
-            <button onClick={() => router.push('/apply')}
-              className="flex items-center gap-1.5 rounded-lg font-medium transition-all whitespace-nowrap"
-              style={{ background: '#1B3A8C', color: 'white', border: 'none', padding: '9px 16px' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <path d="M14 3v4a1 1 0 0 0 1 1h4" /><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /><line x1="12" y1="12" x2="12" y2="16" /><line x1="10" y1="14" x2="14" y2="14" />
-              </svg>
-              <span className="text-xs">新規発行申請</span>
+
+          <div className="flex items-center gap-3">
+            <button onClick={() => router.push('/apply')} className={primaryButton}>
+              <Icon name="plus" className="h-5 w-5" />
+              新規発行申請
             </button>
-            <button onClick={handleLogout}
-              className="text-sm px-4 py-2 rounded-lg border transition-all whitespace-nowrap"
-              style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
+            <button onClick={handleLogout} className={secondaryButton}>
+              <Icon name="logout" className="h-4 w-4" />
               ログアウト
             </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-6 py-8">
-        {/* 部門特定エラー */}
+      <main className="mx-auto max-w-[1600px] px-6 py-8 lg:px-8">
         {deptLookupError && (
-          <div className="rounded-xl p-5 mb-6 border-2" style={{ background: '#FEF2F2', borderColor: '#F87171' }}>
-            <p className="text-sm font-bold" style={{ color: '#B91C1C' }}>{deptLookupError}</p>
+          <div className="mb-6 rounded-[18px] border border-[#F7C7C1] bg-[#FDECEC] p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)]">
+            <p className="text-sm font-semibold text-[#E74C3C]">{deptLookupError}</p>
           </div>
         )}
 
-        {/* フィルタータブバー（2026-07-02改訂：5枚カードからタブバー形式に変更） */}
-        <div className="flex items-end gap-6 border-b mb-0" style={{ borderColor: '#E5E9F2' }}>
-          {filterCards.map(card => {
-            const isActive = activeFilter === card.key
-            const isDisabled = card.count === null
-            const icon = card.key === 'pending'
-              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? card.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><rect x="4" y="4" width="16" height="16" rx="2" /><line x1="8" y1="10" x2="16" y2="10" /><line x1="8" y1="14" x2="13" y2="14" /></svg>
-              : card.key === 'explain'
-              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? card.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></svg>
-              : card.key === 'rejected'
-              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? card.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></svg>
-              : card.key === 'waiting'
-              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? card.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>
-              : card.key === 'completed'
-              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? card.color : '#5A6A8A'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="9" /><polyline points="8 12.5 10.8 15 16 9" /></svg>
-              : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9AA5BD" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><rect x="3" y="5" width="18" height="14" rx="2" /><polyline points="3 7 12 13 21 7" /></svg>
-            return (
-              <button
-                key={card.key}
-                onClick={() => { if (isDisabled) return; setActiveFilter(card.key) }}
-                disabled={isDisabled}
-                className="flex items-center gap-2 pb-3 relative transition-all"
-                style={{ background: 'none', border: 'none', cursor: isDisabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', flexShrink: 0, opacity: isDisabled ? 0.55 : 1 }}>
-                {icon}
-                <span className="text-sm font-medium" style={{ color: isActive ? card.color : (isDisabled ? '#9AA5BD' : '#1A2340') }}>{card.label}</span>
-                {card.count === null ? (
-                  <span className="text-xs" style={{ color: '#9AA5BD' }}>準備中</span>
-                ) : (
-                  <span className="text-xs font-bold rounded-full"
-                    style={{
-                      color: isActive ? 'white' : '#5A6A8A',
-                      background: isActive ? card.color : '#EEF0F5',
-                      padding: '2px 8px',
-                      minWidth: '20px',
-                      textAlign: 'center',
-                      lineHeight: 1.4,
-                    }}>{card.count}</span>
-                )}
-                {isActive && (
-                  <div className="absolute" style={{ left: 0, right: 0, bottom: '-1px', height: '2.5px', background: card.color, borderRadius: '2px 2px 0 0' }} />
-                )}
-              </button>
-            )
-          })}
-        </div>
+        <section className="overflow-hidden rounded-[18px] border border-[#E8EDF5] bg-[radial-gradient(circle_at_20%_15%,rgba(47,95,208,.14),transparent_32%),linear-gradient(135deg,#F7FBFF_0%,#EEF5FF_48%,#FFFFFF_100%)] p-6 shadow-[0_10px_30px_rgba(15,23,42,.05)] md:p-8">
+          <div className="grid gap-6 xl:grid-cols-[.8fr_1.6fr] xl:items-center">
+            <div className="flex items-start gap-5">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#DDE8FF] text-[#2F5FD0]">
+                <Icon name={filterCards.find(c => c.key === activeFilter)?.icon || 'file'} className="h-8 w-8" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-[#1F2937]">本日の状況</p>
+                <h2 className="mt-2 text-4xl font-semibold tracking-normal text-[#2F5FD0] md:text-5xl">
+                  {currentLabel} {activeFilter === 'other' ? visibleMyRequests.length : baseCurrentList.length}件
+                </h2>
+                <p className="mt-4 text-sm font-medium leading-6 text-[#1F2937]">
+                  対応が必要な案件を確認し、次のアクションへ進めてください。
+                </p>
+              </div>
+            </div>
 
-        {/* 絞り込み・並び替え・検索（2026-07-14追加：以前のサブフィルターピルを共通部品に置き換え） */}
+            <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+              {filterCards.map(card => (
+                <button
+                  key={card.key}
+                  onClick={() => setActiveFilter(card.key)}
+                  className={`rounded-[18px] border bg-white/86 p-5 text-left shadow-[0_10px_30px_rgba(15,23,42,.05)] backdrop-blur transition hover:-translate-y-0.5 hover:shadow-[0_15px_40px_rgba(15,23,42,.08)] ${activeFilter === card.key ? 'border-[#2F5FD0]' : 'border-[#E8EDF5]'}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-sm font-semibold text-[#1F2937]">{card.label}</p>
+                    <Icon name={card.icon} className="h-5 w-5 text-[#6B7280]" />
+                  </div>
+                  <div className="mt-5 flex items-end gap-1">
+                    <span className="text-4xl font-semibold tracking-normal" style={{ color: card.color }}>{card.count}</span>
+                    <span className="pb-1 text-sm font-semibold" style={{ color: card.color }}>件</span>
+                  </div>
+                  <div className="mt-5 h-1 rounded-full bg-[#E8EDF5]">
+                    <div className="h-1 w-8 rounded-full" style={{ background: card.color }} />
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <nav className="mt-6 border-b border-[#E8EDF5]">
+          <div className="flex gap-8 overflow-x-auto">
+            {filterCards.map(card => {
+              const isActive = activeFilter === card.key
+              return (
+                <button
+                  key={card.key}
+                  onClick={() => setActiveFilter(card.key)}
+                  className={`group relative flex shrink-0 items-center gap-2 whitespace-nowrap px-1 pb-4 text-sm font-semibold transition ${isActive ? 'text-[#2F5FD0]' : 'text-[#1F2937] hover:text-[#2F5FD0]'}`}
+                >
+                  <Icon name={card.icon} className="h-4 w-4" />
+                  {card.label}
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${isActive ? 'bg-[#2F5FD0] text-white' : 'bg-[#EEF0F5] text-[#6B7280]'}`}>{card.count}</span>
+                  <span className={`absolute bottom-[-1px] left-0 h-0.5 rounded-full bg-[#2F5FD0] transition-all duration-300 ${isActive ? 'w-full' : 'w-0 group-hover:w-full'}`} />
+                </button>
+              )
+            })}
+          </div>
+        </nav>
+
         {activeFilter !== 'other' && (
-          <div className="mt-4">
-            {listToolbar}
-          </div>
+          <section className="mt-5 rounded-[18px] border border-[#E8EDF5] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)]">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <Icon name="filter" className="h-5 w-5 text-[#1F2937]" />
+                <h2 className="text-base font-semibold text-[#1F2937]">絞り込み</h2>
+              </div>
+              <Icon name="search" className="h-5 w-5 text-[#6B7280]" />
+            </div>
+            <div className="[&_button]:rounded-[16px] [&_button]:font-semibold [&_input]:rounded-[16px] [&_input]:border-[#E8EDF5] [&_input]:transition [&_input:focus]:border-[#2F5FD0] [&_select]:rounded-[16px] [&_select]:border-[#E8EDF5]">
+              {listToolbar}
+            </div>
+          </section>
         )}
-
-        <div className="mb-2" style={{ marginTop: activeFilter === 'pending' ? 0 : '1rem' }} />
 
         {loading ? (
-          <div className="text-center py-16">
-            <p className="text-sm" style={{ color: '#5A6A8A' }}>読み込み中...</p>
+          <div className="py-16 text-center">
+            <p className="text-sm font-medium text-[#6B7280]">読み込み中</p>
           </div>
         ) : (
-          <div className="bg-white rounded-lg border p-6" style={{ borderColor: '#D0DAF0' }}>
+          <section className={`${cardBase} mt-5 p-6`}>
             {activeFilter === 'other' ? (
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-base font-bold" style={{ color: '#1A2340' }}>{currentLabel}（{visibleMyRequests.length}件）</h2>
-                <label className="flex items-center gap-1.5 text-xs" style={{ color: '#5A6A8A' }}>
-                  <input type="checkbox" checked={includeCompletedRequests}
-                    onChange={e => setIncludeCompletedRequests(e.target.checked)} />
+              <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <h2 className="text-lg font-semibold text-[#1F2937]">依頼状況一覧（{visibleMyRequests.length}件）</h2>
+                <label className="flex items-center gap-2 text-sm font-medium text-[#6B7280]">
+                  <input
+                    type="checkbox"
+                    checked={includeCompletedRequests}
+                    onChange={e => setIncludeCompletedRequests(e.target.checked)}
+                    className="h-4 w-4 rounded border-[#E8EDF5] accent-[#2F5FD0]"
+                  />
                   完了したものも表示する
                 </label>
               </div>
             ) : (
-              <h2 className="text-base font-bold mb-4" style={{ color: '#1A2340' }}>{currentLabel}（{currentList.length}件）</h2>
+              <h2 className="mb-5 text-lg font-semibold text-[#1F2937]">{currentLabel}（{currentList.length}件）</h2>
             )}
 
             {activeFilter === 'other' ? (
               myRequestsLoading ? (
-                <p className="text-sm py-6" style={{ color: '#5A6A8A' }}>読み込み中...</p>
+                <p className="py-8 text-sm font-medium text-[#6B7280]">読み込み中</p>
               ) : visibleMyRequests.length === 0 ? (
-                <p className="text-sm py-6" style={{ color: '#5A6A8A' }}>該当する依頼はありません。</p>
+                <p className="py-8 text-sm font-medium text-[#6B7280]">該当する依頼はありません。</p>
               ) : (
-                <div className="flex flex-col gap-3">
+                <div className="grid gap-3">
                   {visibleMyRequests.map(r => <MyRequestCard key={r.id} r={r} includeCompleted={includeCompletedRequests} />)}
                 </div>
               )
             ) : currentList.length === 0 ? (
-              <p className="text-sm py-6" style={{ color: '#5A6A8A' }}>該当する書類はありません。</p>
+              <p className="py-8 text-sm font-medium text-[#6B7280]">該当する書類はありません。</p>
             ) : (
-              <div className="flex flex-col gap-3">
+              <div className="grid gap-3">
                 {currentList.map(c => <ContractCard key={c.id} contract={c} />)}
               </div>
             )}
 
             {activeFilter === 'other' && (
-              <div className="border-t mt-4 pt-3 text-center" style={{ borderColor: '#EEF0F5' }}>
-                <span className="text-xs" style={{ color: '#9AA5BD' }}>更新回答機能は準備中です。</span>
+              <div className="mt-5 border-t border-[#E8EDF5] pt-4 text-center">
+                <span className="text-xs font-medium text-[#6B7280]">更新回答機能は準備中です。</span>
               </div>
             )}
-          </div>
+          </section>
         )}
       </main>
     </div>
@@ -557,9 +629,9 @@ function MyRequestCard({ r, includeCompleted }: { r: MyRequest; includeCompleted
   const badge = (status: string) => {
     const isDone = status === 'completed'
     const isCancelled = status === 'cancelled'
-    const label = isDone ? '完了' : isCancelled ? '要確認：取消済み' : status === 'in_progress' ? '対応中' : '未対応'
-    const color = isDone ? '#0D9488' : isCancelled ? '#EA580C' : '#DC2626'
-    return <span className="text-white text-[10px] px-2 py-0.5 rounded-full" style={{ background: color }}>{label}</span>
+    const label = isDone ? '完了' : isCancelled ? '要確認・取消済み' : status === 'in_progress' ? '対応中' : '未対応'
+    const tone = isDone ? 'green' : isCancelled ? 'orange' : 'blue'
+    return <Pill tone={tone}>{label}</Pill>
   }
   const taskVisible = (status: string | null) => !!status && status !== 'not_required' && (status !== 'completed' || includeCompleted)
 
@@ -568,48 +640,48 @@ function MyRequestCard({ r, includeCompleted }: { r: MyRequest; includeCompleted
   const hasCancelled = r.staff_register_status === 'cancelled' || r.csv_import_status === 'cancelled'
 
   return (
-    <div className="rounded-lg border p-4"
-      style={{
-        borderColor: hasCancelled ? '#FDBA74' : '#D0DAF0',
-        background: hasCancelled ? '#FFF7ED' : 'white',
-      }}>
-      <div className="flex justify-between items-start mb-2">
-        <p className="text-sm font-semibold" style={{ color: '#1A2340' }}>
-          {r.staff_name || '―'}（社員番号：{r.staff_code || '―'}）
-        </p>
-        <p className="text-xs text-right" style={{ color: '#5A6A8A' }}>
-          {r.requested_by_name && <>依頼者：{r.requested_by_name}{r.requested_by_dept ? `（${r.requested_by_dept}）` : ''}<br /></>}
-          依頼日：{formatDateTime(r.requested_at)}
-        </p>
-      </div>
-      <div className="flex flex-col gap-2">
-        {showStaffRegister && (
-          <div className="rounded-md border px-3 py-2"
-            style={{ background: 'white', borderColor: r.staff_register_status === 'cancelled' ? '#FDBA74' : '#D0DAF0' }}>
-            <div className="flex items-center gap-2">
-              {badge(r.staff_register_status as string)}
-              <span className="text-xs" style={{ color: '#1A2340' }}>スタッフマスタ登録</span>
+    <article className={`${cardBase} p-5 ${hasCancelled ? 'border-[#FFE2C7] bg-[#FFF8F1]' : ''}`}>
+      <div className="grid gap-4 lg:grid-cols-[minmax(240px,1.2fr)_minmax(220px,.9fr)_1.6fr] lg:items-start">
+        <div className="min-w-0">
+          <p className="break-words text-[22px] font-semibold leading-7 text-[#1F2937]">{r.staff_name || '-'}</p>
+          <p className="mt-2 text-sm font-medium text-[#6B7280]">社員番号 {r.staff_code || '-'}</p>
+        </div>
+
+        <div className="min-w-0">
+          <p className="mb-2 text-xs font-semibold text-[#6B7280]">依頼情報</p>
+          <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">
+            {r.requested_by_name && <>依頼者 {r.requested_by_name}{r.requested_by_dept ? `（${r.requested_by_dept}）` : ''}<br /></>}
+            依頼日 {formatDateTime(r.requested_at)}
+          </p>
+        </div>
+
+        <div className="grid gap-3">
+          {showStaffRegister && (
+            <div className="rounded-2xl border border-[#E8EDF5] bg-white px-4 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                {badge(r.staff_register_status as string)}
+                <span className="text-sm font-semibold text-[#1F2937]">スタッフマスタ登録</span>
+              </div>
+              {r.staff_register_status === 'cancelled' && r.staff_register_cancel_reason && (
+                <p className="mt-2 break-words text-sm font-medium leading-6 text-[#F59E42]">取消理由：{r.staff_register_cancel_reason}</p>
+              )}
             </div>
-            {r.staff_register_status === 'cancelled' && r.staff_register_cancel_reason && (
-              <p className="text-[11px] mt-1.5" style={{ color: '#9A3412' }}>取消理由：{r.staff_register_cancel_reason}</p>
-            )}
-          </div>
-        )}
-        {showCsvImport && (
-          <div className="rounded-md border px-3 py-2"
-            style={{ background: 'white', borderColor: r.csv_import_status === 'cancelled' ? '#FDBA74' : '#D0DAF0' }}>
-            <div className="flex items-center gap-2">
-              {badge(r.csv_import_status as string)}
-              <span className="text-xs" style={{ color: '#1A2340' }}>
-                CSVインポート{r.system_type ? `（${r.system_type}${r.dispatch_start_date ? '・派遣開始日 ' + formatDate(new Date(r.dispatch_start_date)) : ''}）` : ''}
-              </span>
+          )}
+          {showCsvImport && (
+            <div className="rounded-2xl border border-[#E8EDF5] bg-white px-4 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                {badge(r.csv_import_status as string)}
+                <span className="break-words text-sm font-semibold text-[#1F2937]">
+                  CSVインポート{r.system_type ? `（${r.system_type}${r.dispatch_start_date ? '・派遣開始日 ' + formatDate(new Date(r.dispatch_start_date)) : ''}）` : ''}
+                </span>
+              </div>
+              {r.csv_import_status === 'cancelled' && r.csv_import_cancel_reason && (
+                <p className="mt-2 break-words text-sm font-medium leading-6 text-[#F59E42]">取消理由：{r.csv_import_cancel_reason}</p>
+              )}
             </div>
-            {r.csv_import_status === 'cancelled' && r.csv_import_cancel_reason && (
-              <p className="text-[11px] mt-1.5" style={{ color: '#9A3412' }}>取消理由：{r.csv_import_cancel_reason}</p>
-            )}
-          </div>
-        )}
+          )}
+        </div>
       </div>
-    </div>
+    </article>
   )
 }

@@ -1039,6 +1039,9 @@ function ApplyPageInner() {
   const [csvRequestSent, setCsvRequestSent] = useState(false)
   const [csvRequestSubmitting, setCsvRequestSubmitting] = useState(false)
   const [csvRequestError, setCsvRequestError] = useState('')
+  // CSVインポート依頼（STEP2・単独）で管理部に伝える就業場所名（2026-07-14追加。
+  // 従来この依頼には就業場所名を入力する欄自体が無く、一覧側で就業先が常に空欄になっていた）
+  const [csvRequestWorkLocation, setCsvRequestWorkLocation] = useState('')
   const [workLocationName, setWorkLocationName] = useState('')
   const [workLocationAddress, setWorkLocationAddress] = useState('')
   const [workLocationTel, setWorkLocationTel] = useState('')
@@ -1995,10 +1998,12 @@ function ApplyPageInner() {
     if (!reqName) return 'スタッフ氏名を入力してください'
     if (!reqDept) return '部門名を入力してください'
     if (!reqHireDate) return '入社日を入力してください'
-    if (!reqWorkLocation) return '就業場所名を入力してください'
+    // 就業場所名はスタッフマスタ登録のみの依頼では不要。CSVインポートも同時に
+    // 依頼する場合のみ必須にする（2026-07-14：伊藤さん確認の上、必須条件を変更）
     if (reqWithCsv) {
       if (!reqCsvSystem) return '使用システムを選択してください'
       if (!reqDispatchStart) return '派遣開始日を入力してください'
+      if (!reqWorkLocation) return '就業場所名を入力してください'
     }
     return null
   }
@@ -2024,7 +2029,9 @@ function ApplyPageInner() {
         staff_code: reqEmployeeNumber,
         staff_dept: reqDept,
         staff_hire_date: reqHireDate,
-        client_name: reqWorkLocation,
+        // 就業場所名はCSVインポートも同時に依頼した場合のみ入力される。単独のスタッフマスタ
+        // 登録依頼では空文字のまま保存せずnullにする（一覧側で「-」表示になるようにするため）
+        client_name: reqWorkLocation || null,
         // 「CSVインポートも同時に依頼する」がオフの場合は、csv_import_status を明示的に
         // 'not_required' にする（デフォルトが'pending'のままだと、CSVインポートも
         // 未対応の依頼として管理部側に表示されてしまうため）
@@ -2032,7 +2039,10 @@ function ApplyPageInner() {
         system_type: reqWithCsv ? reqCsvSystem : null,
         dispatch_start_date: reqWithCsv ? reqDispatchStart : null,
         requested_by: user.id,
-        requested_by_name: (submitterStaffRow as any)?.name || null,
+        // staffマスタに一致する行が無い場合でも申請者が空欄にならないよう、
+        // メールアドレスへフォールバックする（2026-07-14追加・教訓：スタッフ登録前の
+        // テスト送信でここがnullのまま保存され、管理部画面に申請者情報が出ない事故があった）
+        requested_by_name: (submitterStaffRow as any)?.name || user.email || null,
         requested_by_dept: (submitterStaffRow as any)?.department_master?.dept_name || null,
       }])
 
@@ -2053,6 +2063,12 @@ function ApplyPageInner() {
   // 追加入力なしでその場で送信する）
   const handleSubmitCsvRequest = async () => {
     if (csvRequestSubmitting) return // 二重送信防止
+    // 就業場所名は必須（2026-07-14：この依頼には元々就業場所名の入力欄が無く、
+    // 一覧側で就業先が常に空欄になっていたことが判明したため追加）
+    if (!csvRequestWorkLocation.trim()) {
+      setCsvRequestError('就業場所名を入力してください')
+      return
+    }
     setCsvRequestSubmitting(true)
     setCsvRequestError('')
     try {
@@ -2068,13 +2084,14 @@ function ApplyPageInner() {
         staff_name: selectedStaff?.name || null,
         staff_code: selectedStaff?.employee_number || null,
         staff_id: selectedStaff?.id || null,
+        client_name: csvRequestWorkLocation.trim(),
         system_type: csvSystem,
         dispatch_start_date: csvDispatchStart,
         // スタッフはすでに登録済み（この依頼はCSVデータの話のみ）なので、
         // デフォルトの'pending'のままにせず明示的にnullにする
         staff_register_status: null,
         requested_by: user.id,
-        requested_by_name: (submitterStaffRow as any)?.name || null,
+        requested_by_name: (submitterStaffRow as any)?.name || user.email || null,
         requested_by_dept: (submitterStaffRow as any)?.department_master?.dept_name || null,
       }])
 
@@ -2300,25 +2317,12 @@ function ApplyPageInner() {
                                   className="border rounded-lg px-3 py-2 text-sm focus:outline-none w-40 placeholder:text-gray-400"
                                   style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                               </div>
-                              {/* 就業場所名 */}
-                              <div className="flex flex-col gap-1">
-                                <label className="text-xs font-medium flex items-center gap-1" style={{ color: '#1A2340' }}>
-                                  就業場所名
-                                  <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>必須</span>
-                                </label>
-                                <input
-                                  type="text" value={reqWorkLocation}
-                                  onChange={e => setReqWorkLocation(e.target.value)}
-                                  className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-sm placeholder:text-gray-400"
-                                  style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                                  placeholder="例）ソフトバンク（SB） 量販 コジマ×ビックカメラ福生店" />
-                              </div>
                               {/* CSVインポート同時依頼 */}
                               <div className="flex flex-col gap-2">
                                 <label className="flex items-center gap-2 cursor-pointer">
                                   <input
                                     type="checkbox" checked={reqWithCsv}
-                                    onChange={e => { setReqWithCsv(e.target.checked); setReqCsvSystem(''); setReqDispatchStart('') }}
+                                    onChange={e => { setReqWithCsv(e.target.checked); setReqCsvSystem(''); setReqDispatchStart(''); setReqWorkLocation('') }}
                                     className="w-4 h-4" style={{ accentColor: '#1B3A8C' }} />
                                   <span className="text-xs font-medium" style={{ color: '#1A2340' }}>CSVインポートも同時に依頼する</span>
                                 </label>
@@ -2353,6 +2357,20 @@ function ApplyPageInner() {
                                         onChange={e => setReqDispatchStart(e.target.value)}
                                         className="border rounded-lg px-3 py-2 text-sm focus:outline-none w-40 placeholder:text-gray-400"
                                         style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                                    </div>
+                                    {/* 就業場所名（2026-07-14：CSVインポートが絡む依頼のみ必須にするため、
+                                        単独のスタッフマスタ登録依頼からはこの欄自体を外しここへ移動） */}
+                                    <div className="flex flex-col gap-1">
+                                      <label className="text-xs font-medium flex items-center gap-1" style={{ color: '#1A2340' }}>
+                                        就業場所名
+                                        <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>必須</span>
+                                      </label>
+                                      <input
+                                        type="text" value={reqWorkLocation}
+                                        onChange={e => setReqWorkLocation(e.target.value)}
+                                        className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-sm placeholder:text-gray-400"
+                                        style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                                        placeholder="例）ソフトバンク（SB） 量販 コジマ×ビックカメラ福生店" />
                                     </div>
                                   </div>
                                 )}
@@ -2896,13 +2914,25 @@ function ApplyPageInner() {
                                 ))}
                               </div>
                               {/* 一覧下部：対象データが違う場合の依頼ボタン */}
-                              <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border"
+                              <div className="flex flex-col gap-2 px-3 py-2 rounded-lg border"
                                 style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
                                 <span className="text-xs" style={{ color: '#5A6A8A' }}>該当する就業先が一覧にありませんか？</span>
+                                <div className="flex flex-col gap-1">
+                                  <label className="text-xs font-medium flex items-center gap-1" style={{ color: '#1A2340' }}>
+                                    就業場所名
+                                    <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>必須</span>
+                                  </label>
+                                  <input
+                                    type="text" value={csvRequestWorkLocation}
+                                    onChange={e => setCsvRequestWorkLocation(e.target.value)}
+                                    className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-sm placeholder:text-gray-400"
+                                    style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                                    placeholder="例）ソフトバンク（SB） 量販 コジマ×ビックカメラ福生店" />
+                                </div>
                                 <button
                                   onClick={e => { e.preventDefault(); handleSubmitCsvRequest() }}
                                   disabled={csvRequestSubmitting}
-                                  className="text-xs px-3 py-1.5 rounded-lg border"
+                                  className="self-start text-xs px-3 py-1.5 rounded-lg border"
                                   style={{ color: '#DC2626', borderColor: '#FECACA', background: 'white', whiteSpace: 'nowrap', opacity: csvRequestSubmitting ? 0.6 : 1 }}>
                                   {csvRequestSubmitting ? '送信中…' : '管理部へCSVインポートを依頼する'}
                                 </button>
@@ -2916,6 +2946,18 @@ function ApplyPageInner() {
                             <div className="rounded-lg border p-3 flex flex-col gap-2"
                               style={{ background: '#FEF2F2', borderColor: '#FECACA' }}>
                               <p className="text-xs" style={{ color: '#DC2626' }}>対象スタッフの就業先データが見つかりませんでした。</p>
+                              <div className="flex flex-col gap-1">
+                                <label className="text-xs font-medium flex items-center gap-1" style={{ color: '#1A2340' }}>
+                                  就業場所名
+                                  <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>必須</span>
+                                </label>
+                                <input
+                                  type="text" value={csvRequestWorkLocation}
+                                  onChange={e => setCsvRequestWorkLocation(e.target.value)}
+                                  className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-sm placeholder:text-gray-400"
+                                  style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                                  placeholder="例）ソフトバンク（SB） 量販 コジマ×ビックカメラ福生店" />
+                              </div>
                               <div className="flex gap-2 flex-wrap">
                                 <button
                                   onClick={e => { e.preventDefault(); handleSubmitCsvRequest() }}

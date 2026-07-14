@@ -692,7 +692,7 @@ function MyRequestCard({ r, includeCompleted }: { r: MyRequest; includeCompleted
         <div className="min-w-0">
           <p className="mb-2 text-xs font-semibold text-[#6B7280]">依頼情報</p>
           <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">
-            {r.requested_by_name && <>依頼者 {r.requested_by_name}{r.requested_by_dept ? `（${r.requested_by_dept}）` : ''}<br /></>}
+            申請者 {r.requested_by_name || '-'}{r.requested_by_dept && <span className="text-[#6B7280]">（{r.requested_by_dept}）</span>}<br />
             依頼日 {formatDateTime(r.requested_at)}
           </p>
         </div>

@@ -1252,11 +1252,11 @@ function RequestCard({ r, onCancel }: {
         <div className="min-w-0">
           <p className="mb-2 text-xs font-semibold text-[#6B7280]">依頼日時</p>
           <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{formatDateTime(r.requested_at)}</p>
-          {r.requested_by_name && (
-            <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">
-              申請者 {r.requested_by_name}{r.requested_by_dept ? `（${r.requested_by_dept}）` : ''}
-            </p>
-          )}
+          <p className="mb-1 mt-3 text-xs font-semibold text-[#6B7280]">申請者</p>
+          <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">
+            {r.requested_by_name || '-'}
+            {r.requested_by_dept && <span className="text-[#6B7280]">（{r.requested_by_dept}）</span>}
+          </p>
         </div>
 
         <div className="grid gap-3">

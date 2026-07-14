@@ -585,7 +585,7 @@ export default function SSCDashboard() {
 
                   <div className="min-w-0">
                     <p className="mb-2 text-xs font-semibold text-[#6B7280]">契約期間</p>
-                    <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{getEmployPeriodLabel(contract)}</p>
+                    <p className="break-words text-xs font-medium leading-5 text-[#1F2937]">{getEmployPeriodLabel(contract)}</p>
                     {(contract.pattern === 'B' || contract.pattern === 'C') && f.dispatchStart && f.dispatchEnd && (
                       <p className="mt-1 break-words text-xs font-medium leading-5 text-[#6B7280]">{f.dispatchStart} 〜 {f.dispatchEnd}</p>
                     )}
@@ -599,10 +599,10 @@ export default function SSCDashboard() {
 
                   <div className="flex items-center justify-start lg:justify-end">
                     <button
-                      className="inline-flex h-[52px] items-center justify-center gap-2 rounded-2xl bg-[#EEF4FF] px-5 text-sm font-semibold text-[#2F5FD0] transition hover:-translate-y-0.5 hover:bg-[#DFEAFE]"
+                      className="inline-flex h-[52px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-[#EEF4FF] px-5 text-sm font-semibold text-[#2F5FD0] transition hover:-translate-y-0.5 hover:bg-[#DFEAFE]"
                       onClick={() => router.push(`/dashboard/ssc/contracts/${contract.id}`)}
                     >
-                      {activeTab === '承認待ち' ? '申請詳細へ' : '詳細を見る'}
+                      {activeTab === '承認待ち' ? '詳細へ' : '詳細を見る'}
                       <Icon name="arrow" className="h-4 w-4" />
                     </button>
                   </div>

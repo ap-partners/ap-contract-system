@@ -19,6 +19,7 @@ import {
 } from '../_shared/contractDisplay'
 import { useContractListToolbar, buildDateSortOptions } from '../_shared/useContractListToolbar'
 import { useApprovedAccumulator, APPROVED_WINDOW_DAYS, CONTRACT_COLUMNS } from '../_shared/useApprovedAccumulator'
+import RenewalManagementTab from '../_shared/RenewalManagementTab'
 
 type RequestRow = {
   id: string
@@ -1174,7 +1175,9 @@ export default function AdminDashboard() {
 
         {activeTab === 'csvImport' && <PlaceholderTab title="CSVインポート" description="CSVインポートタブは未実装です。次のフェーズで実装予定です。" icon="upload" />}
         {activeTab === 'csvDiff' && <PlaceholderTab title="CSV差異アラート" description="CSV差異アラートタブは未実装です。次のフェーズで実装予定です。" icon="alert" />}
-        {activeTab === 'renewal' && <PlaceholderTab title="更新期限管理" description="更新期限管理タブは未実装です。次のフェーズで実装予定です。" icon="clock" />}
+        {activeTab === 'renewal' && user && (
+          <RenewalManagementTab deptNo={null} currentUserId={user.id} currentUserDeptName="管理部" />
+        )}
       </main>
 
       {(bulkApproving || bulkApproveDone !== null) && (

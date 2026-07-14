@@ -17,6 +17,7 @@ import {
 } from '../_shared/contractDisplay'
 import { useContractListToolbar, buildDateSortOptions } from '../_shared/useContractListToolbar'
 import { useApprovedAccumulator, APPROVED_WINDOW_DAYS } from '../_shared/useApprovedAccumulator'
+import RenewalManagementTab from '../_shared/RenewalManagementTab'
 
 type Contract = ContractForDisplay & {
   created_by_dept_no: number | null
@@ -42,7 +43,7 @@ type MyRequest = {
   requested_at: string
 }
 
-type FilterKey = 'pending' | 'explain' | 'rejected' | 'waiting' | 'completed' | 'other'
+type FilterKey = 'pending' | 'explain' | 'rejected' | 'waiting' | 'completed' | 'other' | 'renewal'
 type IconName = 'file' | 'message' | 'refresh' | 'pen' | 'check' | 'mail' | 'search' | 'filter' | 'map' | 'arrow' | 'logout' | 'plus' | 'alert' | 'clock'
 
 const SIGN_DEADLINE_DAYS = 7 // 署名期日＝通知から7日（初期値。将来アラート日数マスタで変更可能にする予定）
@@ -316,6 +317,7 @@ export default function SalesDashboard() {
     { key: 'waiting', label: '署名待ち', count: waitingList.length, color: '#F59E42', tone: 'orange', icon: 'pen' },
     { key: 'completed', label: '完了', count: approvedTotalCount, color: '#4CAF50', tone: 'green', icon: 'check' },
     { key: 'other', label: '依頼状況', count: visibleMyRequests.length, color: '#7C3AED', tone: 'purple', icon: 'mail' },
+    { key: 'renewal', label: '更新期限管理', count: null, color: '#F59E42', tone: 'orange', icon: 'clock' },
   ]
 
   const baseListForFilter: Record<FilterKey, Contract[]> = {
@@ -325,6 +327,7 @@ export default function SalesDashboard() {
     waiting: waitingList,
     completed: completedList,
     other: [],
+    renewal: [],
   }
   const baseCurrentList = baseListForFilter[activeFilter]
   const currentLabel = filterCards.find(c => c.key === activeFilter)?.label || ''
@@ -339,6 +342,7 @@ export default function SalesDashboard() {
     waiting: [],
     completed: [],
     other: [],
+    renewal: [],
   }
 
   const { result: currentList, toolbar: listToolbar, searchText: contractSearchText } = useContractListToolbar(baseCurrentList, {
@@ -589,7 +593,7 @@ export default function SalesDashboard() {
           </div>
         </nav>
 
-        {activeFilter !== 'other' && (
+        {activeFilter !== 'other' && activeFilter !== 'renewal' && (
           <section className="mt-5 rounded-[18px] border border-[#E8EDF5] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)]">
             <div className="mb-4 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
@@ -624,7 +628,18 @@ export default function SalesDashboard() {
           </section>
         )}
 
-        {loading ? (
+        {activeFilter === 'renewal' ? (
+          <section className={`${cardBase} mt-5 p-6`}>
+            <h2 className="mb-5 text-lg font-semibold text-[#1F2937]">更新期限管理</h2>
+            {user && (
+              <RenewalManagementTab
+                deptNo={deptNoRef.current}
+                currentUserId={user.id}
+                currentUserDeptName={deptNameRef.current}
+              />
+            )}
+          </section>
+        ) : loading ? (
           <div className="py-16 text-center">
             <p className="text-sm font-medium text-[#6B7280]">読み込み中</p>
           </div>

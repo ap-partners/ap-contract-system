@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import {
-  ContractStatus,
   ContractForDisplay,
   formatDateTime,
   getDocumentLabel,
@@ -19,6 +18,7 @@ import {
   getEmployPeriodLabel,
 } from '../_shared/contractDisplay'
 import { useContractListToolbar, buildDateSortOptions } from '../_shared/useContractListToolbar'
+import { useApprovedAccumulator, APPROVED_WINDOW_DAYS, CONTRACT_COLUMNS } from '../_shared/useApprovedAccumulator'
 
 type RequestRow = {
   id: string
@@ -216,7 +216,12 @@ export default function AdminDashboard() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
 
-  const [contracts, setContracts] = useState<Contract[]>([])
+  const [flowContracts, setFlowContracts] = useState<Contract[]>([])
+  const {
+    approvedContracts, approvedTotalCount, approvedHasMore, approvedLoadingMore,
+    approvedSearchMode, approvedSearching, approvedSearchNotice,
+    fetchApprovedRecent, loadMoreApproved, runApprovedSearch,
+  } = useApprovedAccumulator<Contract>(q => q.neq('work_place', '社内'))
   const [contractsLoading, setContractsLoading] = useState(true)
   const [contractsError, setContractsError] = useState('')
   const [contractsSubTab, setContractsSubTab] = useState<ContractSubTab>('承認待ち')
@@ -225,7 +230,14 @@ export default function AdminDashboard() {
   const [bulkApproving, setBulkApproving] = useState(false)
   const [bulkApproveDone, setBulkApproveDone] = useState<number | null>(null)
 
-  const [internalContracts, setInternalContracts] = useState<Contract[]>([])
+  const [internalFlowContracts, setInternalFlowContracts] = useState<Contract[]>([])
+  const {
+    approvedContracts: internalApprovedContracts, approvedTotalCount: internalApprovedTotalCount,
+    approvedHasMore: internalApprovedHasMore, approvedLoadingMore: internalApprovedLoadingMore,
+    approvedSearchMode: internalApprovedSearchMode, approvedSearching: internalApprovedSearching,
+    approvedSearchNotice: internalApprovedSearchNotice, fetchApprovedRecent: fetchInternalApprovedRecent,
+    loadMoreApproved: loadMoreInternalApproved, runApprovedSearch: runInternalApprovedSearch,
+  } = useApprovedAccumulator<Contract>(q => q.eq('work_place', '社内'))
   const [internalContractsLoading, setInternalContractsLoading] = useState(true)
   const [internalContractsError, setInternalContractsError] = useState('')
   const [internalContractsSubTab, setInternalContractsSubTab] = useState<ContractSubTab>('承認待ち')
@@ -252,14 +264,17 @@ export default function AdminDashboard() {
       setContractsError('')
       const { data, error } = await supabase
         .from('contracts')
-        .select('id, pattern, contract_type, document_type, work_place, status, created_by, created_at, rejection_reason, signed_at, warning_confirmations, warning_level, input_data')
+        .select(CONTRACT_COLUMNS)
         .neq('work_place', '社内')
+        .in('status', ['申請中', '差し戻し中'])
         .order('created_at', { ascending: false })
       if (error) { setContractsError('契約一覧の取得に失敗しました: ' + error.message); setContractsLoading(false); return }
-      setContracts((data || []) as Contract[])
+      setFlowContracts((data || []) as Contract[])
+      await fetchApprovedRecent()
       setContractsLoading(false)
     }
     loadContracts()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
   const toggleSelect = (id: string) => {
@@ -289,12 +304,8 @@ export default function AdminDashboard() {
         fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST' }).catch(() => {})
       )
     )
-    const { data: refreshed } = await supabase
-      .from('contracts')
-      .select('id, status')
-      .in('id', ids)
-    const statusMap = new Map((refreshed || []).map(r => [r.id, r.status as ContractStatus]))
-    setContracts(prev => prev.map(c => statusMap.has(c.id) ? { ...c, status: statusMap.get(c.id)! } : c))
+    setFlowContracts(prev => prev.filter(c => !ids.includes(c.id)))
+    await fetchApprovedRecent()
     setBulkApproving(false)
     setBulkApproveDone(ids.length)
   }
@@ -313,14 +324,17 @@ export default function AdminDashboard() {
       setInternalContractsError('')
       const { data, error } = await supabase
         .from('contracts')
-        .select('id, pattern, contract_type, document_type, work_place, status, created_by, created_at, rejection_reason, signed_at, warning_confirmations, warning_level, input_data')
+        .select(CONTRACT_COLUMNS)
         .eq('work_place', '社内')
+        .in('status', ['申請中', '差し戻し中'])
         .order('created_at', { ascending: false })
       if (error) { setInternalContractsError('社内案件の取得に失敗しました: ' + error.message); setInternalContractsLoading(false); return }
-      setInternalContracts((data || []) as Contract[])
+      setInternalFlowContracts((data || []) as Contract[])
+      await fetchInternalApprovedRecent()
       setInternalContractsLoading(false)
     }
     loadInternalContracts()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
   const toggleSelectInternal = (id: string) => {
@@ -350,12 +364,8 @@ export default function AdminDashboard() {
         fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST' }).catch(() => {})
       )
     )
-    const { data: refreshed } = await supabase
-      .from('contracts')
-      .select('id, status')
-      .in('id', ids)
-    const statusMap = new Map((refreshed || []).map(r => [r.id, r.status as ContractStatus]))
-    setInternalContracts(prev => prev.map(c => statusMap.has(c.id) ? { ...c, status: statusMap.get(c.id)! } : c))
+    setInternalFlowContracts(prev => prev.filter(c => !ids.includes(c.id)))
+    await fetchInternalApprovedRecent()
     setInternalBulkApproving(false)
     setInternalBulkApproveDone(ids.length)
   }
@@ -449,17 +459,18 @@ export default function AdminDashboard() {
     router.push('/login')
   }
 
-  const filteredContracts = contracts.filter(c => {
-    if (contractsSubTab === '承認待ち') return c.status === '申請中'
-    if (contractsSubTab === '差し戻し中') return c.status === '差し戻し中'
-    if (contractsSubTab === '承認済み') return ['SSC承認済み', '署名待ち', '署名済み', '完了'].includes(c.status)
-    return false
-  })
-  const contractsPendingCount = contracts.filter(c => c.status === '申請中').length
-  const contractsRejectedCount = contracts.filter(c => c.status === '差し戻し中').length
-  const contractsApprovedCount = contracts.filter(c => ['SSC承認済み', '署名待ち', '署名済み', '完了'].includes(c.status)).length
+  const filteredContracts = contractsSubTab === '承認済み'
+    ? approvedContracts
+    : flowContracts.filter(c => {
+        if (contractsSubTab === '承認待ち') return c.status === '申請中'
+        if (contractsSubTab === '差し戻し中') return c.status === '差し戻し中'
+        return false
+      })
+  const contractsPendingCount = flowContracts.filter(c => c.status === '申請中').length
+  const contractsRejectedCount = flowContracts.filter(c => c.status === '差し戻し中').length
+  const contractsApprovedCount = approvedTotalCount
 
-  const { result: visibleContracts, toolbar: contractsToolbar } = useContractListToolbar(filteredContracts, {
+  const { result: visibleContracts, toolbar: contractsToolbar, searchText: contractsSearchText } = useContractListToolbar(filteredContracts, {
     statusOptions: contractsSubTab === '承認済み'
       ? [
           { value: 'SSC承認済み', label: 'SSC承認済み' },
@@ -486,17 +497,18 @@ export default function AdminDashboard() {
     }
   }
 
-  const filteredInternalContracts = internalContracts.filter(c => {
-    if (internalContractsSubTab === '承認待ち') return c.status === '申請中'
-    if (internalContractsSubTab === '差し戻し中') return c.status === '差し戻し中'
-    if (internalContractsSubTab === '承認済み') return ['SSC承認済み', '署名待ち', '署名済み', '完了'].includes(c.status)
-    return false
-  })
-  const internalPendingCount = internalContracts.filter(c => c.status === '申請中').length
-  const internalRejectedCount = internalContracts.filter(c => c.status === '差し戻し中').length
-  const internalApprovedCount = internalContracts.filter(c => ['SSC承認済み', '署名待ち', '署名済み', '完了'].includes(c.status)).length
+  const filteredInternalContracts = internalContractsSubTab === '承認済み'
+    ? internalApprovedContracts
+    : internalFlowContracts.filter(c => {
+        if (internalContractsSubTab === '承認待ち') return c.status === '申請中'
+        if (internalContractsSubTab === '差し戻し中') return c.status === '差し戻し中'
+        return false
+      })
+  const internalPendingCount = internalFlowContracts.filter(c => c.status === '申請中').length
+  const internalRejectedCount = internalFlowContracts.filter(c => c.status === '差し戻し中').length
+  const internalApprovedCount = internalApprovedTotalCount
 
-  const { result: visibleInternalContracts, toolbar: internalToolbar } = useContractListToolbar(filteredInternalContracts, {
+  const { result: visibleInternalContracts, toolbar: internalToolbar, searchText: internalSearchText } = useContractListToolbar(filteredInternalContracts, {
     statusOptions: internalContractsSubTab === '承認済み'
       ? [
           { value: 'SSC承認済み', label: 'SSC承認済み' },
@@ -952,6 +964,26 @@ export default function AdminDashboard() {
                   <h2 className="text-base font-semibold text-[#1F2937]">絞り込み</h2>
                 </div>
                 {contractsToolbar}
+                {contractsSubTab === '承認済み' && (
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    {!approvedSearchMode ? (
+                      <>
+                        <p className="text-xs font-medium text-[#6B7280]">表示は直近{APPROVED_WINDOW_DAYS}日分です。それより前は検索してください。</p>
+                        <button onClick={() => runApprovedSearch(contractsSearchText)} disabled={!contractsSearchText.trim() || approvedSearching}
+                          className="rounded-[14px] border border-[#D0DAF0] bg-white px-4 py-2 text-xs font-semibold text-[#2F5FD0] disabled:opacity-50">
+                          {approvedSearching ? '検索中…' : '全期間で検索'}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs font-medium text-[#6B7280]">全期間検索の結果です{approvedSearchNotice ? '（' + approvedSearchNotice + '）' : ''}</p>
+                        <button onClick={fetchApprovedRecent} className="rounded-[14px] border border-[#D0DAF0] bg-white px-4 py-2 text-xs font-semibold text-[#2F5FD0]">
+                          直近{APPROVED_WINDOW_DAYS}日の表示に戻す
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
               </section>
             )}
             {!contractsLoading && !contractsError && filteredContracts.length === 0 && <EmptyState text="該当する契約はありません" />}
@@ -968,6 +1000,14 @@ export default function AdminDashboard() {
                 />
               ))}
             </div>
+            {contractsSubTab === '承認済み' && approvedHasMore && !approvedSearchMode && (
+              <div className="flex justify-center">
+                <button onClick={loadMoreApproved} disabled={approvedLoadingMore}
+                  className="rounded-2xl border border-[#D0DAF0] bg-white px-6 py-3 text-sm font-semibold text-[#2F5FD0] disabled:opacity-50">
+                  {approvedLoadingMore ? '読み込み中…' : 'さらに読み込む'}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -1009,6 +1049,26 @@ export default function AdminDashboard() {
                   <h2 className="text-base font-semibold text-[#1F2937]">絞り込み</h2>
                 </div>
                 {internalToolbar}
+                {internalContractsSubTab === '承認済み' && (
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    {!internalApprovedSearchMode ? (
+                      <>
+                        <p className="text-xs font-medium text-[#6B7280]">表示は直近{APPROVED_WINDOW_DAYS}日分です。それより前は検索してください。</p>
+                        <button onClick={() => runInternalApprovedSearch(internalSearchText)} disabled={!internalSearchText.trim() || internalApprovedSearching}
+                          className="rounded-[14px] border border-[#D0DAF0] bg-white px-4 py-2 text-xs font-semibold text-[#2F5FD0] disabled:opacity-50">
+                          {internalApprovedSearching ? '検索中…' : '全期間で検索'}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs font-medium text-[#6B7280]">全期間検索の結果です{internalApprovedSearchNotice ? '（' + internalApprovedSearchNotice + '）' : ''}</p>
+                        <button onClick={fetchInternalApprovedRecent} className="rounded-[14px] border border-[#D0DAF0] bg-white px-4 py-2 text-xs font-semibold text-[#2F5FD0]">
+                          直近{APPROVED_WINDOW_DAYS}日の表示に戻す
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
               </section>
             )}
             {!internalContractsLoading && !internalContractsError && filteredInternalContracts.length === 0 && <EmptyState text="該当する社内案件はありません" />}
@@ -1026,6 +1086,14 @@ export default function AdminDashboard() {
                 />
               ))}
             </div>
+            {internalContractsSubTab === '承認済み' && internalApprovedHasMore && !internalApprovedSearchMode && (
+              <div className="flex justify-center">
+                <button onClick={loadMoreInternalApproved} disabled={internalApprovedLoadingMore}
+                  className="rounded-2xl border border-[#D0DAF0] bg-white px-6 py-3 text-sm font-semibold text-[#2F5FD0] disabled:opacity-50">
+                  {internalApprovedLoadingMore ? '読み込み中…' : 'さらに読み込む'}
+                </button>
+              </div>
+            )}
           </div>
         )}
 

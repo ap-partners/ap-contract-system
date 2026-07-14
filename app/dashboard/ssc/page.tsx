@@ -6,7 +6,6 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import {
-  ContractStatus,
   ContractForDisplay,
   formatDateTime,
   getDocumentLabel,
@@ -20,6 +19,7 @@ import {
   getEmployPeriodLabel,
 } from '../_shared/contractDisplay'
 import { useContractListToolbar, buildDateSortOptions } from '../_shared/useContractListToolbar'
+import { useApprovedAccumulator, APPROVED_WINDOW_DAYS, CONTRACT_COLUMNS } from '../_shared/useApprovedAccumulator'
 
 type Contract = ContractForDisplay
 
@@ -142,7 +142,15 @@ const Icon = ({ name, className = '' }: { name: IconName; className?: string }) 
 export default function SSCDashboard() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
-  const [contracts, setContracts] = useState<Contract[]>([])
+  // 「承認待ち」「差し戻し中」は対応が終われば別タブへ移るフロー型のため、件数は自然に少数のまま
+  // 留まる。全件取得のままで問題ない（docs/SYSTEM_DESIGN.md 10章 2026-07-14参照）。
+  const [flowContracts, setFlowContracts] = useState<Contract[]>([])
+  // 「承認済み・署名状況」（蓄積型）は共通フックで直近45日・ページ単位で取得する。
+  const {
+    approvedContracts, approvedTotalCount, approvedHasMore, approvedLoadingMore,
+    approvedSearchMode, approvedSearching, approvedSearchNotice,
+    fetchApprovedRecent, loadMoreApproved, runApprovedSearch,
+  } = useApprovedAccumulator<Contract>(q => q.neq('work_place', '社内'))
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabType>('承認待ち')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -157,17 +165,20 @@ export default function SSCDashboard() {
       if (data.user.user_metadata?.role !== 'SSC') { router.push('/login'); return }
       setUser(data.user)
 
-      const { data: rows, error } = await supabase
+      const { data: flowRows, error } = await supabase
         .from('contracts')
-        .select('id, pattern, contract_type, document_type, work_place, status, created_by, created_at, rejection_reason, signed_at, warning_confirmations, warning_level, input_data')
+        .select(CONTRACT_COLUMNS)
         .neq('work_place', '社内')
+        .in('status', ['申請中', '差し戻し中'])
         .order('created_at', { ascending: false })
 
       if (error) { console.error('contracts取得エラー:', error); setLoading(false); return }
-      setContracts((rows || []) as Contract[])
+      setFlowContracts((flowRows || []) as Contract[])
+      await fetchApprovedRecent()
       setLoading(false)
     }
     init()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router])
 
   const handleLogout = async () => {
@@ -175,12 +186,13 @@ export default function SSCDashboard() {
     router.push('/login')
   }
 
-  const filtered = contracts.filter(c => {
-    if (activeTab === '承認待ち') return c.status === '申請中'
-    if (activeTab === '差し戻し中') return c.status === '差し戻し中'
-    if (activeTab === '承認済み') return ['SSC承認済み', '署名待ち', '署名済み', '完了'].includes(c.status)
-    return false
-  })
+  const filtered = activeTab === '承認済み'
+    ? approvedContracts
+    : flowContracts.filter(c => {
+        if (activeTab === '承認待ち') return c.status === '申請中'
+        if (activeTab === '差し戻し中') return c.status === '差し戻し中'
+        return false
+      })
 
   const statusOptionsByTab: Record<TabType, { value: string; label: string }[]> = {
     '承認待ち': [],
@@ -192,7 +204,7 @@ export default function SSCDashboard() {
     ],
   }
 
-  const { result: visibleContracts, toolbar: listToolbar } = useContractListToolbar(filtered, {
+  const { result: visibleContracts, toolbar: listToolbar, searchText } = useContractListToolbar(filtered, {
     statusOptions: statusOptionsByTab[activeTab],
     sortOptions: buildDateSortOptions<Contract>(),
     getSearchText: c => {
@@ -206,9 +218,9 @@ export default function SSCDashboard() {
 
   const bulkTargets = visibleContracts.filter(c => !hasWarning(c) && !hasAutoCheckWarning(c))
 
-  const pendingCount = contracts.filter(c => c.status === '申請中').length
-  const rejectedCount = contracts.filter(c => c.status === '差し戻し中').length
-  const approvedCount = contracts.filter(c => ['SSC承認済み', '署名待ち', '署名済み', '完了'].includes(c.status)).length
+  const pendingCount = flowContracts.filter(c => c.status === '申請中').length
+  const rejectedCount = flowContracts.filter(c => c.status === '差し戻し中').length
+  const approvedCount = approvedTotalCount
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -247,12 +259,8 @@ export default function SSCDashboard() {
       )
     )
 
-    const { data: refreshed } = await supabase
-      .from('contracts')
-      .select('id, status')
-      .in('id', ids)
-    const statusMap = new Map((refreshed || []).map(r => [r.id, r.status as ContractStatus]))
-    setContracts(prev => prev.map(c => statusMap.has(c.id) ? { ...c, status: statusMap.get(c.id)! } : c))
+    setFlowContracts(prev => prev.filter(c => !ids.includes(c.id)))
+    await fetchApprovedRecent()
     setBulkApproving(false)
     setBulkApproveDone(ids.length)
   }
@@ -388,6 +396,26 @@ export default function SSCDashboard() {
             <div className="[&_button]:rounded-[14px] [&_button]:font-semibold [&_input]:rounded-[14px] [&_input]:border-[#E8EDF5] [&_input]:transition [&_input:focus]:border-[#2F5FD0] [&_select]:rounded-[14px] [&_select]:border-[#E8EDF5]">
               {listToolbar}
             </div>
+            {activeTab === '承認済み' && (
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                {!approvedSearchMode ? (
+                  <>
+                    <p className="text-xs font-medium text-[#6B7280]">表示は直近{APPROVED_WINDOW_DAYS}日分です。それより前は検索してください。</p>
+                    <button onClick={() => runApprovedSearch(searchText)} disabled={!searchText.trim() || approvedSearching}
+                      className="rounded-[14px] border border-[#D0DAF0] bg-white px-4 py-2 text-xs font-semibold text-[#2F5FD0] disabled:opacity-50">
+                      {approvedSearching ? '検索中…' : '全期間で検索'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs font-medium text-[#6B7280]">全期間検索の結果です{approvedSearchNotice ? '（' + approvedSearchNotice + '）' : ''}</p>
+                    <button onClick={fetchApprovedRecent} className="rounded-[14px] border border-[#D0DAF0] bg-white px-4 py-2 text-xs font-semibold text-[#2F5FD0]">
+                      直近{APPROVED_WINDOW_DAYS}日の表示に戻す
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
           </section>
         )}
 
@@ -588,6 +616,15 @@ export default function SSCDashboard() {
                 </article>
               )
             })}
+          </div>
+        )}
+
+        {activeTab === '承認済み' && approvedHasMore && !approvedSearchMode && (
+          <div className="mt-5 flex justify-center">
+            <button onClick={loadMoreApproved} disabled={approvedLoadingMore}
+              className="rounded-2xl border border-[#D0DAF0] bg-white px-6 py-3 text-sm font-semibold text-[#2F5FD0] disabled:opacity-50">
+              {approvedLoadingMore ? '読み込み中…' : 'さらに読み込む'}
+            </button>
           </div>
         )}
       </main>

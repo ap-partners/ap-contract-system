@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
@@ -16,6 +16,7 @@ import {
   getEmployPeriodLabel,
 } from '../_shared/contractDisplay'
 import { useContractListToolbar, buildDateSortOptions } from '../_shared/useContractListToolbar'
+import { useApprovedAccumulator, APPROVED_WINDOW_DAYS } from '../_shared/useApprovedAccumulator'
 
 type Contract = ContractForDisplay & {
   created_by_dept_no: number | null
@@ -187,7 +188,15 @@ export default function SalesDashboard() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [deptLookupError, setDeptLookupError] = useState('')
-  const [contracts, setContracts] = useState<Contract[]>([])
+  // 「完了」（署名済み・完了）は蓄積型のため共通フックで直近45日・ページ単位で取得する。
+  // それ以外（進行中・要説明・差し戻し・署名待ち）はフロー型なので全件取得のまま。
+  const [flowContracts, setFlowContracts] = useState<Contract[]>([])
+  const deptNoRef = useRef<number | null>(null)
+  const {
+    approvedContracts, approvedTotalCount, approvedHasMore, approvedLoadingMore,
+    approvedSearchMode, approvedSearching, approvedSearchNotice,
+    fetchApprovedRecent, loadMoreApproved, runApprovedSearch,
+  } = useApprovedAccumulator<Contract>(q => q.eq('created_by_dept_no', deptNoRef.current), ['署名済み', '完了'])
   const [loading, setLoading] = useState(true)
   const [activeFilter, setActiveFilter] = useState<FilterKey>('pending')
   const [confirmingExplainId, setConfirmingExplainId] = useState<string | null>(null)
@@ -220,14 +229,17 @@ export default function SalesDashboard() {
       }
 
       const deptName = (staffRow as any)?.department_master?.dept_name || null
+      deptNoRef.current = staffRow.dept_no
 
       await Promise.all([
         loadContracts(staffRow.dept_no),
+        fetchApprovedRecent(),
         loadMyRequests(deptName),
       ])
       setLoading(false)
     }
     init()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router])
 
   const loadMyRequests = async (deptName: string | null) => {
@@ -248,10 +260,11 @@ export default function SalesDashboard() {
       .from('contracts')
       .select('id, pattern, contract_type, document_type, work_place, status, created_by, created_by_dept_no, created_at, rejection_reason, sign_requested_at, signed_at, input_data')
       .eq('created_by_dept_no', deptNo)
+      .in('status', ['申請中', 'SSC承認済み', '差し戻し中', '署名待ち'])
       .order('created_at', { ascending: false })
 
     if (error) { console.error('contracts取得エラー:', error); return }
-    setContracts((rows || []) as Contract[])
+    setFlowContracts((rows || []) as Contract[])
   }
 
   const handleLogout = async () => {
@@ -264,11 +277,11 @@ export default function SalesDashboard() {
     return c.status === 'SSC承認済み' && (cp === 'face' || cp === 'print')
   }
 
-  const explainList = contracts.filter(isExplainNeeded)
-  const pendingList = contracts.filter(c => ['申請中', 'SSC承認済み'].includes(c.status) && !isExplainNeeded(c))
-  const rejectedList = contracts.filter(c => c.status === '差し戻し中')
-  const waitingList = contracts.filter(c => c.status === '署名待ち')
-  const completedList = contracts.filter(c => ['署名済み', '完了'].includes(c.status))
+  const explainList = flowContracts.filter(isExplainNeeded)
+  const pendingList = flowContracts.filter(c => ['申請中', 'SSC承認済み'].includes(c.status) && !isExplainNeeded(c))
+  const rejectedList = flowContracts.filter(c => c.status === '差し戻し中')
+  const waitingList = flowContracts.filter(c => c.status === '署名待ち')
+  const completedList = approvedContracts
 
   const hasVisibleTask = (r: MyRequest, includeCompleted: boolean) => {
     const srVisible = !!r.staff_register_status && (r.staff_register_status !== 'completed' || includeCompleted)
@@ -282,7 +295,7 @@ export default function SalesDashboard() {
     { key: 'explain', label: '要説明', count: explainList.length, color: '#6B7280', tone: 'gray', icon: 'message' },
     { key: 'rejected', label: '差し戻し', count: rejectedList.length, color: '#E74C3C', tone: 'red', icon: 'refresh' },
     { key: 'waiting', label: '署名待ち', count: waitingList.length, color: '#F59E42', tone: 'orange', icon: 'pen' },
-    { key: 'completed', label: '完了', count: completedList.length, color: '#4CAF50', tone: 'green', icon: 'check' },
+    { key: 'completed', label: '完了', count: approvedTotalCount, color: '#4CAF50', tone: 'green', icon: 'check' },
     { key: 'other', label: '依頼状況', count: visibleMyRequests.length, color: '#7C3AED', tone: 'purple', icon: 'mail' },
   ]
 
@@ -309,7 +322,7 @@ export default function SalesDashboard() {
     other: [],
   }
 
-  const { result: currentList, toolbar: listToolbar } = useContractListToolbar(baseCurrentList, {
+  const { result: currentList, toolbar: listToolbar, searchText: contractSearchText } = useContractListToolbar(baseCurrentList, {
     statusOptions: statusOptionsForFilter[activeFilter],
     sortOptions: buildDateSortOptions<Contract>(),
     getSearchText: c => {
@@ -332,7 +345,7 @@ export default function SalesDashboard() {
       return
     }
     const now = new Date().toISOString()
-    setContracts(prev => prev.map(c => c.id === contractId ? { ...c, status: '署名待ち' as ContractStatus, sign_requested_at: now } : c))
+    setFlowContracts(prev => prev.map(c => c.id === contractId ? { ...c, status: '署名待ち' as ContractStatus, sign_requested_at: now } : c))
     setConfirmingExplainId(null)
     setExplainLoading(false)
   }
@@ -505,7 +518,7 @@ export default function SalesDashboard() {
               <div>
                 <p className="text-sm font-semibold text-[#1F2937]">本日の状況</p>
                 <h2 className="mt-2 text-4xl font-semibold tracking-normal text-[#2F5FD0] md:text-5xl">
-                  {currentLabel} {activeFilter === 'other' ? visibleMyRequests.length : baseCurrentList.length}件
+                  {currentLabel} {activeFilter === 'other' ? visibleMyRequests.length : activeFilter === 'completed' ? approvedTotalCount : baseCurrentList.length}件
                 </h2>
                 <p className="mt-4 text-sm font-medium leading-6 text-[#1F2937]">
                   対応が必要な案件を確認し、次のアクションへ進めてください。
@@ -569,6 +582,26 @@ export default function SalesDashboard() {
             <div className="[&_button]:rounded-[16px] [&_button]:font-semibold [&_input]:rounded-[16px] [&_input]:border-[#E8EDF5] [&_input]:transition [&_input:focus]:border-[#2F5FD0] [&_select]:rounded-[16px] [&_select]:border-[#E8EDF5]">
               {listToolbar}
             </div>
+            {activeFilter === 'completed' && (
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                {!approvedSearchMode ? (
+                  <>
+                    <p className="text-xs font-medium text-[#6B7280]">表示は直近{APPROVED_WINDOW_DAYS}日分です。それより前は検索してください。</p>
+                    <button onClick={() => runApprovedSearch(contractSearchText)} disabled={!contractSearchText.trim() || approvedSearching}
+                      className="rounded-[14px] border border-[#D0DAF0] bg-white px-4 py-2 text-xs font-semibold text-[#2F5FD0] disabled:opacity-50">
+                      {approvedSearching ? '検索中…' : '全期間で検索'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs font-medium text-[#6B7280]">全期間検索の結果です{approvedSearchNotice ? '（' + approvedSearchNotice + '）' : ''}</p>
+                    <button onClick={fetchApprovedRecent} className="rounded-[14px] border border-[#D0DAF0] bg-white px-4 py-2 text-xs font-semibold text-[#2F5FD0]">
+                      直近{APPROVED_WINDOW_DAYS}日の表示に戻す
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
           </section>
         )}
 
@@ -610,6 +643,15 @@ export default function SalesDashboard() {
             ) : (
               <div className="grid gap-3">
                 {currentList.map(c => <ContractCard key={c.id} contract={c} />)}
+              </div>
+            )}
+
+            {activeFilter === 'completed' && approvedHasMore && !approvedSearchMode && (
+              <div className="mt-5 flex justify-center">
+                <button onClick={loadMoreApproved} disabled={approvedLoadingMore}
+                  className="rounded-2xl border border-[#D0DAF0] bg-white px-6 py-3 text-sm font-semibold text-[#2F5FD0] disabled:opacity-50">
+                  {approvedLoadingMore ? '読み込み中…' : 'さらに読み込む'}
+                </button>
               </div>
             )}
 

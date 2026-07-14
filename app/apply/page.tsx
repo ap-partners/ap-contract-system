@@ -1867,6 +1867,11 @@ function ApplyPageInner() {
         // 実IDはcsvResults[csvSelectedId].idに入っているため、ここで変換してから保存する
         csv_raw_data_id: (csvMode === 'csv' && csvSelectedId !== null && csvResults[csvSelectedId]) ? csvResults[csvSelectedId].id : null,
         input_data: { staff: staffSnapshot, fields, csvMeta },
+        // ダッシュボード一覧の「全期間で検索」用（2026-07-14追加）。氏名・社員番号・就業先名を
+        // 連結した検索用テキスト。input_dataはJSONBのためSQL側で都度パースせず済むよう、
+        // 保存時点でこの1カラムに平坦化しておく（docs/SYSTEM_DESIGN.md 10章 2026-07-14参照）。
+        search_text: [staffSnapshot?.name, staffSnapshot?.employee_number, workLocationName]
+          .filter(Boolean).join(' '),
         warning_confirmations: warningConfirmations,
         auto_check_results: autoCheckResults,
         warning_level: warningLevel,

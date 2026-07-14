@@ -28,6 +28,9 @@ type MyRequest = {
   request_type: 'staff_register' | 'csv_import'
   staff_name: string | null
   staff_code: string | null
+  staff_dept: string | null
+  staff_hire_date: string | null
+  client_name: string | null
   system_type: string | null
   dispatch_start_date: string | null
   staff_register_status: string | null
@@ -247,7 +250,7 @@ export default function SalesDashboard() {
     if (!deptName) { setMyRequests([]); setMyRequestsLoading(false); return }
     const { data: rows, error } = await supabase
       .from('requests')
-      .select('id, request_type, staff_name, staff_code, system_type, dispatch_start_date, staff_register_status, csv_import_status, staff_register_cancel_reason, csv_import_cancel_reason, requested_by_name, requested_by_dept, requested_at')
+      .select('id, request_type, staff_name, staff_code, staff_dept, staff_hire_date, client_name, system_type, dispatch_start_date, staff_register_status, csv_import_status, staff_register_cancel_reason, csv_import_cancel_reason, requested_by_name, requested_by_dept, requested_at')
       .eq('requested_by_dept', deptName)
       .order('requested_at', { ascending: false })
     if (error) { console.error('requests取得エラー:', error); setMyRequestsLoading(false); return }
@@ -683,17 +686,33 @@ function MyRequestCard({ r, includeCompleted }: { r: MyRequest; includeCompleted
 
   return (
     <article className={`${cardBase} p-5 ${hasCancelled ? 'border-[#FFE2C7] bg-[#FFF8F1]' : ''}`}>
-      <div className="grid gap-4 lg:grid-cols-[minmax(240px,1.2fr)_minmax(220px,.9fr)_1.6fr] lg:items-start">
+      <div className="grid gap-4 lg:grid-cols-[minmax(200px,1.1fr)_minmax(160px,.8fr)_minmax(200px,.9fr)_minmax(200px,.9fr)_1.4fr] lg:items-start">
         <div className="min-w-0">
-          <p className="break-words text-[22px] font-semibold leading-7 text-[#1F2937]">{r.staff_name || '-'}</p>
-          <p className="mt-2 text-sm font-medium text-[#6B7280]">社員番号 {r.staff_code || '-'}</p>
+          {r.staff_dept && <p className="text-sm font-medium text-[#6B7280]">{r.staff_dept}</p>}
+          <p className="mt-1 break-words text-[22px] font-semibold leading-7 text-[#1F2937]">{r.staff_name || '-'}</p>
         </div>
 
         <div className="min-w-0">
-          <p className="mb-2 text-xs font-semibold text-[#6B7280]">依頼情報</p>
+          <p className="mb-2 text-xs font-semibold text-[#6B7280]">社員番号</p>
+          <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{r.staff_code || '-'}</p>
+          {r.staff_hire_date && <p className="mt-1 text-xs font-medium text-[#6B7280]">入社日 {formatDate(new Date(r.staff_hire_date))}</p>}
+        </div>
+
+        <div className="min-w-0">
+          <p className="mb-2 text-xs font-semibold text-[#6B7280]">就業先</p>
+          <div className="flex items-start gap-2">
+            <Icon name="map" className="mt-0.5 h-4 w-4 shrink-0 text-[#2F5FD0]" />
+            <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{r.client_name || '-'}</p>
+          </div>
+        </div>
+
+        <div className="min-w-0">
+          <p className="mb-2 text-xs font-semibold text-[#6B7280]">依頼日時</p>
+          <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{formatDateTime(r.requested_at)}</p>
+          <p className="mb-1 mt-3 text-xs font-semibold text-[#6B7280]">申請者</p>
           <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">
-            申請者 {r.requested_by_name || '-'}{r.requested_by_dept && <span className="text-[#6B7280]">（{r.requested_by_dept}）</span>}<br />
-            依頼日 {formatDateTime(r.requested_at)}
+            {r.requested_by_name || '-'}
+            {r.requested_by_dept && <span className="text-[#6B7280]">（{r.requested_by_dept}）</span>}
           </p>
         </div>
 

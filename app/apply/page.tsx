@@ -2926,7 +2926,7 @@ function ApplyPageInner() {
                                     type="text" value={csvRequestWorkLocation}
                                     onChange={e => setCsvRequestWorkLocation(e.target.value)}
                                     className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-sm placeholder:text-gray-400"
-                                    style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                                    style={{ borderColor: '#D0DAF0', color: '#1A2340', background: 'white' }}
                                     placeholder="例）ソフトバンク（SB） 量販 コジマ×ビックカメラ福生店" />
                                 </div>
                                 <button
@@ -2955,7 +2955,7 @@ function ApplyPageInner() {
                                   type="text" value={csvRequestWorkLocation}
                                   onChange={e => setCsvRequestWorkLocation(e.target.value)}
                                   className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-sm placeholder:text-gray-400"
-                                  style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                                  style={{ borderColor: '#D0DAF0', color: '#1A2340', background: 'white' }}
                                   placeholder="例）ソフトバンク（SB） 量販 コジマ×ビックカメラ福生店" />
                               </div>
                               <div className="flex gap-2 flex-wrap">

@@ -20,10 +20,12 @@ import {
 } from '../_shared/contractDisplay'
 import { useContractListToolbar, buildDateSortOptions } from '../_shared/useContractListToolbar'
 import { useApprovedAccumulator, APPROVED_WINDOW_DAYS, CONTRACT_COLUMNS } from '../_shared/useApprovedAccumulator'
+import RenewalManagementTab from '../_shared/RenewalManagementTab'
+import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
 
 type Contract = ContractForDisplay
 
-type TabType = '承認待ち' | '差し戻し中' | '承認済み'
+type TabType = '承認待ち' | '差し戻し中' | '承認済み' | '更新期限管理'
 
 type IconName =
   | 'home'
@@ -157,6 +159,14 @@ export default function SSCDashboard() {
   const [showBulkApproveConfirm, setShowBulkApproveConfirm] = useState(false)
   const [bulkApproving, setBulkApproving] = useState(false)
   const [bulkApproveDone, setBulkApproveDone] = useState<number | null>(null)
+  // 更新期限管理タブ：SSCは全部門を閲覧・意向確認できる（承認権限に相当する「送付準備完了」
+  // の一括確定は管理部・担当営業のみ。2026-07-14「SSCも管理部も管理する」要件を踏まえ追加）
+  const {
+    candidates: renewalCandidates, loading: renewalLoading,
+    syncCandidates, fetchCandidates, updateCandidate,
+    searchCsvRenewal, requestCsvImport, switchToManualOverride,
+    copyDispatchToEmploy, bulkMarkReady, confirmNotRenewing,
+  } = useRenewalCandidates()
 
   useEffect(() => {
     const init = async () => {
@@ -175,6 +185,8 @@ export default function SSCDashboard() {
       if (error) { console.error('contracts取得エラー:', error); setLoading(false); return }
       setFlowContracts((flowRows || []) as Contract[])
       await fetchApprovedRecent()
+      await syncCandidates()
+      await fetchCandidates(null)
       setLoading(false)
     }
     init()
@@ -202,6 +214,7 @@ export default function SSCDashboard() {
       { value: '署名待ち', label: '署名待ち' },
       { value: '署名済み', label: '署名済み' },
     ],
+    '更新期限管理': [],
   }
 
   const { result: visibleContracts, toolbar: listToolbar, searchText } = useContractListToolbar(filtered, {
@@ -275,6 +288,7 @@ export default function SSCDashboard() {
     { key: '承認待ち', label: '承認待ち', count: pendingCount },
     { key: '差し戻し中', label: '差し戻し', count: rejectedCount },
     { key: '承認済み', label: '承認済み・署名状況', count: approvedCount },
+    { key: '更新期限管理', label: '更新期限管理', count: renewalCandidates.length },
   ]
 
   const summaryCards = [
@@ -469,13 +483,15 @@ export default function SSCDashboard() {
           </section>
         )}
 
+        {activeTab !== '更新期限管理' && (
         <div className="mt-7 flex items-center justify-between gap-4">
           <p className="text-sm font-medium text-[#6B7280]">
             <span className="font-semibold text-[#1F2937]">{visibleContracts.length}</span>件の申請が見つかりました
           </p>
         </div>
+        )}
 
-        {loading ? (
+        {activeTab !== '更新期限管理' && (loading ? (
           <div className="py-16 text-center">
             <p className="text-sm font-medium text-[#6B7280]">読み込み中</p>
           </div>
@@ -616,6 +632,25 @@ export default function SSCDashboard() {
                 </article>
               )
             })}
+          </div>
+        ))}
+
+        {activeTab === '更新期限管理' && user && (
+          <div className="mt-5">
+            <RenewalManagementTab
+              candidates={renewalCandidates}
+              loading={renewalLoading}
+              updateCandidate={updateCandidate}
+              searchCsvRenewal={searchCsvRenewal}
+              requestCsvImport={requestCsvImport}
+              switchToManualOverride={switchToManualOverride}
+              copyDispatchToEmploy={copyDispatchToEmploy}
+              bulkMarkReady={bulkMarkReady}
+              confirmNotRenewing={confirmNotRenewing}
+              currentUserId={user.id}
+              currentUserDeptName="SSC"
+              canFinalize={false}
+            />
           </div>
         )}
 

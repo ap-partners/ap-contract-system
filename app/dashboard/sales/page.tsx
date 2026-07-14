@@ -18,6 +18,7 @@ import {
 import { useContractListToolbar, buildDateSortOptions } from '../_shared/useContractListToolbar'
 import { useApprovedAccumulator, APPROVED_WINDOW_DAYS } from '../_shared/useApprovedAccumulator'
 import RenewalManagementTab from '../_shared/RenewalManagementTab'
+import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
 
 type Contract = ContractForDisplay & {
   created_by_dept_no: number | null
@@ -214,6 +215,12 @@ export default function SalesDashboard() {
   // （伊藤さん指摘・2026-07-14）
   const deptNameRef = useRef<string | null>(null)
   const [myRequestsWindowMode, setMyRequestsWindowMode] = useState<'recent' | 'all'>('recent')
+  const {
+    candidates: renewalCandidates, loading: renewalLoading,
+    syncCandidates, fetchCandidates, updateCandidate,
+    searchCsvRenewal, requestCsvImport, switchToManualOverride,
+    copyDispatchToEmploy, bulkMarkReady, confirmNotRenewing,
+  } = useRenewalCandidates()
 
   useEffect(() => {
     const init = async () => {
@@ -246,6 +253,7 @@ export default function SalesDashboard() {
         loadContracts(staffRow.dept_no),
         fetchApprovedRecent(),
         loadMyRequests(deptName),
+        (async () => { await syncCandidates(); await fetchCandidates(staffRow.dept_no) })(),
       ])
       setLoading(false)
     }
@@ -317,7 +325,7 @@ export default function SalesDashboard() {
     { key: 'waiting', label: '署名待ち', count: waitingList.length, color: '#F59E42', tone: 'orange', icon: 'pen' },
     { key: 'completed', label: '完了', count: approvedTotalCount, color: '#4CAF50', tone: 'green', icon: 'check' },
     { key: 'other', label: '依頼状況', count: visibleMyRequests.length, color: '#7C3AED', tone: 'purple', icon: 'mail' },
-    { key: 'renewal', label: '更新期限管理', count: null, color: '#F59E42', tone: 'orange', icon: 'clock' },
+    { key: 'renewal', label: '更新期限管理', count: renewalCandidates.length, color: '#F59E42', tone: 'orange', icon: 'clock' },
   ]
 
   const baseListForFilter: Record<FilterKey, Contract[]> = {
@@ -541,7 +549,7 @@ export default function SalesDashboard() {
               <div>
                 <p className="text-sm font-semibold text-[#1F2937]">本日の状況</p>
                 <h2 className="mt-2 text-4xl font-semibold tracking-normal text-[#2F5FD0] md:text-5xl">
-                  {currentLabel} {activeFilter === 'other' ? visibleMyRequests.length : activeFilter === 'completed' ? approvedTotalCount : baseCurrentList.length}件
+                  {currentLabel} {activeFilter === 'other' ? visibleMyRequests.length : activeFilter === 'completed' ? approvedTotalCount : activeFilter === 'renewal' ? renewalCandidates.length : baseCurrentList.length}件
                 </h2>
                 <p className="mt-4 text-sm font-medium leading-6 text-[#1F2937]">
                   対応が必要な案件を確認し、次のアクションへ進めてください。
@@ -549,7 +557,7 @@ export default function SalesDashboard() {
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+            <div className="grid gap-4 md:grid-cols-4 xl:grid-cols-7">
               {filterCards.map(card => (
                 <button
                   key={card.key}
@@ -633,7 +641,15 @@ export default function SalesDashboard() {
             <h2 className="mb-5 text-lg font-semibold text-[#1F2937]">更新期限管理</h2>
             {user && (
               <RenewalManagementTab
-                deptNo={deptNoRef.current}
+                candidates={renewalCandidates}
+                loading={renewalLoading}
+                updateCandidate={updateCandidate}
+                searchCsvRenewal={searchCsvRenewal}
+                requestCsvImport={requestCsvImport}
+                switchToManualOverride={switchToManualOverride}
+                copyDispatchToEmploy={copyDispatchToEmploy}
+                bulkMarkReady={bulkMarkReady}
+                confirmNotRenewing={confirmNotRenewing}
                 currentUserId={user.id}
                 currentUserDeptName={deptNameRef.current}
               />

@@ -38,10 +38,19 @@ export type RenewalCandidate = {
   new_work_location_name: string | null
   new_work_address: string | null
   new_csv_raw_data_id: string | null
-  status: 'pending' | 'csv_pending' | 'ready'
+  status: 'pending' | 'csv_pending' | 'ready' | 'not_renewing'
   created_at: string
   updated_at: string
 }
+
+// スタッフ・クライアント双方の意向が「更新する」で揃っているか（伊藤さん要件：
+// 「対象スタッフが更新を希望するかの確認と、クライアントが更新してくれるかの両方の
+// 確認がとれている必要がある」）。どちらか一方でも「更新しない」なら更新不可。
+export const isBothConfirmedToRenew = (c: Pick<RenewalCandidate, 'staff_intent' | 'client_intent'>) =>
+  c.staff_intent === 'renew' && c.client_intent === 'ok'
+
+export const hasNonRenewalIntent = (c: Pick<RenewalCandidate, 'staff_intent' | 'client_intent'>) =>
+  c.staff_intent === 'end' || c.client_intent === 'ng'
 
 // 残日数（マイナス＝超過）。基準日は雇用期間終了日を優先し、無ければ派遣期間終了日。
 export function remainingDays(c: Pick<RenewalCandidate, 'employ_end_date' | 'dispatch_end_date'>): number | null {
@@ -52,7 +61,7 @@ export function remainingDays(c: Pick<RenewalCandidate, 'employ_end_date' | 'dis
   return Math.floor((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
 
-const addDays = (dateStr: string, days: number) => {
+export const addDays = (dateStr: string, days: number) => {
   const d = new Date(dateStr)
   d.setDate(d.getDate() + days)
   return d.toISOString().split('T')[0]
@@ -69,13 +78,15 @@ export function useRenewalCandidates() {
   const syncCandidates = useCallback(async () => {
     setSyncing(true)
     try {
-      const { data: contracts } = await supabase
+      const { data: contracts, error: contractsError } = await supabase
         .from('contracts')
         .select('id, created_at, created_by_dept_no, csv_raw_data_id, input_data')
         .eq('work_place', '現場')
-        .not('status', 'in', '("差し戻し中","取り下げ")')
+        .neq('status', '差し戻し中')
+        .neq('status', '取り下げ')
         .order('created_at', { ascending: false })
 
+      if (contractsError) { console.error('更新候補の同期エラー（contracts取得）:', contractsError); return }
       if (!contracts) return
 
       // スタッフ（社員番号）ごとに最新の1件だけを残す
@@ -127,28 +138,62 @@ export function useRenewalCandidates() {
       if (targetRows.length === 0) return
 
       // 既存行（スタッフ入力済みの値）は上書きしないよう、スナップショット項目のみ更新
-      await supabase
+      const { error: upsertError } = await supabase
         .from('renewal_candidates')
         .upsert(targetRows, { onConflict: 'source_contract_id', ignoreDuplicates: false })
+      if (upsertError) console.error('更新候補の同期エラー（upsert）:', upsertError)
     } finally {
       setSyncing(false)
     }
   }, [])
 
   // ②一覧取得。deptNo指定時はその部門のみ（担当営業用）、nullは全部門（管理部・SSC用）
+  // 登録後に退職・退職予定になったスタッフも、表示直前に再チェックして除外する
+  // （syncCandidates側は登録時点のみのチェックのため、その後の退職登録には追従できない）
   const fetchCandidates = useCallback(async (deptNo: number | null) => {
     setLoading(true)
     let q = supabase.from('renewal_candidates').select('*').order('employ_end_date', { ascending: true })
     if (deptNo !== null) q = q.eq('dept_no', deptNo)
-    const { data } = await q
-    setCandidates((data || []) as RenewalCandidate[])
+    const { data, error } = await q
+    if (error) console.error('更新候補の取得エラー:', error)
+    const rows = (data || []) as RenewalCandidate[]
+
+    if (rows.length > 0) {
+      const empNos = Array.from(new Set(rows.map(r => r.employee_number)))
+      const { data: staffRows } = await supabase
+        .from('staff')
+        .select('employee_number, retired_at, retirement_scheduled_at')
+        .in('employee_number', empNos)
+      const todayStr = new Date().toISOString().split('T')[0]
+      const retiredSet = new Set(
+        (staffRows || [])
+          .filter(s => (s.retired_at && s.retired_at < todayStr) || (s.retirement_scheduled_at && s.retirement_scheduled_at < todayStr))
+          .map(s => s.employee_number)
+      )
+      setCandidates(rows.filter(r => !retiredSet.has(r.employee_number)))
+    } else {
+      setCandidates(rows)
+    }
     setLoading(false)
   }, [])
 
+  // 保存失敗（不正な日付形式・通信エラー等）を握りつぶさない。楽観的更新は行うが、
+  // 実際の保存に失敗した場合は画面表示を元に戻し、担当者に必ず知らせる
+  // （2026-07-14修正：以前はerrorを一切見ておらず、保存に失敗しても画面上は
+  // 成功したように見え、再読み込みで静かに消えるという問題があった）。
   const updateCandidate = useCallback(async (id: string, patch: Partial<RenewalCandidate>) => {
+    const prevSnapshot = candidates.find(c => c.id === id)
     setCandidates(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c))
-    await supabase.from('renewal_candidates').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id)
-  }, [])
+    const { error } = await supabase
+      .from('renewal_candidates')
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq('id', id)
+    if (error) {
+      console.error('更新候補の保存エラー:', error)
+      if (prevSnapshot) setCandidates(prev => prev.map(c => c.id === id ? prevSnapshot : c))
+      alert('保存に失敗しました。入力内容（特に日付の形式）をご確認の上、もう一度お試しください。')
+    }
+  }, [candidates])
 
   // ③CSV対象：新しい派遣期間（前回終了日の翌日を基準日として検索）を自動検索し、差異を反映する。
   // 見つからない場合はstatusを'csv_pending'にする（画面側でCSVインポート依頼ボタンを出す）。
@@ -157,11 +202,12 @@ export function useRenewalCandidates() {
     const baseEnd = candidate.dispatch_end_date || candidate.employ_end_date!
     const searchDate = addDays(baseEnd, 1)
 
-    const { data: staffRow } = await supabase
+    const { data: staffRow, error: staffError } = await supabase
       .from('staff')
       .select('crew_code')
       .eq('employee_number', candidate.employee_number)
       .maybeSingle()
+    if (staffError) console.error('CSV再検索エラー（staff取得）:', staffError)
 
     let staffCodeForSearch = candidate.employee_number
     if (candidate.csv_system === 'HRstation') staffCodeForSearch = `F3810${candidate.employee_number}`
@@ -172,13 +218,14 @@ export function useRenewalCandidates() {
       return
     }
 
-    const { data: rowsFound } = await supabase
+    const { data: rowsFound, error: csvError } = await supabase
       .from('csv_raw_data')
       .select('*')
       .eq('system_type', candidate.csv_system || '')
       .eq('staff_code', staffCodeForSearch)
       .lte('dispatch_start', searchDate)
       .gte('dispatch_end', searchDate)
+    if (csvError) console.error('CSV再検索エラー（csv_raw_data取得）:', csvError)
 
     if (!rowsFound || rowsFound.length === 0) {
       await updateCandidate(candidate.id, { status: 'csv_pending' })
@@ -205,7 +252,7 @@ export function useRenewalCandidates() {
     requestedByDept: string | null
   ) => {
     const baseEnd = candidate.dispatch_end_date || candidate.employ_end_date!
-    await supabase.from('requests').insert({
+    const { error } = await supabase.from('requests').insert({
       request_type: 'csv_import',
       staff_name: candidate.staff_name,
       staff_code: candidate.employee_number,
@@ -216,6 +263,10 @@ export function useRenewalCandidates() {
       requested_by_dept: requestedByDept,
       staff_dept: requestedByDept,
     })
+    if (error) {
+      console.error('CSVインポート依頼の保存エラー:', error)
+      alert('インポート依頼の送信に失敗しました。もう一度お試しください。')
+    }
   }, [])
 
   // ⑤派遣先変更のため手入力に切り替える（例外操作・理由必須）
@@ -233,10 +284,36 @@ export function useRenewalCandidates() {
     })
   }, [updateCandidate])
 
+  // 選択行を「送付準備完了」にする。伊藤さん要件：「対象スタッフが更新を希望するかの確認と、
+  // クライアントが更新してくれるかの両方の確認がとれている必要がある」ため、両方の意向が
+  // 「更新する」で揃っている行だけを対象にする（揃っていない行は無視し、スキップ件数を返す）。
   const bulkMarkReady = useCallback(async (ids: string[]) => {
-    setCandidates(prev => prev.map(c => ids.includes(c.id) ? { ...c, status: 'ready' } : c))
-    await supabase.from('renewal_candidates').update({ status: 'ready', updated_at: new Date().toISOString() }).in('id', ids)
-  }, [])
+    const eligibleIds = ids.filter(id => {
+      const c = candidates.find(x => x.id === id)
+      return c && isBothConfirmedToRenew(c)
+    })
+    const skipped = ids.length - eligibleIds.length
+    if (eligibleIds.length > 0) {
+      setCandidates(prev => prev.map(c => eligibleIds.includes(c.id) ? { ...c, status: 'ready' } : c))
+      const { error } = await supabase
+        .from('renewal_candidates')
+        .update({ status: 'ready', updated_at: new Date().toISOString() })
+        .in('id', eligibleIds)
+      if (error) {
+        console.error('一括「送付準備完了」の保存エラー:', error)
+        // 保存に失敗した場合は画面表示を元に戻す（サイレント失敗の防止）
+        setCandidates(prev => prev.map(c => eligibleIds.includes(c.id) ? { ...c, status: 'pending' } : c))
+        alert('送付準備完了への更新に失敗しました。もう一度お試しください。')
+        return { updatedCount: 0, skippedCount: ids.length }
+      }
+    }
+    return { updatedCount: eligibleIds.length, skippedCount: skipped }
+  }, [candidates])
+
+  // 「更新しない」を確定する（スタッフ・クライアントどちらかが更新しない意向の場合の着地点）
+  const confirmNotRenewing = useCallback(async (id: string, reason: string) => {
+    await updateCandidate(id, { status: 'not_renewing', no_renewal_reason: reason })
+  }, [updateCandidate])
 
   return {
     candidates,
@@ -248,6 +325,7 @@ export function useRenewalCandidates() {
     searchCsvRenewal,
     requestCsvImport,
     switchToManualOverride,
+    confirmNotRenewing,
     copyDispatchToEmploy,
     bulkMarkReady,
   }

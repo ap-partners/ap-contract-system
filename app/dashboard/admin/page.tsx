@@ -20,6 +20,7 @@ import {
 import { useContractListToolbar, buildDateSortOptions } from '../_shared/useContractListToolbar'
 import { useApprovedAccumulator, APPROVED_WINDOW_DAYS, CONTRACT_COLUMNS } from '../_shared/useApprovedAccumulator'
 import RenewalManagementTab from '../_shared/RenewalManagementTab'
+import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
 
 type RequestRow = {
   id: string
@@ -242,6 +243,13 @@ export default function AdminDashboard() {
   const [bulkApproving, setBulkApproving] = useState(false)
   const [bulkApproveDone, setBulkApproveDone] = useState<number | null>(null)
 
+  const {
+    candidates: renewalCandidates, loading: renewalLoading,
+    syncCandidates, fetchCandidates, updateCandidate,
+    searchCsvRenewal, requestCsvImport, switchToManualOverride,
+    copyDispatchToEmploy, bulkMarkReady, confirmNotRenewing,
+  } = useRenewalCandidates()
+
   const [internalFlowContracts, setInternalFlowContracts] = useState<Contract[]>([])
   const {
     approvedContracts: internalApprovedContracts, approvedTotalCount: internalApprovedTotalCount,
@@ -268,6 +276,13 @@ export default function AdminDashboard() {
     }
     checkUser()
   }, [])
+
+  // 更新期限管理：管理部は全部門横断のためdeptNo=null（絞り込みなし）
+  useEffect(() => {
+    if (!user) return
+    (async () => { await syncCandidates(); await fetchCandidates(null) })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user])
 
   useEffect(() => {
     if (!user) return
@@ -571,7 +586,7 @@ export default function AdminDashboard() {
     ...(isInternalApprover ? [{ key: 'internal' as TabType, label: '社内承認', icon: 'shield' as IconName, count: internalPendingCount }] : []),
     { key: 'csvImport', label: 'CSVインポート', icon: 'upload' },
     { key: 'csvDiff', label: 'CSV差異アラート', icon: 'alert' },
-    { key: 'renewal', label: '更新期限管理', icon: 'clock' },
+    { key: 'renewal', label: '更新期限管理', icon: 'clock', count: renewalCandidates.length },
   ]
 
   // サマリータブ用：ドメイン横断で「今どこに未対応があるか」を一目で見せるカード（2026-07-14新設）。
@@ -582,10 +597,10 @@ export default function AdminDashboard() {
     { key: 'requests', label: '依頼 未対応', value: pendingTotalCount, icon: 'file' },
     { key: 'contracts', label: '契約 承認待ち', value: contractsPendingCount, icon: 'list' },
     ...(isInternalApprover ? [{ key: 'internal' as TabType, label: '社内承認待ち', value: internalPendingCount, icon: 'shield' as IconName }] : []),
+    { key: 'renewal', label: '更新期限 対象', value: renewalCandidates.length, icon: 'clock' },
   ]
   const overviewPlaceholders: { label: string; icon: IconName }[] = [
     { label: 'CSV差異', icon: 'alert' },
-    { label: '更新期限', icon: 'clock' },
   ]
 
   const requestSummary = [
@@ -1176,7 +1191,19 @@ export default function AdminDashboard() {
         {activeTab === 'csvImport' && <PlaceholderTab title="CSVインポート" description="CSVインポートタブは未実装です。次のフェーズで実装予定です。" icon="upload" />}
         {activeTab === 'csvDiff' && <PlaceholderTab title="CSV差異アラート" description="CSV差異アラートタブは未実装です。次のフェーズで実装予定です。" icon="alert" />}
         {activeTab === 'renewal' && user && (
-          <RenewalManagementTab deptNo={null} currentUserId={user.id} currentUserDeptName="管理部" />
+          <RenewalManagementTab
+            candidates={renewalCandidates}
+            loading={renewalLoading}
+            updateCandidate={updateCandidate}
+            searchCsvRenewal={searchCsvRenewal}
+            requestCsvImport={requestCsvImport}
+            switchToManualOverride={switchToManualOverride}
+            copyDispatchToEmploy={copyDispatchToEmploy}
+            bulkMarkReady={bulkMarkReady}
+            confirmNotRenewing={confirmNotRenewing}
+            currentUserId={user.id}
+            currentUserDeptName="管理部"
+          />
         )}
       </main>
 

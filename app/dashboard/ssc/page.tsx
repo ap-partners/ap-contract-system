@@ -162,6 +162,11 @@ export default function SSCDashboard() {
   // 二重承認ガード（総合レビュー指摘12）：一括承認完了時に「他の人が先に処理済みだった」件数が
   // あった場合にここへ入れて、完了ダイアログで伝える
   const [bulkApproveSkipped, setBulkApproveSkipped] = useState(0)
+  // 総合レビュー指摘24対応：notify-sign-request（署名依頼メール送信）が失敗しても、以前は
+  // .catch(()=>{})で握りつぶし「送信しました」と断言していた。実際の失敗件数を完了ダイアログで
+  // 伝える（個別の再送信UIは今回のスコープ外。失敗した契約は「SSC承認済み」のまま止まるため、
+  // 管理部・伊藤さんへの連絡で個別対応する運用とする）。
+  const [bulkApproveNotifyFailed, setBulkApproveNotifyFailed] = useState(0)
   // 更新期限管理タブ：SSCは全部門を閲覧・意向確認できる（承認権限に相当する「送付準備完了」
   // の一括確定は管理部・担当営業のみ。2026-07-14「SSCも管理部も管理する」要件を踏まえ追加）
   const {
@@ -286,19 +291,24 @@ export default function SSCDashboard() {
     const approvedIds = (updatedRows || []).map(r => r.id as string)
     const skipped = ids.length - approvedIds.length
 
+    let notifyFailedCount = 0
     if (approvedIds.length > 0) {
       const notifyAuthHeader = await getAuthHeader()
-      await Promise.all(
+      const notifyResults = await Promise.all(
         approvedIds.map(id =>
-          fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST', headers: notifyAuthHeader }).catch(() => {})
+          fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST', headers: notifyAuthHeader })
+            .then(res => res.ok)
+            .catch(() => false)
         )
       )
+      notifyFailedCount = notifyResults.filter(ok => !ok).length
     }
 
     setFlowContracts(prev => prev.filter(c => !ids.includes(c.id)))
     await fetchApprovedRecent()
     setBulkApproving(false)
     setBulkApproveSkipped(skipped)
+    setBulkApproveNotifyFailed(notifyFailedCount)
     setBulkApproveDone(approvedIds.length)
   }
 
@@ -307,6 +317,7 @@ export default function SSCDashboard() {
     setShowBulkApproveConfirm(false)
     setBulkApproveDone(null)
     setBulkApproveSkipped(0)
+    setBulkApproveNotifyFailed(0)
   }
 
   const tabs: { key: TabType; label: string; count: number }[] = [
@@ -716,6 +727,12 @@ export default function SSCDashboard() {
                   <p className="mt-3 text-sm font-medium leading-6 text-[#F59E42]">
                     {bulkApproveSkipped}件は、選択後に他の人が先に承認・差し戻し済みだったため、
                     <br />対象から除外しました。
+                  </p>
+                )}
+                {bulkApproveNotifyFailed > 0 && (
+                  <p className="mt-3 text-sm font-medium leading-6 text-[#E74C3C]">
+                    {bulkApproveNotifyFailed}件は承認は完了しましたが、送信依頼メールの送信に失敗しました。
+                    <br />該当の契約は「SSC承認済み」のまま止まっています。管理部にご連絡ください。
                   </p>
                 )}
                 <button

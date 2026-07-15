@@ -343,7 +343,10 @@ export default function SalesDashboard() {
   const statusOptionsForFilter: Record<FilterKey, { value: string; label: string }[]> = {
     pending: [
       { value: '申請中', label: '申請中' },
-      { value: 'SSC承認済み', label: 'SSC承認済み' },
+      // 総合レビュー指摘21対応：社内案件は「承認済み」・社外案件は「SSC承認済み」と
+      // カード側の表示を出し分けているため、この絞り込みピルも両方に当てはまる中立的な
+      // ラベルにする（値自体は変更せず、実際のstatus文字列'SSC承認済み'のまま絞り込む）。
+      { value: 'SSC承認済み', label: '承認済み' },
     ],
     explain: [],
     rejected: [],
@@ -425,7 +428,11 @@ export default function SalesDashboard() {
           <p className="mb-2 text-xs font-semibold text-[#6B7280]">ステータス</p>
           <div className="flex flex-wrap gap-2">
             <Pill tone="blue">{getDocumentLabel(contract.document_type, contract.pattern)}</Pill>
-            <ContractStatusBadge status={contract.status} overrideLabel={isExplain ? '説明対応が必要' : undefined} />
+            <ContractStatusBadge
+              status={contract.status}
+              isInternal={(f.workPlace || contract.work_place) === '社内'}
+              overrideLabel={isExplain ? '説明対応が必要' : undefined}
+            />
             {isWaitingSign && <SignDeadlineBadge signRequestedAt={contract.sign_requested_at} />}
             {isConfirmed && <ConfirmedBadge signedAt={contract.signed_at} />}
           </div>

@@ -132,6 +132,7 @@ export default function SignPage() {
           employeeNumber: employeeNumber.trim(),
           authCode: authCode.trim(),
           signatureImageDataUrl,
+          sealName: signAction === 'signature' ? sealName.trim() : undefined,
         }),
       })
       const data = await res.json()

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { supabase, getAuthHeader } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
@@ -219,6 +219,11 @@ export default function AdminDashboard() {
   const [reqLoading, setReqLoading] = useState(true)
   const [reqError, setReqError] = useState('')
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  // 総合レビュー指摘19対応：タブバッジ・サマリーカードの「未対応」件数は、絞り込み・検索・
+  // 期間指定の影響を一切受けない独立した件数であるべき（そうでないと、他のタブや検索条件を
+  // 見ている間だけ「未対応0件」等の誤表示になる）。requests（絞り込み後の一覧用state）とは
+  // 別に、常に全期間・全条件のpending件数だけを数える専用state・取得処理を持つ。
+  const [pendingTotalCountAll, setPendingTotalCountAll] = useState(0)
 
   const [searchText, setSearchText] = useState('')
   const [deptFilter, setDeptFilter] = useState('')
@@ -244,6 +249,8 @@ export default function AdminDashboard() {
   const [bulkApproveDone, setBulkApproveDone] = useState<number | null>(null)
   // 二重承認ガード（総合レビュー指摘12）：一括承認完了時に「他の人が先に処理済みだった」件数
   const [bulkApproveSkipped, setBulkApproveSkipped] = useState(0)
+  // 総合レビュー指摘24対応：署名依頼メール送信の失敗を隠さず件数で伝える
+  const [bulkApproveNotifyFailed, setBulkApproveNotifyFailed] = useState(0)
 
   const {
     candidates: renewalCandidates, loading: renewalLoading,
@@ -268,6 +275,7 @@ export default function AdminDashboard() {
   const [internalBulkApproving, setInternalBulkApproving] = useState(false)
   const [internalBulkApproveDone, setInternalBulkApproveDone] = useState<number | null>(null)
   const [internalBulkApproveSkipped, setInternalBulkApproveSkipped] = useState(0)
+  const [internalBulkApproveNotifyFailed, setInternalBulkApproveNotifyFailed] = useState(0)
 
   useEffect(() => {
     const checkUser = async () => {
@@ -336,18 +344,23 @@ export default function AdminDashboard() {
     }
     const approvedIds = (updatedRows || []).map(r => r.id as string)
     const skipped = ids.length - approvedIds.length
+    let notifyFailedCount = 0
     if (approvedIds.length > 0) {
       const notifyAuthHeader = await getAuthHeader()
-      await Promise.all(
+      const notifyResults = await Promise.all(
         approvedIds.map(id =>
-          fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST', headers: notifyAuthHeader }).catch(() => {})
+          fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST', headers: notifyAuthHeader })
+            .then(res => res.ok)
+            .catch(() => false)
         )
       )
+      notifyFailedCount = notifyResults.filter(ok => !ok).length
     }
     setFlowContracts(prev => prev.filter(c => !ids.includes(c.id)))
     await fetchApprovedRecent()
     setBulkApproving(false)
     setBulkApproveSkipped(skipped)
+    setBulkApproveNotifyFailed(notifyFailedCount)
     setBulkApproveDone(approvedIds.length)
   }
 
@@ -356,6 +369,7 @@ export default function AdminDashboard() {
     setShowBulkApproveConfirm(false)
     setBulkApproveDone(null)
     setBulkApproveSkipped(0)
+    setBulkApproveNotifyFailed(0)
   }
 
   useEffect(() => {
@@ -406,18 +420,23 @@ export default function AdminDashboard() {
     }
     const approvedIds = (updatedRows || []).map(r => r.id as string)
     const skipped = ids.length - approvedIds.length
+    let notifyFailedCount = 0
     if (approvedIds.length > 0) {
       const notifyAuthHeader = await getAuthHeader()
-      await Promise.all(
+      const notifyResults = await Promise.all(
         approvedIds.map(id =>
-          fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST', headers: notifyAuthHeader }).catch(() => {})
+          fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST', headers: notifyAuthHeader })
+            .then(res => res.ok)
+            .catch(() => false)
         )
       )
+      notifyFailedCount = notifyResults.filter(ok => !ok).length
     }
     setInternalFlowContracts(prev => prev.filter(c => !ids.includes(c.id)))
     await fetchInternalApprovedRecent()
     setInternalBulkApproving(false)
     setInternalBulkApproveSkipped(skipped)
+    setInternalBulkApproveNotifyFailed(notifyFailedCount)
     setInternalBulkApproveDone(approvedIds.length)
   }
 
@@ -426,6 +445,7 @@ export default function AdminDashboard() {
     setInternalShowBulkApproveConfirm(false)
     setInternalBulkApproveDone(null)
     setInternalBulkApproveSkipped(0)
+    setInternalBulkApproveNotifyFailed(0)
   }
 
   useEffect(() => {
@@ -434,7 +454,7 @@ export default function AdminDashboard() {
       setReqLoading(true)
       setReqError('')
       try {
-        let query = supabase.from('requests').select('*').order('requested_at', { ascending: false }).limit(500)
+        let query = supabase.from('requests').select('*').order('requested_at', { ascending: false })
 
         if (searchText) {
           query = query.or(`staff_name.ilike.%${searchText}%,staff_code.ilike.%${searchText}%`)
@@ -451,6 +471,14 @@ export default function AdminDashboard() {
           const windowStart = new Date()
           windowStart.setDate(windowStart.getDate() - REQUEST_WINDOW_DAYS)
           query = query.gte('requested_at', windowStart.toISOString())
+        }
+        // 総合レビュー指摘20対応：「未対応のみは常に全期間対象」という上のコメント通りの
+        // 動作にするため、pending表示時（かつ期間未指定）はlimitを付けない。以前は新しい順
+        // 500件で一律に切っていたため、総依頼数が500件を超えると古い未対応依頼が
+        // 一覧から恒久的に見えなくなっていた（対応漏れの発見という目的に反する不具合だった）。
+        // それ以外（すべて／完了済み／取消済み）は直近の窓で既に絞られているため500件で十分。
+        if (!(statusFilter === 'pending' && !dateFrom && !dateTo)) {
+          query = query.limit(500)
         }
 
         const { data, error } = await query
@@ -492,12 +520,21 @@ export default function AdminDashboard() {
     loadRequests()
   }, [user, searchText, deptFilter, requesterFilter, typeFilter, systemFilter, statusFilter, dateFrom, dateTo])
 
-  const resetFilters = () => {
-    setSearchText(''); setDeptFilter(''); setRequesterFilter(''); setTypeFilter(''); setSystemFilter('')
-    setStatusFilter('pending'); setDateFrom(''); setDateTo('')
-  }
+  // 総合レビュー指摘19対応：タブバッジ・サマリーカード用の「未対応」件数は、上の一覧取得とは
+  // 独立して、絞り込み・検索・期間指定の影響を一切受けない全期間・全件のクエリで数える。
+  const fetchPendingTotalCountAll = useCallback(async () => {
+    const { count } = await supabase
+      .from('requests')
+      .select('id', { count: 'exact', head: true })
+      .or('staff_register_status.eq.pending,csv_import_status.eq.pending')
+    setPendingTotalCountAll(count ?? 0)
+  }, [])
 
-  const pendingTotalCount = requests.filter(isPending).length
+  useEffect(() => {
+    if (!user) return
+    fetchPendingTotalCountAll()
+  }, [user, fetchPendingTotalCountAll])
+
   const visibleRequests = requests.slice(0, visibleCount)
 
   const handleCancelTask = async (
@@ -512,6 +549,8 @@ export default function AdminDashboard() {
       .eq('id', requestId)
     if (error) { alert('取消の保存に失敗しました: ' + error.message); return false }
     setRequests(prev => prev.map(r => r.id === requestId ? { ...r, [statusField]: 'cancelled', [reasonField]: reason } : r))
+    // 取消により「未対応」から外れる可能性があるため、独立集計のバッジ件数も更新する
+    fetchPendingTotalCountAll()
     return true
   }
 
@@ -587,7 +626,9 @@ export default function AdminDashboard() {
   } = useContractListToolbar(filteredInternalContracts, {
     statusOptions: internalContractsSubTab === '承認済み'
       ? [
-          { value: 'SSC承認済み', label: 'SSC承認済み' },
+          // 総合レビュー指摘21対応：社内承認タブはカード側が「承認済み」表示（isInternal=true）
+          // なので、絞り込みピルも合わせる（値自体は変更せず、実際のstatus文字列のまま絞り込む）。
+          { value: 'SSC承認済み', label: '承認済み' },
           { value: '署名待ち', label: '署名待ち' },
           { value: '署名済み', label: '署名済み' },
         ]
@@ -628,7 +669,7 @@ export default function AdminDashboard() {
 
   const tabs: { key: TabType; label: string; icon: IconName; count?: number }[] = [
     { key: 'overview', label: 'サマリー', icon: 'grid' },
-    { key: 'requests', label: '依頼管理', icon: 'file', count: pendingTotalCount },
+    { key: 'requests', label: '依頼管理', icon: 'file', count: pendingTotalCountAll },
     { key: 'contracts', label: '契約一覧', icon: 'list' },
     ...(isInternalApprover ? [{ key: 'internal' as TabType, label: '社内承認', icon: 'shield' as IconName, count: internalPendingCount }] : []),
     { key: 'csvImport', label: 'CSVインポート', icon: 'upload' },
@@ -641,7 +682,7 @@ export default function AdminDashboard() {
   // CSV差異・更新期限はまだ機能自体が未実装のため「準備中」の非活性カードとして枠だけ用意しておく
   // （CLAUDE.md運用ルール10番：将来の完成形を見据えた骨格を先に作っておく）。
   const overviewCards: { key: TabType; label: string; value: number; icon: IconName }[] = [
-    { key: 'requests', label: '依頼 未対応', value: pendingTotalCount, icon: 'file' },
+    { key: 'requests', label: '依頼 未対応', value: pendingTotalCountAll, icon: 'file' },
     { key: 'contracts', label: '契約 承認待ち', value: contractsPendingCount, icon: 'list' },
     ...(isInternalApprover ? [{ key: 'internal' as TabType, label: '社内承認待ち', value: internalPendingCount, icon: 'shield' as IconName }] : []),
     { key: 'renewal', label: '更新期限 対象', value: renewalCandidates.length, icon: 'clock' },
@@ -652,7 +693,10 @@ export default function AdminDashboard() {
 
   const requestSummary = [
     { label: '総依頼件数', value: requests.length, color: '#2F5FD0', tone: 'blue' as const, icon: 'file' as const },
-    { label: '未対応', value: requests.filter(isPending).length, color: '#E74C3C', tone: 'red' as const, icon: 'alert' as const },
+    // 総合レビュー指摘19対応：ここだけ絞り込みと無関係な全社の未対応件数（タブバッジと同じ値）にする。
+    // 他のカード（総依頼件数・対応中・完了・取消済み）は「今表示している一覧の内訳」のままでよいが、
+    // 「未対応」は対応漏れの発見という目的上、常に全体件数でないと意味が薄れるため。
+    { label: '未対応', value: pendingTotalCountAll, color: '#E74C3C', tone: 'red' as const, icon: 'alert' as const },
     { label: '対応中', value: requests.filter(r => r.staff_register_status === 'in_progress' || r.csv_import_status === 'in_progress').length, color: '#F59E42', tone: 'orange' as const, icon: 'refresh' as const },
     { label: '完了', value: requests.filter(r => !isPending(r) && !hasCancelled(r)).length, color: '#4CAF50', tone: 'green' as const, icon: 'check' as const },
     { label: '取消済み', value: requests.filter(hasCancelled).length, color: '#6B7280', tone: 'gray' as const, icon: 'refresh' as const },
@@ -1263,6 +1307,7 @@ export default function AdminDashboard() {
           loading={bulkApproving}
           doneCount={bulkApproveDone}
           skippedCount={bulkApproveSkipped}
+          notifyFailedCount={bulkApproveNotifyFailed}
           onOk={handleBulkApproveDoneOk}
         />
       )}
@@ -1272,6 +1317,7 @@ export default function AdminDashboard() {
           loading={internalBulkApproving}
           doneCount={internalBulkApproveDone}
           skippedCount={internalBulkApproveSkipped}
+          notifyFailedCount={internalBulkApproveNotifyFailed}
           onOk={handleBulkApproveInternalDoneOk}
         />
       )}
@@ -1350,7 +1396,7 @@ function PlaceholderTab({ title, description, icon }: { title: string; descripti
   )
 }
 
-function BulkOverlay({ loading, doneCount, skippedCount = 0, onOk }: { loading: boolean; doneCount: number | null; skippedCount?: number; onOk: () => void }) {
+function BulkOverlay({ loading, doneCount, skippedCount = 0, notifyFailedCount = 0, onOk }: { loading: boolean; doneCount: number | null; skippedCount?: number; notifyFailedCount?: number; onOk: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(31,41,55,.52)] p-4 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-[18px] border border-[#E8EDF5] bg-white p-8 text-center shadow-[0_24px_80px_rgba(15,23,42,.18)]">
@@ -1375,6 +1421,12 @@ function BulkOverlay({ loading, doneCount, skippedCount = 0, onOk }: { loading: 
               <p className="mt-3 text-sm font-medium leading-6 text-[#F59E42]">
                 {skippedCount}件は、選択後に他の人が先に承認・差し戻し済みだったため、
                 <br />対象から除外しました。
+              </p>
+            )}
+            {notifyFailedCount > 0 && (
+              <p className="mt-3 text-sm font-medium leading-6 text-[#E74C3C]">
+                {notifyFailedCount}件は承認は完了しましたが、送信依頼メールの送信に失敗しました。
+                <br />該当の契約は「SSC承認済み」のまま止まっています。管理部にご連絡ください。
               </p>
             )}
             <button onClick={onOk} className="mt-7 inline-flex h-[52px] w-full items-center justify-center rounded-2xl bg-[#2F5FD0] px-6 text-sm font-semibold text-white transition hover:bg-[#244CB3]">

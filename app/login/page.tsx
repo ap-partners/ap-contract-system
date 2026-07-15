@@ -26,7 +26,16 @@ export default function LoginPage() {
     if (role === '管理部') router.push('/dashboard/admin')
     else if (role === 'SSC') router.push('/dashboard/ssc')
     else if (role === '担当営業') router.push('/dashboard/sales')
-    else router.push('/dashboard/sales')
+    else {
+      // 総合レビュー指摘23対応：以前はロール未設定でも/dashboard/salesへ送っていたが、
+      // sales側のロールチェックで即座に/loginへ押し戻され、エラーメッセージも出ないまま
+      // ログイン画面に無言で戻されるだけになっていた。ロールが判定できない場合はここで
+      // 止めて、原因が分かるメッセージを表示する。
+      await supabase.auth.signOut()
+      setError('アカウントに権限が設定されていません。管理部にご連絡ください。')
+      setLoading(false)
+      return
+    }
   }
 
   return (

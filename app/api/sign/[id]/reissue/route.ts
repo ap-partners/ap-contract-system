@@ -9,7 +9,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendSignRequestMail } from '@/lib/mail'
-import { generateSignAuthCode, computeSignAuthCodeExpiry } from '@/lib/signAuthCode'
+import {
+  generateSignAuthCode,
+  computeSignAuthCodeExpiry,
+  SIGN_AUTH_CODE_EXPIRY_DAYS,
+  SIGN_AUTH_MAX_ATTEMPTS,
+  SIGN_AUTH_REISSUE_COOLDOWN_MINUTES,
+} from '@/lib/signAuthCode'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -30,7 +36,7 @@ export async function POST(
 
   const { data: contract, error } = await supabaseAdmin
     .from('contracts')
-    .select('id, staff_id, status, document_type')
+    .select('id, staff_id, status, document_type, sign_auth_code_expires_at, sign_auth_attempts')
     .eq('id', id)
     .maybeSingle()
 
@@ -60,6 +66,32 @@ export async function POST(
     return NextResponse.json({ error: '送信先メールアドレスが取得できませんでした。' }, { status: 400 })
   }
 
+  // 総合レビュー指摘8対応（2026-07-15）：
+  // ①レート制限：直近発行から一定時間内は再発行を拒否し、社員番号さえ分かれば
+  //   何度でも呼べて従業員へメールを連投できてしまう問題に対処する。
+  //   sign_auth_code_expires_atから発行時刻を逆算し、クールダウン中かどうか判定する。
+  const prevAttempts = contract.sign_auth_attempts ?? 0
+  const prevExpiresAt = contract.sign_auth_code_expires_at ? new Date(contract.sign_auth_code_expires_at) : null
+  const now = new Date()
+  const wasExpired = !prevExpiresAt || prevExpiresAt.getTime() <= now.getTime()
+  const wasLocked = prevAttempts >= SIGN_AUTH_MAX_ATTEMPTS
+
+  if (!wasExpired && !wasLocked && prevExpiresAt) {
+    const issuedAt = new Date(prevExpiresAt.getTime() - SIGN_AUTH_CODE_EXPIRY_DAYS * 24 * 60 * 60 * 1000)
+    const minutesSinceIssued = (now.getTime() - issuedAt.getTime()) / (60 * 1000)
+    if (minutesSinceIssued < SIGN_AUTH_REISSUE_COOLDOWN_MINUTES) {
+      return NextResponse.json(
+        { error: `再発行は少し時間をおいてからお試しください（発行済みのメールもご確認ください）。` },
+        { status: 429 }
+      )
+    }
+  }
+
+  // ②5回試行→再発行→再試行という形での試行回数制限の迂回を防ぐため、既存コードが
+  //   まだ有効かつ未失効（=単なる「メールが届かない」等の理由での再発行）の場合は
+  //   試行回数を0にリセットせず引き継ぐ。失効・上限到達済みの場合のみ0から再開する。
+  const nextAttempts = (wasExpired || wasLocked) ? 0 : prevAttempts
+
   const authCode = generateSignAuthCode()
   const authCodeExpiresAt = computeSignAuthCodeExpiry()
 
@@ -68,7 +100,7 @@ export async function POST(
     .update({
       sign_auth_code: authCode,
       sign_auth_code_expires_at: authCodeExpiresAt,
-      sign_auth_attempts: 0,
+      sign_auth_attempts: nextAttempts,
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)

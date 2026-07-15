@@ -23,6 +23,26 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// 総合レビュー指摘9対応（2026-07-15）：署名画像（丸印鑑PNG）はクライアント（Canvas）が
+// 生成したものをそのまま信頼して受理していたため、リクエストを直接叩けば内容検証なしに
+// 任意の画像を法的書類へ埋め込めてしまう問題があった。最低限のガードとして、
+// ①data URL形式・PNG・サイズ上限のチェック、②画面で入力されたフルネーム（sealName）と
+// スタッフマスタ上の氏名が一致することの検証、の2点を追加する。
+const MAX_SIGNATURE_IMAGE_BYTES = 500 * 1024 // 500KB（丸印鑑1枚として十分な上限）
+
+const validateSignatureImageDataUrl = (dataUrl: string): string | null => {
+  const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl)
+  if (!match) return '署名画像の形式が正しくありません。お手数ですが、最初からやり直してください。'
+  const base64 = match[1]
+  const approxBytes = Math.floor((base64.length * 3) / 4)
+  if (approxBytes === 0) return '署名画像が空です。お手数ですが、最初からやり直してください。'
+  if (approxBytes > MAX_SIGNATURE_IMAGE_BYTES) return '署名画像のサイズが大きすぎます。お手数ですが、最初からやり直してください。'
+  return null
+}
+
+// 全角・半角スペース、通常スペースをすべて除去して比較する（氏名の区切り方の揺れを許容するため）
+const normalizeNameForCompare = (name: string): string => name.replace(/[\s　]/g, '').toLowerCase()
+
 const getDocumentLabel = (documentType: string, contractType: string): string => {
   const suffix = contractType === 'アルバイト' ? '（アルバイト）' : contractType === '無期契約' ? '（無期）' : ''
   return `${documentType.replace(/\n/g, ' ')}${suffix}`
@@ -50,6 +70,7 @@ export async function POST(
   const employeeNumber = (body?.employeeNumber || '').trim()
   const authCode = (body?.authCode || '').trim()
   const signatureImageDataUrl: string | undefined = body?.signatureImageDataUrl || undefined
+  const sealName: string = (body?.sealName || '').trim()
 
   if (!employeeNumber || !authCode) {
     return NextResponse.json({ error: '社員番号と認証コードを入力してください。' }, { status: 400 })
@@ -118,6 +139,22 @@ export async function POST(
 
   if (signAction === 'signature' && !signatureImageDataUrl) {
     return NextResponse.json({ error: '署名が入力されていません。' }, { status: 400 })
+  }
+
+  if (signAction === 'signature' && signatureImageDataUrl) {
+    const imageError = validateSignatureImageDataUrl(signatureImageDataUrl)
+    if (imageError) {
+      return NextResponse.json({ error: imageError }, { status: 400 })
+    }
+    if (!sealName) {
+      return NextResponse.json({ error: 'フルネームを入力してください。' }, { status: 400 })
+    }
+    if (normalizeNameForCompare(sealName) !== normalizeNameForCompare(staff.name || '')) {
+      return NextResponse.json(
+        { error: '入力されたお名前がご本人の氏名と一致しません。お手数ですが、正しいフルネームをご入力ください。' },
+        { status: 400 }
+      )
+    }
   }
 
   // ① PDF再生成（署名の場合のみ署名画像を埋め込む。確認のみの場合はそのまま）

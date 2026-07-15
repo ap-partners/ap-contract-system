@@ -417,11 +417,31 @@ export default function RenewalManagementTab({
                           // 実際に値が変わった項目だけを表示する（前回と今回が同一の項目は
                           // 一覧に出さない。全項目を常に並べると「変わっていないのに変わって
                           // 見える」という誤解を招くため。2026-07-14修正）
+                          // 2026-07-15修正（伊藤さんご指摘）：自（開始日）だけが変わらないことは
+                          // なく、自と至は必ずセットで変わるため、至だけでなく自もあわせて
+                          // 「自◯◯ 〜 至◯◯」の形式で1項目にまとめて表示する。
+                          const formatPeriod = (start: string | null, end: string | null) =>
+                            (!start && !end) ? '―' : `自${start || '―'} 〜 至${end || '―'}`
                           const diffRows = [
-                            { label: '雇用期間_至', before: c.employ_end_date, after: c.new_employ_end },
-                            { label: '派遣期間_至', before: c.dispatch_end_date, after: c.new_dispatch_end },
-                            { label: '就業場所', before: c.work_location_name, after: c.new_work_location_name },
-                          ].filter(r => (r.before || null) !== (r.after || null))
+                            {
+                              label: '雇用期間',
+                              before: formatPeriod(c.employ_start_date, c.employ_end_date),
+                              after: formatPeriod(c.new_employ_start, c.new_employ_end),
+                              changed: (c.employ_start_date || null) !== (c.new_employ_start || null) || (c.employ_end_date || null) !== (c.new_employ_end || null),
+                            },
+                            {
+                              label: '派遣期間',
+                              before: formatPeriod(c.dispatch_start_date, c.dispatch_end_date),
+                              after: formatPeriod(c.new_dispatch_start, c.new_dispatch_end),
+                              changed: (c.dispatch_start_date || null) !== (c.new_dispatch_start || null) || (c.dispatch_end_date || null) !== (c.new_dispatch_end || null),
+                            },
+                            {
+                              label: '就業場所',
+                              before: c.work_location_name || '―',
+                              after: c.new_work_location_name || '―',
+                              changed: (c.work_location_name || null) !== (c.new_work_location_name || null),
+                            },
+                          ].filter(r => r.changed)
                           return (
                             <div className="flex flex-col gap-2">
                               <div className="text-[11px] text-[#8B98B1]">CSVから自動取得した最新内容との差異</div>
@@ -433,9 +453,9 @@ export default function RenewalManagementTab({
                                     <tr className="text-[#6B7280]"><td className="py-1 pr-3 w-1/5">項目</td><td className="py-1 pr-3 w-2/5">前回</td><td className="py-1 w-2/5">今回</td></tr>
                                     {diffRows.map(r => (
                                       <tr key={r.label}>
-                                        <td className="py-1 pr-3">{r.label}</td>
-                                        <td className="py-1 pr-3 text-[#8B98B1] line-through">{r.before || '―'}</td>
-                                        <td className="py-1 font-semibold" style={{ color: '#E74C3C' }}>{r.after || '―'}</td>
+                                        <td className="py-1 pr-3 align-top">{r.label}</td>
+                                        <td className="py-1 pr-3 text-[#8B98B1] line-through align-top">{r.before}</td>
+                                        <td className="py-1 font-semibold align-top" style={{ color: '#E74C3C' }}>{r.after}</td>
                                       </tr>
                                     ))}
                                   </tbody>

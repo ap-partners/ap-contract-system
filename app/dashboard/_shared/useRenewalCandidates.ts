@@ -22,7 +22,9 @@ export type RenewalCandidate = {
   staff_name: string | null
   dept_no: number | null
   work_location_name: string | null
+  employ_start_date: string | null
   employ_end_date: string | null
+  dispatch_start_date: string | null
   dispatch_end_date: string | null
   data_source: 'csv' | 'manual'
   csv_system: string | null
@@ -144,7 +146,11 @@ export function useRenewalCandidates() {
           staff_name: c.input_data?.staff?.name || null,
           dept_no: c.created_by_dept_no,
           work_location_name: f.workLocationName || null,
+          // 開始日（自）も前回値として保存する（伊藤さんご指摘・2026-07-15：自と至は必ずセットで
+          // 変わるため、差異表示で至だけでなく自も分かるようにしたい、への対応）
+          employ_start_date: f.employStart || null,
           employ_end_date: f.employEnd || null,
+          dispatch_start_date: f.dispatchStart || null,
           dispatch_end_date: f.dispatchEnd || null,
           data_source: c.input_data?.csvMeta?.csvMode === 'csv' ? 'csv' : 'manual',
           csv_system: c.input_data?.csvMeta?.csvSystem || null,

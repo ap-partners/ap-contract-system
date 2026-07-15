@@ -350,7 +350,7 @@ export default function RenewalManagementTab({
                             value={notRenewingReasonText}
                             onChange={e => setNotRenewingReasonText(e.target.value)}
                             placeholder="例：クライアントの案件終了のため"
-                            className="flex-1 text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5"
+                            className="flex-1 text-xs rounded-lg border border-[#E8EDF5] bg-white px-2 py-1.5"
                           />
                           <button
                             onClick={async () => {
@@ -380,7 +380,7 @@ export default function RenewalManagementTab({
                           value={overrideReasonText}
                           onChange={e => setOverrideReasonText(e.target.value)}
                           placeholder="例：派遣先が◯◯から××に変更"
-                          className="flex-1 text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5"
+                          className="flex-1 text-xs rounded-lg border border-[#E8EDF5] bg-white px-2 py-1.5"
                         />
                         <button
                           onClick={async () => {

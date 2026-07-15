@@ -897,7 +897,7 @@ export default function SSCContractDetail() {
                     <p className="text-sm font-bold mb-2" style={{ color: '#B91C1C' }}>↩ 差し戻し理由を入力してください</p>
                     <textarea
                       className="w-full text-sm rounded-lg px-3 py-2 border focus:outline-none"
-                      style={{ borderColor: '#D0DAF0', color: '#1A2340', minHeight: '100px', lineHeight: '1.6', resize: 'vertical' }}
+                      style={{ borderColor: '#D0DAF0', color: '#1A2340', background: '#FFFFFF', minHeight: '100px', lineHeight: '1.6', resize: 'vertical' }}
                       placeholder="例：派遣期間の終了日が抵触日を超えています。再確認をお願いします。"
                       value={rejectReason}
                       onChange={e => setRejectReason(e.target.value)}
@@ -928,7 +928,7 @@ export default function SSCContractDetail() {
                     </p>
                     <textarea
                       className="w-full text-sm rounded-lg px-3 py-2 border focus:outline-none"
-                      style={{ borderColor: '#D0DAF0', color: '#1A2340', minHeight: '100px', lineHeight: '1.6', resize: 'vertical' }}
+                      style={{ borderColor: '#D0DAF0', color: '#1A2340', background: '#FFFFFF', minHeight: '100px', lineHeight: '1.6', resize: 'vertical' }}
                       placeholder="例：クライアント特別対応のため、上長確認済みで金額に問題ないことを確認しました。"
                       value={forceApproveReason}
                       onChange={e => setForceApproveReason(e.target.value)}

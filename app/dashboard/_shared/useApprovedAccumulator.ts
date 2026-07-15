@@ -11,7 +11,7 @@ export const APPROVED_WINDOW_DAYS = 45
 export const APPROVED_PAGE_SIZE = 50
 export const APPROVED_SEARCH_LIMIT = 200
 export const APPROVED_STATUSES = ['SSC承認済み', '署名待ち', '署名済み', '完了']
-export const CONTRACT_COLUMNS = 'id, pattern, contract_type, document_type, work_place, status, created_by, created_at, rejection_reason, signed_at, warning_confirmations, warning_level, input_data'
+export const CONTRACT_COLUMNS = 'id, pattern, contract_type, document_type, work_place, status, created_by, created_by_name, created_at, rejection_reason, signed_at, warning_confirmations, warning_level, input_data'
 
 const windowStartIso = () => {
   const d = new Date()

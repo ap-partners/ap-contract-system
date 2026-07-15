@@ -647,7 +647,7 @@ export default function SSCDashboard() {
                   <div className="min-w-0">
                     <p className="mb-2 text-xs font-semibold text-[#6B7280]">申請日時</p>
                     <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{formatDateTime(contract.created_at)}</p>
-                    <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {contract.created_by.slice(0, 8)}</p>
+                    <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {contract.created_by_name || `ID:${contract.created_by.slice(0, 8)}`}</p>
                   </div>
 
                   <div className="flex items-center justify-start 2xl:justify-end">

@@ -43,6 +43,7 @@ type ContractDetail = {
   approved_by: string | null
   approved_at: string | null
   created_by: string
+  created_by_name: string | null
   created_at: string
 }
 
@@ -616,8 +617,9 @@ export default function SSCContractDetail() {
             <div className="grid" style={{ gridTemplateColumns: '160px 1fr' }}>
               <div className="px-4 py-3 text-xs font-medium" style={{ background: '#EEF2FA', color: '#5A6A8A' }}>申請者</div>
               <div className="px-4 py-3 text-sm" style={{ color: '#5A6A8A' }}>
-                {/* フェーズ2（認証統合後）で氏名表示に切り替え予定 */}
-                申請者ID：{contract.created_by.slice(0, 8)}…
+                {/* 総合レビュー指摘E対応（2026-07-16）：認証統合後、申請時点の氏名スナップショット
+                    （created_by_name）を表示するよう切り替え済み。取得できない古いデータのみID表示にフォールバック */}
+                {contract.created_by_name || `申請者ID：${contract.created_by.slice(0, 8)}…`}
               </div>
             </div>
             <div className="grid" style={{ gridTemplateColumns: '160px 1fr' }}>

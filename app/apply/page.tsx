@@ -864,7 +864,7 @@ function ApplyPageInner() {
       // （2026-07-02追加：この取得処理がなく、新規申請のcreated_by_dept_noが常にnullになっていたバグを修正）
       const { data: submitterStaffRow } = await supabase
         .from('staff')
-        .select('dept_no')
+        .select('dept_no, name')
         .eq('email', user.email)
         .limit(1)
         .maybeSingle()
@@ -938,6 +938,9 @@ function ApplyPageInner() {
         status: '申請中',
         closing_pattern: (pattern === 'A' || pattern === 'C') ? closingPattern : null,
         created_by_dept_no: submitterStaffRow?.dept_no ?? null,
+        // 総合レビュー指摘E対応（2026-07-16）：SSC・管理部が「誰の申請か」をID断片ではなく
+        // 氏名で判断できるよう、申請時点の担当者名をスナップショットとして保存する。
+        created_by_name: submitterStaffRow?.name ?? null,
         // csvSelectedIdは配列のインデックス（何番目を選んだか）であり、CSV行の実IDではない。
         // 実IDはcsvResults[csvSelectedId].idに入っているため、ここで変換してから保存する
         csv_raw_data_id: (csvMode === 'csv' && csvSelectedId !== null && csvResults[csvSelectedId]) ? csvResults[csvSelectedId].id : null,

@@ -17,6 +17,7 @@ export type ContractForDisplay = {
   work_place: string
   status: ContractStatus
   created_by: string
+  created_by_name?: string | null
   created_at: string
   rejection_reason: string | null
   signed_at: string | null

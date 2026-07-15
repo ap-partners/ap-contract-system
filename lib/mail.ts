@@ -74,15 +74,16 @@ export type RenewalDigestItem = {
 
 // 残日数は雇用期間終了日を優先し、無ければ派遣期間終了日を基準に計算している
 // （useRenewalCandidates.tsのremainingDays()と同じ考え方）。メール本文でも実際に基準にした
-// 日付が分かるよう、ダッシュボード（RenewalManagementTab.tsx）と同じ「雇◯◯ / 派◯◯」表記に揃える
-// （2026-07-15修正：以前は雇用期間終了日だけを表示しており、派遣期間終了日基準の案件では
-// 常に「-」と表示されて分かりにくかった）。
+// 日付が分かるよう、ダッシュボード（RenewalManagementTab.tsx）と同じ「同一／雇／派」の考え方に揃える。
+// ただしダッシュボードは省スペースUIのため「雇◯◯ / 派◯◯」と省略表記だが、メールは
+// スペース制約が無いため「雇用期間終了日」「派遣期間終了日」と正式名称で書く
+// （2026-07-15：業務改善責任者/PdM/UI-UXレビューを踏まえた修正。省略形は初見で誤読しやすいため）。
 function formatEndDateLabel(employEndDate: string | null, dispatchEndDate: string | null): string {
-  if (employEndDate && dispatchEndDate && employEndDate === dispatchEndDate) return `同一・${employEndDate}`
-  if (employEndDate && dispatchEndDate) return `雇${employEndDate} / 派${dispatchEndDate}`
-  if (employEndDate) return `雇${employEndDate}`
-  if (dispatchEndDate) return `派${dispatchEndDate}`
-  return '-'
+  if (employEndDate && dispatchEndDate && employEndDate === dispatchEndDate) return `雇用・派遣期間終了日：${employEndDate}`
+  if (employEndDate && dispatchEndDate) return `雇用期間終了日：${employEndDate} / 派遣期間終了日：${dispatchEndDate}`
+  if (employEndDate) return `雇用期間終了日：${employEndDate}`
+  if (dispatchEndDate) return `派遣期間終了日：${dispatchEndDate}`
+  return '終了日：不明'
 }
 
 export async function sendRenewalDigestMail(
@@ -96,25 +97,40 @@ export async function sendRenewalDigestMail(
 
   const todayLabel = new Date().toLocaleDateString('ja-JP')
   const sorted = [...items].sort((a, b) => (a.remainingDays ?? 9999) - (b.remainingDays ?? 9999))
+  const overdueCount = items.filter(i => (i.remainingDays ?? 0) < 0).length
+  const upcomingCount = items.length - overdueCount
+
+  // 件名：中身が全て「期限超過」なのに「更新期限が近い」という件名では緊急度が伝わらない、
+  // という指摘を踏まえ、超過案件が1件でもあれば件名自体で分かるようにする（2026-07-15修正）。
+  const subject = overdueCount > 0
+    ? `【更新期限管理・要対応】${deptName} 期限超過${overdueCount}件を含む契約があります（${todayLabel}）`
+    : `【更新期限管理】${deptName} 更新期限が近い契約のお知らせ（${todayLabel}）`
 
   const lines: string[] = [
     'お疲れ様です。APパートナーズです。',
     '',
-    `${deptName}で、更新期限管理の確認・対応が必要な契約が${items.length}件あります（${todayLabel}時点）。`,
+    `${deptName}で、更新期限管理の確認・対応が必要な契約が${items.length}件あります（${todayLabel}時点／期限超過${overdueCount}件・期限内${upcomingCount}件）。`,
     '',
   ]
   for (const item of sorted) {
     const days = item.remainingDays
     const daysLabel = days === null ? '(残日数不明)' : days < 0 ? `期限超過${Math.abs(days)}日` : `残り${days}日`
     const endDateLabel = formatEndDateLabel(item.employEndDate, item.dispatchEndDate)
-    lines.push(`・${item.staffName || '(氏名未登録)'}様（${item.workLocationName || '就業先不明'}）：${daysLabel}（${endDateLabel}）`)
+    // 氏名・就業先名が長いケース（外国籍スタッフ等）でも読みやすいよう、1件を2行に分ける
+    // （2026-07-15修正：1行に詰め込むと長い名前で読みにくいという指摘への対応）。
+    lines.push(`・${item.staffName || '(氏名未登録)'}様（${item.workLocationName || '就業先不明'}）`)
+    lines.push(`　${daysLabel}／${endDateLabel}`)
   }
   lines.push(
     '',
     '期限超過の契約は特に優先してご確認ください。',
     '更新期限管理タブから、スタッフ・クライアントへの意向確認と「送付準備完了」の操作をお願いします。',
-    `${APP_URL}/dashboard/sales`,
-    '（SSC・管理部の方は各自のダッシュボードの「更新期限管理」タブをご覧ください）',
+    '',
+    `担当営業の方はこちら：${APP_URL}/dashboard/sales`,
+    `SSCの方はこちら：${APP_URL}/dashboard/ssc`,
+    `管理部の方はこちら：${APP_URL}/dashboard/admin`,
+    '',
+    '※本メールは自動送信です。このアドレスへの返信には対応しておりません。ご不明点は管理部までご連絡ください。',
   )
   if (overrideNotice) {
     lines.push('', overrideNotice)
@@ -124,7 +140,7 @@ export async function sendRenewalDigestMail(
     from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
     to: toEmails.join(','),
     cc: ccEmails.length > 0 ? ccEmails.join(',') : undefined,
-    subject: `【更新期限管理】${deptName} 更新期限が近い契約のお知らせ（${todayLabel}）`,
+    subject,
     text: lines.join('\n'),
   })
 }

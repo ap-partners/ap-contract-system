@@ -82,6 +82,7 @@ export async function GET(req: NextRequest) {
         workLocationName: c.work_location_name,
         remainingDays: days,
         employEndDate: c.employ_end_date,
+        dispatchEndDate: c.dispatch_end_date,
       },
       newlyCrossed,
     })

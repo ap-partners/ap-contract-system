@@ -69,6 +69,20 @@ export type RenewalDigestItem = {
   workLocationName: string | null
   remainingDays: number | null
   employEndDate: string | null
+  dispatchEndDate: string | null
+}
+
+// 残日数は雇用期間終了日を優先し、無ければ派遣期間終了日を基準に計算している
+// （useRenewalCandidates.tsのremainingDays()と同じ考え方）。メール本文でも実際に基準にした
+// 日付が分かるよう、ダッシュボード（RenewalManagementTab.tsx）と同じ「雇◯◯ / 派◯◯」表記に揃える
+// （2026-07-15修正：以前は雇用期間終了日だけを表示しており、派遣期間終了日基準の案件では
+// 常に「-」と表示されて分かりにくかった）。
+function formatEndDateLabel(employEndDate: string | null, dispatchEndDate: string | null): string {
+  if (employEndDate && dispatchEndDate && employEndDate === dispatchEndDate) return `同一・${employEndDate}`
+  if (employEndDate && dispatchEndDate) return `雇${employEndDate} / 派${dispatchEndDate}`
+  if (employEndDate) return `雇${employEndDate}`
+  if (dispatchEndDate) return `派${dispatchEndDate}`
+  return '-'
 }
 
 export async function sendRenewalDigestMail(
@@ -92,7 +106,8 @@ export async function sendRenewalDigestMail(
   for (const item of sorted) {
     const days = item.remainingDays
     const daysLabel = days === null ? '(残日数不明)' : days < 0 ? `期限超過${Math.abs(days)}日` : `残り${days}日`
-    lines.push(`・${item.staffName || '(氏名未登録)'}様（${item.workLocationName || '就業先不明'}）：${daysLabel}（雇用期間終了日：${item.employEndDate || '-'}）`)
+    const endDateLabel = formatEndDateLabel(item.employEndDate, item.dispatchEndDate)
+    lines.push(`・${item.staffName || '(氏名未登録)'}様（${item.workLocationName || '就業先不明'}）：${daysLabel}（${endDateLabel}）`)
   }
   lines.push(
     '',

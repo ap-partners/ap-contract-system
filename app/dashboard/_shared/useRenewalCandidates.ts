@@ -97,6 +97,37 @@ export function useRenewalCandidates() {
         if (!latestByStaff.has(empNo)) latestByStaff.set(empNo, c)
       }
 
+      // 総合レビュー指摘17対応（2026-07-15）：契約が更新されると、同じスタッフでも新しい
+      // contract_idで別行がupsertされる（upsertのonConflictがsource_contract_id単位のため）。
+      // 旧契約に紐づく行は削除されずに残り、同じスタッフのカードが2枚並んでしまっていた。
+      // ここで、現時点の最新契約（latestByStaff）と食い違うsource_contract_idを持つ既存行を
+      // employee_number単位で洗い出し、削除する（スタッフが入力済みの意向等も含めて丸ごと
+      // 削除されるが、旧契約はもう有効ではないため妥当）。
+      const empNosAll = Array.from(latestByStaff.keys())
+      if (empNosAll.length > 0) {
+        const { data: existingRows, error: existingError } = await supabase
+          .from('renewal_candidates')
+          .select('id, employee_number, source_contract_id')
+          .in('employee_number', empNosAll)
+        if (existingError) {
+          console.error('更新候補の同期エラー（既存行取得）:', existingError)
+        } else if (existingRows && existingRows.length > 0) {
+          const staleIds = existingRows
+            .filter(r => {
+              const latest = latestByStaff.get(r.employee_number)
+              return latest && latest.id !== r.source_contract_id
+            })
+            .map(r => r.id)
+          if (staleIds.length > 0) {
+            const { error: deleteError } = await supabase
+              .from('renewal_candidates')
+              .delete()
+              .in('id', staleIds)
+            if (deleteError) console.error('更新候補の同期エラー（旧契約分の削除）:', deleteError)
+          }
+        }
+      }
+
       const today = new Date(); today.setHours(0, 0, 0, 0)
       const rows: any[] = []
       for (const [empNo, c] of latestByStaff.entries()) {

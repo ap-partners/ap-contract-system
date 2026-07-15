@@ -180,6 +180,27 @@ export default function RenewalManagementTab({
 
   const showManualForm = (c: RenewalCandidate) => c.data_source === 'manual' || c.manual_override
 
+  // 総合レビュー指摘18対応（2026-07-15）：「更新しない」で確定（status='not_renewing'）した後も
+  // スタッフ・クライアント意向のSegmentedは操作可能なままだったが、意向を「更新する」側へ戻しても
+  // statusがnot_renewingに固定されたままになり、一括送付準備等の対象に二度と戻らない不具合があった。
+  // 意向を変更した結果、両意向とも「更新しない」を示さなくなった場合は、statusをpendingへ戻し、
+  // 確定時の理由（no_renewal_reason）もクリアして通常フローに復帰できるようにする。
+  const handleIntentChange = (
+    c: RenewalCandidate,
+    field: 'staff_intent' | 'client_intent',
+    value: 'renew' | 'end' | 'ok' | 'ng'
+  ) => {
+    const nextValue = (c[field] === value ? 'unconfirmed' : value) as any
+    const nextStaffIntent = field === 'staff_intent' ? nextValue : c.staff_intent
+    const nextClientIntent = field === 'client_intent' ? nextValue : c.client_intent
+    const patch: Partial<RenewalCandidate> = { [field]: nextValue } as any
+    if (c.status === 'not_renewing' && !hasNonRenewalIntent({ staff_intent: nextStaffIntent, client_intent: nextClientIntent })) {
+      patch.status = 'pending'
+      patch.no_renewal_reason = null
+    }
+    updateCandidate(c.id, patch)
+  }
+
   if (loading) {
     return <div className="rounded-[18px] border border-[#E8EDF5] bg-white p-8 text-center text-sm text-[#6B7280]">読み込み中です…</div>
   }
@@ -268,7 +289,7 @@ export default function RenewalManagementTab({
                       <p className="mb-1 text-xs font-semibold text-[#6B7280]">スタッフ意向</p>
                       <Segmented
                         value={c.staff_intent}
-                        onChange={v => updateCandidate(c.id, { staff_intent: (c.staff_intent === v ? 'unconfirmed' : v) as any })}
+                        onChange={v => handleIntentChange(c, 'staff_intent', v as any)}
                         options={[{ value: 'renew', label: '希望' }, { value: 'end', label: '希望しない' }]}
                       />
                     </div>
@@ -277,7 +298,7 @@ export default function RenewalManagementTab({
                       <p className="mb-1 text-xs font-semibold text-[#6B7280]">クライアント意向</p>
                       <Segmented
                         value={c.client_intent}
-                        onChange={v => updateCandidate(c.id, { client_intent: (c.client_intent === v ? 'unconfirmed' : v) as any })}
+                        onChange={v => handleIntentChange(c, 'client_intent', v as any)}
                         options={[{ value: 'ok', label: 'OK' }, { value: 'ng', label: 'NG' }]}
                       />
                     </div>

@@ -59,3 +59,57 @@ export async function sendSignRequestMail(
     ].join('\n'),
   })
 }
+
+// ===== 更新期限管理：残日数しきい値通知（フェーズ2） =====
+// 2026-07-15追加。部門ごとに1日1通のダイジェスト形式（伊藤さん決定）。
+// 宛先はTO=担当営業（自部門）、CC=SSC・管理部（伊藤さん決定）。
+// 社内向けメールのため、署名依頼メール（lib/mail.ts上部）と異なり氏名・就業先名を本文に含めてよい。
+export type RenewalDigestItem = {
+  staffName: string | null
+  workLocationName: string | null
+  remainingDays: number | null
+  employEndDate: string | null
+}
+
+export async function sendRenewalDigestMail(
+  toEmails: string[],
+  ccEmails: string[],
+  deptName: string,
+  items: RenewalDigestItem[],
+  overrideNotice?: string
+): Promise<void> {
+  if (toEmails.length === 0) return
+
+  const todayLabel = new Date().toLocaleDateString('ja-JP')
+  const sorted = [...items].sort((a, b) => (a.remainingDays ?? 9999) - (b.remainingDays ?? 9999))
+
+  const lines: string[] = [
+    'お疲れ様です。APパートナーズです。',
+    '',
+    `${deptName}で、更新期限管理の確認・対応が必要な契約が${items.length}件あります（${todayLabel}時点）。`,
+    '',
+  ]
+  for (const item of sorted) {
+    const days = item.remainingDays
+    const daysLabel = days === null ? '(残日数不明)' : days < 0 ? `期限超過${Math.abs(days)}日` : `残り${days}日`
+    lines.push(`・${item.staffName || '(氏名未登録)'}様（${item.workLocationName || '就業先不明'}）：${daysLabel}（雇用期間終了日：${item.employEndDate || '-'}）`)
+  }
+  lines.push(
+    '',
+    '期限超過の契約は特に優先してご確認ください。',
+    '更新期限管理タブから、スタッフ・クライアントへの意向確認と「送付準備完了」の操作をお願いします。',
+    `${APP_URL}/dashboard/sales`,
+    '（SSC・管理部の方は各自のダッシュボードの「更新期限管理」タブをご覧ください）',
+  )
+  if (overrideNotice) {
+    lines.push('', overrideNotice)
+  }
+
+  await transporter.sendMail({
+    from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
+    to: toEmails.join(','),
+    cc: ccEmails.length > 0 ? ccEmails.join(',') : undefined,
+    subject: `【更新期限管理】${deptName} 更新期限が近い契約のお知らせ（${todayLabel}）`,
+    text: lines.join('\n'),
+  })
+}

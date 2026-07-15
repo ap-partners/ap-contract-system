@@ -159,6 +159,9 @@ export default function SSCDashboard() {
   const [showBulkApproveConfirm, setShowBulkApproveConfirm] = useState(false)
   const [bulkApproving, setBulkApproving] = useState(false)
   const [bulkApproveDone, setBulkApproveDone] = useState<number | null>(null)
+  // 二重承認ガード（総合レビュー指摘12）：一括承認完了時に「他の人が先に処理済みだった」件数が
+  // あった場合にここへ入れて、完了ダイアログで伝える
+  const [bulkApproveSkipped, setBulkApproveSkipped] = useState(0)
   // 更新期限管理タブ：SSCは全部門を閲覧・意向確認できる（承認権限に相当する「送付準備完了」
   // の一括確定は管理部・担当営業のみ。2026-07-14「SSCも管理部も管理する」要件を踏まえ追加）
   const {
@@ -217,7 +220,7 @@ export default function SSCDashboard() {
     '更新期限管理': [],
   }
 
-  const { result: visibleContracts, toolbar: listToolbar, searchText } = useContractListToolbar(filtered, {
+  const { result: visibleContracts, toolbar: listToolbar, statusFilter: listStatusFilter, searchText, sortKey: listSortKey } = useContractListToolbar(filtered, {
     statusOptions: statusOptionsByTab[activeTab],
     sortOptions: buildDateSortOptions<Contract>(),
     getSearchText: c => {
@@ -228,6 +231,15 @@ export default function SSCDashboard() {
     searchPlaceholder: '氏名・社員番号・就業先で検索',
     resetKey: activeTab,
   })
+
+  // 絞り込み・検索・並び替えを変えると、画面から消えた案件のチェックが選択状態のまま残ってしまい、
+  // 見えていない案件まで一括承認に巻き込まれる恐れがあった（総合レビュー指摘11・2026-07-15対応）。
+  // RenewalManagementTab.tsxと同じ考え方で、条件を変えたタイミングで選択を必ずクリアする。
+  useEffect(() => {
+    setSelectedIds(new Set())
+    setShowBulkApproveConfirm(false)
+    setBulkApproveDone(null)
+  }, [listStatusFilter, searchText, listSortKey])
 
   const bulkTargets = visibleContracts.filter(c => !hasWarning(c) && !hasAutoCheckWarning(c))
 
@@ -256,33 +268,45 @@ export default function SSCDashboard() {
     setBulkApproving(true)
     const now = new Date().toISOString()
     const ids = Array.from(selectedIds)
-    const { error } = await supabase
+    // 二重承認ガード（総合レビュー指摘12）：SSCと管理部が同時に同じ案件を承認すると二重更新・
+    // notify-sign-requestの二重送信（メール2通）が起きうるため、更新時に「まだ申請中の案件だけ」
+    // という条件を必ずつけ、実際に更新できた件数だけを対象にする。
+    const { data: updatedRows, error } = await supabase
       .from('contracts')
       .update({ status: 'SSC承認済み', approved_by: user.id, approved_at: now, updated_at: now })
       .in('id', ids)
+      .eq('status', '申請中')
+      .select('id')
     if (error) {
       alert('一括承認に失敗しました: ' + error.message)
       setBulkApproving(false)
       return
     }
 
-    const notifyAuthHeader = await getAuthHeader()
-    await Promise.all(
-      ids.map(id =>
-        fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST', headers: notifyAuthHeader }).catch(() => {})
+    const approvedIds = (updatedRows || []).map(r => r.id as string)
+    const skipped = ids.length - approvedIds.length
+
+    if (approvedIds.length > 0) {
+      const notifyAuthHeader = await getAuthHeader()
+      await Promise.all(
+        approvedIds.map(id =>
+          fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST', headers: notifyAuthHeader }).catch(() => {})
+        )
       )
-    )
+    }
 
     setFlowContracts(prev => prev.filter(c => !ids.includes(c.id)))
     await fetchApprovedRecent()
     setBulkApproving(false)
-    setBulkApproveDone(ids.length)
+    setBulkApproveSkipped(skipped)
+    setBulkApproveDone(approvedIds.length)
   }
 
   const handleBulkApproveDoneOk = () => {
     setSelectedIds(new Set())
     setShowBulkApproveConfirm(false)
     setBulkApproveDone(null)
+    setBulkApproveSkipped(0)
   }
 
   const tabs: { key: TabType; label: string; count: number }[] = [
@@ -468,7 +492,8 @@ export default function SSCDashboard() {
                 <div className="mt-5 flex flex-col gap-3 sm:flex-row">
                   <button
                     onClick={handleBulkApprove}
-                    className="inline-flex h-[52px] flex-1 items-center justify-center rounded-2xl bg-[#2F5FD0] px-6 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-[#244CB3]"
+                    disabled={bulkApproving}
+                    className="inline-flex h-[52px] flex-1 items-center justify-center rounded-2xl bg-[#2F5FD0] px-6 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-[#244CB3] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     選択中の{selectedIds.size}件を一括承認する
                   </button>
@@ -687,6 +712,12 @@ export default function SSCDashboard() {
                 <p className="mt-3 text-sm font-medium leading-6 text-[#6B7280]">
                   対象スタッフへ署名の確認依頼を送信しました。
                 </p>
+                {bulkApproveSkipped > 0 && (
+                  <p className="mt-3 text-sm font-medium leading-6 text-[#F59E42]">
+                    {bulkApproveSkipped}件は、選択後に他の人が先に承認・差し戻し済みだったため、
+                    <br />対象から除外しました。
+                  </p>
+                )}
                 <button
                   onClick={handleBulkApproveDoneOk}
                   className="mt-7 inline-flex h-[52px] w-full items-center justify-center rounded-2xl bg-[#2F5FD0] px-6 text-sm font-semibold text-white transition hover:bg-[#244CB3]"

@@ -242,6 +242,8 @@ export default function AdminDashboard() {
   const [showBulkApproveConfirm, setShowBulkApproveConfirm] = useState(false)
   const [bulkApproving, setBulkApproving] = useState(false)
   const [bulkApproveDone, setBulkApproveDone] = useState<number | null>(null)
+  // 二重承認ガード（総合レビュー指摘12）：一括承認完了時に「他の人が先に処理済みだった」件数
+  const [bulkApproveSkipped, setBulkApproveSkipped] = useState(0)
 
   const {
     candidates: renewalCandidates, loading: renewalLoading,
@@ -265,6 +267,7 @@ export default function AdminDashboard() {
   const [internalShowBulkApproveConfirm, setInternalShowBulkApproveConfirm] = useState(false)
   const [internalBulkApproving, setInternalBulkApproving] = useState(false)
   const [internalBulkApproveDone, setInternalBulkApproveDone] = useState<number | null>(null)
+  const [internalBulkApproveSkipped, setInternalBulkApproveSkipped] = useState(0)
 
   useEffect(() => {
     const checkUser = async () => {
@@ -317,31 +320,42 @@ export default function AdminDashboard() {
     setBulkApproving(true)
     const now = new Date().toISOString()
     const ids = Array.from(selectedIds)
-    const { error } = await supabase
+    // 二重承認ガード（総合レビュー指摘12）：SSCと管理部が同時に同じ案件を承認すると二重更新・
+    // notify-sign-requestの二重送信（メール2通）が起きうるため、「まだ申請中の案件だけ」を
+    // 条件につけ、実際に更新できた分だけを対象にする。
+    const { data: updatedRows, error } = await supabase
       .from('contracts')
       .update({ status: 'SSC承認済み', approved_by: user.id, approved_at: now, updated_at: now })
       .in('id', ids)
+      .eq('status', '申請中')
+      .select('id')
     if (error) {
       alert('一括承認に失敗しました: ' + error.message)
       setBulkApproving(false)
       return
     }
-    const notifyAuthHeader = await getAuthHeader()
-    await Promise.all(
-      ids.map(id =>
-        fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST', headers: notifyAuthHeader }).catch(() => {})
+    const approvedIds = (updatedRows || []).map(r => r.id as string)
+    const skipped = ids.length - approvedIds.length
+    if (approvedIds.length > 0) {
+      const notifyAuthHeader = await getAuthHeader()
+      await Promise.all(
+        approvedIds.map(id =>
+          fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST', headers: notifyAuthHeader }).catch(() => {})
+        )
       )
-    )
+    }
     setFlowContracts(prev => prev.filter(c => !ids.includes(c.id)))
     await fetchApprovedRecent()
     setBulkApproving(false)
-    setBulkApproveDone(ids.length)
+    setBulkApproveSkipped(skipped)
+    setBulkApproveDone(approvedIds.length)
   }
 
   const handleBulkApproveDoneOk = () => {
     setSelectedIds(new Set())
     setShowBulkApproveConfirm(false)
     setBulkApproveDone(null)
+    setBulkApproveSkipped(0)
   }
 
   useEffect(() => {
@@ -378,31 +392,40 @@ export default function AdminDashboard() {
     setInternalBulkApproving(true)
     const now = new Date().toISOString()
     const ids = Array.from(internalSelectedIds)
-    const { error } = await supabase
+    // 二重承認ガード（総合レビュー指摘12。社内承認タブ側）
+    const { data: updatedRows, error } = await supabase
       .from('contracts')
       .update({ status: 'SSC承認済み', approved_by: user.id, approved_at: now, updated_at: now })
       .in('id', ids)
+      .eq('status', '申請中')
+      .select('id')
     if (error) {
       alert('一括承認に失敗しました: ' + error.message)
       setInternalBulkApproving(false)
       return
     }
-    const notifyAuthHeader = await getAuthHeader()
-    await Promise.all(
-      ids.map(id =>
-        fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST', headers: notifyAuthHeader }).catch(() => {})
+    const approvedIds = (updatedRows || []).map(r => r.id as string)
+    const skipped = ids.length - approvedIds.length
+    if (approvedIds.length > 0) {
+      const notifyAuthHeader = await getAuthHeader()
+      await Promise.all(
+        approvedIds.map(id =>
+          fetch(`/api/contracts/${id}/notify-sign-request`, { method: 'POST', headers: notifyAuthHeader }).catch(() => {})
+        )
       )
-    )
+    }
     setInternalFlowContracts(prev => prev.filter(c => !ids.includes(c.id)))
     await fetchInternalApprovedRecent()
     setInternalBulkApproving(false)
-    setInternalBulkApproveDone(ids.length)
+    setInternalBulkApproveSkipped(skipped)
+    setInternalBulkApproveDone(approvedIds.length)
   }
 
   const handleBulkApproveInternalDoneOk = () => {
     setInternalSelectedIds(new Set())
     setInternalShowBulkApproveConfirm(false)
     setInternalBulkApproveDone(null)
+    setInternalBulkApproveSkipped(0)
   }
 
   useEffect(() => {
@@ -508,7 +531,10 @@ export default function AdminDashboard() {
   const contractsRejectedCount = flowContracts.filter(c => c.status === '差し戻し中').length
   const contractsApprovedCount = approvedTotalCount
 
-  const { result: visibleContracts, toolbar: contractsToolbar, searchText: contractsSearchText } = useContractListToolbar(filteredContracts, {
+  const {
+    result: visibleContracts, toolbar: contractsToolbar,
+    statusFilter: contractsStatusFilter, searchText: contractsSearchText, sortKey: contractsSortKey,
+  } = useContractListToolbar(filteredContracts, {
     statusOptions: contractsSubTab === '承認済み'
       ? [
           { value: 'SSC承認済み', label: 'SSC承認済み' },
@@ -525,6 +551,15 @@ export default function AdminDashboard() {
     searchPlaceholder: '氏名・社員番号・就業先で検索',
     resetKey: contractsSubTab,
   })
+
+  // 絞り込み・検索・並び替えを変えると、画面から消えた案件のチェックが選択状態のまま残ってしまい、
+  // 見えていない案件まで一括承認に巻き込まれる恐れがあった（総合レビュー指摘11・2026-07-15対応）。
+  // RenewalManagementTab.tsxと同じ考え方で、条件を変えたタイミングで選択を必ずクリアする。
+  useEffect(() => {
+    setSelectedIds(new Set())
+    setShowBulkApproveConfirm(false)
+    setBulkApproveDone(null)
+  }, [contractsStatusFilter, contractsSearchText, contractsSortKey])
 
   const bulkTargets = visibleContracts.filter(c => !hasWarning(c) && !hasAutoCheckWarning(c))
   const toggleSelectAll = () => {
@@ -546,7 +581,10 @@ export default function AdminDashboard() {
   const internalRejectedCount = internalFlowContracts.filter(c => c.status === '差し戻し中').length
   const internalApprovedCount = internalApprovedTotalCount
 
-  const { result: visibleInternalContracts, toolbar: internalToolbar, searchText: internalSearchText } = useContractListToolbar(filteredInternalContracts, {
+  const {
+    result: visibleInternalContracts, toolbar: internalToolbar,
+    statusFilter: internalStatusFilter, searchText: internalSearchText, sortKey: internalSortKey,
+  } = useContractListToolbar(filteredInternalContracts, {
     statusOptions: internalContractsSubTab === '承認済み'
       ? [
           { value: 'SSC承認済み', label: 'SSC承認済み' },
@@ -563,6 +601,13 @@ export default function AdminDashboard() {
     searchPlaceholder: '氏名・社員番号・就業先で検索',
     resetKey: internalContractsSubTab,
   })
+
+  // 絞り込み・検索・並び替えを変えると選択状態が残ってしまう問題への対応（指摘11。社内承認タブ側）。
+  useEffect(() => {
+    setInternalSelectedIds(new Set())
+    setInternalShowBulkApproveConfirm(false)
+    setInternalBulkApproveDone(null)
+  }, [internalStatusFilter, internalSearchText, internalSortKey])
 
   const internalBulkTargets = visibleInternalContracts.filter(c => !hasWarning(c) && !hasAutoCheckWarning(c))
   const toggleSelectAllInternal = () => {
@@ -785,6 +830,7 @@ export default function AdminDashboard() {
     showConfirm,
     onApprove,
     onCancel,
+    approving = false,
   }: {
     visible: boolean
     selectedSize: number
@@ -795,6 +841,7 @@ export default function AdminDashboard() {
     showConfirm: boolean
     onApprove: () => void
     onCancel: () => void
+    approving?: boolean
   }) => {
     if (!visible) return null
 
@@ -824,7 +871,7 @@ export default function AdminDashboard() {
               承認後、対象スタッフへ署名・確認依頼が自動送信されます（雇用契約書は署名、就業条件明示書は内容確認の依頼になります。対面・印刷パターンの案件は担当営業のダッシュボードに表示されます）。
             </p>
             <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-              <button onClick={onApprove} className={`${primaryButton} flex-1`}>
+              <button onClick={onApprove} disabled={approving} className={`${primaryButton} flex-1 disabled:cursor-not-allowed disabled:opacity-60`}>
                 選択中の{selectedSize}件を一括承認する
               </button>
               <button onClick={onCancel} className={secondaryButton}>
@@ -1047,6 +1094,7 @@ export default function AdminDashboard() {
               showConfirm={showBulkApproveConfirm && !bulkApproving && bulkApproveDone === null}
               onApprove={handleBulkApprove}
               onCancel={() => setShowBulkApproveConfirm(false)}
+              approving={bulkApproving}
             />
             {contractsError && <p className="text-sm font-semibold text-[#E74C3C]">{contractsError}</p>}
             {contractsLoading && <p className="py-8 text-sm font-medium text-[#6B7280]">読み込み中</p>}
@@ -1132,6 +1180,7 @@ export default function AdminDashboard() {
               showConfirm={internalShowBulkApproveConfirm && !internalBulkApproving && internalBulkApproveDone === null}
               onApprove={handleBulkApproveInternal}
               onCancel={() => setInternalShowBulkApproveConfirm(false)}
+              approving={internalBulkApproving}
             />
             {internalContractsError && <p className="text-sm font-semibold text-[#E74C3C]">{internalContractsError}</p>}
             {internalContractsLoading && <p className="py-8 text-sm font-medium text-[#6B7280]">読み込み中</p>}
@@ -1213,6 +1262,7 @@ export default function AdminDashboard() {
         <BulkOverlay
           loading={bulkApproving}
           doneCount={bulkApproveDone}
+          skippedCount={bulkApproveSkipped}
           onOk={handleBulkApproveDoneOk}
         />
       )}
@@ -1221,6 +1271,7 @@ export default function AdminDashboard() {
         <BulkOverlay
           loading={internalBulkApproving}
           doneCount={internalBulkApproveDone}
+          skippedCount={internalBulkApproveSkipped}
           onOk={handleBulkApproveInternalDoneOk}
         />
       )}
@@ -1299,7 +1350,7 @@ function PlaceholderTab({ title, description, icon }: { title: string; descripti
   )
 }
 
-function BulkOverlay({ loading, doneCount, onOk }: { loading: boolean; doneCount: number | null; onOk: () => void }) {
+function BulkOverlay({ loading, doneCount, skippedCount = 0, onOk }: { loading: boolean; doneCount: number | null; skippedCount?: number; onOk: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(31,41,55,.52)] p-4 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-[18px] border border-[#E8EDF5] bg-white p-8 text-center shadow-[0_24px_80px_rgba(15,23,42,.18)]">
@@ -1320,6 +1371,12 @@ function BulkOverlay({ loading, doneCount, onOk }: { loading: boolean; doneCount
             <p className="mt-3 text-sm font-medium leading-6 text-[#6B7280]">
               対象スタッフへ署名の確認依頼を送信しました。
             </p>
+            {skippedCount > 0 && (
+              <p className="mt-3 text-sm font-medium leading-6 text-[#F59E42]">
+                {skippedCount}件は、選択後に他の人が先に承認・差し戻し済みだったため、
+                <br />対象から除外しました。
+              </p>
+            )}
             <button onClick={onOk} className="mt-7 inline-flex h-[52px] w-full items-center justify-center rounded-2xl bg-[#2F5FD0] px-6 text-sm font-semibold text-white transition hover:bg-[#244CB3]">
               OK
             </button>

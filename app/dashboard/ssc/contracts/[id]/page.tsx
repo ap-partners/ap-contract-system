@@ -313,12 +313,21 @@ export default function SSCContractDetail() {
     init()
   }, [id, router])
 
+  // 二重承認ガード（総合レビュー指摘12）：SSCと管理部が同じ画面を同時に開いて操作すると、
+  // 表示上は「未処理」に見えていても実際は既に処理済み、ということが起こりうる。更新時に
+  // 「まだ申請中の案件だけ」という条件を必ずつけ、更新できた行が0件なら「先に他の人が処理済み」
+  // として扱い、画面を最新状態に更新し直す。
+  const refetchContract = async () => {
+    const { data: row } = await supabase.from('contracts').select('*').eq('id', id).single()
+    if (row) setContract(row as ContractDetail)
+  }
+
   // 承認処理（warning_level が none / yellow の場合。理由入力は不要）
   const handleApprove = async () => {
     if (!contract || actionLoading) return
     setActionLoading(true)
     setActionError('')
-    const { error } = await supabase
+    const { data: updatedRows, error } = await supabase
       .from('contracts')
       .update({
         status: 'SSC承認済み',
@@ -327,8 +336,17 @@ export default function SSCContractDetail() {
         updated_at: new Date().toISOString(),
       })
       .eq('id', contract.id)
+      .eq('status', '申請中')
+      .select('id')
     if (error) {
       setActionError('承認の保存に失敗しました。もう一度お試しください。（' + error.message + '）')
+      setActionLoading(false)
+      return
+    }
+    if (!updatedRows || updatedRows.length === 0) {
+      setActionError('この申請は、あなたが確認している間に他の人が先に処理していました。最新の状態に更新しました。')
+      setShowApproveConfirm(false)
+      await refetchContract()
       setActionLoading(false)
       return
     }
@@ -351,7 +369,7 @@ export default function SSCContractDetail() {
     if (!forceApproveReason.trim()) { setActionError('強制承認の理由を入力してください。'); return }
     setActionLoading(true)
     setActionError('')
-    const { error } = await supabase
+    const { data: updatedRows, error } = await supabase
       .from('contracts')
       .update({
         status: 'SSC承認済み',
@@ -361,8 +379,17 @@ export default function SSCContractDetail() {
         updated_at: new Date().toISOString(),
       })
       .eq('id', contract.id)
+      .eq('status', '申請中')
+      .select('id')
     if (error) {
       setActionError('強制承認の保存に失敗しました。もう一度お試しください。（' + error.message + '）')
+      setActionLoading(false)
+      return
+    }
+    if (!updatedRows || updatedRows.length === 0) {
+      setActionError('この申請は、あなたが確認している間に他の人が先に処理していました。最新の状態に更新しました。')
+      setShowForceApproveForm(false)
+      await refetchContract()
       setActionLoading(false)
       return
     }
@@ -382,7 +409,7 @@ export default function SSCContractDetail() {
     if (!rejectReason.trim()) { setActionError('差し戻し理由を入力してください。'); return }
     setActionLoading(true)
     setActionError('')
-    const { error } = await supabase
+    const { data: updatedRows, error } = await supabase
       .from('contracts')
       .update({
         status: '差し戻し中',
@@ -392,8 +419,17 @@ export default function SSCContractDetail() {
         updated_at: new Date().toISOString(),
       })
       .eq('id', contract.id)
+      .eq('status', '申請中')
+      .select('id')
     if (error) {
       setActionError('差し戻しの保存に失敗しました。もう一度お試しください。（' + error.message + '）')
+      setActionLoading(false)
+      return
+    }
+    if (!updatedRows || updatedRows.length === 0) {
+      setActionError('この申請は、あなたが確認している間に他の人が先に処理していました。最新の状態に更新しました。')
+      setShowRejectForm(false)
+      await refetchContract()
       setActionLoading(false)
       return
     }

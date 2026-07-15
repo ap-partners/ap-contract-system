@@ -570,7 +570,7 @@ export default function SSCDashboard() {
               return (
                 <article
                   key={contract.id}
-                  className="grid gap-4 rounded-[18px] border border-[#E8EDF5] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)] transition hover:-translate-y-0.5 hover:shadow-[0_15px_40px_rgba(15,23,42,.08)] lg:grid-cols-[36px_minmax(220px,1.3fr)_minmax(220px,1.2fr)_minmax(180px,.9fr)_minmax(170px,.85fr)_minmax(160px,.75fr)_auto] lg:items-center"
+                  className="grid gap-4 rounded-[18px] border border-[#E8EDF5] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)] transition hover:-translate-y-0.5 hover:shadow-[0_15px_40px_rgba(15,23,42,.08)] 2xl:grid-cols-[36px_minmax(180px,1.3fr)_minmax(180px,1.2fr)_minmax(150px,.9fr)_minmax(140px,.85fr)_minmax(130px,.75fr)_136px] 2xl:items-center"
                 >
                   <div className="flex items-center">
                     {canBulkSelect && (
@@ -650,7 +650,7 @@ export default function SSCDashboard() {
                     <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {contract.created_by.slice(0, 8)}</p>
                   </div>
 
-                  <div className="flex items-center justify-start lg:justify-end">
+                  <div className="flex items-center justify-start 2xl:justify-end">
                     <button
                       className="inline-flex h-[52px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-[#EEF4FF] px-5 text-sm font-semibold text-[#2F5FD0] transition hover:-translate-y-0.5 hover:bg-[#DFEAFE]"
                       onClick={() => router.push(`/dashboard/ssc/contracts/${contract.id}`)}
@@ -661,7 +661,7 @@ export default function SSCDashboard() {
                   </div>
 
                   {contract.status === '差し戻し中' && contract.rejection_reason && (
-                    <div className="rounded-2xl border border-[#FFE2C7] bg-[#FFF8F1] p-4 lg:col-span-7">
+                    <div className="rounded-2xl border border-[#FFE2C7] bg-[#FFF8F1] p-4 2xl:col-span-7">
                       <p className="text-xs font-semibold text-[#F59E42]">差し戻し理由</p>
                       <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.rejection_reason}</p>
                     </div>

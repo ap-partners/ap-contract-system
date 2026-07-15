@@ -108,19 +108,26 @@ export async function GET(req: NextRequest) {
   const { data: usersList } = await supabaseAdmin.auth.admin.listUsers({ perPage: 200 })
   const emailById = new Map<string, string>((usersList?.users || []).map(u => [u.id, u.email || '']))
 
-  const ccEmails = Array.from(new Set(
+  const sscEmails = Array.from(new Set(
     (roleRows || [])
-      .filter((r: any) => r.role === 'SSC' || r.role === '管理部')
+      .filter((r: any) => r.role === 'SSC')
       .map((r: any) => emailById.get(r.id))
       .filter((e): e is string => !!e)
   ))
+  const mgmtEmails = Array.from(new Set(
+    (roleRows || [])
+      .filter((r: any) => r.role === '管理部')
+      .map((r: any) => emailById.get(r.id))
+      .filter((e): e is string => !!e)
+  ))
+  const ccEmails = Array.from(new Set([...sscEmails, ...mgmtEmails]))
 
   let sentCount = 0
   const results: any[] = []
 
   for (const [deptNo, items] of byDept.entries()) {
     const deptName = deptNo !== null ? (deptNameByNo.get(deptNo) || `部門No.${deptNo}`) : '部門未設定'
-    const toEmails = deptNo !== null
+    const assignedToEmails = deptNo !== null
       ? Array.from(new Set(
           (roleRows || [])
             .filter((r: any) => r.role === '担当営業' && r.dept_no === deptNo)
@@ -129,25 +136,33 @@ export async function GET(req: NextRequest) {
         ))
       : []
 
+    // 総合レビュー指摘N対応（2026-07-16）：部門未設定・担当営業アカウント未登録等で
+    // 本来の宛先（担当営業）が1件も特定できない場合、以前はここで送信自体をスキップしており、
+    // override環境変数を外した本番運用では「誰にも通知が届かない＝更新漏れ」の恐れがあった。
+    // 担当者が特定できない案件は、管理部宛にフォールバック送信することで通知の空白を無くす。
+    const isUnassignedFallback = assignedToEmails.length === 0
+    const toEmails = isUnassignedFallback ? mgmtEmails : assignedToEmails
+    const ccForThisDept = isUnassignedFallback ? sscEmails : ccEmails
+
     const realTo = toEmails
-    const realCc = ccEmails
+    const realCc = ccForThisDept
     let finalTo = toEmails
-    let finalCc = ccEmails
+    let finalCc = ccForThisDept
     let overrideNotice: string | undefined
 
     if (overrideEmail) {
       finalTo = [overrideEmail]
       finalCc = []
-      overrideNotice = `※現在テスト運用中のため、本来の宛先ではなくこのアドレスに届いています。\n　本来のTO：${realTo.join(', ') || '(該当する担当営業アカウントなし)'}\n　本来のCC：${realCc.join(', ') || '(なし)'}`
+      overrideNotice = `※現在テスト運用中のため、本来の宛先ではなくこのアドレスに届いています。\n　本来のTO：${realTo.join(', ') || '(該当する担当営業・管理部アカウントなし)'}\n　本来のCC：${realCc.join(', ') || '(なし)'}`
     }
 
     if (finalTo.length === 0) {
-      results.push({ deptNo, deptName, sent: false, reason: '送信先メールアドレスが見つかりませんでした（担当営業アカウント未登録の可能性）' })
+      results.push({ deptNo, deptName, sent: false, reason: '送信先メールアドレスが見つかりませんでした（担当営業アカウント未登録・管理部フォールバックも0件）' })
       continue
     }
 
     try {
-      await sendRenewalDigestMail(finalTo, finalCc, deptName, items.map(t => t.item), overrideNotice)
+      await sendRenewalDigestMail(finalTo, finalCc, deptName, items.map(t => t.item), overrideNotice, isUnassignedFallback)
       sentCount++
       results.push({ deptNo, deptName, sent: true, count: items.length })
 

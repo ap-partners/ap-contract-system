@@ -826,7 +826,7 @@ export default function AdminDashboard() {
     const autoWarningTone: 'red' | 'blue' = contract.warning_level === 'red' ? 'red' : 'blue'
 
     return (
-      <article className={`${cardBase} grid gap-4 p-5 lg:grid-cols-[36px_minmax(220px,1.3fr)_minmax(220px,1.2fr)_minmax(180px,.9fr)_minmax(170px,.85fr)_minmax(160px,.75fr)_auto] lg:items-center`}>
+      <article className={`${cardBase} grid gap-4 p-5 2xl:grid-cols-[36px_minmax(180px,1.3fr)_minmax(180px,1.2fr)_minmax(150px,.9fr)_minmax(140px,.85fr)_minmax(130px,.75fr)_136px] 2xl:items-center`}>
         <div className="flex items-center">
           {canBulkSelect && (
             <input
@@ -890,7 +890,7 @@ export default function AdminDashboard() {
           <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {contract.created_by.slice(0, 8)}</p>
         </div>
 
-        <div className="flex items-center justify-start lg:justify-end">
+        <div className="flex items-center justify-start 2xl:justify-end">
           <button className={primaryButton} onClick={() => router.push(`/dashboard/ssc/contracts/${contract.id}`)}>
             {subTab === '承認待ち' ? '内容を確認する' : '詳細を見る'}
             <Icon name="arrow" className="h-4 w-4" />
@@ -898,7 +898,7 @@ export default function AdminDashboard() {
         </div>
 
         {contract.status === '差し戻し中' && contract.rejection_reason && (
-          <div className="rounded-2xl border border-[#FFE2C7] bg-[#FFF8F1] p-4 lg:col-span-7">
+          <div className="rounded-2xl border border-[#FFE2C7] bg-[#FFF8F1] p-4 2xl:col-span-7">
             <p className="text-xs font-semibold text-[#F59E42]">差し戻し理由</p>
             <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.rejection_reason}</p>
           </div>

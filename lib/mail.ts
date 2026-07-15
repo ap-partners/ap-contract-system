@@ -91,7 +91,8 @@ export async function sendRenewalDigestMail(
   ccEmails: string[],
   deptName: string,
   items: RenewalDigestItem[],
-  overrideNotice?: string
+  overrideNotice?: string,
+  isUnassignedFallback?: boolean
 ): Promise<void> {
   if (toEmails.length === 0) return
 
@@ -102,9 +103,13 @@ export async function sendRenewalDigestMail(
 
   // 件名：中身が全て「期限超過」なのに「更新期限が近い」という件名では緊急度が伝わらない、
   // という指摘を踏まえ、超過案件が1件でもあれば件名自体で分かるようにする（2026-07-15修正）。
+  // 総合レビュー指摘N対応（2026-07-16）：部門未設定・担当営業アカウント未登録等で本来の
+  // 宛先（担当営業）が特定できない案件は、管理部宛にフォールバック送信する。件名で
+  // フォールバックだと分かるようにし、埋もれて放置されるのを防ぐ。
+  const fallbackPrefix = isUnassignedFallback ? '【担当者未設定】' : ''
   const subject = overdueCount > 0
-    ? `【更新期限管理・要対応】${deptName} 期限超過${overdueCount}件を含む契約があります（${todayLabel}）`
-    : `【更新期限管理】${deptName} 更新期限が近い契約のお知らせ（${todayLabel}）`
+    ? `${fallbackPrefix}【更新期限管理・要対応】${deptName} 期限超過${overdueCount}件を含む契約があります（${todayLabel}）`
+    : `${fallbackPrefix}【更新期限管理】${deptName} 更新期限が近い契約のお知らせ（${todayLabel}）`
 
   const lines: string[] = [
     'お疲れ様です。APパートナーズです。',
@@ -132,6 +137,13 @@ export async function sendRenewalDigestMail(
     '',
     '※本メールは自動送信です。このアドレスへの返信には対応しておりません。ご不明点は管理部までご連絡ください。',
   )
+  if (isUnassignedFallback) {
+    lines.push(
+      '',
+      '※この部門は担当営業アカウントが特定できなかったため、本来の宛先の代わりに管理部宛に送信しています。'
+      + '対象スタッフの部門設定・担当営業アカウントの登録をご確認ください。'
+    )
+  }
   if (overrideNotice) {
     lines.push('', overrideNotice)
   }

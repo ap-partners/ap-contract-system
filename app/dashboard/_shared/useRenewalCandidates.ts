@@ -80,23 +80,25 @@ export function useRenewalCandidates() {
   const syncCandidates = useCallback(async () => {
     setSyncing(true)
     try {
+      // 総合レビュー指摘31対応（2026-07-15）：以前はcontractsのinput_data（業務内容・住所等の
+      // 長文フィールドを含む肥大化したJSON）を全件・全履歴分そのまま取得した上でJS側で
+      // 「スタッフごとの最新1件」を絞り込んでいた。件数が増えるほど重くなる作り（3ダッシュボード
+      // すべての初期化のたびに全ユーザーが実行）だったため、DB関数
+      // `get_latest_genba_contracts_for_renewal()`にDISTINCT ONでの絞り込みを移し、
+      // 必要な列だけをテキストとして受け取るように変更。RLSは呼び出しロールのものがそのまま
+      // 適用される（関数はSECURITY INVOKERのデフォルトのまま）。
       const { data: contracts, error: contractsError } = await supabase
-        .from('contracts')
-        .select('id, created_at, created_by_dept_no, csv_raw_data_id, input_data')
-        .eq('work_place', '現場')
-        .neq('status', '差し戻し中')
-        .neq('status', '取り下げ')
-        .order('created_at', { ascending: false })
+        .rpc('get_latest_genba_contracts_for_renewal')
 
       if (contractsError) { console.error('更新候補の同期エラー（contracts取得）:', contractsError); return }
       if (!contracts) return
 
-      // スタッフ（社員番号）ごとに最新の1件だけを残す
+      // DB関数側で既にスタッフ（社員番号）ごとの最新1件に絞り込み済み
       const latestByStaff = new Map<string, any>()
       for (const c of contracts) {
-        const empNo = c.input_data?.staff?.employee_number
+        const empNo = c.employee_number
         if (!empNo) continue
-        if (!latestByStaff.has(empNo)) latestByStaff.set(empNo, c)
+        latestByStaff.set(empNo, c)
       }
 
       // 総合レビュー指摘17対応（2026-07-15）：契約が更新されると、同じスタッフでも新しい
@@ -133,8 +135,7 @@ export function useRenewalCandidates() {
       const today = new Date(); today.setHours(0, 0, 0, 0)
       const rows: any[] = []
       for (const [empNo, c] of latestByStaff.entries()) {
-        const f = c.input_data?.fields || {}
-        const endDate = f.employEnd || f.dispatchEnd
+        const endDate = c.employ_end || c.dispatch_end
         if (!endDate) continue
         const end = new Date(endDate); end.setHours(0, 0, 0, 0)
         const diffDays = Math.floor((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
@@ -143,17 +144,17 @@ export function useRenewalCandidates() {
         rows.push({
           source_contract_id: c.id,
           employee_number: empNo,
-          staff_name: c.input_data?.staff?.name || null,
+          staff_name: c.staff_name || null,
           dept_no: c.created_by_dept_no,
-          work_location_name: f.workLocationName || null,
+          work_location_name: c.work_location_name || null,
           // 開始日（自）も前回値として保存する（伊藤さんご指摘・2026-07-15：自と至は必ずセットで
           // 変わるため、差異表示で至だけでなく自も分かるようにしたい、への対応）
-          employ_start_date: f.employStart || null,
-          employ_end_date: f.employEnd || null,
-          dispatch_start_date: f.dispatchStart || null,
-          dispatch_end_date: f.dispatchEnd || null,
-          data_source: c.input_data?.csvMeta?.csvMode === 'csv' ? 'csv' : 'manual',
-          csv_system: c.input_data?.csvMeta?.csvSystem || null,
+          employ_start_date: c.employ_start || null,
+          employ_end_date: c.employ_end || null,
+          dispatch_start_date: c.dispatch_start || null,
+          dispatch_end_date: c.dispatch_end || null,
+          data_source: c.csv_mode === 'csv' ? 'csv' : 'manual',
+          csv_system: c.csv_system || null,
         })
       }
 

@@ -122,3 +122,18 @@ export async function downloadDriveFile(fileId: string): Promise<Buffer> {
 
   return Buffer.from(res.data as ArrayBuffer)
 }
+
+// 総合レビュー指摘16対応（2026-07-15）：complete APIでは「PDF生成→Driveアップロード→
+// contractsの条件付きUPDATE」の順で処理しており、UPDATEが競合等で失敗した場合、
+// アップロード済みのPDFがどの契約にも紐づかない孤児ファイルとしてDrive上に残ってしまう。
+// UPDATE失敗時にこの関数でアップロード直後のファイルを削除し、孤児ファイルを残さないようにする。
+// 削除自体が失敗しても（権限・ネットワーク等）呼び出し元の処理は止めず、ログに残すだけにする。
+export async function deleteDriveFile(fileId: string): Promise<void> {
+  try {
+    const auth = getAuth()
+    const drive = google.drive({ version: 'v3', auth })
+    await drive.files.delete({ fileId, supportsAllDrives: true })
+  } catch (e) {
+    console.error(`[deleteDriveFile] 孤児ファイルの削除に失敗しました（fileId=${fileId}）`, e)
+  }
+}

@@ -272,6 +272,75 @@ export default function AdminDashboard() {
     copyDispatchToEmploy, bulkMarkReady, confirmNotRenewing,
   } = useRenewalCandidates()
 
+  // ===== CSVインポートタブ（2026-07-15実装） =====
+  const [csvImportSystem, setCsvImportSystem] = useState<'e-staffing' | 'HRstation' | 'winworks' | 'Staffia'>('e-staffing')
+  const [csvFile, setCsvFile] = useState<File | null>(null)
+  const [csvFile103, setCsvFile103] = useState<File | null>(null)
+  const [csvFile104, setCsvFile104] = useState<File | null>(null)
+  const [csvUploading, setCsvUploading] = useState(false)
+  const [csvUploadError, setCsvUploadError] = useState('')
+  const [csvUploadResult, setCsvUploadResult] = useState<any>(null)
+  const [csvHistory, setCsvHistory] = useState<any[]>([])
+  const [csvHistoryLoading, setCsvHistoryLoading] = useState(true)
+
+  const fetchCsvHistory = useCallback(async () => {
+    setCsvHistoryLoading(true)
+    const { data } = await supabase
+      .from('csv_imports')
+      .select('*')
+      .order('uploaded_at', { ascending: false })
+      .limit(20)
+    setCsvHistory(data || [])
+    setCsvHistoryLoading(false)
+  }, [])
+
+  useEffect(() => {
+    if (!user) return
+    fetchCsvHistory()
+  }, [user, fetchCsvHistory])
+
+  const resetCsvUploadForm = () => {
+    setCsvFile(null); setCsvFile103(null); setCsvFile104(null)
+  }
+
+  const handleCsvUpload = async () => {
+    setCsvUploadError('')
+    setCsvUploadResult(null)
+    if (csvImportSystem === 'Staffia' && (!csvFile103 || !csvFile104)) {
+      setCsvUploadError('Staffiaは「契約詳細（KEF00103）」「スタッフ個人・派遣期間（KEF00104）」の両方のファイルを選択してください。')
+      return
+    }
+    if (csvImportSystem !== 'Staffia' && !csvFile) {
+      setCsvUploadError('ファイルを選択してください。')
+      return
+    }
+    setCsvUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('system', csvImportSystem)
+      if (csvImportSystem === 'Staffia') {
+        formData.append('file103', csvFile103 as File)
+        formData.append('file104', csvFile104 as File)
+      } else {
+        formData.append('file', csvFile as File)
+      }
+      const authHeader = await getAuthHeader()
+      const res = await fetch('/api/admin/csv-import', { method: 'POST', headers: authHeader, body: formData })
+      const json = await res.json()
+      if (!res.ok) {
+        setCsvUploadError(json?.error || 'アップロードに失敗しました。')
+      } else {
+        setCsvUploadResult(json)
+        resetCsvUploadForm()
+        await fetchCsvHistory()
+      }
+    } catch (e: any) {
+      setCsvUploadError('通信エラーが発生しました：' + (e?.message || ''))
+    } finally {
+      setCsvUploading(false)
+    }
+  }
+
   const [internalFlowContracts, setInternalFlowContracts] = useState<Contract[]>([])
   const {
     approvedContracts: internalApprovedContracts, approvedTotalCount: internalApprovedTotalCount,
@@ -1296,8 +1365,131 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {activeTab === 'csvImport' && <PlaceholderTab title="CSVインポート" description="CSVインポートタブは未実装です。次のフェーズで実装予定です。" icon="upload" />}
-        {activeTab === 'csvDiff' && <PlaceholderTab title="CSV差異アラート" description="CSV差異アラートタブは未実装です。次のフェーズで実装予定です。" icon="alert" />}
+        {activeTab === 'csvImport' && (
+          <div className="space-y-6">
+            <section className={`${cardBase} p-6 md:p-8`}>
+              <p className="text-lg font-semibold text-[#1F2937]">CSVインポート</p>
+              <p className="mt-2 text-sm font-medium leading-6 text-[#6B7280]">
+                4システム（e-staffing・HRstation・winworks・Staffia）のCSVファイルを取り込みます。
+                Staffiaのみ「契約詳細（KEF00103）」「スタッフ個人・派遣期間（KEF00104）」の2ファイルが必要です。
+                同じ内容のCSVは上書きOKですが、申請中もしくはそれ以降のステータスの契約から参照されている行は保護され、上書きされません。
+              </p>
+
+              <div className="mt-6">
+                <p className="mb-3 text-sm font-semibold text-[#1F2937]">システムを選択</p>
+                <div className="flex flex-wrap gap-3">
+                  {(['e-staffing', 'HRstation', 'winworks', 'Staffia'] as const).map(sys => (
+                    <button
+                      key={sys}
+                      onClick={() => { setCsvImportSystem(sys); resetCsvUploadForm(); setCsvUploadError(''); setCsvUploadResult(null) }}
+                      className={`rounded-2xl border px-5 py-3 text-sm font-semibold transition ${csvImportSystem === sys ? 'border-[#2F5FD0] bg-[#EAF1FF] text-[#2F5FD0]' : 'border-[#E8EDF5] bg-white text-[#1F2937] hover:border-[#2F5FD0] hover:text-[#2F5FD0]'}`}
+                    >
+                      {sys}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-4 md:grid-cols-2">
+                {csvImportSystem === 'Staffia' ? (
+                  <>
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold text-[#1F2937]">契約詳細（KEF00103）</label>
+                      <input
+                        type="file"
+                        accept=".csv"
+                        onChange={e => setCsvFile103(e.target.files?.[0] || null)}
+                        className="block w-full rounded-2xl border border-[#E8EDF5] bg-white p-3 text-sm text-[#1F2937] file:mr-4 file:rounded-xl file:border-0 file:bg-[#EAF1FF] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#2F5FD0]"
+                      />
+                      {csvFile103 && <p className="mt-2 text-xs font-medium text-[#6B7280]">{csvFile103.name}</p>}
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold text-[#1F2937]">スタッフ個人・派遣期間（KEF00104）</label>
+                      <input
+                        type="file"
+                        accept=".csv"
+                        onChange={e => setCsvFile104(e.target.files?.[0] || null)}
+                        className="block w-full rounded-2xl border border-[#E8EDF5] bg-white p-3 text-sm text-[#1F2937] file:mr-4 file:rounded-xl file:border-0 file:bg-[#EAF1FF] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#2F5FD0]"
+                      />
+                      {csvFile104 && <p className="mt-2 text-xs font-medium text-[#6B7280]">{csvFile104.name}</p>}
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-[#1F2937]">CSVファイル</label>
+                    <input
+                      type="file"
+                      accept=".csv"
+                      onChange={e => setCsvFile(e.target.files?.[0] || null)}
+                      className="block w-full rounded-2xl border border-[#E8EDF5] bg-white p-3 text-sm text-[#1F2937] file:mr-4 file:rounded-xl file:border-0 file:bg-[#EAF1FF] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#2F5FD0]"
+                    />
+                    {csvFile && <p className="mt-2 text-xs font-medium text-[#6B7280]">{csvFile.name}</p>}
+                  </div>
+                )}
+              </div>
+
+              {csvUploadError && (
+                <div className="mt-4 rounded-2xl border border-[#FDE0E0] bg-[#FDECEC] p-4">
+                  <p className="text-sm font-medium leading-6 text-[#E74C3C]">{csvUploadError}</p>
+                </div>
+              )}
+
+              <div className="mt-6">
+                <button onClick={handleCsvUpload} disabled={csvUploading} className={`${primaryButton} disabled:cursor-not-allowed disabled:opacity-60`}>
+                  {csvUploading ? 'アップロード中…' : (
+                    <>
+                      <Icon name="upload" className="h-5 w-5" />
+                      アップロードする
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {csvUploadResult && (
+                <div className="mt-6 rounded-2xl border border-[#BFE7CF] bg-[#F0FBF4] p-5">
+                  <p className="text-sm font-semibold text-[#1F2937]">アップロードが完了しました</p>
+                  <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+                    <ResultStat label="新規" value={csvUploadResult.counts?.new ?? 0} />
+                    <ResultStat label="更新" value={csvUploadResult.counts?.updated ?? 0} />
+                    <ResultStat label="保護によりスキップ" value={csvUploadResult.counts?.protectedSkipped ?? 0} />
+                    <ResultStat label="キー不明でスキップ" value={csvUploadResult.counts?.skippedNoKey ?? 0} />
+                  </div>
+                  {typeof csvUploadResult.autoMatch?.matchedCount === 'number' && csvUploadResult.autoMatch.matchedCount > 0 && (
+                    <p className="mt-4 text-sm font-medium leading-6 text-[#4CAF50]">
+                      依頼の自動マッチが{csvUploadResult.autoMatch.matchedCount}件成立し、依頼元へ通知メールを送信しました。
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
+
+            <section className={`${cardBase} p-6 md:p-8`}>
+              <p className="text-sm font-semibold text-[#1F2937]">インポート履歴（直近20件）</p>
+              {csvHistoryLoading ? (
+                <p className="mt-4 text-sm font-medium text-[#6B7280]">読み込み中…</p>
+              ) : csvHistory.length === 0 ? (
+                <p className="mt-4 text-sm font-medium text-[#6B7280]">まだインポート履歴はありません</p>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {csvHistory.map(h => (
+                    <div key={h.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#E8EDF5] p-4">
+                      <div>
+                        <p className="text-sm font-semibold text-[#1F2937]">{h.system_type}</p>
+                        <p className="mt-1 text-xs font-medium text-[#6B7280]">{formatDateTime(h.uploaded_at)}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                        <Pill tone="blue">新規 {h.new_rows ?? 0}</Pill>
+                        <Pill tone="green">更新 {h.updated_rows ?? 0}</Pill>
+                        <Pill tone="orange">保護 {h.pending_rows ?? 0}</Pill>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+        {activeTab === 'csvDiff' && <PlaceholderTab title="CSV差異アラート" description="CSV差異アラートは専用ダッシュボードを設けず、CSVインポート画面での上書き保護（申請中以降のステータスの契約から参照される行は上書きしない）と、依頼の自動マッチ通知のみで対応する方針に簡略化しました（2026-07-15決定）。" icon="alert" />}
         {activeTab === 'renewal' && user && (
           <RenewalManagementTab
             candidates={renewalCandidates}
@@ -1406,6 +1598,15 @@ function PlaceholderTab({ title, description, icon }: { title: string; descripti
         </div>
       </div>
     </section>
+  )
+}
+
+function ResultStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl border border-[#E8EDF5] bg-white p-4">
+      <p className="text-xs font-semibold text-[#6B7280]">{label}</p>
+      <p className="mt-2 text-2xl font-semibold text-[#1F2937]">{value}<span className="ml-1 text-sm font-semibold text-[#6B7280]">件</span></p>
+    </div>
   )
 }
 

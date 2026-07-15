@@ -571,6 +571,7 @@ function ApplyPageInner() {
         salaryType: raw.salaryType || '時給', basicSalary: raw.basicSalary || '', skillPay: raw.skillPay || '0', rolePay: raw.rolePay || '0', salesPay: raw.salesPay || '0', housingPay: raw.housingPay || '0',
         overtimePay: raw.overtimePay || '0', overtimeHours: raw.overtimeHours || '0', transportType: raw.transportType || 'default',
         hasEmployInsurance: raw.hasEmployInsurance !== false, hasSocialInsurance: raw.hasSocialInsurance !== false,
+        monthlyStandardHours: raw.monthlyStandardHours ?? null, // buildCurrentFields()と同じキー構成に揃える（指摘14対応。これが無いと変更有無の判定が常にfalseになる）
       })
       setOriginalFieldsSnapshot(JSON.stringify(normalizeFields(f))) // 差し戻し時点の内容（画面と同じ整形ルール適用後）を保存し、送信直前に「変更されたか」を比較する
       if (row.rejected_at) {
@@ -951,21 +952,29 @@ function ApplyPageInner() {
         warning_level: warningLevel,
       }
 
-      const { error } = editContractId
+      // 再申請（update）は、画面を開いたままの間に他の人が処理を進めている可能性があるため、
+      // 保存直前に status='差し戻し中' であることも条件に含める（指摘15対応）。
+      // これが無いと、承認済み等に進んだ契約を古い画面からの送信で上書きしてしまう恐れがある。
+      const { error, data: savedRows } = editContractId
         ? await supabase.from('contracts').update({
             ...payload,
             rejection_reason: null,
             rejected_by: null,
             rejected_at: null,
             updated_at: new Date().toISOString(),
-          }).eq('id', editContractId)
+          }).eq('id', editContractId).eq('status', '差し戻し中').select('id')
         : await supabase.from('contracts').insert({
             ...payload,
             created_by: user.id,
-          })
+          }).select('id')
 
       if (error) {
         setSubmitError('申請の保存に失敗しました。お手数ですが、もう一度お試しください。（' + error.message + '）')
+        setIsSubmitting(false)
+        return
+      }
+      if (editContractId && (!savedRows || savedRows.length === 0)) {
+        setSubmitError('この申請は既に処理が進んでいるため、この画面からは保存できませんでした。お手数ですが、画面を再読み込みして最新の状態をご確認ください。')
         setIsSubmitting(false)
         return
       }
@@ -1747,6 +1756,7 @@ function ApplyPageInner() {
                                 setCsvSearched(false)
                                 setCsvNoResults(false)
                                 setCsvResults([])
+                                setCsvSelectedId(null) // 再検索時に前回選択が残らないようにリセット（指摘13対応）
 
                                 // システムごとの検索キー対応（確定仕様）
                                 // - e-staffing：staff_code そのまま
@@ -3211,7 +3221,7 @@ function ApplyPageInner() {
                         キャンセル
                       </button>
                       <button
-                        disabled={isSubmitting}
+                                       disabled={isSubmitting}
                         onClick={() => { setShowConfirmModal(false); handleSubmitContract() }}
                         className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white" style={{ background: isSubmitting ? '#A8C0E8' : '#1B3A8C' }}>
                         {isSubmitting ? '送信中...' : 'OK・申請する'}

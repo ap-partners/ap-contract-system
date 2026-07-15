@@ -15,7 +15,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { renderContractPdfBuffer } from '@/lib/pdf/renderContractPdf'
-import { uploadSignedPdf } from '@/lib/googleDrive'
+import { uploadSignedPdf, deleteDriveFile } from '@/lib/googleDrive'
 import { SIGN_AUTH_MAX_ATTEMPTS } from '@/lib/signAuthCode'
 
 const supabaseAdmin = createClient(
@@ -212,10 +212,15 @@ export async function POST(
     .select()
     .maybeSingle()
 
+  // 総合レビュー指摘16対応（2026-07-15）：UPDATEが失敗・空振りした場合、直前でアップロード
+  // 済みのPDFがどの契約にも紐づかない孤児ファイルとしてDrive上に残ってしまうため、
+  // ここで削除しておく（削除自体の失敗は握りつぶしてログのみ。ユーザー応答は止めない）。
   if (updateError) {
+    await deleteDriveFile(driveFileId)
     return NextResponse.json({ error: 'ステータス更新に失敗しました。' }, { status: 500 })
   }
   if (!updatedRow) {
+    await deleteDriveFile(driveFileId)
     return NextResponse.json({ error: 'この書類は既に手続きが完了しています。' }, { status: 409 })
   }
 

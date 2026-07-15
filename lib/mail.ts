@@ -144,3 +144,33 @@ export async function sendRenewalDigestMail(
     text: lines.join('\n'),
   })
 }
+
+// ===== CSVインポート自動化：依頼の自動マッチ完了通知（2026-07-15追加） =====
+// 担当営業が「CSVインポート依頼」を出した後、管理部が新しいCSVを取り込んだ結果
+// 自動マッチが成立し依頼が自動完了した際、依頼元の担当営業へ通知する。社内向けメールのため
+// 氏名・就業先名を本文に含めてよい（署名依頼メールと異なるルール。renewal digestと同様）。
+export async function sendCsvImportMatchedMail(
+  toEmail: string,
+  staffName: string | null,
+  workLocationName: string | null
+): Promise<void> {
+  const subject = `【APパートナーズ】CSVインポート依頼が完了しました（${staffName || '対象スタッフ'}様）`
+  await transporter.sendMail({
+    from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject,
+    text: [
+      'お疲れ様です。APパートナーズです。',
+      '',
+      `以前ご依頼いただいたCSVインポート依頼について、該当データが取り込まれ、自動的に完了しました。`,
+      '',
+      `対象スタッフ：${staffName || '(氏名不明)'}`,
+      `就業先：${workLocationName || '(就業先不明)'}`,
+      '',
+      '申請画面（STEP2）からCSV検索を行うと、内容が反映できる状態になっています。',
+      `担当営業の方はこちら：${APP_URL}/dashboard/sales`,
+      '',
+      '※本メールは自動送信です。このアドレスへの返信には対応しておりません。ご不明点は管理部までご連絡ください。',
+    ].join('\n'),
+  })
+}

@@ -234,6 +234,19 @@ export default function AdminDashboard() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
 
+  // 依頼管理タブの「絞り込み」リセットボタン用（ビルドエラー修正・2026-07-15：
+  // JSX側から参照されていたが未定義だった）
+  const resetFilters = () => {
+    setSearchText('')
+    setDeptFilter('')
+    setRequesterFilter('')
+    setTypeFilter('')
+    setSystemFilter('')
+    setStatusFilter('pending')
+    setDateFrom('')
+    setDateTo('')
+  }
+
   const [flowContracts, setFlowContracts] = useState<Contract[]>([])
   const {
     approvedContracts, approvedTotalCount, approvedHasMore, approvedLoadingMore,

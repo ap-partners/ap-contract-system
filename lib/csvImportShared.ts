@@ -126,8 +126,8 @@ export function buildUniqueKey(row: Record<string, any>, systemKey: ImportSystem
 // CSVバッファ（cp932エンコード）をパースして行の配列を返す
 export function parseCsvBuffer(buffer: Buffer): Record<string, any>[] {
   const text = iconv.decode(buffer, 'cp932')
-  const parsed = Papa.parse<Record<string, any>>(text, { header: true, skipEmptyLines: true })
-  return parsed.data
+  const parsed = Papa.parse(text, { header: true, skipEmptyLines: true })
+  return parsed.data as Record<string, any>[]
 }
 
 export type CsvRecordForUpsert = {

@@ -20,43 +20,104 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://ap-contract-system.v
 // （docs/SYSTEM_DESIGN.md 10章 2026-07-13決定。1通のメールで完結させる方式）。
 // コードは数字6桁のみで氏名・契約内容等の個人情報は含まないため、上記の
 // 「本文に個人情報を含めない」ルールには抵触しない。
-// 2026-07-13追加：プロのUXライター/CRM観点でのレビューを踏まえて件名・本文を改善
-// （docs/SYSTEM_DESIGN.md 10章 2026-07-13参照）。件名には「認証コード在中」を明記し
-// 本文を読み飛ばされるリスクを下げる一方、期限（2日間）はコードの有効期限であって
-// 対応そのものの締切ではない（再発行可能）ため、件名では触れず本文で正確に説明する。
+// 2026-07-16修正（UIUX総合レビュー対応・伊藤さん承認済み）：
+//  ①件名の「（認証コード在中）」はフィッシングメールを連想させる表現のため削除
+//    （コード自体は引き続き本文に記載）。
+//  ②書類種別（雇用契約書／就業条件明示書等）を件名・本文に追加。氏名・給与・就業先等の
+//    個人情報は引き続き一切含めないため、7-4章のルールには抵触しない。
+//  ③HTML版を追加（ボタン・認証コードを大きく目立たせる、他社の実例を伊藤さんと確認の上で
+//    採用したデザイン）。ただし環境・メールアプリによりHTMLが正しく表示されない場合に備え、
+//    従来通りの文字だけの版（text）も同じメールに必ず同封し、HTML非対応の環境では自動的に
+//    そちらが表示されるようにする（multipart/alternative。nodemailerのtext+html指定で対応）。
+//    見た目の崩れを防ぐため、表（テーブル）レイアウト＋インラインスタイルのみを使い、
+//    画像・外部フォント・flexbox等の新しいCSSは使用しない。
 export async function sendSignRequestMail(
   toEmail: string,
   contractId: string,
   isConfirmationOnly: boolean,
-  authCode: string
+  authCode: string,
+  documentType?: string | null
 ): Promise<void> {
   const url = `${APP_URL}/sign/${contractId}`
+  // document_type には改行込みの「雇用契約書 兼\n就業条件明示書」（パターンC）が
+  // 入ることがあるため、メール表示用に改行をスペースへ変換する。
+  const docTypeLabel = (documentType || '').replace(/\n/g, ' ').trim()
+  const docTypePrefix = docTypeLabel ? `【${docTypeLabel}】` : ''
   const subject = isConfirmationOnly
-    ? '【APパートナーズ】書類のご確認をお願いします（認証コード在中）'
-    : '【APパートナーズ】契約書のご署名をお願いします（認証コード在中）'
+    ? `【APパートナーズ】${docTypePrefix}書類のご確認をお願いします`
+    : `【APパートナーズ】${docTypePrefix}契約書のご署名をお願いします`
   const actionLabel = isConfirmationOnly ? 'ご確認' : 'ご署名'
+  const docTypeLine = docTypeLabel ? `対象書類：${docTypeLabel}\n` : ''
+
+  const text = [
+    'お疲れ様です。APパートナーズです。',
+    '',
+    `書類の${actionLabel}をお願いいたします。`,
+    docTypeLine,
+    '①下記URLを開いてください',
+    url,
+    '',
+    '②画面で「社員番号」と「認証コード」を入力してください',
+    `　認証コード（6桁）：${authCode}`,
+    '',
+    '※認証コードは本人確認のためのものです。他の方に伝えないようご注意ください。',
+    '※コードの有効期限は2日間です。切れた場合は、画面の「認証コードを再発行する」からいつでも再送できます。',
+    '※操作方法についてご不明な点があれば、担当営業までご連絡ください。',
+    '',
+    'このメールに心当たりがない場合は、お手数ですが破棄してください。',
+  ].filter(Boolean).join('\n')
+
+  const html = `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F7FC;padding:24px 0;">
+  <tr><td align="center">
+    <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:8px;max-width:480px;width:100%;">
+      <tr><td style="padding:32px 32px 8px 32px;font-family:sans-serif;font-size:14px;color:#1A2340;">
+        お疲れ様です。APパートナーズです。
+      </td></tr>
+      <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;">
+        書類の${actionLabel}をお願いいたします。
+      </td></tr>
+      ${docTypeLabel ? `<tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#5A6A8A;">対象書類：${docTypeLabel}</td></tr>` : ''}
+      <tr><td align="center" style="padding:24px 32px 8px 32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0">
+          <tr><td align="center" bgcolor="#1B3A8C" style="border-radius:6px;">
+            <a href="${url}" target="_blank" style="display:inline-block;padding:14px 32px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">
+              書類を${actionLabel}する
+            </a>
+          </td></tr>
+        </table>
+      </tr></td>
+      <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#5A6A8A;" align="center">
+        ボタンが表示されない場合は <a href="${url}" style="color:#1B3A8C;">こちらのリンク</a> を開いてください
+      </td></tr>
+      <tr><td style="padding:24px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">
+        画面を開いたら「社員番号」と、下記の「認証コード」を入力してください。
+      </td></tr>
+      <tr><td align="center" style="padding:12px 32px 0 32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+          <tr><td align="center" bgcolor="#EEF2FA" style="border-radius:6px;padding:14px 0;font-family:sans-serif;font-size:26px;font-weight:bold;letter-spacing:4px;color:#1B3A8C;">
+            ${authCode}
+          </td></tr>
+        </table>
+      </tr></td>
+      <tr><td style="padding:20px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#5A6A8A;line-height:1.7;">
+        ※認証コードは本人確認のためのものです。他の方に伝えないようご注意ください。<br>
+        ※コードの有効期限は2日間です。切れた場合は、画面の「認証コードを再発行する」からいつでも再送できます。<br>
+        ※操作方法についてご不明な点があれば、担当営業までご連絡ください。
+      </td></tr>
+      <tr><td style="padding:20px 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
+        このメールに心当たりがない場合は、お手数ですが破棄してください。
+      </td></tr>
+    </table>
+  </td></tr>
+</table>`.trim()
 
   await transporter.sendMail({
     from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
     to: toEmail,
     subject,
-    text: [
-      'お疲れ様です。APパートナーズです。',
-      '',
-      `書類の${actionLabel}をお願いいたします。`,
-      '',
-      '①下記URLを開いてください',
-      url,
-      '',
-      '②画面で「社員番号」と「認証コード」を入力してください',
-      `　認証コード（6桁）：${authCode}`,
-      '',
-      '※認証コードは本人確認のためのものです。他の方に伝えないようご注意ください。',
-      '※コードの有効期限は2日間です。切れた場合は、画面の「認証コードを再発行する」からいつでも再送できます。',
-      '※操作方法についてご不明な点があれば、担当営業までご連絡ください。',
-      '',
-      'このメールに心当たりがない場合は、お手数ですが破棄してください。',
-    ].join('\n'),
+    text,
+    html,
   })
 }
 

@@ -112,7 +112,7 @@ export async function POST(
   const isConfirmationOnly = contract.document_type === '就業条件明示書'
 
   try {
-    await sendSignRequestMail(toEmail, id, isConfirmationOnly, authCode)
+    await sendSignRequestMail(toEmail, id, isConfirmationOnly, authCode, contract.document_type)
   } catch (e: any) {
     return NextResponse.json({ error: 'メール送信に失敗しました：' + (e?.message || '') }, { status: 500 })
   }

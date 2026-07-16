@@ -140,7 +140,7 @@ export async function POST(
   }
 
   try {
-    await sendSignRequestMail(toEmail, id, isConfirmationOnly, authCode)
+    await sendSignRequestMail(toEmail, id, isConfirmationOnly, authCode, contract.document_type)
   } catch (e: any) {
     await rollbackToApproved()
     return NextResponse.json(

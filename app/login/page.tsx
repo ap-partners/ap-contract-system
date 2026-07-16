@@ -11,11 +11,17 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  // 総合レビュー指摘I対応（2026-07-16）：ログアウト後の再ログインでメール欄に前回のアドレスが
+  // 残るため、ロールを兼任する担当者が意図と違うロールでログインしやすいという指摘。
+  // 遷移前に一瞬「◯◯としてログインします」という成功メッセージを出し、意図したロールと
+  // 違う場合にその場で気づけるようにする。
+  const [successMsg, setSuccessMsg] = useState('')
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError('')
+    setSuccessMsg('')
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
       setError('メールアドレスまたはパスワードが正しくありません')
@@ -23,9 +29,16 @@ export default function LoginPage() {
       return
     }
     const role = data.user?.user_metadata?.role
-    if (role === '管理部') router.push('/dashboard/admin')
-    else if (role === 'SSC') router.push('/dashboard/ssc')
-    else if (role === '担当営業') router.push('/dashboard/sales')
+    const destinationByRole: Record<string, string> = {
+      '管理部': '/dashboard/admin',
+      'SSC': '/dashboard/ssc',
+      '担当営業': '/dashboard/sales',
+    }
+    const destination = role ? destinationByRole[role] : undefined
+    if (destination) {
+      setSuccessMsg(`${role}としてログインしました。画面を開いています…`)
+      setTimeout(() => router.push(destination), 700)
+    }
     else {
       // 総合レビュー指摘23対応：以前はロール未設定でも/dashboard/salesへ送っていたが、
       // sales側のロールチェックで即座に/loginへ押し戻され、エラーメッセージも出ないまま
@@ -89,6 +102,12 @@ export default function LoginPage() {
             {error && (
               <div className="rounded-lg px-4 py-3 text-sm" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
                 {error}
+              </div>
+            )}
+
+            {successMsg && (
+              <div className="rounded-lg px-4 py-3 text-sm" style={{ background: '#ECFDF5', color: '#065F46', border: '1px solid #A7F3D0' }}>
+                ✅ {successMsg}
               </div>
             )}
 

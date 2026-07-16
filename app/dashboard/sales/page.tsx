@@ -328,6 +328,13 @@ export default function SalesDashboard() {
     { key: 'renewal', label: '更新期限管理', count: renewalCandidates.length, color: '#F59E42', tone: 'orange', icon: 'clock' },
   ]
 
+  // 総合レビュー指摘C対応（2026-07-16）：上部KPIカードと直下のタブが同じ7項目を重複表示しており、
+  // ファーストビューの半分が同じ情報の繰り返しになっていた（レビュー指摘B・C）。
+  // カードは「今日対応すべき」もの（要説明・差し戻し・署名待ち・更新期限管理）に絞り、
+  // 網羅的な件数・切り替えは直下のタブ（filterCards全件）に任せる。
+  const TOP_CARD_KEYS: FilterKey[] = ['explain', 'rejected', 'waiting', 'renewal']
+  const topCards = filterCards.filter(c => TOP_CARD_KEYS.includes(c.key))
+
   const baseListForFilter: Record<FilterKey, Contract[]> = {
     pending: pendingList,
     explain: explainList,
@@ -564,8 +571,8 @@ export default function SalesDashboard() {
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-4 xl:grid-cols-7">
-              {filterCards.map(card => (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {topCards.map(card => (
                 <button
                   key={card.key}
                   onClick={() => setActiveFilter(card.key)}

@@ -279,6 +279,9 @@ export default function SSCContractDetail() {
   // 強制承認のUI状態（2026-07-02追加：7-5章の骨格実装。warning_level='red'の時のみ使用）
   const [showForceApproveForm, setShowForceApproveForm] = useState(false)
   const [forceApproveReason, setForceApproveReason] = useState('')
+  // 総合レビュー指摘G対応（2026-07-16）：強制承認は取り消し不可の危険操作のため、
+  // 理由入力に加えて「取り消し不可であることを理解した」チェックを入れないと実行できないようにする
+  const [forceApproveAcknowledged, setForceApproveAcknowledged] = useState(false)
 
   useEffect(() => {
     const init = async () => {
@@ -935,16 +938,29 @@ export default function SSCContractDetail() {
                       value={forceApproveReason}
                       onChange={e => setForceApproveReason(e.target.value)}
                     />
+                    {/* 総合レビュー指摘G対応（2026-07-16）：強制承認は取り消し不可の危険操作であることを
+                        押す直前に明示し、誤クリックを防ぐ */}
+                    <label className="mt-3 flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={forceApproveAcknowledged}
+                        onChange={e => setForceApproveAcknowledged(e.target.checked)}
+                      />
+                      <span className="text-xs font-medium leading-relaxed" style={{ color: '#B91C1C' }}>
+                        強制承認は取り消しできません。内容を確認のうえ実行することを理解しました。
+                      </span>
+                    </label>
                     <div className="flex gap-3 mt-3">
                       <button
                         onClick={handleForceApprove}
-                        disabled={actionLoading || !forceApproveReason.trim()}
+                        disabled={actionLoading || !forceApproveReason.trim() || !forceApproveAcknowledged}
                         className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white transition-all disabled:opacity-50"
                         style={{ background: '#DC2626' }}>
-                        {actionLoading ? '処理中...' : '強制承認する'}
+                        {actionLoading ? '処理中...' : '強制承認する（取り消し不可）'}
                       </button>
                       <button
-                        onClick={() => { setShowForceApproveForm(false); setForceApproveReason(''); setActionError('') }}
+                        onClick={() => { setShowForceApproveForm(false); setForceApproveReason(''); setForceApproveAcknowledged(false); setActionError('') }}
                         className="px-4 py-2.5 rounded-lg text-sm border" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
                         キャンセル
                       </button>
@@ -983,11 +999,23 @@ export default function SSCContractDetail() {
 
                 {/* メインボタン（フォーム展開前のみ表示） */}
                 {!showRejectForm && !showApproveConfirm && !showForceApproveForm && (
+                  <>
+                    {/* 総合レビュー指摘G対応（2026-07-16）：警告ありの案件では通常の「承認する」が
+                        出ず「強制承認」しか無い理由が伝わらず戸惑うとの指摘に対応し、説明文を追加。
+                        あわせて危険操作（強制承認）だけを赤にし、差し戻しはニュートラルな色に変えて
+                        主副の区別をはっきりさせる */}
+                    {isRedWarning && (
+                      <p className="text-xs font-medium leading-relaxed mb-3 text-center" style={{ color: '#B91C1C' }}>
+                        自動チェックで警告があるため、通常承認はできません。内容を確認のうえ、強制承認（理由必須）か差し戻しを選んでください。
+                      </p>
+                    )}
                   <div className="flex gap-4">
                     <button
                       onClick={() => { setShowRejectForm(true); setActionError('') }}
                       className="flex-1 py-3 rounded-xl text-sm font-bold border-2 transition-all"
-                      style={{ color: '#DC2626', borderColor: '#DC2626', background: 'white' }}>
+                      style={isRedWarning
+                        ? { color: '#5A6A8A', borderColor: '#D0DAF0', background: 'white' }
+                        : { color: '#DC2626', borderColor: '#DC2626', background: 'white' }}>
                       ↩ 差し戻す
                     </button>
                     {isRedWarning ? (
@@ -1006,6 +1034,7 @@ export default function SSCContractDetail() {
                       </button>
                     )}
                   </div>
+                  </>
                 )}
               </>
             )}

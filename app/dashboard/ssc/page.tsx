@@ -597,7 +597,9 @@ export default function SSCDashboard() {
                         </span>
                       )}
                       {warning && (
-                        <span className="rounded-full bg-[#FFF3E8] px-3 py-1 text-xs font-semibold text-[#F59E42]">
+                        // 総合レビュー指摘F対応（2026-07-16）：🔴（赤＝要注意）の絵文字なのに
+                        // 背景がオレンジで危険度の直感が働かないという指摘。赤系に統一。
+                        <span className="rounded-full bg-[#FDECEC] px-3 py-1 text-xs font-semibold text-[#E74C3C]">
                           🔴 個別確認が必要（一括承認対象外）
                         </span>
                       )}

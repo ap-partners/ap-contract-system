@@ -847,7 +847,9 @@ export default function AdminDashboard() {
         <div className="min-w-0">
           <div className="mb-2 flex flex-wrap items-center gap-2">
             {deadline.type && <Pill tone={deadline.type === 'overdue' ? 'red' : 'orange'}>{deadline.label}</Pill>}
-            {warning && <Pill tone="orange">🔴 個別確認が必要（一括承認対象外）</Pill>}
+            {/* 総合レビュー指摘F対応（2026-07-16）：🔴（赤）の絵文字なのに地色がオレンジで
+                危険度の直感が働かないという指摘。SSC一覧と同じくtoneをredに統一 */}
+            {warning && <Pill tone="red">🔴 個別確認が必要（一括承認対象外）</Pill>}
             {autoWarning && <Pill tone={autoWarningTone}>{contract.warning_level === 'red' ? '🔴' : '🟡'} 自動チェック要確認（一括承認対象外）</Pill>}
           </div>
           <p className="break-words text-[22px] font-semibold leading-7 text-[#1F2937]">{staff.name || '-'}</p>

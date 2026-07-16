@@ -205,6 +205,13 @@ export default function SalesDashboard() {
   } = useApprovedAccumulator<Contract>(q => q.eq('created_by_dept_no', deptNoRef.current), ['署名済み', '完了'])
   const [loading, setLoading] = useState(true)
   const [activeFilter, setActiveFilter] = useState<FilterKey>('pending')
+  // 総合レビュー指摘B対応（2026-07-16）：担当営業のタブが「ステータス（進行中/要説明/差し戻し/
+  // 署名待ち/完了）」と「機能（依頼状況/更新期限管理）」を1階層に混在させており、管理部（機能タブ→
+  // ステータスのサブタブという2階層）と文法が異なるという指摘。activeFilterの値自体は変えず
+  // （既存のフィルタ・蓄積表示ロジックへの影響を避けるため）、タブの見せ方だけを「契約一覧／
+  // 依頼状況／更新期限管理」の機能タブ＋契約一覧内のステータスのサブタブという2階層に変更する。
+  // このrefは「契約一覧」タブに戻ったときに直前に見ていたステータスへ復帰するためのもの。
+  const lastContractFilterRef = useRef<FilterKey>('pending')
   const [confirmingExplainId, setConfirmingExplainId] = useState<string | null>(null)
   const [explainLoading, setExplainLoading] = useState(false)
   const [myRequests, setMyRequests] = useState<MyRequest[]>([])
@@ -327,6 +334,14 @@ export default function SalesDashboard() {
     { key: 'other', label: '依頼状況', count: visibleMyRequests.length, color: '#7C3AED', tone: 'purple', icon: 'mail' },
     { key: 'renewal', label: '更新期限管理', count: renewalCandidates.length, color: '#F59E42', tone: 'orange', icon: 'clock' },
   ]
+
+  // 総合レビュー指摘B対応（2026-07-16）：契約のステータス別サブタブ（機能タブ「契約一覧」の中身）。
+  // 「依頼状況」「更新期限管理」は別の機能タブとして扱うためここには含めない。
+  const CONTRACT_SUB_KEYS: FilterKey[] = ['pending', 'explain', 'rejected', 'waiting', 'completed']
+  const isContractGroupActive = CONTRACT_SUB_KEYS.includes(activeFilter)
+  const contractSubTabs = filterCards.filter(c => CONTRACT_SUB_KEYS.includes(c.key))
+  const contractsTotalCount = pendingList.length + explainList.length + rejectedList.length + waitingList.length + approvedTotalCount
+  if (isContractGroupActive) lastContractFilterRef.current = activeFilter
 
   // 総合レビュー指摘C対応（2026-07-16）：上部KPIカードと直下のタブが同じ7項目を重複表示しており、
   // ファーストビューの半分が同じ情報の繰り返しになっていた（レビュー指摘B・C）。
@@ -595,25 +610,46 @@ export default function SalesDashboard() {
           </div>
         </section>
 
+        {/* 総合レビュー指摘B対応（2026-07-16）：管理部と同じ「機能タブ→ステータスのサブタブ」の
+            2階層構造に変更。機能タブは「契約一覧／依頼状況／更新期限管理」の3つ */}
         <nav className="mt-6 border-b border-[#E8EDF5]">
           <div className="flex gap-8 overflow-x-auto">
-            {filterCards.map(card => {
+            {[
+              { key: 'contracts' as const, label: '契約一覧', icon: 'file' as IconName, count: contractsTotalCount, isActive: isContractGroupActive, onClick: () => setActiveFilter(lastContractFilterRef.current) },
+              { key: 'other' as const, label: '依頼状況', icon: 'mail' as IconName, count: visibleMyRequests.length, isActive: activeFilter === 'other', onClick: () => setActiveFilter('other') },
+              { key: 'renewal' as const, label: '更新期限管理', icon: 'clock' as IconName, count: renewalCandidates.length, isActive: activeFilter === 'renewal', onClick: () => setActiveFilter('renewal') },
+            ].map(group => (
+              <button
+                key={group.key}
+                onClick={group.onClick}
+                className={`group relative flex shrink-0 items-center gap-2 whitespace-nowrap px-1 pb-4 text-sm font-semibold transition ${group.isActive ? 'text-[#2F5FD0]' : 'text-[#1F2937] hover:text-[#2F5FD0]'}`}
+              >
+                <Icon name={group.icon} className="h-4 w-4" />
+                {group.label}
+                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${group.isActive ? 'bg-[#2F5FD0] text-white' : 'bg-[#EEF0F5] text-[#6B7280]'}`}>{group.count}</span>
+                <span className={`absolute bottom-[-1px] left-0 h-0.5 rounded-full bg-[#2F5FD0] transition-all duration-300 ${group.isActive ? 'w-full' : 'w-0 group-hover:w-full'}`} />
+              </button>
+            ))}
+          </div>
+        </nav>
+
+        {/* 「契約一覧」機能タブの中だけに表示するステータスのサブタブ（進行中/要説明/差し戻し/署名待ち/完了） */}
+        {isContractGroupActive && (
+          <div className="mt-4 flex gap-2 overflow-x-auto">
+            {contractSubTabs.map(card => {
               const isActive = activeFilter === card.key
               return (
                 <button
                   key={card.key}
                   onClick={() => setActiveFilter(card.key)}
-                  className={`group relative flex shrink-0 items-center gap-2 whitespace-nowrap px-1 pb-4 text-sm font-semibold transition ${isActive ? 'text-[#2F5FD0]' : 'text-[#1F2937] hover:text-[#2F5FD0]'}`}
+                  className={`shrink-0 whitespace-nowrap rounded-full border px-4 py-2 text-xs font-semibold transition ${isActive ? 'border-[#2F5FD0] bg-[#EEF2FA] text-[#2F5FD0]' : 'border-[#E8EDF5] bg-white text-[#6B7280] hover:border-[#2F5FD0] hover:text-[#2F5FD0]'}`}
                 >
-                  <Icon name={card.icon} className="h-4 w-4" />
-                  {card.label}
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${isActive ? 'bg-[#2F5FD0] text-white' : 'bg-[#EEF0F5] text-[#6B7280]'}`}>{card.count}</span>
-                  <span className={`absolute bottom-[-1px] left-0 h-0.5 rounded-full bg-[#2F5FD0] transition-all duration-300 ${isActive ? 'w-full' : 'w-0 group-hover:w-full'}`} />
+                  {card.label} {card.count}
                 </button>
               )
             })}
           </div>
-        </nav>
+        )}
 
         {activeFilter !== 'other' && activeFilter !== 'renewal' && (
           <section className="mt-5 rounded-[18px] border border-[#E8EDF5] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)]">

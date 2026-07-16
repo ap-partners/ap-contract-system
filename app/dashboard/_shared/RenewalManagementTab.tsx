@@ -10,7 +10,19 @@ import {
   remainingDays,
   RenewalCandidate,
   addDays,
+  ContactFields,
 } from './useRenewalCandidates'
+
+// 2026-07-16追加（チャットB・④差異確認の表示範囲拡大）：指揮命令者・派遣先責任者・
+// 苦情処理申出先の3グループ×4項目の表示ラベル
+const CONTACT_GROUP_LABELS: Record<keyof ContactFields, string> = {
+  cmd: '指揮命令者',
+  resp: '派遣先責任者',
+  comp: '苦情処理申出先',
+}
+const CONTACT_FIELD_LABELS: Record<'dept' | 'role' | 'name' | 'tel', string> = {
+  dept: '部署', role: '役職', name: '氏名', tel: 'TEL',
+}
 import { useContractListToolbar } from './useContractListToolbar'
 
 // データ取得・同期は親（管理部・担当営業・SSCダッシュボード）側でuseRenewalCandidatesを1回だけ
@@ -106,6 +118,8 @@ export default function RenewalManagementTab({
   const [notRenewingReasonId, setNotRenewingReasonId] = useState<string | null>(null)
   const [notRenewingReasonText, setNotRenewingReasonText] = useState('')
   const [recheckingId, setRecheckingId] = useState<string | null>(null)
+  // 2026-07-16追加（チャットB・④）：指揮命令者等12項目の差異詳細の開閉状態
+  const [contactDetailId, setContactDetailId] = useState<string | null>(null)
 
   // 残日数の内訳をKPIカードとして先頭に出す（伊藤さんご指摘：残日数の内訳が一目でわからず、
   // 今日どれから手をつけるべきか掴みにくい、への対応。2026-07-14追加）。45日前から対象に
@@ -380,6 +394,30 @@ export default function RenewalManagementTab({
                               changed: (c.work_location_name || null) !== (c.new_work_location_name || null),
                             },
                           ].filter(r => r.changed)
+
+                          // 2026-07-16追加（チャットB・④）：雇用期間・派遣期間・就業場所以外に、
+                          // 指揮命令者・派遣先責任者・苦情処理申出先（部署/役職/氏名/TEL、計12項目）
+                          // で変わった項目があれば別枠で検知する。CSV自動反映でも派遣先の担当者が
+                          // 変わることは普通にあり得るため（伊藤さんご指摘）、変更があった項目だけを
+                          // 「詳細を確認」ボタンの先に表示する。
+                          const contactDiffRows: { group: string; field: string; before: string; after: string }[] = []
+                          if (c.previous_contact_fields && c.new_contact_fields) {
+                            (['cmd', 'resp', 'comp'] as const).forEach(g => {
+                              (['dept', 'role', 'name', 'tel'] as const).forEach(f => {
+                                const before = c.previous_contact_fields?.[g]?.[f] || null
+                                const after = c.new_contact_fields?.[g]?.[f] || null
+                                if ((before || null) !== (after || null)) {
+                                  contactDiffRows.push({
+                                    group: CONTACT_GROUP_LABELS[g],
+                                    field: CONTACT_FIELD_LABELS[f],
+                                    before: before || '―',
+                                    after: after || '―',
+                                  })
+                                }
+                              })
+                            })
+                          }
+
                           return (
                             <div className="flex flex-col gap-2">
                               <div className="text-[11px] text-[#8B98B1]">CSVから自動取得した最新内容との差異</div>
@@ -398,6 +436,34 @@ export default function RenewalManagementTab({
                                     ))}
                                   </tbody>
                                 </table>
+                              )}
+
+                              {contactDiffRows.length > 0 && (
+                                <div className="rounded-2xl bg-[#FFF8F1] px-4 py-3">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="text-xs font-semibold" style={{ color: '#B45309' }}>
+                                      指揮命令者・派遣先責任者・苦情処理申出先にも変更点があります（{contactDiffRows.length}項目）
+                                    </div>
+                                    <button
+                                      onClick={() => setContactDetailId(contactDetailId === c.id ? null : c.id)}
+                                      className="shrink-0 rounded-full border border-[#E8EDF5] bg-white px-3 py-1 text-[11px] font-semibold text-[#2F5FD0]"
+                                    >{contactDetailId === c.id ? '閉じる' : '詳細を確認'}</button>
+                                  </div>
+                                  {contactDetailId === c.id && (
+                                    <table className="mt-2 text-xs w-full">
+                                      <tbody>
+                                        <tr className="text-[#6B7280]"><td className="py-1 pr-3 w-1/5">項目</td><td className="py-1 pr-3 w-2/5">前回</td><td className="py-1 w-2/5">今回</td></tr>
+                                        {contactDiffRows.map((r, i) => (
+                                          <tr key={i}>
+                                            <td className="py-1 pr-3 align-top">{r.group}・{r.field}</td>
+                                            <td className="py-1 pr-3 text-[#8B98B1] line-through align-top">{r.before}</td>
+                                            <td className="py-1 font-semibold align-top" style={{ color: '#E74C3C' }}>{r.after}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  )}
+                                </div>
                               )}
                             </div>
                           )
@@ -433,6 +499,23 @@ export default function RenewalManagementTab({
                               style={{ background: '#EAF1FF', color: '#244CB3' }}
                             >雇用期間へコピー ↓</button>
                           </div>
+
+                          {/* 2026-07-16追加（チャットB・⑦）：誤って前回と同じ期間のまま申請してしまう
+                              ケースへの安全チェック。あくまで警告のみで、入力や申請自体は止めない
+                              （過去に誤った内容で署名済みの契約を訂正するケースもあり得るため。
+                              伊藤さんご指摘・2026-07-16）。 */}
+                          {draft.start && draft.end && c.dispatch_start_date && c.dispatch_end_date
+                            && draft.start === c.dispatch_start_date && draft.end === c.dispatch_end_date && (
+                            <div className="rounded-2xl px-4 py-2.5" style={{ background: '#FDECEC' }}>
+                              <p className="text-xs font-semibold" style={{ color: '#B91C1C' }}>
+                                入力された派遣期間が前回と全く同じです。誤って同じ期間のまま入力していないかご確認ください。
+                              </p>
+                              <p className="mt-0.5 text-[11px]" style={{ color: '#B91C1C' }}>
+                                （前回契約の内容を訂正するための申請である場合は、そのまま進めて問題ありません）
+                              </p>
+                            </div>
+                          )}
+
                           <div className="grid grid-cols-2 gap-2">
                             <div>
                               <div className="text-[11px] text-[#6B7280] mb-1">雇用期間_自</div>

@@ -18,8 +18,24 @@
 
 import { useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { extractCsvFields } from '@/app/apply/_lib/helpers'
 
 export const RENEWAL_ALERT_WINDOW_DAYS = 45
+
+// 2026-07-16追加（チャットB・④差異確認の表示範囲拡大）：指揮命令者・派遣先責任者・
+// 苦情処理申出先の3グループ×(部署/役職/氏名/TEL)＝12項目。前回契約の値（previous）と
+// 新しいCSVで見つかった値（new）を保持し、RenewalManagementTab側で変更有無を比較・表示する。
+export type ContactFieldGroup = {
+  dept: string | null
+  role: string | null
+  name: string | null
+  tel: string | null
+}
+export type ContactFields = {
+  cmd: ContactFieldGroup
+  resp: ContactFieldGroup
+  comp: ContactFieldGroup
+}
 
 export type RenewalCandidate = {
   id: string
@@ -37,6 +53,9 @@ export type RenewalCandidate = {
   // 2026-07-16追加：前回契約の書類種別（就業条件明示書／雇用契約書 兼 就業条件明示書 等）。
   // 一覧カードに表示する。書類種別そのものを変える更新はチャットD（新規申請ルート）でのみ対応。
   document_type: string | null
+  // 2026-07-16追加（チャットB）：指揮命令者・派遣先責任者・苦情処理申出先の前回値／新値
+  previous_contact_fields: ContactFields | null
+  new_contact_fields: ContactFields | null
   no_renewal_reason: string | null
   manual_override: boolean
   manual_override_reason: string | null
@@ -159,6 +178,12 @@ export function useRenewalCandidates() {
           csv_system: c.csv_system || null,
           // 2026-07-16追加：前回契約の書類種別（一覧カード表示用）
           document_type: c.document_type || null,
+          // 2026-07-16追加（チャットB）：前回契約の指揮命令者・派遣先責任者・苦情処理申出先
+          previous_contact_fields: {
+            cmd: { dept: c.cmd_dept || null, role: c.cmd_role || null, name: c.cmd_name || null, tel: c.cmd_tel || null },
+            resp: { dept: c.resp_dept || null, role: c.resp_role || null, name: c.resp_name || null, tel: c.resp_tel || null },
+            comp: { dept: c.comp_dept || null, role: c.comp_role || null, name: c.comp_name || null, tel: c.comp_tel || null },
+          },
         })
       }
 
@@ -301,6 +326,14 @@ export function useRenewalCandidates() {
     }
 
     const r = rowsFound[0]
+    // 2026-07-16追加（チャットB）：CSVの生データから指揮命令者・派遣先責任者・苦情処理申出先の
+    // 新しい値も抽出し、previous_contact_fieldsとの差異表示に使う
+    const extracted = extractCsvFields(candidate.csv_system || '', r.raw_data) as Record<string, any>
+    const newContactFields: ContactFields = {
+      cmd: { dept: extracted.cmdDept || null, role: extracted.cmdRole || null, name: extracted.cmdName || null, tel: extracted.cmdTel || null },
+      resp: { dept: extracted.respDept || null, role: extracted.respRole || null, name: extracted.respName || null, tel: extracted.respTel || null },
+      comp: { dept: extracted.compDept || null, role: extracted.compRole || null, name: extracted.compName || null, tel: extracted.compTel || null },
+    }
     await updateCandidate(candidate.id, {
       new_dispatch_start: r.dispatch_start,
       new_dispatch_end: r.dispatch_end,
@@ -309,6 +342,7 @@ export function useRenewalCandidates() {
       new_work_location_name: r.work_location,
       new_work_address: r.work_address,
       new_csv_raw_data_id: r.id,
+      new_contact_fields: newContactFields,
       status: 'pending',
     })
   }, [updateCandidate])

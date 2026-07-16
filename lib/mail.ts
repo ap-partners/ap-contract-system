@@ -209,7 +209,7 @@ export async function sendRenewalDigestMail(
   lines.push(
     '',
     '期限超過の契約は特に優先してご確認ください。',
-    '更新期限管理タブから、スタッフ・クライアントへの意向確認と「送付準備完了」の操作をお願いします。',
+    '更新期限管理タブから対応をお願いします。',
     '',
     `担当営業の方はこちら：${APP_URL}/dashboard/sales`,
     `SSCの方はこちら：${APP_URL}/dashboard/ssc`,
@@ -271,7 +271,7 @@ export async function sendRenewalDigestMail(
         期限超過の契約は特に優先してご確認ください。
       </td></tr>
       <tr><td style="padding:0 32px 20px 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">
-        更新期限管理タブから、スタッフ・クライアントへの意向確認と「送付準備完了」の操作をお願いします。
+        更新期限管理タブから対応をお願いします。
       </td></tr>
       <tr><td style="padding:0 32px 2px 32px;font-family:sans-serif;font-size:13px;"><a href="${APP_URL}/dashboard/sales" style="color:#1B3A8C;">担当営業の方はこちら</a></td></tr>
       <tr><td style="padding:0 32px 2px 32px;font-family:sans-serif;font-size:13px;"><a href="${APP_URL}/dashboard/ssc" style="color:#1B3A8C;">SSCの方はこちら</a></td></tr>

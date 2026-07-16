@@ -1334,3 +1334,12 @@ STEP2の検索は「使用システム＋派遣開始日＋スタッフ社員番
     - 画面下部に固定表示（sticky）のバーを新設し、①仕分け件数の集計（一括申請◯件・個別申請◯件・未対応◯件。実行前の仕分け状況を表す。実行後は「申請済み」ステータスに移りこの集計からは外れる）、②一括申請の実行ボタン、の2つをここにまとめる。個別申請ボタンはこの固定バーには含めず、各行に留まる。
     - 一括申請の実行ボタンを押した際は、SSC・管理部の既存の一括承認と同じUXパターン（確認ダイアログ→処理中の全画面オーバーレイ→完了件数の結果表示）を流用する。実行時に期間データの有効性を再チェックし（フラグを立てた後にCSVが再取込まれる等でデータが変わる可能性への備え）、無効になっていた行は対象外にして結果画面に件数を表示する。
     - 技術実装イメージ：「一括申請」は`/apply`の画面を1件ずつ開くのではなく、確定済みの反映後データを使って裏側でそのまま新しい`contracts`行を作成・保存する（申請完了と同じ状態で保存）。`/apply`の画面（STEP8）を実際に経由するのは「個別申請」のみ。
+
+- **[実装完了・要デプロイ＋実機確認] チャットA（①②⑧⑨）を実装**（2026-07-16）：
+  - **DB**：`renewal_candidates`テーブルから`staff_intent`・`client_intent`列（CHECK制約含む）を削除、`document_type`列（text）を追加。DB関数`get_latest_genba_contracts_for_renewal()`を`document_type`も返すよう再作成（Supabase MCPで適用済み・反映確認済み）。既存データに`status='ready'`の行が無いことを確認した上で、`status`のCHECK制約から`'ready'`を削除（`pending`／`csv_pending`／`not_renewing`の3値に）。
+  - **`app/dashboard/_shared/useRenewalCandidates.ts`**：`RenewalCandidate`型から`staff_intent`・`client_intent`を削除し`document_type`（DB由来）・`current_dept_name`／`current_contract_type`（staffマスタから都度joinするクライアント側のみの項目）を追加。`isBothConfirmedToRenew`・`hasNonRenewalIntent`・`bulkMarkReady`を削除。`fetchCandidates()`でstaffテーブルから`dept_no`・`contract_type`も取得し、`department_master`で部署名に変換して各行に付与するよう変更（申請時点のスナップショットではなく現在値。伊藤さん確定）。`syncCandidates()`は新しいDB関数の戻り値から`document_type`も取り込むよう変更。`confirmNotRenewing`は常時呼び出し可能な操作に位置づけ直し（意向不一致という前提条件を撤廃）。
+  - **`app/dashboard/_shared/RenewalManagementTab.tsx`**：スタッフ意向・クライアント意向のSegmentedトグル2列、KPIカード「意向未確定」、一括「送付準備完了」ボタンと選択チェックボックス列を削除。カードグリッドを`[minmax(200px,1.6fr)_90px_minmax(160px,0.9fr)_130px_150px_auto]`に再構成し、氏名の下に社員番号・所属部署・雇用形態をまとめて表示、新設の「書類種別」列に前回契約の`document_type`（改行はスペースに変換して表示）を表示。「更新しないで確定する」は、以前は意向の不一致時のみ出ていたが、常時押せる控えめな下線リンクとして各カードに常設（意思決定ログ⑧）。右端ボタンの文言を状態表現から行動表現に統一：CSV自動反映で差分あり「更新内容を確認」、CSV未反映「対応方法を確認」、手入力（CSV対象外／クライアント変更後）「更新内容を入力」（意思決定ログ⑨）。`Segmented`コンポーネント自体はチャットC（一括申請／個別申請トグル）での再利用を見込んで残置。
+  - **`app/dashboard/sales/page.tsx`・`admin/page.tsx`・`ssc/page.tsx`**：`bulkMarkReady`の分割代入・propsへの受け渡しを削除。
+  - **`lib/mail.ts`**：更新期限管理ダイジェストメールの文言から「スタッフ・クライアントへの意向確認と『送付準備完了』の操作をお願いします」を「更新期限管理タブから対応をお願いします」に変更（text・html両方に影響する共通行のため1箇所の修正で両対応）。
+  - **未対応（次回チャットB・C・D）**：④差異確認の表示範囲拡大・⑥原契約confirmation画面・⑦安全チェックはチャットB、⑤の一括申請・個別申請はチャットC・D。
+  - **次にやること**：git push→Vercelデプロイ→実機確認（3ダッシュボードの更新期限管理タブで、所属部署・雇用形態・書類種別の表示、意向トグル削除後のレイアウト崩れが無いこと、「更新しないで確定する」の動作、ボタン文言の表示、を確認）。

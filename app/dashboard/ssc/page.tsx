@@ -173,7 +173,7 @@ export default function SSCDashboard() {
     candidates: renewalCandidates, loading: renewalLoading,
     syncCandidates, fetchCandidates, updateCandidate,
     searchCsvRenewal, requestCsvImport, switchToManualOverride,
-    copyDispatchToEmploy, bulkMarkReady, confirmNotRenewing,
+    copyDispatchToEmploy, confirmNotRenewing,
   } = useRenewalCandidates()
 
   useEffect(() => {
@@ -684,7 +684,6 @@ export default function SSCDashboard() {
               requestCsvImport={requestCsvImport}
               switchToManualOverride={switchToManualOverride}
               copyDispatchToEmploy={copyDispatchToEmploy}
-              bulkMarkReady={bulkMarkReady}
               confirmNotRenewing={confirmNotRenewing}
               currentUserId={user.id}
               currentUserDeptName="SSC"

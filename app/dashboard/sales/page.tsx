@@ -226,7 +226,7 @@ export default function SalesDashboard() {
     candidates: renewalCandidates, loading: renewalLoading,
     syncCandidates, fetchCandidates, updateCandidate,
     searchCsvRenewal, requestCsvImport, switchToManualOverride,
-    copyDispatchToEmploy, bulkMarkReady, confirmNotRenewing,
+    copyDispatchToEmploy, confirmNotRenewing,
   } = useRenewalCandidates()
 
   useEffect(() => {
@@ -698,7 +698,6 @@ export default function SalesDashboard() {
                 requestCsvImport={requestCsvImport}
                 switchToManualOverride={switchToManualOverride}
                 copyDispatchToEmploy={copyDispatchToEmploy}
-                bulkMarkReady={bulkMarkReady}
                 confirmNotRenewing={confirmNotRenewing}
                 currentUserId={user.id}
                 currentUserDeptName={deptNameRef.current}

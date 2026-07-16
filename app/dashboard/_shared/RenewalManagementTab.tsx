@@ -1,16 +1,14 @@
 // ===== 更新期限管理タブ（共通コンポーネント） =====
 // 管理部ダッシュボード（全部門）・担当営業ダッシュボード（自部門のみ）・SSCダッシュボード
-// （全部門・閲覧＋意向確認のみ）で共有する。
-// docs/SYSTEM_DESIGN.md 10章 2026-07-14「更新期限管理タブの仕様を確定」・2026-07-14
-// 「UI/UX再監査・カード型リストへの刷新」参照。
+// （全部門・閲覧のみ）で共有する。
+// docs/SYSTEM_DESIGN.md 10章 2026-07-14「更新期限管理タブの仕様を確定」・2026-07-16
+// 「更新期限管理タブの改修方針を確定」（チャットA）参照。
 'use client'
 
-import { useState, useEffect, Fragment } from 'react'
+import { useState, Fragment } from 'react'
 import {
   remainingDays,
   RenewalCandidate,
-  isBothConfirmedToRenew,
-  hasNonRenewalIntent,
   addDays,
 } from './useRenewalCandidates'
 import { useContractListToolbar } from './useContractListToolbar'
@@ -27,13 +25,12 @@ type Props = {
   requestCsvImport: (c: RenewalCandidate, userId: string, dept: string | null) => Promise<void>
   switchToManualOverride: (id: string, reason: string) => Promise<void>
   copyDispatchToEmploy: (id: string, start: string, end: string) => Promise<void>
-  bulkMarkReady: (ids: string[]) => Promise<{ updatedCount: number; skippedCount: number }>
   confirmNotRenewing: (id: string, reason: string) => Promise<void>
   currentUserId: string
   currentUserDeptName: string | null
-  // SSCは「閲覧＋意向確認」までの権限とし、最終的な「送付準備完了」への一括確定操作は
-  // 管理部・担当営業のみに残す（伊藤さんとの2026-07-14合意。原要件「SSCも管理部も管理する」を
-  // 踏まえ、意向確認・CSV依頼・手入力切替・更新しない確定は引き続きSSCも操作可能にする）。
+  // SSCは「閲覧のみ」の想定（伊藤さんとの2026-07-14合意）。将来チャットC・Dで一括申請・
+  // 個別申請の実行操作を追加する際、この propで実行系操作の可否を制御する想定
+  // （現時点では表示のみのタブのため、実行系UIは無い＝このpropは今のところ影響しない）。
   canFinalize?: boolean
 }
 
@@ -61,6 +58,8 @@ function daysBadge(days: number | null) {
   )
 }
 
+// トグル系UIの共通見た目（今回は使用箇所が無いが、チャットCの「一括申請／個別申請」トグルで
+// 同じ見た目を再利用する想定のため、コンポーネント自体は残しておく）
 function Segmented({
   value, onChange, options,
 }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
@@ -83,34 +82,29 @@ function Segmented({
 const STATUS_LABEL: Record<string, string> = {
   pending: '確認中',
   csv_pending: 'CSV未反映',
-  ready: '送付準備完了',
   not_renewing: '更新しない',
 }
 
-// カード上でひと目でわかるよう、ステータスごとにバッジを出す（現状の唯一の抜けは
-// 'ready'：以前は一括確定した後に画面上で見分けがつかず、二重処理につながる恐れがあった。
-// 2026-07-14修正）。'pending'は通常状態のため出さない。
-function StatusBadge({ status }: { status: RenewalCandidate['status'] }) {
-  if (status === 'ready') {
-    return <span className="text-xs font-semibold rounded-full px-2.5 py-1 whitespace-nowrap" style={{ background: '#D1FAE5', color: '#065F46' }}>✓ 送付準備完了</span>
-  }
-  return null
+// document_typeにはSTEP1の選択ボタン表示用のliteralな改行（'雇用契約書 兼\n就業条件明示書'）が
+// そのまま入っていることがあるため、一覧表示用に改行をスペースへ変換する
+// （app/api/contracts/[id]/pdf/route.tsのgetDocumentLabel()と同じ考え方）。
+function formatDocumentType(documentType: string | null): string {
+  if (!documentType) return '―'
+  return documentType.replace(/\n/g, ' ').trim()
 }
 
 export default function RenewalManagementTab({
   candidates, loading, updateCandidate,
   searchCsvRenewal, requestCsvImport, switchToManualOverride,
-  copyDispatchToEmploy, bulkMarkReady, confirmNotRenewing,
-  currentUserId, currentUserDeptName, canFinalize = true,
+  copyDispatchToEmploy, confirmNotRenewing,
+  currentUserId, currentUserDeptName,
 }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [overrideReasonId, setOverrideReasonId] = useState<string | null>(null)
   const [overrideReasonText, setOverrideReasonText] = useState('')
   const [manualDraft, setManualDraft] = useState<Record<string, { start: string; end: string }>>({})
   const [notRenewingReasonId, setNotRenewingReasonId] = useState<string | null>(null)
   const [notRenewingReasonText, setNotRenewingReasonText] = useState('')
-  const [bulkNotice, setBulkNotice] = useState<string | null>(null)
   const [recheckingId, setRecheckingId] = useState<string | null>(null)
 
   // 残日数の内訳をKPIカードとして先頭に出す（伊藤さんご指摘：残日数の内訳が一目でわからず、
@@ -130,12 +124,11 @@ export default function RenewalManagementTab({
     const bucket = t === 'overdue' ? 't7' : t
     if (bucket in kpiCounts) kpiCounts[bucket]++
   }
-  const unconfirmedCount = candidates.filter(c => c.staff_intent === 'unconfirmed' || c.client_intent === 'unconfirmed').length
 
   const statusOptions = Array.from(new Set(candidates.map(c => c.status)))
     .map(s => ({ value: s, label: STATUS_LABEL[s] || s }))
 
-  const { result: filtered, toolbar, statusFilter, searchText, sortKey } = useContractListToolbar<RenewalCandidate>(candidates, {
+  const { result: filtered, toolbar } = useContractListToolbar<RenewalCandidate>(candidates, {
     statusOptions,
     sortOptions: [
       { key: 'days_asc', label: '残日数が近い順', compare: (a, b) => (remainingDays(a) ?? 9999) - (remainingDays(b) ?? 9999) },
@@ -145,13 +138,6 @@ export default function RenewalManagementTab({
     getSearchText: c => `${c.staff_name || ''} ${c.employee_number} ${c.work_location_name || ''}`,
     searchPlaceholder: '氏名・社員番号・就業場所で検索',
   })
-
-  // 絞り込み・検索・並び替えを変えると、画面から消えた案件のチェックが選択状態のまま
-  // 残ってしまい、見えていない案件まで一括操作に巻き込まれる恐れがあった（2026-07-14修正）。
-  // 条件を変えたタイミングで選択を必ずクリアする。
-  useEffect(() => {
-    setSelected(new Set())
-  }, [statusFilter, searchText, sortKey])
 
   const toggleExpand = async (c: RenewalCandidate) => {
     const opening = expandedId !== c.id
@@ -170,36 +156,7 @@ export default function RenewalManagementTab({
     setRecheckingId(null)
   }
 
-  const toggleSelect = (id: string) => {
-    setSelected(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id); else next.add(id)
-      return next
-    })
-  }
-
   const showManualForm = (c: RenewalCandidate) => c.data_source === 'manual' || c.manual_override
-
-  // 総合レビュー指摘18対応（2026-07-15）：「更新しない」で確定（status='not_renewing'）した後も
-  // スタッフ・クライアント意向のSegmentedは操作可能なままだったが、意向を「更新する」側へ戻しても
-  // statusがnot_renewingに固定されたままになり、一括送付準備等の対象に二度と戻らない不具合があった。
-  // 意向を変更した結果、両意向とも「更新しない」を示さなくなった場合は、statusをpendingへ戻し、
-  // 確定時の理由（no_renewal_reason）もクリアして通常フローに復帰できるようにする。
-  const handleIntentChange = (
-    c: RenewalCandidate,
-    field: 'staff_intent' | 'client_intent',
-    value: 'renew' | 'end' | 'ok' | 'ng'
-  ) => {
-    const nextValue = (c[field] === value ? 'unconfirmed' : value) as any
-    const nextStaffIntent = field === 'staff_intent' ? nextValue : c.staff_intent
-    const nextClientIntent = field === 'client_intent' ? nextValue : c.client_intent
-    const patch: Partial<RenewalCandidate> = { [field]: nextValue } as any
-    if (c.status === 'not_renewing' && !hasNonRenewalIntent({ staff_intent: nextStaffIntent, client_intent: nextClientIntent })) {
-      patch.status = 'pending'
-      patch.no_renewal_reason = null
-    }
-    updateCandidate(c.id, patch)
-  }
 
   if (loading) {
     return <div className="rounded-[18px] border border-[#E8EDF5] bg-white p-8 text-center text-sm text-[#6B7280]">読み込み中です…</div>
@@ -207,7 +164,7 @@ export default function RenewalManagementTab({
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {kpiBuckets.map(b => (
           <div key={b.key} className="rounded-[18px] border border-[#E8EDF5] bg-white/86 p-5 backdrop-blur">
             <p className="text-sm font-semibold text-[#1F2937]">{b.label}</p>
@@ -217,13 +174,6 @@ export default function RenewalManagementTab({
             </div>
           </div>
         ))}
-        <div className="rounded-[18px] border border-[#E8EDF5] bg-white/86 p-5 backdrop-blur">
-          <p className="text-sm font-semibold text-[#1F2937]">意向未確定</p>
-          <div className="mt-4 flex items-end gap-1">
-            <span className="text-3xl font-semibold tracking-normal text-[#6B7280]">{unconfirmedCount}</span>
-            <span className="pb-1 text-xs font-semibold text-[#6B7280]">件</span>
-          </div>
-        </div>
       </div>
 
       {candidates.length > 0 && (
@@ -251,6 +201,8 @@ export default function RenewalManagementTab({
               ? `同一・${c.employ_end_date}`
               : `雇${c.employ_end_date || '―'} / 派${c.dispatch_end_date || '―'}`
             const isManual = showManualForm(c)
+            // メタ情報（所属部署・雇用形態）：staffマスタの現在値。2026-07-16追加。
+            const metaParts = [c.current_dept_name, c.current_contract_type].filter(Boolean)
             // 「派遣期間_自」の初期候補は前回終了日そのものではなく、その翌日にする
             // （前回終了日をそのまま使うと新しい派遣期間が1日重複してしまうバグがあった。
             // 2026-07-14修正）。ユーザーが未入力のままコピー操作をしても、この候補値で
@@ -259,23 +211,24 @@ export default function RenewalManagementTab({
               start: c.new_dispatch_start || (c.dispatch_end_date ? addDays(c.dispatch_end_date, 1) : ''),
               end: c.new_dispatch_end || '',
             }
+            // 2026-07-16：右端ボタンの文言を状態表現から行動表現に統一（意思決定ログ⑨）
+            const actionLabel = c.status === 'csv_pending' ? '対応方法を確認' : !isManual ? '更新内容を確認' : '更新内容を入力'
 
             return (
               <Fragment key={c.id}>
                 <article className="rounded-[18px] border border-[#E8EDF5] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)] transition hover:-translate-y-0.5 hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]">
-                  <div className="grid gap-4 lg:grid-cols-[28px_minmax(180px,1.3fr)_90px_minmax(170px,1fr)_150px_130px_150px_auto] lg:items-center">
-                    <div className="flex items-center">
-                      {canFinalize && (
-                        <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleSelect(c.id)} className="h-5 w-5 rounded border-[#E8EDF5] accent-[#2F5FD0]" />
-                      )}
-                    </div>
-
+                  <div className="grid gap-4 lg:grid-cols-[minmax(200px,1.6fr)_90px_minmax(160px,0.9fr)_130px_150px_auto] lg:items-center">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="break-words text-base font-semibold leading-6 text-[#1F2937]">{c.staff_name || '―'}</p>
-                        <StatusBadge status={c.status} />
+                        {c.status === 'not_renewing' && (
+                          <span className="text-xs font-semibold rounded-full px-2.5 py-1 whitespace-nowrap" style={{ background: '#E8EDF5', color: '#6B7280' }}>更新しない</span>
+                        )}
                       </div>
-                      <p className="mt-1 text-xs font-medium text-[#8B98B1]">{c.employee_number}</p>
+                      <p className="mt-1 text-xs font-medium text-[#8B98B1]">
+                        {c.employee_number}
+                        {metaParts.length > 0 && <span className="ml-1.5">・{metaParts.join('・')}</span>}
+                      </p>
                     </div>
 
                     <div>{daysBadge(days)}</div>
@@ -285,22 +238,9 @@ export default function RenewalManagementTab({
                       <p className="break-words text-xs font-medium leading-5 text-[#1F2937]">{periodLabel}</p>
                     </div>
 
-                    <div>
-                      <p className="mb-1 text-xs font-semibold text-[#6B7280]">スタッフ意向</p>
-                      <Segmented
-                        value={c.staff_intent}
-                        onChange={v => handleIntentChange(c, 'staff_intent', v as any)}
-                        options={[{ value: 'renew', label: '希望' }, { value: 'end', label: '希望しない' }]}
-                      />
-                    </div>
-
-                    <div>
-                      <p className="mb-1 text-xs font-semibold text-[#6B7280]">クライアント意向</p>
-                      <Segmented
-                        value={c.client_intent}
-                        onChange={v => handleIntentChange(c, 'client_intent', v as any)}
-                        options={[{ value: 'ok', label: 'OK' }, { value: 'ng', label: 'NG' }]}
-                      />
+                    <div className="min-w-0">
+                      <p className="mb-1 text-xs font-semibold text-[#6B7280]">書類種別</p>
+                      <p className="break-words text-xs font-medium leading-5 text-[#1F2937]">{formatDocumentType(c.document_type)}</p>
                     </div>
 
                     <div className="min-w-0">
@@ -320,13 +260,23 @@ export default function RenewalManagementTab({
                       )}
                     </div>
 
-                    <div className="flex items-center justify-start lg:justify-end">
+                    <div className="flex flex-col items-start gap-1.5 lg:items-end">
                       <button
                         onClick={() => toggleExpand(c)}
                         className="inline-flex h-[44px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-[#EEF4FF] px-5 text-sm font-semibold text-[#2F5FD0] transition hover:-translate-y-0.5 hover:bg-[#DFEAFE]"
                       >
-                        {expandedId === c.id ? '閉じる' : (c.status === 'csv_pending' ? 'CSV未反映' : !isManual ? '差異を確認' : '内容を入力')}
+                        {expandedId === c.id ? '閉じる' : actionLabel}
                       </button>
+                      {/* 2026-07-16：スタッフ・クライアント意向トグル廃止に伴い、「更新しない」の
+                          確定操作は意向の不一致を待たず常時操作可能にする（意思決定ログ⑧）。 */}
+                      {c.status !== 'not_renewing' && (
+                        <button
+                          onClick={() => { setNotRenewingReasonId(c.id); setNotRenewingReasonText('') }}
+                          className="text-[11px] font-semibold underline text-[#8B98B1] hover:text-[#6B7280]"
+                        >
+                          更新しないで確定する
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -337,38 +287,26 @@ export default function RenewalManagementTab({
                     </div>
                   )}
 
-                  {c.status !== 'not_renewing' && hasNonRenewalIntent(c) && (
+                  {notRenewingReasonId === c.id && (
                     <div className="mt-4 rounded-2xl bg-[#FDECEC] px-4 py-3">
-                      <div className="text-xs mb-2" style={{ color: '#B91C1C' }}>
-                        {c.staff_intent === 'end' ? 'スタッフが更新を希望していません。' : ''}
-                        {c.client_intent === 'ng' ? 'クライアントの更新確認がNGです。' : ''}
-                        　このまま「更新しない」で確定する場合は理由を入力してください。
-                      </div>
-                      {notRenewingReasonId === c.id ? (
-                        <div className="flex gap-2">
-                          <input
-                            value={notRenewingReasonText}
-                            onChange={e => setNotRenewingReasonText(e.target.value)}
-                            placeholder="例：クライアントの案件終了のため"
-                            className="flex-1 text-xs rounded-lg border border-[#E8EDF5] bg-white px-2 py-1.5"
-                          />
-                          <button
-                            onClick={async () => {
-                              if (!notRenewingReasonText.trim()) return
-                              await confirmNotRenewing(c.id, notRenewingReasonText.trim())
-                              setNotRenewingReasonId(null)
-                            }}
-                            className="rounded-2xl bg-[#E74C3C] text-white text-xs font-semibold px-4 py-1.5 whitespace-nowrap"
-                          >更新しないで確定</button>
-                          <button onClick={() => setNotRenewingReasonId(null)} className="rounded-2xl border border-[#E8EDF5] text-xs font-semibold px-4 py-1.5 whitespace-nowrap">キャンセル</button>
-                        </div>
-                      ) : (
+                      <div className="text-xs mb-2" style={{ color: '#B91C1C' }}>更新しない理由を入力してください。</div>
+                      <div className="flex gap-2">
+                        <input
+                          value={notRenewingReasonText}
+                          onChange={e => setNotRenewingReasonText(e.target.value)}
+                          placeholder="例：クライアントの案件終了のため"
+                          className="flex-1 text-xs rounded-lg border border-[#E8EDF5] bg-white px-2 py-1.5"
+                        />
                         <button
-                          onClick={() => { setNotRenewingReasonId(c.id); setNotRenewingReasonText('') }}
-                          className="rounded-2xl border border-[#E74C3C] text-xs font-semibold px-4 py-1.5 whitespace-nowrap"
-                          style={{ color: '#E74C3C' }}
-                        >更新しないで確定する</button>
-                      )}
+                          onClick={async () => {
+                            if (!notRenewingReasonText.trim()) return
+                            await confirmNotRenewing(c.id, notRenewingReasonText.trim())
+                            setNotRenewingReasonId(null)
+                          }}
+                          className="rounded-2xl bg-[#E74C3C] text-white text-xs font-semibold px-4 py-1.5 whitespace-nowrap"
+                        >更新しないで確定</button>
+                        <button onClick={() => setNotRenewingReasonId(null)} className="rounded-2xl border border-[#E8EDF5] text-xs font-semibold px-4 py-1.5 whitespace-nowrap">キャンセル</button>
+                      </div>
                     </div>
                   )}
 
@@ -513,33 +451,6 @@ export default function RenewalManagementTab({
               </Fragment>
             )
           })}
-        </div>
-      )}
-
-      {canFinalize && candidates.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <div className="flex justify-between items-center">
-            <span className="text-xs text-[#8B98B1]">
-              {selected.size}件選択中
-              {selected.size > 0 && `（うちスタッフ・クライアントとも「更新する」で確定済み：${Array.from(selected).filter(id => { const c = candidates.find(x => x.id === id); return c && isBothConfirmedToRenew(c) }).length}件）`}
-            </span>
-            <button
-              disabled={selected.size === 0}
-              onClick={async () => {
-                const { updatedCount, skippedCount } = await bulkMarkReady(Array.from(selected))
-                setBulkNotice(
-                  skippedCount > 0
-                    ? `${updatedCount}件を送付準備完了にしました（${skippedCount}件はスタッフ・クライアントどちらかの意向が未確定/更新しないのためスキップしました）`
-                    : `${updatedCount}件を送付準備完了にしました`
-                )
-                setSelected(new Set())
-              }}
-              className="rounded-2xl bg-[#2F5FD0] text-white text-sm font-semibold px-5 py-2.5 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-            >
-              選択行を一括で送付準備完了に
-            </button>
-          </div>
-          {bulkNotice && <p className="text-xs text-[#6B7280] text-right">{bulkNotice}</p>}
         </div>
       )}
     </div>

@@ -2,12 +2,18 @@
 // 管理部・担当営業ダッシュボードで共有する（docs/SYSTEM_DESIGN.md 10章 2026-07-14
 // 「更新期限管理タブの仕様を確定」参照）。
 //
-// スコープ（今回のチャットで実装する範囲）：
+// スコープ：
 // ①現場契約（work_place='現場'）のうち雇用期間終了日が45日以内（超過含む）の最新契約を検知し、
-//   renewal_candidatesへ登録する。②スタッフ/クライアント意向のトグル入力。③CSV対象は新しい
-// 派遣期間を自動検索して差異表示、CSV非対象（または「派遣先変更」で手入力に切替た場合）は
-// 派遣期間を手入力→雇用期間へコピー。④CSVインポート依頼（requestsテーブル）。⑤一括ステータス更新。
-// 対象外（次回以降）：自動メール通知、「全項目を編集」からのフル編集画面連携、送付・署名フローへの統合。
+//   renewal_candidatesへ登録する。②CSV対象は新しい派遣期間を自動検索して差異表示、CSV非対象
+// （または「派遣先変更」で手入力に切替た場合）は派遣期間を手入力→雇用期間へコピー。
+// ③CSVインポート依頼（requestsテーブル）。
+// 2026-07-16（意思決定ログ「更新期限管理タブの改修方針を確定」チャットA）：スタッフ意向・
+// クライアント意向のトグルと、それに連動する「送付準備完了」への一括更新は廃止した。理由は
+// 営業担当が手動で都度更新する自己申告データであり、実際の更新申請という確実な行動が発生する
+// 新フロー（チャットC・D）では価値が薄いため。ステータスは pending（未対応）→
+// not_renewing（更新しない・確定）の2つに単純化（チャットC・Dで「申請済み」を追加予定）。
+// 対象外（次回以降）：チャットB（差異確認拡張・原契約confirmation画面・安全チェック）、
+// チャットC（一括申請の実装）、チャットD（`/apply`プリフィル・個別申請の実装）。
 'use client'
 
 import { useState, useCallback } from 'react'
@@ -28,8 +34,9 @@ export type RenewalCandidate = {
   dispatch_end_date: string | null
   data_source: 'csv' | 'manual'
   csv_system: string | null
-  staff_intent: 'unconfirmed' | 'renew' | 'end'
-  client_intent: 'unconfirmed' | 'ok' | 'ng'
+  // 2026-07-16追加：前回契約の書類種別（就業条件明示書／雇用契約書 兼 就業条件明示書 等）。
+  // 一覧カードに表示する。書類種別そのものを変える更新はチャットD（新規申請ルート）でのみ対応。
+  document_type: string | null
   no_renewal_reason: string | null
   manual_override: boolean
   manual_override_reason: string | null
@@ -40,19 +47,14 @@ export type RenewalCandidate = {
   new_work_location_name: string | null
   new_work_address: string | null
   new_csv_raw_data_id: string | null
-  status: 'pending' | 'csv_pending' | 'ready' | 'not_renewing'
+  status: 'pending' | 'csv_pending' | 'not_renewing'
   created_at: string
   updated_at: string
+  // 2026-07-16追加：staffマスタの「今の」所属部署名・雇用形態（申請時点のスナップショットではない。
+  // 伊藤さん確定）。DBには保存せず、fetchCandidates()で都度joinして付与するクライアント側のみの項目。
+  current_dept_name?: string | null
+  current_contract_type?: string | null
 }
-
-// スタッフ・クライアント双方の意向が「更新する」で揃っているか（伊藤さん要件：
-// 「対象スタッフが更新を希望するかの確認と、クライアントが更新してくれるかの両方の
-// 確認がとれている必要がある」）。どちらか一方でも「更新しない」なら更新不可。
-export const isBothConfirmedToRenew = (c: Pick<RenewalCandidate, 'staff_intent' | 'client_intent'>) =>
-  c.staff_intent === 'renew' && c.client_intent === 'ok'
-
-export const hasNonRenewalIntent = (c: Pick<RenewalCandidate, 'staff_intent' | 'client_intent'>) =>
-  c.staff_intent === 'end' || c.client_intent === 'ng'
 
 // 残日数（マイナス＝超過）。基準日は雇用期間終了日を優先し、無ければ派遣期間終了日。
 export function remainingDays(c: Pick<RenewalCandidate, 'employ_end_date' | 'dispatch_end_date'>): number | null {
@@ -75,8 +77,8 @@ export function useRenewalCandidates() {
   const [syncing, setSyncing] = useState(false)
 
   // ①検知・登録：現場契約のうち、スタッフごとに最新の契約を対象に、雇用期間終了日が
-  // 45日以内（超過含む）のものをrenewal_candidatesへupsertする。既存行のスタッフ/クライアント意向・
-  // ステータス等（担当営業が入力した値）は上書きしない。退職済み・退職予定のスタッフは対象外。
+  // 45日以内（超過含む）のものをrenewal_candidatesへupsertする。既存行のステータス等
+  // （担当営業が入力した値）は上書きしない。退職済み・退職予定のスタッフは対象外。
   const syncCandidates = useCallback(async () => {
     setSyncing(true)
     try {
@@ -155,6 +157,8 @@ export function useRenewalCandidates() {
           dispatch_end_date: c.dispatch_end || null,
           data_source: c.csv_mode === 'csv' ? 'csv' : 'manual',
           csv_system: c.csv_system || null,
+          // 2026-07-16追加：前回契約の書類種別（一覧カード表示用）
+          document_type: c.document_type || null,
         })
       }
 
@@ -187,7 +191,10 @@ export function useRenewalCandidates() {
 
   // ②一覧取得。deptNo指定時はその部門のみ（担当営業用）、nullは全部門（管理部・SSC用）
   // 登録後に退職・退職予定になったスタッフも、表示直前に再チェックして除外する
-  // （syncCandidates側は登録時点のみのチェックのため、その後の退職登録には追従できない）
+  // （syncCandidates側は登録時点のみのチェックのため、その後の退職登録には追従できない）。
+  // 2026-07-16追加：一覧カードに「今の」所属部署名・雇用形態を出すため、staffマスタから
+  // dept_no・contract_typeも取得し、department_masterで部署名に変換して各行に付与する
+  // （申請時点のスナップショットではなく現在値を出す、という伊藤さんの確定に基づく）。
   const fetchCandidates = useCallback(async (deptNo: number | null) => {
     setLoading(true)
     let q = supabase.from('renewal_candidates').select('*').order('employ_end_date', { ascending: true })
@@ -200,7 +207,7 @@ export function useRenewalCandidates() {
       const empNos = Array.from(new Set(rows.map(r => r.employee_number)))
       const { data: staffRows } = await supabase
         .from('staff')
-        .select('employee_number, retired_at, retirement_scheduled_at')
+        .select('employee_number, retired_at, retirement_scheduled_at, dept_no, contract_type')
         .in('employee_number', empNos)
       const todayStr = new Date().toISOString().split('T')[0]
       const retiredSet = new Set(
@@ -208,7 +215,30 @@ export function useRenewalCandidates() {
           .filter(s => (s.retired_at && s.retired_at < todayStr) || (s.retirement_scheduled_at && s.retirement_scheduled_at < todayStr))
           .map(s => s.employee_number)
       )
-      setCandidates(rows.filter(r => !retiredSet.has(r.employee_number)))
+
+      const deptNosForStaff = Array.from(new Set((staffRows || []).map(s => s.dept_no).filter((n): n is number => n != null)))
+      let deptNameByNo = new Map<number, string>()
+      if (deptNosForStaff.length > 0) {
+        const { data: deptRows } = await supabase
+          .from('department_master')
+          .select('dept_no, dept_name')
+          .in('dept_no', deptNosForStaff)
+        deptNameByNo = new Map((deptRows || []).map((d: any) => [d.dept_no, d.dept_name]))
+      }
+      const staffByEmpNo = new Map((staffRows || []).map(s => [s.employee_number, s]))
+
+      setCandidates(
+        rows
+          .filter(r => !retiredSet.has(r.employee_number))
+          .map(r => {
+            const s = staffByEmpNo.get(r.employee_number)
+            return {
+              ...r,
+              current_dept_name: s?.dept_no != null ? (deptNameByNo.get(s.dept_no) || null) : null,
+              current_contract_type: s?.contract_type || null,
+            }
+          })
+      )
     } else {
       setCandidates(rows)
     }
@@ -322,33 +352,9 @@ export function useRenewalCandidates() {
     })
   }, [updateCandidate])
 
-  // 選択行を「送付準備完了」にする。伊藤さん要件：「対象スタッフが更新を希望するかの確認と、
-  // クライアントが更新してくれるかの両方の確認がとれている必要がある」ため、両方の意向が
-  // 「更新する」で揃っている行だけを対象にする（揃っていない行は無視し、スキップ件数を返す）。
-  const bulkMarkReady = useCallback(async (ids: string[]) => {
-    const eligibleIds = ids.filter(id => {
-      const c = candidates.find(x => x.id === id)
-      return c && isBothConfirmedToRenew(c)
-    })
-    const skipped = ids.length - eligibleIds.length
-    if (eligibleIds.length > 0) {
-      setCandidates(prev => prev.map(c => eligibleIds.includes(c.id) ? { ...c, status: 'ready' } : c))
-      const { error } = await supabase
-        .from('renewal_candidates')
-        .update({ status: 'ready', updated_at: new Date().toISOString() })
-        .in('id', eligibleIds)
-      if (error) {
-        console.error('一括「送付準備完了」の保存エラー:', error)
-        // 保存に失敗した場合は画面表示を元に戻す（サイレント失敗の防止）
-        setCandidates(prev => prev.map(c => eligibleIds.includes(c.id) ? { ...c, status: 'pending' } : c))
-        alert('送付準備完了への更新に失敗しました。もう一度お試しください。')
-        return { updatedCount: 0, skippedCount: ids.length }
-      }
-    }
-    return { updatedCount: eligibleIds.length, skippedCount: skipped }
-  }, [candidates])
-
-  // 「更新しない」を確定する（スタッフ・クライアントどちらかが更新しない意向の場合の着地点）
+  // 「更新しない」を確定する（担当営業・SSC・管理部の誰でも操作可能。理由入力必須。
+  // 2026-07-16：以前は意向トグルの不一致時のみ出る導線だったが、意向トグル廃止に伴い
+  // 常時操作可能なボタンに変更）
   const confirmNotRenewing = useCallback(async (id: string, reason: string) => {
     await updateCandidate(id, { status: 'not_renewing', no_renewal_reason: reason })
   }, [updateCandidate])
@@ -365,6 +371,5 @@ export function useRenewalCandidates() {
     switchToManualOverride,
     confirmNotRenewing,
     copyDispatchToEmploy,
-    bulkMarkReady,
   }
 }

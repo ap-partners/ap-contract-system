@@ -24,6 +24,7 @@ const CONTACT_FIELD_LABELS: Record<'dept' | 'role' | 'name' | 'tel', string> = {
   dept: '部署', role: '役職', name: '氏名', tel: 'TEL',
 }
 import { useContractListToolbar } from './useContractListToolbar'
+import RenewalContractConfirmModal from './RenewalContractConfirmModal'
 
 // データ取得・同期は親（管理部・担当営業・SSCダッシュボード）側でuseRenewalCandidatesを1回だけ
 // 呼び出し、そこで得られる件数を「本日の状況」カード・タブ件数バッジにも使う（2026-07-14修正：
@@ -120,6 +121,8 @@ export default function RenewalManagementTab({
   const [recheckingId, setRecheckingId] = useState<string | null>(null)
   // 2026-07-16追加（チャットB・④）：指揮命令者等12項目の差異詳細の開閉状態
   const [contactDetailId, setContactDetailId] = useState<string | null>(null)
+  // 2026-07-17追加（チャットB・⑥）：契約内容の全項目確認モーダルの開閉対象
+  const [confirmModalCandidate, setConfirmModalCandidate] = useState<RenewalCandidate | null>(null)
 
   // 残日数の内訳をKPIカードとして先頭に出す（伊藤さんご指摘：残日数の内訳が一目でわからず、
   // 今日どれから手をつけるべきか掴みにくい、への対応。2026-07-14追加）。45日前から対象に
@@ -349,6 +352,14 @@ export default function RenewalManagementTab({
 
                   {expandedId === c.id && (
                     <div className="mt-4 rounded-2xl bg-[#F7FBFF] px-4 py-4">
+                      {/* 2026-07-17追加（チャットB・⑥）：雇用期間・派遣期間・指揮命令者等の限られた
+                          項目だけでなく、契約の全項目（就業場所住所・業務内容・給与など）を
+                          STEP8形式で確認できる読み取り専用画面への導線 */}
+                      <button
+                        onClick={() => setConfirmModalCandidate(c)}
+                        className="mb-3 self-start rounded-2xl border border-[#D0DAF0] bg-white px-4 py-1.5 text-xs font-semibold text-[#2F5FD0]"
+                      >契約内容をすべて確認</button>
+
                       {!isManual ? (
                         c.status === 'csv_pending' ? (
                           <div className="flex flex-col gap-2">
@@ -535,6 +546,13 @@ export default function RenewalManagementTab({
             )
           })}
         </div>
+      )}
+
+      {confirmModalCandidate && (
+        <RenewalContractConfirmModal
+          candidate={confirmModalCandidate}
+          onClose={() => setConfirmModalCandidate(null)}
+        />
       )}
     </div>
   )

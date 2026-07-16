@@ -1,6 +1,8 @@
 // ===== メール送信処理 =====
 // Gmail（agency@appart.co.jp）のSMTP＋アプリパスワードを使って送信する（2026-07-08決定）。
-// 7-4章のルール通り、本文には個人情報・契約内容・氏名を一切含めない（件名＋システムURLのみ）。
+// 7-4章のルール通り、本文には契約内容・給与・就業先等の個人情報を含めない（件名＋システムURLのみ）。
+// ただし宛名の氏名（「〇〇様」）のみ、2026-07-16に伊藤さんの判断で例外的に許可（詳細は
+// sendSignRequestMail関数内のコメント・docs/SYSTEM_DESIGN.md 10章2026-07-16参照）。
 import nodemailer from 'nodemailer'
 
 const transporter = nodemailer.createTransport({
@@ -36,9 +38,16 @@ export async function sendSignRequestMail(
   contractId: string,
   isConfirmationOnly: boolean,
   authCode: string,
-  documentType?: string | null
+  documentType?: string | null,
+  staffName?: string | null
 ): Promise<void> {
   const url = `${APP_URL}/sign/${contractId}`
+  // 2026-07-16修正（伊藤さん決定）：本人確認前のメールに氏名を入れないという7-4章の
+  // ルールを、伊藤さんの判断で今回だけ変更。「〇〇様」の宛名を入れることで、機械的な
+  // 一斉送信メールに見えてしまいフィッシングと誤解されるリスクを下げ、開封率・信頼感を
+  // 優先する（誤送信時の情報漏洩リスクは、氏名以外に既に会社名・書類種別・認証コードが
+  // 含まれているため、氏名を加える増分は小さいと判断）。
+  const greetingHtml = staffName ? `<tr><td style="padding:32px 32px 0 32px;font-family:sans-serif;font-size:14px;color:#1A2340;font-weight:bold;">${staffName}　様</td></tr>` : ''
   // document_type には改行込みの「雇用契約書 兼\n就業条件明示書」（パターンC）が
   // 入ることがあるため、メール表示用に改行をスペースへ変換する。
   const docTypeLabel = (documentType || '').replace(/\n/g, ' ').trim()
@@ -48,8 +57,13 @@ export async function sendSignRequestMail(
     : `【APパートナーズ】${docTypePrefix}契約書のご署名をお願いします`
   const actionLabel = isConfirmationOnly ? 'ご確認' : 'ご署名'
   const docTypeLine = docTypeLabel ? `対象書類：${docTypeLabel}\n` : ''
+  // 2026-07-16修正（伊藤さんレビュー対応）：ボタン文言を「書類をご署名する」から
+  // 「書類に署名する」へ変更（丁寧語の重ね過ぎを避けたシンプルな表現に統一）。
+  // 確認のみ（パターンB）の場合も同じ考え方で「書類を確認する」に統一。
+  const buttonLabel = isConfirmationOnly ? '書類を確認する' : '書類に署名する'
 
   const text = [
+    staffName ? `${staffName}　様` : '',
     'お疲れ様です。APパートナーズです。',
     '',
     `書類の${actionLabel}をお願いいたします。`,
@@ -57,11 +71,11 @@ export async function sendSignRequestMail(
     '①下記URLを開いてください',
     url,
     '',
-    '②画面で「社員番号」と「認証コード」を入力してください',
+    '②画面で「社員番号（6桁の数字）」と、下記の「認証コード」を入力してください',
     `　認証コード（6桁）：${authCode}`,
     '',
     '※認証コードは本人確認のためのものです。他の方に伝えないようご注意ください。',
-    '※コードの有効期限は2日間です。切れた場合は、画面の「認証コードを再発行する」からいつでも再送できます。',
+    '※認証コードの有効期限は2日間です。期限が切れた場合は、画面の「認証コードを再発行する」からいつでも新しいコードを再送できます。',
     '※操作方法についてご不明な点があれば、担当営業までご連絡ください。',
     '',
     'このメールに心当たりがない場合は、お手数ですが破棄してください。',
@@ -71,38 +85,39 @@ export async function sendSignRequestMail(
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F7FC;padding:24px 0;">
   <tr><td align="center">
     <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:8px;max-width:480px;width:100%;">
-      <tr><td style="padding:32px 32px 8px 32px;font-family:sans-serif;font-size:14px;color:#1A2340;">
+      ${greetingHtml}
+      <tr><td style="padding:${staffName ? '8px' : '32px'} 32px 8px 32px;font-family:sans-serif;font-size:14px;color:#1A2340;">
         お疲れ様です。APパートナーズです。
       </td></tr>
       <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;">
         書類の${actionLabel}をお願いいたします。
       </td></tr>
       ${docTypeLabel ? `<tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#5A6A8A;">対象書類：${docTypeLabel}</td></tr>` : ''}
-      <tr><td align="center" style="padding:24px 32px 8px 32px;">
+      <tr><td align="center" style="padding:24px 32px 28px 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0">
           <tr><td align="center" bgcolor="#1B3A8C" style="border-radius:6px;">
             <a href="${url}" target="_blank" style="display:inline-block;padding:14px 32px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">
-              書類を${actionLabel}する
+              ${buttonLabel}
             </a>
           </td></tr>
         </table>
-      </tr></td>
-      <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#5A6A8A;" align="center">
+      </td></tr>
+      <tr><td style="padding:0 32px 24px 32px;font-family:sans-serif;font-size:12px;color:#5A6A8A;" align="center">
         ボタンが表示されない場合は <a href="${url}" style="color:#1B3A8C;">こちらのリンク</a> を開いてください
       </td></tr>
       <tr><td style="padding:24px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">
-        画面を開いたら「社員番号」と、下記の「認証コード」を入力してください。
+        画面を開いたら「社員番号（6桁の数字）」と、下記の「認証コード」を入力してください。
       </td></tr>
       <tr><td align="center" style="padding:12px 32px 0 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
-          <tr><td align="center" bgcolor="#EEF2FA" style="border-radius:6px;padding:14px 0;font-family:sans-serif;font-size:26px;font-weight:bold;letter-spacing:4px;color:#1B3A8C;">
+          <tr><td align="center" bgcolor="#FFFFFF" style="border-radius:6px;padding:14px 0;font-family:sans-serif;font-size:26px;font-weight:bold;letter-spacing:4px;color:#1B3A8C;">
             ${authCode}
           </td></tr>
         </table>
-      </tr></td>
+      </td></tr>
       <tr><td style="padding:20px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#5A6A8A;line-height:1.7;">
         ※認証コードは本人確認のためのものです。他の方に伝えないようご注意ください。<br>
-        ※コードの有効期限は2日間です。切れた場合は、画面の「認証コードを再発行する」からいつでも再送できます。<br>
+        ※認証コードの有効期限は2日間です。期限が切れた場合は、画面の「認証コードを再発行する」からいつでも新しいコードを再送できます。<br>
         ※操作方法についてご不明な点があれば、担当営業までご連絡ください。
       </td></tr>
       <tr><td style="padding:20px 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">

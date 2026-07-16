@@ -53,7 +53,7 @@ export async function POST(
 
   const { data: staff } = await supabaseAdmin
     .from('staff')
-    .select('employee_number, email')
+    .select('employee_number, email, name')
     .eq('id', contract.staff_id)
     .maybeSingle()
 
@@ -112,7 +112,7 @@ export async function POST(
   const isConfirmationOnly = contract.document_type === '就業条件明示書'
 
   try {
-    await sendSignRequestMail(toEmail, id, isConfirmationOnly, authCode, contract.document_type)
+    await sendSignRequestMail(toEmail, id, isConfirmationOnly, authCode, contract.document_type, staff.name)
   } catch (e: any) {
     return NextResponse.json({ error: 'メール送信に失敗しました：' + (e?.message || '') }, { status: 500 })
   }

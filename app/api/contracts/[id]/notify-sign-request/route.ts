@@ -126,7 +126,7 @@ export async function POST(
 
   const { data: staffRow } = await supabaseAdmin
     .from('staff')
-    .select('email')
+    .select('email, name')
     .eq('id', updatedRow.staff_id)
     .maybeSingle()
 
@@ -140,7 +140,7 @@ export async function POST(
   }
 
   try {
-    await sendSignRequestMail(toEmail, id, isConfirmationOnly, authCode, contract.document_type)
+    await sendSignRequestMail(toEmail, id, isConfirmationOnly, authCode, contract.document_type, staffRow?.name)
   } catch (e: any) {
     await rollbackToApproved()
     return NextResponse.json(

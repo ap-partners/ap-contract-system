@@ -191,7 +191,8 @@ export async function sendRenewalDigestMail(
   // 担当営業・SSC・管理部が読むため、一覧内の氏名には「様」を付けない（社外向けの署名依頼メール
   // とは性質が異なるため区別。docs/SYSTEM_DESIGN.md 10章2026-07-16参照）。
   const lines: string[] = [
-    'お疲れ様です。APパートナーズです。',
+    'お疲れ様です。',
+    'APパートナーズ 契約書管理システムです。',
     '',
     `${deptName}で、更新期限管理の確認・対応が必要な契約が${items.length}件あります（${todayLabel}時点／期限超過${overdueCount}件・期限内${upcomingCount}件）。`,
     '',
@@ -255,7 +256,7 @@ export async function sendRenewalDigestMail(
   <tr><td align="center">
     <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:8px;max-width:560px;width:100%;">
       <tr><td style="padding:32px 32px 4px 32px;font-family:sans-serif;font-size:14px;color:#1A2340;">
-        お疲れ様です。APパートナーズです。
+        お疲れ様です。<br>APパートナーズ 契約書管理システムです。
       </td></tr>
       <tr><td style="padding:20px 32px 4px 32px;font-family:sans-serif;font-size:14px;font-weight:bold;color:#1A2340;">
         ${deptName}で、更新期限管理の確認・対応が必要な契約が${items.length}件あります。

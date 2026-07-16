@@ -39,11 +39,12 @@ type Props = {
   switchToManualOverride: (id: string, reason: string) => Promise<void>
   copyDispatchToEmploy: (id: string, start: string, end: string) => Promise<void>
   confirmNotRenewing: (id: string, reason: string) => Promise<void>
+  // 2026-07-17追加（チャットC・⑤）：仕分けフラグ（未定/一括申請/個別申請）の切り替え
+  setTriageMode: (id: string, mode: RenewalCandidate['triage_mode']) => Promise<void>
   currentUserId: string
   currentUserDeptName: string | null
-  // SSCは「閲覧のみ」の想定（伊藤さんとの2026-07-14合意）。将来チャットC・Dで一括申請・
-  // 個別申請の実行操作を追加する際、この propで実行系操作の可否を制御する想定
-  // （現時点では表示のみのタブのため、実行系UIは無い＝このpropは今のところ影響しない）。
+  // SSCは「閲覧のみ」の想定（伊藤さんとの2026-07-14合意）。チャットCで実装した仕分けトグル・
+  // 一括申請の実行ボタンは、このpropがfalseの場合は操作不可（閲覧のみ）にする。
   canFinalize?: boolean
 }
 
@@ -71,23 +72,33 @@ function daysBadge(days: number | null) {
   )
 }
 
-// トグル系UIの共通見た目（今回は使用箇所が無いが、チャットCの「一括申請／個別申請」トグルで
-// 同じ見た目を再利用する想定のため、コンポーネント自体は残しておく）
+// トグル系UIの共通見た目。チャットC・⑤の「未定／一括申請／個別申請」トグルで使用。
+// disabledを指定したoptionは選択できず、選択理由をtitle属性で表示する。
 function Segmented({
-  value, onChange, options,
-}: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
+  value, onChange, options, disabled,
+}: {
+  value: string
+  onChange: (v: string) => void
+  options: { value: string; label: string; disabled?: boolean; disabledReason?: string }[]
+  disabled?: boolean
+}) {
   return (
     <div className="inline-flex rounded-full p-0.5" style={{ background: '#E8EDF5' }}>
-      {options.map(o => (
-        <button
-          key={o.value}
-          onClick={() => onChange(o.value)}
-          className="text-xs font-semibold rounded-full px-3 py-1.5 whitespace-nowrap transition"
-          style={value === o.value ? { background: '#2F5FD0', color: '#fff' } : { color: '#6B7280' }}
-        >
-          {o.label}
-        </button>
-      ))}
+      {options.map(o => {
+        const isDisabled = disabled || o.disabled
+        return (
+          <button
+            key={o.value}
+            onClick={() => !isDisabled && onChange(o.value)}
+            disabled={isDisabled}
+            title={o.disabled ? o.disabledReason : undefined}
+            className="text-xs font-semibold rounded-full px-3 py-1.5 whitespace-nowrap transition disabled:cursor-not-allowed disabled:opacity-40"
+            style={value === o.value && !isDisabled ? { background: '#2F5FD0', color: '#fff' } : { color: '#6B7280' }}
+          >
+            {o.label}
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -106,11 +117,25 @@ function formatDocumentType(documentType: string | null): string {
   return documentType.replace(/\n/g, ' ').trim()
 }
 
+// 2026-07-17追加（チャットC・⑤）：「一括申請」に切り替えられるのは、新しい雇用期間・派遣期間
+// の両方が確定している行のみ（伊藤さんご指摘：CSV未反映のまま、または手入力の期間が未入力の
+// 状態で一括申請対象にできてしまうと危険なため）。「更新しない」で確定済みの行も対象外。
+function periodReady(c: RenewalCandidate): boolean {
+  if (c.status !== 'pending') return false
+  return Boolean(c.new_employ_start && c.new_employ_end && c.new_dispatch_start && c.new_dispatch_end)
+}
+
+const TRIAGE_LABEL: Record<RenewalCandidate['triage_mode'], string> = {
+  undecided: '未対応',
+  bulk: '一括申請',
+  individual: '個別申請',
+}
+
 export default function RenewalManagementTab({
   candidates, loading, updateCandidate,
   searchCsvRenewal, requestCsvImport, switchToManualOverride,
-  copyDispatchToEmploy, confirmNotRenewing,
-  currentUserId, currentUserDeptName,
+  copyDispatchToEmploy, confirmNotRenewing, setTriageMode,
+  currentUserId, currentUserDeptName, canFinalize = true,
 }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [overrideReasonId, setOverrideReasonId] = useState<string | null>(null)
@@ -296,6 +321,30 @@ export default function RenewalManagementTab({
                       )}
                     </div>
                   </div>
+
+                  {/* 2026-07-17追加（チャットC・⑤）：仕分けトグル（未定/一括申請/個別申請）。
+                      「更新しない」で確定済みの行には出さない（対象外のため）。純粋なブックキーピング
+                      フラグで、切り替え自体に副作用は無い（伊藤さん確定・2026-07-16）。 */}
+                  {c.status !== 'not_renewing' && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-semibold text-[#8B98B1]">対応方針</span>
+                      <Segmented
+                        value={c.triage_mode}
+                        onChange={v => setTriageMode(c.id, v as RenewalCandidate['triage_mode'])}
+                        disabled={!canFinalize}
+                        options={[
+                          { value: 'undecided', label: TRIAGE_LABEL.undecided },
+                          {
+                            value: 'bulk',
+                            label: TRIAGE_LABEL.bulk,
+                            disabled: !periodReady(c),
+                            disabledReason: '新しい雇用期間・派遣期間が確定してから選べます',
+                          },
+                          { value: 'individual', label: TRIAGE_LABEL.individual },
+                        ]}
+                      />
+                    </div>
+                  )}
 
                   {c.status === 'not_renewing' && (
                     <div className="mt-4 rounded-2xl bg-[#F3F5F8] px-4 py-3">
@@ -547,6 +596,33 @@ export default function RenewalManagementTab({
           })}
         </div>
       )}
+
+      {/* 2026-07-17追加（チャットC・⑤）：仕分け状況の集計と一括申請の実行ボタンを常に見える
+          位置に固定表示する（伊藤さんご指摘：行数が多い場合いちいちスクロールするのは面倒なため）。
+          件数は「実行前の状態」＝triage_modeの内訳を表す。一括申請の実際の実行処理（contracts
+          テーブルへの新規作成）は次回実装予定のため、ボタンは現時点では無効化してある。 */}
+      {candidates.length > 0 && (() => {
+        const active = candidates.filter(c => c.status !== 'not_renewing')
+        const bulkCount = active.filter(c => c.triage_mode === 'bulk').length
+        const individualCount = active.filter(c => c.triage_mode === 'individual').length
+        const undecidedCount = active.filter(c => c.triage_mode === 'undecided').length
+        return (
+          <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-4 rounded-[18px] border border-[#E8EDF5] bg-white px-5 py-4 shadow-[0_15px_40px_rgba(15,23,42,.12)]">
+            <div className="flex flex-wrap items-center gap-4 text-xs font-semibold text-[#6B7280]">
+              <span>一括申請 <span style={{ color: '#2F5FD0' }}>{bulkCount}件</span></span>
+              <span>個別申請 <span style={{ color: '#5A3EC8' }}>{individualCount}件</span></span>
+              <span>未対応 <span style={{ color: '#8B98B1' }}>{undecidedCount}件</span></span>
+            </div>
+            <button
+              disabled
+              title="一括申請の実行処理は次回実装予定です"
+              className="inline-flex h-[44px] shrink-0 cursor-not-allowed items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-[#EEF4FF] px-6 text-sm font-semibold text-[#2F5FD0] opacity-40"
+            >
+              一括申請を実行（{bulkCount}件）
+            </button>
+          </div>
+        )
+      })()}
 
       {confirmModalCandidate && (
         <RenewalContractConfirmModal

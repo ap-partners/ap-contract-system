@@ -269,7 +269,7 @@ export default function AdminDashboard() {
     candidates: renewalCandidates, loading: renewalLoading,
     syncCandidates, fetchCandidates, updateCandidate,
     searchCsvRenewal, requestCsvImport, switchToManualOverride,
-    copyDispatchToEmploy, confirmNotRenewing,
+    copyDispatchToEmploy, confirmNotRenewing, setTriageMode,
   } = useRenewalCandidates()
 
   // ===== CSVインポートタブ（2026-07-15実装） =====
@@ -1502,6 +1502,7 @@ export default function AdminDashboard() {
             switchToManualOverride={switchToManualOverride}
             copyDispatchToEmploy={copyDispatchToEmploy}
             confirmNotRenewing={confirmNotRenewing}
+            setTriageMode={setTriageMode}
             currentUserId={user.id}
             currentUserDeptName="管理部"
           />

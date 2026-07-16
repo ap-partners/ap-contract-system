@@ -67,6 +67,10 @@ export type RenewalCandidate = {
   new_work_address: string | null
   new_csv_raw_data_id: string | null
   status: 'pending' | 'csv_pending' | 'not_renewing'
+  // 2026-07-17追加（チャットC・⑤一括申請）：一覧左側の仕分けフラグ。実行に副作用を持たない
+  // 純粋なブックキーピング項目（伊藤さん確定・2026-07-17）。「一括申請」に切り替えられるのは
+  // 新しい期間データ（雇用・派遣とも）が確定している行のみ（画面側でperiodReady()により制御）。
+  triage_mode: 'undecided' | 'bulk' | 'individual'
   created_at: string
   updated_at: string
   // 2026-07-16追加：staffマスタの「今の」所属部署名・雇用形態（申請時点のスナップショットではない。
@@ -393,6 +397,12 @@ export function useRenewalCandidates() {
     await updateCandidate(id, { status: 'not_renewing', no_renewal_reason: reason })
   }, [updateCandidate])
 
+  // 2026-07-17追加（チャットC・⑤）：仕分けフラグの切り替え。副作用は一切無く、単に
+  // triage_modeを保存するだけ（実行系の処理は次回チャットCの続きで実装予定）。
+  const setTriageMode = useCallback(async (id: string, mode: RenewalCandidate['triage_mode']) => {
+    await updateCandidate(id, { triage_mode: mode })
+  }, [updateCandidate])
+
   return {
     candidates,
     loading,
@@ -405,5 +415,6 @@ export function useRenewalCandidates() {
     switchToManualOverride,
     confirmNotRenewing,
     copyDispatchToEmploy,
+    setTriageMode,
   }
 }

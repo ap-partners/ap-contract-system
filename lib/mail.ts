@@ -187,6 +187,9 @@ export async function sendRenewalDigestMail(
     ? `${fallbackPrefix}【更新期限管理・要対応】${deptName} 期限超過${overdueCount}件を含む契約があります（${todayLabel}）`
     : `${fallbackPrefix}【更新期限管理】${deptName} 更新期限が近い契約のお知らせ（${todayLabel}）`
 
+  // 2026-07-16修正（伊藤さんレビュー対応）：対象は社内向け業務メールで、スタッフ本人ではなく
+  // 担当営業・SSC・管理部が読むため、一覧内の氏名には「様」を付けない（社外向けの署名依頼メール
+  // とは性質が異なるため区別。docs/SYSTEM_DESIGN.md 10章2026-07-16参照）。
   const lines: string[] = [
     'お疲れ様です。APパートナーズです。',
     '',
@@ -199,7 +202,7 @@ export async function sendRenewalDigestMail(
     const endDateLabel = formatEndDateLabel(item.employEndDate, item.dispatchEndDate)
     // 氏名・就業先名が長いケース（外国籍スタッフ等）でも読みやすいよう、1件を2行に分ける
     // （2026-07-15修正：1行に詰め込むと長い名前で読みにくいという指摘への対応）。
-    lines.push(`・${item.staffName || '(氏名未登録)'}様（${item.workLocationName || '就業先不明'}）`)
+    lines.push(`・${item.staffName || '(氏名未登録)'}（${item.workLocationName || '就業先不明'}）`)
     lines.push(`　${daysLabel}／${endDateLabel}`)
   }
   lines.push(
@@ -224,12 +227,70 @@ export async function sendRenewalDigestMail(
     lines.push('', overrideNotice)
   }
 
+  // 2026-07-16追加（伊藤さんレビュー対応）：対象が複数件あると文字だけの一覧は見づらいという
+  // 指摘を受け、署名依頼メール（sendSignRequestMail）と同じtext+html multipart方式でHTML版を
+  // 追加した。氏名を紺太字、期限超過を赤太字、期限内（残り）を緑太字にして視認性を上げ、
+  // 1件ごとに罫線で区切る。HTML非対応の環境では上のtext版が自動的に表示される。
+  const itemsHtml = sorted.map((item, idx) => {
+    const days = item.remainingDays
+    const daysLabel = days === null ? '(残日数不明)' : days < 0 ? `期限超過${Math.abs(days)}日` : `残り${days}日`
+    const daysColor = days !== null && days < 0 ? '#C0392B' : '#1F7A45'
+    const endDateLabel = formatEndDateLabel(item.employEndDate, item.dispatchEndDate)
+    const borderStyle = idx === sorted.length - 1 ? '' : 'border-bottom:1px solid #F0F2F7;'
+    return `<tr><td style="padding:14px 32px;${borderStyle}">
+        <p style="margin:0 0 4px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#1B3A8C;">${item.staffName || '(氏名未登録)'}（${item.workLocationName || '就業先不明'}）</p>
+        <p style="margin:0;font-family:sans-serif;font-size:13px;"><span style="color:${daysColor};font-weight:bold;">${daysLabel}</span><span style="color:#8A94AA;"> ／ ${endDateLabel}</span></p>
+      </td></tr>`
+  }).join('')
+
+  const fallbackNoticeHtml = isUnassignedFallback
+    ? `<tr><td style="padding:16px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">※この部門は担当営業アカウントが特定できなかったため、本来の宛先の代わりに管理部宛に送信しています。対象スタッフの部門設定・担当営業アカウントの登録をご確認ください。</td></tr>`
+    : ''
+  const overrideNoticeHtml = overrideNotice
+    ? `<tr><td style="padding:16px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;white-space:pre-line;">${overrideNotice}</td></tr>`
+    : ''
+
+  const html = `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F7FC;padding:24px 0;">
+  <tr><td align="center">
+    <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:8px;max-width:560px;width:100%;">
+      <tr><td style="padding:32px 32px 4px 32px;font-family:sans-serif;font-size:14px;color:#1A2340;">
+        お疲れ様です。APパートナーズです。
+      </td></tr>
+      <tr><td style="padding:20px 32px 4px 32px;font-family:sans-serif;font-size:14px;font-weight:bold;color:#1A2340;">
+        ${deptName}で、更新期限管理の確認・対応が必要な契約が${items.length}件あります。
+      </td></tr>
+      <tr><td style="padding:0 32px 20px 32px;font-family:sans-serif;font-size:13px;color:#5A6A8A;">
+        （${todayLabel}時点／期限超過${overdueCount}件・期限内${upcomingCount}件）
+      </td></tr>
+      <tr><td style="padding:0 32px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
+      ${itemsHtml}
+      <tr><td style="padding:20px 32px 0 32px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0 0 20px;"></td></tr>
+      <tr><td style="padding:0 32px 4px 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">
+        期限超過の契約は特に優先してご確認ください。
+      </td></tr>
+      <tr><td style="padding:0 32px 20px 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">
+        更新期限管理タブから、スタッフ・クライアントへの意向確認と「送付準備完了」の操作をお願いします。
+      </td></tr>
+      <tr><td style="padding:0 32px 2px 32px;font-family:sans-serif;font-size:13px;"><a href="${APP_URL}/dashboard/sales" style="color:#1B3A8C;">担当営業の方はこちら</a></td></tr>
+      <tr><td style="padding:0 32px 2px 32px;font-family:sans-serif;font-size:13px;"><a href="${APP_URL}/dashboard/ssc" style="color:#1B3A8C;">SSCの方はこちら</a></td></tr>
+      <tr><td style="padding:0 32px 20px 32px;font-family:sans-serif;font-size:13px;"><a href="${APP_URL}/dashboard/admin" style="color:#1B3A8C;">管理部の方はこちら</a></td></tr>
+      <tr><td style="padding:0 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
+        ※本メールは自動送信です。このアドレスへの返信には対応しておりません。ご不明点は管理部までご連絡ください。
+      </td></tr>
+      ${fallbackNoticeHtml}
+      ${overrideNoticeHtml}
+    </table>
+  </td></tr>
+</table>`.trim()
+
   await transporter.sendMail({
     from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
     to: toEmails.join(','),
     cc: ccEmails.length > 0 ? ccEmails.join(',') : undefined,
     subject,
     text: lines.join('\n'),
+    html,
   })
 }
 

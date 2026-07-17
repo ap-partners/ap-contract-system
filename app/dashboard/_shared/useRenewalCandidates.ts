@@ -468,7 +468,11 @@ export function useRenewalCandidates() {
           }
         }
 
-        const mergedFields = {
+        // 明示的にRecord<string, any>と型注釈しておかないと、TypeScriptがスプレッド元
+        // （buildMergedFieldsの戻り値）のインデックスシグネチャを無視し、以下で追加している
+        // 明示プロパティ（employStart等）だけの狭い型として推論してしまい、salaryType等
+        // 他のプロパティへのアクセスがビルド時型エラーになる（2026-07-17 Vercelビルドで発覚）。
+        const mergedFields: Record<string, any> = {
           ...buildMergedFields(prevFields, csvFields),
           employStart: c.new_employ_start,
           employEnd: c.new_employ_end,

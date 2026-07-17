@@ -29,7 +29,15 @@ export const RENEWAL_SECTIONS: { title: string; fields: RenewalFieldDef[] }[] = 
       { label: '始業時刻', prevKey: 'startTime', csvKey: 'startTime' },
       { label: '終業時刻', prevKey: 'endTime', csvKey: 'endTime' },
       { label: '休憩時間（分）', prevKey: 'breakTime', csvKey: 'breakTime' },
-      { label: '所定労働日数', prevKey: 'workDays', csvKey: 'workDays' },
+      // 所定労働日数：extractCsvFields()はCSVの「勤務日」「就業日」列から生テキストを返すが、
+      // /apply の実際のSTEP3では所定労働日数はプルダウン選択（週5日・週4日・シフト制・その他等）の
+      // 手入力項目であり、このCSV生テキストをその選択肢に反映する処理はSTEP2/3のどこにも無い
+      // （2026-07-17伊藤さんご指摘で発覚。実データ・実コード再検証済み：app/apply/page.tsxの
+      // CSV反映ブロックにsetWorkDays(fields.workDays)の呼び出しが存在しないことを確認）。
+      // つまりCSVの生テキストは実際の申請では一度も使われたことがない値であり、前回契約の
+      // workDays（手入力値）と比較しても意味のある差異にならない。csvKeyを持たせず、他の
+      // 手入力項目（給与・備考等）と同じく前回値をそのまま引き継ぐ扱いにする。
+      { label: '所定労働日数', prevKey: 'workDays' },
       { label: '業務に伴う責任の程度', prevKey: 'responsibility', csvKey: 'responsibility' },
       { label: '組織単位', prevKey: 'organizationUnit', csvKey: 'org' },
       { label: '抵触日（事業所単位）', prevKey: 'conflictDate', csvKey: 'conflictDate' },

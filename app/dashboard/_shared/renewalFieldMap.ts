@@ -131,7 +131,14 @@ export function buildMergedFields(
       if (!def.csvKey) continue
       const csvVal = csvFields[def.csvKey]
       if (csvVal !== undefined && csvVal !== null && csvVal !== '') {
-        merged[def.prevKey] = csvVal
+        // 2026-07-17実機テストで判明：extractCsvFields()の一部の項目（例：Staffiaの休憩時間＝
+        // breakTime）はCSV側の実装で数値のまま返ってくる。fields.*は元々すべて文字列を想定した
+        // 項目（STEP画面のテキスト入力・buildCurrentFields()の保存形式と同じ）のため、数値のまま
+        // 個別申請プリフィル（/apply?renewal=）に渡すと、文字列専用の.replace()等を呼ぶ箇所で
+        // 「(e || "").replace is not a function」という実行時エラーになり画面が真っ白になる不具合
+        // があった。ここで必ず文字列化してから代入することで、一括申請・個別申請どちらの経路でも
+        // 同じ安全な形にする。
+        merged[def.prevKey] = String(csvVal)
       }
     }
   }

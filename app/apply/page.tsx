@@ -1154,10 +1154,11 @@ function ApplyPageInner() {
       // 送信成功後にrenewal_candidates側を「申請済み」にする（一括申請と同じ扱い。失敗しても
       // 契約自体は正常に保存済みなので、ここのエラーは申請完了自体をブロックしない）。
       if (renewalCandidateId) {
-        await supabase.from('renewal_candidates')
-          .update({ status: 'applied', triage_mode: 'undecided' })
-          .eq('id', renewalCandidateId)
-          .catch(() => {})
+        try {
+          await supabase.from('renewal_candidates')
+            .update({ status: 'applied', triage_mode: 'undecided' })
+            .eq('id', renewalCandidateId)
+        } catch { /* 契約自体は保存済みのため、ここの失敗で申請完了をブロックしない */ }
       }
       setIsSubmitted(true)
     } catch (e: any) {

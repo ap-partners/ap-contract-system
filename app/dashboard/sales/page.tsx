@@ -226,7 +226,7 @@ export default function SalesDashboard() {
     candidates: renewalCandidates, loading: renewalLoading,
     syncCandidates, fetchCandidates, updateCandidate,
     searchCsvRenewal, requestCsvImport, switchToManualOverride,
-    copyDispatchToEmploy, confirmNotRenewing, setTriageMode,
+    copyDispatchToEmploy, confirmNotRenewing, setTriageMode, executeBulkApply,
   } = useRenewalCandidates()
 
   useEffect(() => {
@@ -700,7 +700,9 @@ export default function SalesDashboard() {
                 copyDispatchToEmploy={copyDispatchToEmploy}
                 confirmNotRenewing={confirmNotRenewing}
                 setTriageMode={setTriageMode}
+                executeBulkApply={executeBulkApply}
                 currentUserId={user.id}
+                currentUserEmail={user.email}
                 currentUserDeptName={deptNameRef.current}
               />
             )}

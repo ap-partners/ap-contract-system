@@ -13,114 +13,12 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { extractCsvFields } from '@/app/apply/_lib/helpers'
 import { RenewalCandidate } from './useRenewalCandidates'
+import { RENEWAL_SECTIONS as SECTIONS, RenewalFieldDef } from './renewalFieldMap'
 
 type Props = {
   candidate: RenewalCandidate
   onClose: () => void
 }
-
-// ラベル・前回契約のキー（input_data.fields内。STEP3の指揮命令者等はsnake_case、
-// それ以外はcamelCaseという実データ上の混在をそのまま踏襲する）・CSV反映後のキー
-// （extractCsvFields()の戻り値。CSV対象外・CSV未マッチの場合はcsvKeyがあっても前回値を
-// そのまま「今回」として表示する＝変更なし扱い）。csvKeyを指定しない項目はCSVでは
-// 管理していない項目のため、前回値のみを表示する（給与・備考など）。
-type FieldDef = { label: string; prevKey: string; csvKey?: string; multiline?: boolean }
-
-const SECTIONS: { title: string; fields: FieldDef[] }[] = [
-  {
-    title: '雇用期間・派遣期間',
-    fields: [], // 専用ロジックで別途表示（renewal_candidatesの既存カラムを使うため）
-  },
-  {
-    title: '就業場所',
-    fields: [
-      { label: '就業場所名', prevKey: 'workLocationName' },
-      { label: '住所', prevKey: 'workLocationAddress' },
-      { label: '電話番号', prevKey: 'workLocationTel' },
-    ],
-  },
-  {
-    title: '業務内容・勤務条件',
-    fields: [
-      { label: '業務内容', prevKey: 'businessContent', csvKey: 'business', multiline: true },
-      { label: '始業時刻', prevKey: 'startTime', csvKey: 'startTime' },
-      { label: '終業時刻', prevKey: 'endTime', csvKey: 'endTime' },
-      { label: '休憩時間（分）', prevKey: 'breakTime', csvKey: 'breakTime' },
-      { label: '所定労働日数', prevKey: 'workDays', csvKey: 'workDays' },
-      { label: '業務に伴う責任の程度', prevKey: 'responsibility', csvKey: 'responsibility' },
-      { label: '組織単位', prevKey: 'organizationUnit', csvKey: 'org' },
-      { label: '抵触日（事業所単位）', prevKey: 'conflictDate', csvKey: 'conflictDate' },
-      { label: '抵触日（組織単位）', prevKey: 'conflictDateOrg', csvKey: 'conflictDateOrg' },
-      { label: '変形労働時間制', prevKey: 'flexTime', csvKey: 'flexTime' },
-      { label: '所定労働時間外労働', prevKey: 'overtime', csvKey: 'overtime' },
-      { label: '福利厚生施設の利用等', prevKey: 'welfare', csvKey: 'welfare', multiline: true },
-    ],
-  },
-  {
-    title: '指揮命令者',
-    fields: [
-      { label: '部署', prevKey: 'cmd_dept', csvKey: 'cmdDept' },
-      { label: '役職', prevKey: 'cmd_role', csvKey: 'cmdRole' },
-      { label: '氏名', prevKey: 'cmd_name', csvKey: 'cmdName' },
-      { label: '電話番号', prevKey: 'cmd_tel', csvKey: 'cmdTel' },
-    ],
-  },
-  {
-    title: '派遣先責任者',
-    fields: [
-      { label: '部署', prevKey: 'resp_dept', csvKey: 'respDept' },
-      { label: '役職', prevKey: 'resp_role', csvKey: 'respRole' },
-      { label: '氏名', prevKey: 'resp_name', csvKey: 'respName' },
-      { label: '電話番号', prevKey: 'resp_tel', csvKey: 'respTel' },
-    ],
-  },
-  {
-    title: '苦情処理申出先（派遣先）',
-    fields: [
-      { label: '部署', prevKey: 'comp_dept', csvKey: 'compDept' },
-      { label: '役職', prevKey: 'comp_role', csvKey: 'compRole' },
-      { label: '氏名', prevKey: 'comp_name', csvKey: 'compName' },
-      { label: '電話番号', prevKey: 'comp_tel', csvKey: 'compTel' },
-    ],
-  },
-  {
-    title: '派遣元責任者',
-    fields: [
-      { label: '部署', prevKey: 'mgr_dept', csvKey: 'mgrDept' },
-      { label: '役職', prevKey: 'mgr_role', csvKey: 'mgrRole' },
-      { label: '氏名', prevKey: 'mgr_name', csvKey: 'mgrName' },
-      { label: '電話番号', prevKey: 'mgr_tel', csvKey: 'mgrTel' },
-    ],
-  },
-  {
-    title: '苦情処理申出先（派遣元）',
-    fields: [
-      { label: '部署', prevKey: 'cmp_dept', csvKey: 'cmpDept' },
-      { label: '役職', prevKey: 'cmp_role', csvKey: 'cmpRole' },
-      { label: '氏名', prevKey: 'cmp_name', csvKey: 'cmpName' },
-      { label: '電話番号', prevKey: 'cmp_tel', csvKey: 'cmpTel' },
-    ],
-  },
-  {
-    title: '給与',
-    fields: [
-      { label: '給与の種類', prevKey: 'salaryType' },
-      { label: '基本給', prevKey: 'basicSalary' },
-      { label: '役職手当', prevKey: 'rolePay' },
-      { label: '職能給', prevKey: 'skillPay' },
-      { label: '営業手当', prevKey: 'salesPay' },
-      { label: '定額残業手当', prevKey: 'overtimePay' },
-      { label: '住宅手当', prevKey: 'housingPay' },
-    ],
-  },
-  {
-    title: '備考',
-    fields: [
-      { label: '安全及び衛生', prevKey: 'safetyText', multiline: true },
-      { label: '紛争防止措置', prevKey: 'conflictText', multiline: true },
-    ],
-  },
-]
 
 function formatPeriod(start: string | null, end: string | null) {
   return (!start && !end) ? '―' : `自${start || '―'} 〜 至${end || '―'}`
@@ -166,7 +64,7 @@ export default function RenewalContractConfirmModal({ candidate, onClose }: Prop
   }, [candidate.source_contract_id, candidate.new_csv_raw_data_id, candidate.csv_system])
 
   const getPrev = (key: string) => prevFields?.[key] ?? null
-  const getNew = (def: FieldDef) => {
+  const getNew = (def: RenewalFieldDef) => {
     if (!def.csvKey) return getPrev(def.prevKey) // CSVで管理していない項目＝前回のまま
     if (!csvFields) return getPrev(def.prevKey) // CSV未マッチ＝前回のまま
     return csvFields[def.csvKey] ?? null

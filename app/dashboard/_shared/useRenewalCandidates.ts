@@ -19,6 +19,8 @@
 import { useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { extractCsvFields } from '@/app/apply/_lib/helpers'
+import { buildMergedFields } from './renewalFieldMap'
+import { runAutoChecks, MinimumWageRow } from '@/lib/autoChecks'
 
 export const RENEWAL_ALERT_WINDOW_DAYS = 45
 
@@ -66,7 +68,10 @@ export type RenewalCandidate = {
   new_work_location_name: string | null
   new_work_address: string | null
   new_csv_raw_data_id: string | null
-  status: 'pending' | 'csv_pending' | 'not_renewing'
+  // 2026-07-17追加：'applied'は一括申請の実行によりcontracts行の作成が完了した状態
+  // （このステータスになった行は一覧のKPI・件数集計から除外し、次回syncCandidates()の
+  // 「旧契約分の削除」ロジックで自動的にクリーンアップされる想定）。
+  status: 'pending' | 'csv_pending' | 'not_renewing' | 'applied'
   // 2026-07-17追加（チャットC・⑤一括申請）：一覧左側の仕分けフラグ。実行に副作用を持たない
   // 純粋なブックキーピング項目（伊藤さん確定・2026-07-17）。「一括申請」に切り替えられるのは
   // 新しい期間データ（雇用・派遣とも）が確定している行のみ（画面側でperiodReady()により制御）。
@@ -398,9 +403,158 @@ export function useRenewalCandidates() {
   }, [updateCandidate])
 
   // 2026-07-17追加（チャットC・⑤）：仕分けフラグの切り替え。副作用は一切無く、単に
-  // triage_modeを保存するだけ（実行系の処理は次回チャットCの続きで実装予定）。
+  // triage_modeを保存するだけ。
   const setTriageMode = useCallback(async (id: string, mode: RenewalCandidate['triage_mode']) => {
     await updateCandidate(id, { triage_mode: mode })
+  }, [updateCandidate])
+
+  // ⑥一括申請の実行（チャットC・⑤の契約データ生成処理）。「一括申請」に仕分けた行を、
+  // /apply の handleSubmitContract() と同じ構造のcontracts行として直接作成する
+  // （STEP8の画面自体は経由しない。伊藤さんと確定済みの技術実装イメージ）。
+  // 各行につき、前回契約のinput_data.fieldsを土台に、CSVから反映される最新内容
+  // （extractCsvFields()。renewalFieldMap.tsの対応表で前回契約側のキー名に変換）で
+  // 対応項目のみ上書きし、雇用期間・派遣期間・就業場所名/住所はrenewal_candidatesの
+  // 確定済みnew_*カラム（一覧で表示していたものと同じ値）で上書きする。給与・備考など
+  // CSVで管理していない項目は前回契約の値をそのまま引き継ぐ。
+  // 1件ずつ処理し、失敗した行はスキップして結果に含める（1件の失敗で全体を止めない）。
+  const executeBulkApply = useCallback(async (
+    targets: RenewalCandidate[],
+    submitterUserId: string,
+    submitterEmail: string
+  ): Promise<{ successIds: string[]; failed: { employeeNumber: string; staffName: string | null; reason: string }[] }> => {
+    const successIds: string[] = []
+    const failed: { employeeNumber: string; staffName: string | null; reason: string }[] = []
+
+    const { data: submitterStaffRow } = await supabase
+      .from('staff')
+      .select('dept_no, name')
+      .eq('email', submitterEmail)
+      .limit(1)
+      .maybeSingle()
+
+    const { data: minimumWageRows } = await supabase
+      .from('minimum_wage_master')
+      .select('dept_no, hourly_wage, effective_from')
+
+    for (const c of targets) {
+      try {
+        // 念のための再チェック（一覧表示後にCSVが再取込まれる等でデータが変わっている
+        // 可能性への備え。「一括申請」に切り替えられる条件と同じ）
+        if (c.status !== 'pending' || !c.new_employ_start || !c.new_employ_end || !c.new_dispatch_start || !c.new_dispatch_end) {
+          failed.push({ employeeNumber: c.employee_number, staffName: c.staff_name, reason: '新しい雇用期間・派遣期間が確定していません' })
+          continue
+        }
+
+        const { data: prevContract, error: prevError } = await supabase
+          .from('contracts')
+          .select('staff_id, pattern, contract_type, document_type, work_place, closing_pattern, input_data')
+          .eq('id', c.source_contract_id)
+          .maybeSingle()
+        if (prevError || !prevContract) {
+          failed.push({ employeeNumber: c.employee_number, staffName: c.staff_name, reason: '前回契約の取得に失敗しました' })
+          continue
+        }
+        const prevFields = (prevContract.input_data as any)?.fields || {}
+
+        let csvFields: Record<string, any> | null = null
+        if (c.new_csv_raw_data_id) {
+          const { data: csvRow } = await supabase
+            .from('csv_raw_data')
+            .select('raw_data')
+            .eq('id', c.new_csv_raw_data_id)
+            .maybeSingle()
+          if (csvRow?.raw_data) {
+            csvFields = extractCsvFields(c.csv_system || '', csvRow.raw_data) as Record<string, any>
+          }
+        }
+
+        const mergedFields = {
+          ...buildMergedFields(prevFields, csvFields),
+          employStart: c.new_employ_start,
+          employEnd: c.new_employ_end,
+          dispatchStart: c.new_dispatch_start,
+          dispatchEnd: c.new_dispatch_end,
+          workLocationName: c.new_work_location_name || prevFields.workLocationName,
+          workLocationAddress: c.new_work_address || prevFields.workLocationAddress,
+        }
+
+        const { data: staffRow } = await supabase
+          .from('staff')
+          .select('employee_number, name, department, crew_code, address, dept_no, hired_at')
+          .eq('employee_number', c.employee_number)
+          .maybeSingle()
+
+        const staffSnapshot = staffRow ? {
+          employee_number: staffRow.employee_number,
+          name: staffRow.name,
+          department: staffRow.department,
+          crew_code: staffRow.crew_code,
+          address: staffRow.address || null,
+        } : null
+
+        const { results: autoCheckResults, overallLevel: warningLevel } = runAutoChecks({
+          pattern: prevContract.pattern,
+          workPlace: prevContract.work_place,
+          contractType: prevContract.contract_type,
+          salaryType: mergedFields.salaryType || '時給',
+          basicSalary: Number(mergedFields.basicSalary) || 0,
+          rolePay: Number(mergedFields.rolePay) || 0,
+          skillPay: Number(mergedFields.skillPay) || 0,
+          salesPay: Number(mergedFields.salesPay) || 0,
+          housingPay: Number(mergedFields.housingPay) || 0,
+          overtimePay: Number(mergedFields.overtimePay) || 0,
+          hasEmployInsurance: Boolean(mergedFields.hasEmployInsurance),
+          hasSocialInsurance: Boolean(mergedFields.hasSocialInsurance),
+          workingHoursH: Number(mergedFields.workingHoursH) || 0,
+          workingHoursM: Number(mergedFields.workingHoursM) || 0,
+          monthlyStandardHours: mergedFields.monthlyStandardHours ?? null,
+          deptNo: staffRow?.dept_no ?? null,
+          staffHiredAt: staffRow?.hired_at ?? null,
+          employStart: mergedFields.employStart,
+          employEnd: mergedFields.employEnd,
+          contractStartDate: mergedFields.contractStartDate || '',
+          dispatchStart: mergedFields.dispatchStart,
+          dispatchEnd: mergedFields.dispatchEnd,
+          trialPeriod: mergedFields.trialPeriod || '',
+          minimumWageRowsForDept: (minimumWageRows || []).filter((r: MinimumWageRow) => r.dept_no === staffRow?.dept_no),
+        })
+
+        const payload = {
+          staff_id: prevContract.staff_id,
+          pattern: prevContract.pattern,
+          contract_type: prevContract.contract_type,
+          document_type: prevContract.document_type,
+          work_place: prevContract.work_place,
+          status: '申請中',
+          closing_pattern: prevContract.closing_pattern,
+          created_by_dept_no: submitterStaffRow?.dept_no ?? null,
+          created_by_name: submitterStaffRow?.name ?? null,
+          csv_raw_data_id: c.new_csv_raw_data_id || null,
+          input_data: { staff: staffSnapshot, fields: mergedFields, csvMeta: null },
+          search_text: [staffSnapshot?.name, c.employee_number, mergedFields.workLocationName].filter(Boolean).join(' '),
+          warning_confirmations: [],
+          auto_check_results: autoCheckResults,
+          warning_level: warningLevel,
+          created_by: submitterUserId,
+        }
+
+        const { error: insertError } = await supabase.from('contracts').insert(payload)
+        if (insertError) {
+          failed.push({ employeeNumber: c.employee_number, staffName: c.staff_name, reason: '契約データの保存に失敗しました' })
+          continue
+        }
+
+        // 一覧上は即座に「申請済み」扱いにする（次回syncCandidates()実行時に、最新契約が
+        // 入れ替わったことを検知して自動的にクリーンアップされる）
+        await updateCandidate(c.id, { status: 'applied', triage_mode: 'undecided' })
+        successIds.push(c.id)
+      } catch (e) {
+        console.error('一括申請の実行エラー:', e)
+        failed.push({ employeeNumber: c.employee_number, staffName: c.staff_name, reason: '予期しないエラーが発生しました' })
+      }
+    }
+
+    return { successIds, failed }
   }, [updateCandidate])
 
   return {
@@ -416,5 +570,6 @@ export function useRenewalCandidates() {
     confirmNotRenewing,
     copyDispatchToEmploy,
     setTriageMode,
+    executeBulkApply,
   }
 }

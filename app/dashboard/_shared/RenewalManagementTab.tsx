@@ -41,7 +41,15 @@ type Props = {
   confirmNotRenewing: (id: string, reason: string) => Promise<void>
   // 2026-07-17追加（チャットC・⑤）：仕分けフラグ（未定/一括申請/個別申請）の切り替え
   setTriageMode: (id: string, mode: RenewalCandidate['triage_mode']) => Promise<void>
+  // 2026-07-17追加（チャットC・⑤の契約データ生成処理）：「一括申請」に仕分けた行を実際に
+  // contracts行として作成する処理本体。useRenewalCandidates()から渡される。
+  executeBulkApply: (
+    targets: RenewalCandidate[],
+    submitterUserId: string,
+    submitterEmail: string
+  ) => Promise<{ successIds: string[]; failed: { employeeNumber: string; staffName: string | null; reason: string }[] }>
   currentUserId: string
+  currentUserEmail: string
   currentUserDeptName: string | null
   // SSCは「閲覧のみ」の想定（伊藤さんとの2026-07-14合意）。チャットCで実装した仕分けトグル・
   // 一括申請の実行ボタンは、このpropがfalseの場合は操作不可（閲覧のみ）にする。
@@ -134,8 +142,8 @@ const TRIAGE_LABEL: Record<RenewalCandidate['triage_mode'], string> = {
 export default function RenewalManagementTab({
   candidates, loading, updateCandidate,
   searchCsvRenewal, requestCsvImport, switchToManualOverride,
-  copyDispatchToEmploy, confirmNotRenewing, setTriageMode,
-  currentUserId, currentUserDeptName, canFinalize = true,
+  copyDispatchToEmploy, confirmNotRenewing, setTriageMode, executeBulkApply,
+  currentUserId, currentUserEmail, currentUserDeptName, canFinalize = true,
 }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [overrideReasonId, setOverrideReasonId] = useState<string | null>(null)
@@ -148,6 +156,11 @@ export default function RenewalManagementTab({
   const [contactDetailId, setContactDetailId] = useState<string | null>(null)
   // 2026-07-17追加（チャットB・⑥）：契約内容の全項目確認モーダルの開閉対象
   const [confirmModalCandidate, setConfirmModalCandidate] = useState<RenewalCandidate | null>(null)
+  // 2026-07-17追加（チャットC・⑤の契約データ生成処理）：一括申請の確認ダイアログ→処理中の
+  // 全画面オーバーレイ→完了件数の結果表示（SSC・管理部の一括承認と同じパターン）
+  const [showBulkApplyConfirm, setShowBulkApplyConfirm] = useState(false)
+  const [bulkApplying, setBulkApplying] = useState(false)
+  const [bulkApplyResult, setBulkApplyResult] = useState<{ successCount: number; failed: { employeeNumber: string; staffName: string | null; reason: string }[] } | null>(null)
 
   // 残日数の内訳をKPIカードとして先頭に出す（伊藤さんご指摘：残日数の内訳が一目でわからず、
   // 今日どれから手をつけるべきか掴みにくい、への対応。2026-07-14追加）。45日前から対象に
@@ -199,6 +212,19 @@ export default function RenewalManagementTab({
   }
 
   const showManualForm = (c: RenewalCandidate) => c.data_source === 'manual' || c.manual_override
+
+  const handleExecuteBulkApply = async (targets: RenewalCandidate[]) => {
+    if (targets.length === 0 || bulkApplying) return
+    setBulkApplying(true)
+    const { successIds, failed } = await executeBulkApply(targets, currentUserId, currentUserEmail)
+    setBulkApplying(false)
+    setBulkApplyResult({ successCount: successIds.length, failed })
+  }
+
+  const handleBulkApplyDoneOk = () => {
+    setShowBulkApplyConfirm(false)
+    setBulkApplyResult(null)
+  }
 
   if (loading) {
     return <div className="rounded-[18px] border border-[#E8EDF5] bg-white p-8 text-center text-sm text-[#6B7280]">読み込み中です…</div>
@@ -599,13 +625,15 @@ export default function RenewalManagementTab({
 
       {/* 2026-07-17追加（チャットC・⑤）：仕分け状況の集計と一括申請の実行ボタンを常に見える
           位置に固定表示する（伊藤さんご指摘：行数が多い場合いちいちスクロールするのは面倒なため）。
-          件数は「実行前の状態」＝triage_modeの内訳を表す。一括申請の実際の実行処理（contracts
-          テーブルへの新規作成）は次回実装予定のため、ボタンは現時点では無効化してある。 */}
+          件数は「実行前の状態」＝triage_modeの内訳を表す。SSCは閲覧のみ（canFinalize=false）
+          のため実行不可。 */}
       {candidates.length > 0 && (() => {
         const active = candidates.filter(c => c.status !== 'not_renewing')
-        const bulkCount = active.filter(c => c.triage_mode === 'bulk').length
+        const bulkTargets = active.filter(c => c.triage_mode === 'bulk')
+        const bulkCount = bulkTargets.length
         const individualCount = active.filter(c => c.triage_mode === 'individual').length
         const undecidedCount = active.filter(c => c.triage_mode === 'undecided').length
+        const canExecute = canFinalize && bulkCount > 0
         return (
           <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-4 rounded-[18px] border border-[#E8EDF5] bg-white px-5 py-4 shadow-[0_15px_40px_rgba(15,23,42,.12)]">
             <div className="flex flex-wrap items-center gap-4 text-xs font-semibold text-[#6B7280]">
@@ -614,12 +642,39 @@ export default function RenewalManagementTab({
               <span>未対応 <span style={{ color: '#8B98B1' }}>{undecidedCount}件</span></span>
             </div>
             <button
-              disabled
-              title="一括申請の実行処理は次回実装予定です"
-              className="inline-flex h-[44px] shrink-0 cursor-not-allowed items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-[#EEF4FF] px-6 text-sm font-semibold text-[#2F5FD0] opacity-40"
+              onClick={() => setShowBulkApplyConfirm(true)}
+              disabled={!canExecute}
+              title={!canFinalize ? '閲覧のみのため実行できません' : bulkCount === 0 ? '一括申請に仕分けた案件がありません' : undefined}
+              className="inline-flex h-[44px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-[#2F5FD0] px-6 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-[#244CB3] disabled:cursor-not-allowed disabled:bg-[#EEF4FF] disabled:text-[#2F5FD0] disabled:opacity-40 disabled:hover:translate-y-0"
             >
               一括申請を実行（{bulkCount}件）
             </button>
+
+            {showBulkApplyConfirm && canExecute && !bulkApplying && bulkApplyResult === null && (
+              <div className="w-full rounded-[18px] border border-[#BFE7CF] bg-[#F0FBF4] p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)]">
+                <p className="text-sm font-semibold text-[#1F2937]">
+                  「一括申請」に仕分けた{bulkCount}件を、確定済みの新しい雇用期間・派遣期間で申請しますか
+                </p>
+                <p className="mt-2 text-xs font-medium leading-6 text-[#6B7280]">
+                  各対象者について、新規の契約申請（申請中ステータス）が自動で作成されます。作成後は通常の申請と同じくSSC・管理部の承認が必要です。<br />
+                  内容に誤りがないか、対象者ごとに「契約内容をすべて確認」で今一度ご確認ください。
+                </p>
+                <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                  <button
+                    onClick={() => handleExecuteBulkApply(bulkTargets)}
+                    className="inline-flex h-[48px] flex-1 items-center justify-center rounded-2xl bg-[#2F5FD0] px-6 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-[#244CB3]"
+                  >
+                    {bulkCount}件を一括申請する
+                  </button>
+                  <button
+                    onClick={() => setShowBulkApplyConfirm(false)}
+                    className="inline-flex h-[48px] items-center justify-center rounded-2xl border border-[#E8EDF5] bg-white px-6 text-sm font-semibold text-[#1F2937] transition hover:-translate-y-0.5 hover:border-[#2F5FD0] hover:text-[#2F5FD0]"
+                  >
+                    キャンセル
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )
       })()}
@@ -629,6 +684,57 @@ export default function RenewalManagementTab({
           candidate={confirmModalCandidate}
           onClose={() => setConfirmModalCandidate(null)}
         />
+      )}
+
+      {(bulkApplying || bulkApplyResult !== null) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(31,41,55,.52)] p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-[18px] border border-[#E8EDF5] bg-white p-8 text-center shadow-[0_24px_80px_rgba(15,23,42,.18)]">
+            {bulkApplying ? (
+              <>
+                <div className="mx-auto mb-6 h-14 w-14 animate-spin rounded-full border-4 border-[#DDE8FF] border-t-[#2F5FD0]" />
+                <p className="text-lg font-semibold text-[#1F2937]">一括申請を処理しています</p>
+                <p className="mt-3 text-sm font-medium leading-6 text-[#6B7280]">
+                  完了までしばらくお待ちください。画面を閉じずにお待ちください。
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-[#EAF8EE] text-[#4CAF50]">
+                  <svg viewBox="0 0 24 24" fill="none" className="h-7 w-7"><path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </div>
+                <p className="text-lg font-semibold text-[#1F2937]">
+                  一括申請が完了しました（{bulkApplyResult?.successCount ?? 0}件）
+                </p>
+                <p className="mt-3 text-sm font-medium leading-6 text-[#6B7280]">
+                  作成した申請は、通常の申請と同じくSSC・管理部の承認待ち一覧に表示されます。
+                </p>
+                {bulkApplyResult && bulkApplyResult.failed.length > 0 && (
+                  <div className="mt-4 rounded-2xl bg-[#FDECEC] px-4 py-3 text-left">
+                    <p className="text-xs font-semibold" style={{ color: '#B91C1C' }}>
+                      {bulkApplyResult.failed.length}件は作成に失敗しました。
+                    </p>
+                    <ul className="mt-2 flex flex-col gap-1">
+                      {bulkApplyResult.failed.map((f, i) => (
+                        <li key={i} className="text-xs" style={{ color: '#B91C1C' }}>
+                          {f.staffName || '―'}（{f.employeeNumber}）：{f.reason}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-2 text-[11px]" style={{ color: '#B91C1C' }}>
+                      失敗した案件は「一括申請」のまま残っています。再実行するか、個別申請に切り替えてください。
+                    </p>
+                  </div>
+                )}
+                <button
+                  onClick={handleBulkApplyDoneOk}
+                  className="mt-7 inline-flex h-[52px] w-full items-center justify-center rounded-2xl bg-[#2F5FD0] px-6 text-sm font-semibold text-white transition hover:bg-[#244CB3]"
+                >
+                  OK
+                </button>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )

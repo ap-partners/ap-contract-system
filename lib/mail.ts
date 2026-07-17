@@ -136,6 +136,166 @@ export async function sendSignRequestMail(
   })
 }
 
+// ===== マイページ：初回ログイン／パスワード再設定用の認証コード送信 =====
+// 2026-07-17追加。従来のsendSignRequestMail（契約1件ごとの署名依頼メール）とは別に、
+// マイページ導入に伴い「従業員単位」で送る認証コードメール。
+//  ・purpose='initial'：初めてマイページに入る従業員（is_initial_login=true）向け。
+//    SSC承認等で書類が署名待ちになったタイミングで送る「書類到着＋初回ログイン案内」を兼ねる。
+//  ・purpose='reset'：パスワードを忘れた場合の再設定用。従業員がマイページのログイン画面から
+//    自分で申請した時に送る。
+// 実装当初、既存のsendSignRequestMailを流用しパターンBを増やす案も検討したが、対象読者
+// （契約1件の署名依頼／マイページ全体のログイン案内）が異なり無理に共通化すると条件分岐が
+// 複雑になるため、別関数として新設した（2026-07-17決定）。
+export async function sendStaffLoginCodeMail(
+  toEmail: string,
+  employeeNumber: string,
+  authCode: string,
+  staffName: string | null,
+  purpose: 'initial' | 'reset',
+  pendingDocumentLabel?: string | null
+): Promise<void> {
+  const url = `${APP_URL}/staff/login`
+  const greetingHtml = staffName ? `<tr><td style="padding:32px 32px 0 32px;font-family:sans-serif;font-size:14px;color:#1A2340;font-weight:bold;">${staffName}　様</td></tr>` : ''
+
+  const subject = purpose === 'initial'
+    ? '【APパートナーズ】マイページのご利用開始について'
+    : '【APパートナーズ】パスワード再設定のご案内'
+
+  const introLine = purpose === 'initial'
+    ? (pendingDocumentLabel ? `確認・署名が必要な書類（${pendingDocumentLabel}）が届いています。マイページからご確認ください。` : '確認・署名が必要な書類が届いています。マイページからご確認ください。')
+    : 'パスワード再設定のお手続きです。'
+
+  const text = [
+    staffName ? `${staffName}　様` : '',
+    'お疲れ様です。APパートナーズです。',
+    '',
+    introLine,
+    '',
+    '①下記URLからマイページを開いてください',
+    url,
+    '',
+    `②「社員番号」に ${employeeNumber} を、「認証コード」に下記の6桁を入力してください`,
+    `　認証コード（6桁）：${authCode}`,
+    '',
+    purpose === 'initial' ? '③続けて、次回から使うパスワードを設定してください' : '③続けて、新しいパスワードを設定してください',
+    '',
+    '※認証コードは本人確認のためのものです。他の方に伝えないようご注意ください。',
+    '※認証コードの有効期限は2日間です。期限が切れた場合は、ログイン画面から再度お手続きください。',
+    '※操作方法についてご不明な点があれば、担当営業までご連絡ください。',
+    '',
+    'このメールに心当たりがない場合は、お手数ですが破棄してください。',
+  ].filter(Boolean).join('\n')
+
+  const html = `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F7FC;padding:24px 0;">
+  <tr><td align="center">
+    <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:8px;max-width:480px;width:100%;">
+      ${greetingHtml}
+      <tr><td style="padding:${staffName ? '8px' : '32px'} 32px 8px 32px;font-family:sans-serif;font-size:14px;color:#1A2340;">
+        お疲れ様です。APパートナーズです。
+      </td></tr>
+      <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
+        ${introLine}
+      </td></tr>
+      <tr><td align="center" style="padding:24px 32px 20px 32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0">
+          <tr><td align="center" bgcolor="#1B3A8C" style="border-radius:6px;">
+            <a href="${url}" target="_blank" style="display:inline-block;padding:14px 32px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">
+              マイページを開く
+            </a>
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:0 32px 20px 32px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.7;">
+        社員番号「${employeeNumber}」と、下記の認証コードを入力してください。
+      </td></tr>
+      <tr><td align="center" style="padding:0 32px 0 32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+          <tr><td align="center" bgcolor="#FFFFFF" style="border-radius:6px;padding:14px 0;font-family:sans-serif;font-size:26px;font-weight:bold;letter-spacing:4px;color:#1B3A8C;">
+            ${authCode}
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:20px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#5A6A8A;line-height:1.7;">
+        ※認証コードは本人確認のためのものです。他の方に伝えないようご注意ください。<br>
+        ※認証コードの有効期限は2日間です。期限が切れた場合は、ログイン画面から再度お手続きください。<br>
+        ※操作方法についてご不明な点があれば、担当営業までご連絡ください。
+      </td></tr>
+      <tr><td style="padding:20px 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
+        このメールに心当たりがない場合は、お手数ですが破棄してください。
+      </td></tr>
+    </table>
+  </td></tr>
+</table>`.trim()
+
+  await transporter.sendMail({
+    from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject,
+    text,
+    html,
+  })
+}
+
+// ===== マイページ：書類到着（パスワード設定済みの従業員向け） =====
+// is_initial_login=falseの従業員には認証コードを送らず、ログイン案内のみを送る。
+export async function sendStaffDocumentReadyMail(
+  toEmail: string,
+  staffName: string | null,
+  documentLabel: string
+): Promise<void> {
+  const url = `${APP_URL}/staff/login`
+  const greetingHtml = staffName ? `<tr><td style="padding:32px 32px 0 32px;font-family:sans-serif;font-size:14px;color:#1A2340;font-weight:bold;">${staffName}　様</td></tr>` : ''
+  const subject = `【APパートナーズ】確認・署名が必要な書類があります（${documentLabel}）`
+
+  const text = [
+    staffName ? `${staffName}　様` : '',
+    'お疲れ様です。APパートナーズです。',
+    '',
+    `確認・署名が必要な書類（${documentLabel}）が届いています。`,
+    'マイページにログインしてご確認ください。',
+    '',
+    url,
+    '',
+    'このメールに心当たりがない場合は、お手数ですが破棄してください。',
+  ].filter(Boolean).join('\n')
+
+  const html = `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F7FC;padding:24px 0;">
+  <tr><td align="center">
+    <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:8px;max-width:480px;width:100%;">
+      ${greetingHtml}
+      <tr><td style="padding:${staffName ? '8px' : '32px'} 32px 8px 32px;font-family:sans-serif;font-size:14px;color:#1A2340;">
+        お疲れ様です。APパートナーズです。
+      </td></tr>
+      <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
+        確認・署名が必要な書類（${documentLabel}）が届いています。<br>マイページにログインしてご確認ください。
+      </td></tr>
+      <tr><td align="center" style="padding:24px 32px 28px 32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0">
+          <tr><td align="center" bgcolor="#1B3A8C" style="border-radius:6px;">
+            <a href="${url}" target="_blank" style="display:inline-block;padding:14px 32px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">
+              マイページを開く
+            </a>
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:20px 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
+        このメールに心当たりがない場合は、お手数ですが破棄してください。
+      </td></tr>
+    </table>
+  </td></tr>
+</table>`.trim()
+
+  await transporter.sendMail({
+    from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject,
+    text,
+    html,
+  })
+}
+
 // ===== 更新期限管理：残日数しきい値通知（フェーズ2） =====
 // 2026-07-15追加。部門ごとに1日1通のダイジェスト形式（伊藤さん決定）。
 // 宛先はTO=担当営業（自部門）、CC=SSC・管理部（伊藤さん決定）。

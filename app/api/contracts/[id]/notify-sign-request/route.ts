@@ -18,9 +18,14 @@
 // 同じロジックでフォールバック計算する（docs/SYSTEM_DESIGN.md 10章 2026-07-09決定）。
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { sendSignRequestMail } from '@/lib/mail'
+import { sendStaffLoginCodeMail, sendStaffDocumentReadyMail } from '@/lib/mail'
 import { generateSignAuthCode, computeSignAuthCodeExpiry } from '@/lib/signAuthCode'
 import { getAuthenticatedStaff } from '@/lib/apiAuth'
+
+const getDocumentLabel = (documentType: string, contractType: string): string => {
+  const suffix = contractType === 'アルバイト' ? '（アルバイト）' : contractType === '無期契約' ? '（無期）' : ''
+  return `${(documentType || '').replace(/\n/g, ' ')}${suffix}`
+}
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -74,10 +79,9 @@ export async function POST(
   const isConfirmationOnly = contract.document_type === '就業条件明示書'
   const signActionType: 'signature' | 'confirmation' = isConfirmationOnly ? 'confirmation' : 'signature'
 
-  // 2026-07-13追加：ここで初回の6桁認証コードを発行する（社員番号＋コードでの本人確認方式）。
-  const authCode = generateSignAuthCode()
-  const authCodeExpiresAt = computeSignAuthCodeExpiry()
-
+  // 2026-07-17変更：マイページ導入に伴い、本人確認用の認証コードは契約単位（このAPIで発行）
+  // ではなく従業員単位（staffテーブル。/api/staff/request-code等）で管理する方式に変更した。
+  // ここではステータス遷移のみ行い、コードの要否・発行はこの後の従業員情報取得後に判断する。
   const now = new Date().toISOString()
   const { data: updatedRow, error: updateError } = await supabaseAdmin
     .from('contracts')
@@ -85,9 +89,6 @@ export async function POST(
       status: '署名待ち',
       sign_requested_at: now,
       sign_action_type: signActionType,
-      sign_auth_code: authCode,
-      sign_auth_code_expires_at: authCodeExpiresAt,
-      sign_auth_attempts: 0,
       updated_at: now,
     })
     .eq('id', id)
@@ -107,17 +108,14 @@ export async function POST(
   // 二重送信を防ぐための唯一の排他制御なので順序はそのまま維持する。ただし、この後の
   // メール送信先取得・送信のいずれかに失敗した場合、以前は契約が「署名待ち」のまま
   // 誰にもコードが届かない状態で座礁していた（従業員はURL自体を知らないため実質復旧不能）。
-  // 失敗時はここで「SSC承認済み」へ戻し、届いていない認証コードも破棄することで、
-  // 承認待ちの一覧に再び現れ、担当者が気づいて再実行できるようにする。
+  // 失敗時はここで「SSC承認済み」へ戻すことで、承認待ちの一覧に再び現れ、担当者が気づいて
+  // 再実行できるようにする。
   const rollbackToApproved = async () => {
     await supabaseAdmin
       .from('contracts')
       .update({
         status: 'SSC承認済み',
         sign_requested_at: null,
-        sign_auth_code: null,
-        sign_auth_code_expires_at: null,
-        sign_auth_attempts: 0,
         updated_at: new Date().toISOString(),
       })
       .eq('id', id)
@@ -126,12 +124,12 @@ export async function POST(
 
   const { data: staffRow } = await supabaseAdmin
     .from('staff')
-    .select('email, name')
+    .select('id, email, name, employee_number, is_initial_login')
     .eq('id', updatedRow.staff_id)
     .maybeSingle()
 
   const toEmail = staffRow?.email
-  if (!toEmail) {
+  if (!staffRow || !toEmail) {
     await rollbackToApproved()
     return NextResponse.json(
       { error: '送信先メールアドレスが取得できませんでした。ステータスは「SSC承認済み」に戻しました。スタッフのメールアドレス登録をご確認のうえ、もう一度お試しください。' },
@@ -139,8 +137,22 @@ export async function POST(
     )
   }
 
+  const documentLabel = getDocumentLabel(contract.document_type, contract.contract_type)
+
   try {
-    await sendSignRequestMail(toEmail, id, isConfirmationOnly, authCode, contract.document_type, staffRow?.name)
+    if (staffRow.is_initial_login) {
+      // マイページ未利用（パスワード未設定）の従業員：初回ログイン用の認証コードを発行して送る
+      const authCode = generateSignAuthCode()
+      const authCodeExpiresAt = computeSignAuthCodeExpiry()
+      await supabaseAdmin
+        .from('staff')
+        .update({ login_auth_code: authCode, login_auth_code_expires_at: authCodeExpiresAt, login_auth_attempts: 0 })
+        .eq('id', staffRow.id)
+      await sendStaffLoginCodeMail(toEmail, staffRow.employee_number, authCode, staffRow.name, 'initial', documentLabel)
+    } else {
+      // 既にパスワード設定済みの従業員：コードは送らず、マイページへのログイン案内のみ送る
+      await sendStaffDocumentReadyMail(toEmail, staffRow.name, documentLabel)
+    }
   } catch (e: any) {
     await rollbackToApproved()
     return NextResponse.json(

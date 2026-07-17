@@ -17,6 +17,7 @@ import { createClient } from '@supabase/supabase-js'
 import { renderContractPdfBuffer } from '@/lib/pdf/renderContractPdf'
 import { uploadSignedPdf, deleteDriveFile } from '@/lib/googleDrive'
 import { SIGN_AUTH_MAX_ATTEMPTS } from '@/lib/signAuthCode'
+import { getStaffIdFromRequest } from '@/lib/staffAuth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -72,7 +73,12 @@ export async function POST(
   const signatureImageDataUrl: string | undefined = body?.signatureImageDataUrl || undefined
   const sealName: string = (body?.sealName || '').trim()
 
-  if (!employeeNumber || !authCode) {
+  // 2026-07-17追加：マイページ導入に伴い、ログインセッション（社員番号＋パスワード等で
+  // ログイン済み）があればそれを本人確認として扱う。旧方式（社員番号＋契約ごとの認証コード。
+  // /sign/[id]の一回限りリンク）は、まだセッションを持たない場合のフォールバックとして残す。
+  const sessionStaffId = getStaffIdFromRequest(req)
+
+  if (!sessionStaffId && (!employeeNumber || !authCode)) {
     return NextResponse.json({ error: '社員番号と認証コードを入力してください。' }, { status: 400 })
   }
 
@@ -93,41 +99,60 @@ export async function POST(
     return NextResponse.json({ error: '現在この書類は署名・確認待ちの状態ではありません。' }, { status: 409 })
   }
 
-  // 総合レビュー指摘2対応（2026-07-15）：以前はverify APIだけが5回失敗で失効させており、
-  // このcomplete APIは照合失敗しても試行回数を加算していなかった。verifyを経由せず直接
-  // このAPIへ6桁コードを無制限に総当たりできてしまっていたため、verifyと同じ失効判定・
-  // 加算処理をここにも追加する。
-  if ((contract.sign_auth_attempts || 0) >= SIGN_AUTH_MAX_ATTEMPTS) {
-    return NextResponse.json(
-      { error: '認証コードの入力回数が上限を超えました。\nお手数ですが、下の「認証コードを再発行する」ボタンから新しいコードを取得してください。', reason: 'locked' },
-      { status: 423 }
-    )
-  }
+  let staff: { id: string; name: string; employee_number: string; dept_no: number | null } | null = null
 
-  if (!contract.sign_auth_code || !contract.sign_auth_code_expires_at || new Date(contract.sign_auth_code_expires_at).getTime() < Date.now()) {
-    return NextResponse.json(
-      { error: '認証コードの有効期限が切れています。\nお手数ですが、下の「認証コードを再発行する」ボタンから新しいコードを取得してください。', reason: 'expired' },
-      { status: 410 }
-    )
-  }
-
-  const { data: staff } = await supabaseAdmin
-    .from('staff')
-    .select('id, name, employee_number, dept_no')
-    .eq('id', contract.staff_id)
-    .maybeSingle()
-
-  if (!staff || staff.employee_number !== employeeNumber || contract.sign_auth_code !== authCode) {
-    // 失敗した試行回数を1つ加算する（verifyと同じ5回で失効の扱いに統一）
-    const nextAttempts = (contract.sign_auth_attempts || 0) + 1
-    await supabaseAdmin.from('contracts').update({ sign_auth_attempts: nextAttempts }).eq('id', id)
-    if (nextAttempts >= SIGN_AUTH_MAX_ATTEMPTS) {
+  if (sessionStaffId) {
+    if (sessionStaffId !== contract.staff_id) {
+      return NextResponse.json({ error: 'この書類を操作する権限がありません。' }, { status: 403 })
+    }
+    const { data: staffRow } = await supabaseAdmin
+      .from('staff')
+      .select('id, name, employee_number, dept_no')
+      .eq('id', contract.staff_id)
+      .maybeSingle()
+    staff = staffRow
+    if (!staff) {
+      return NextResponse.json({ error: 'アカウント情報が見つかりませんでした。' }, { status: 404 })
+    }
+  } else {
+    // ===== 旧方式：契約ごとの認証コード（後方互換のため残置） =====
+    if ((contract.sign_auth_attempts || 0) >= SIGN_AUTH_MAX_ATTEMPTS) {
       return NextResponse.json(
         { error: '認証コードの入力回数が上限を超えました。\nお手数ですが、下の「認証コードを再発行する」ボタンから新しいコードを取得してください。', reason: 'locked' },
         { status: 423 }
       )
     }
-    return NextResponse.json({ error: '社員番号または認証コードが正しくありません。ご確認のうえ、もう一度入力してください。', reason: 'invalid' }, { status: 401 })
+
+    if (!contract.sign_auth_code || !contract.sign_auth_code_expires_at || new Date(contract.sign_auth_code_expires_at).getTime() < Date.now()) {
+      return NextResponse.json(
+        { error: '認証コードの有効期限が切れています。\nお手数ですが、下の「認証コードを再発行する」ボタンから新しいコードを取得してください。', reason: 'expired' },
+        { status: 410 }
+      )
+    }
+
+    const { data: staffRow } = await supabaseAdmin
+      .from('staff')
+      .select('id, name, employee_number, dept_no')
+      .eq('id', contract.staff_id)
+      .maybeSingle()
+
+    if (!staffRow || staffRow.employee_number !== employeeNumber || contract.sign_auth_code !== authCode) {
+      // 失敗した試行回数を1つ加算する（verifyと同じ5回で失効の扱いに統一）
+      const nextAttempts = (contract.sign_auth_attempts || 0) + 1
+      await supabaseAdmin.from('contracts').update({ sign_auth_attempts: nextAttempts }).eq('id', id)
+      if (nextAttempts >= SIGN_AUTH_MAX_ATTEMPTS) {
+        return NextResponse.json(
+          { error: '認証コードの入力回数が上限を超えました。\nお手数ですが、下の「認証コードを再発行する」ボタンから新しいコードを取得してください。', reason: 'locked' },
+          { status: 423 }
+        )
+      }
+      return NextResponse.json({ error: '社員番号または認証コードが正しくありません。ご確認のうえ、もう一度入力してください。', reason: 'invalid' }, { status: 401 })
+    }
+    staff = staffRow
+  }
+
+  if (!staff) {
+    return NextResponse.json({ error: '本人確認に失敗しました。' }, { status: 401 })
   }
 
   const signAction: 'signature' | 'confirmation' =

@@ -45,7 +45,7 @@ type RequestRow = {
   displayDept?: string | null
 }
 
-type TabType = 'overview' | 'requests' | 'contracts' | 'internal' | 'csvImport' | 'csvDiff' | 'renewal' | 'master'
+type TabType = 'overview' | 'requests' | 'contracts' | 'internal' | 'csvImport' | 'renewal' | 'master'
 type Contract = ContractForDisplay
 type ContractSubTab = '承認待ち' | '差し戻し中' | '承認済み'
 type IconName = 'file' | 'list' | 'shield' | 'upload' | 'alert' | 'clock' | 'search' | 'refresh' | 'check' | 'arrow' | 'logout' | 'map' | 'user' | 'building' | 'plus' | 'grid'
@@ -935,24 +935,23 @@ export default function AdminDashboard() {
     { key: 'contracts', label: '契約一覧', icon: 'list' },
     ...(isInternalApprover ? [{ key: 'internal' as TabType, label: '社内承認', icon: 'shield' as IconName, count: internalPendingCount }] : []),
     { key: 'csvImport', label: 'CSVインポート', icon: 'upload' },
-    { key: 'csvDiff', label: 'CSV差異アラート', icon: 'alert' },
     { key: 'renewal', label: '更新期限管理', icon: 'clock', count: renewalCandidates.length },
     { key: 'master', label: 'マスタ管理', icon: 'building' },
   ]
 
   // サマリータブ用：ドメイン横断で「今どこに未対応があるか」を一目で見せるカード（2026-07-14新設）。
   // 実データのある3枚（依頼・契約・社内承認）はクリックで該当タブへ切り替わる。
-  // CSV差異・更新期限はまだ機能自体が未実装のため「準備中」の非活性カードとして枠だけ用意しておく
-  // （CLAUDE.md運用ルール10番：将来の完成形を見据えた骨格を先に作っておく）。
+  // 「CSV差異」枠は、CSVインポート画面の上書き保護＋自動マッチ通知のみで対応する方針に簡略化されたため
+  // 2026-07-17に撤去（画面はプレースホルダーのみで実体が無かったため。裏側のcsv_diff_logsテーブル自体は
+  // 将来の再検討に備えて残置。詳細はdocs/SYSTEM_DESIGN.md 10章2026-07-17参照）。
+  // overviewPlaceholders（準備中カードの枠）は今後また未実装機能が出た際に再利用できるよう構造だけ残す。
   const overviewCards: { key: TabType; label: string; value: number; icon: IconName }[] = [
     { key: 'requests', label: '依頼 未対応', value: pendingTotalCountAll, icon: 'file' },
     { key: 'contracts', label: '契約 承認待ち', value: contractsPendingCount, icon: 'list' },
     ...(isInternalApprover ? [{ key: 'internal' as TabType, label: '社内承認待ち', value: internalPendingCount, icon: 'shield' as IconName }] : []),
     { key: 'renewal', label: '更新期限 対象', value: renewalCandidates.length, icon: 'clock' },
   ]
-  const overviewPlaceholders: { label: string; icon: IconName }[] = [
-    { label: 'CSV差異', icon: 'alert' },
-  ]
+  const overviewPlaceholders: { label: string; icon: IconName }[] = []
 
   const requestSummary = [
     { label: '総依頼件数', value: requests.length, color: '#2F5FD0', tone: 'blue' as const, icon: 'file' as const },
@@ -1789,7 +1788,6 @@ export default function AdminDashboard() {
             </section>
           </div>
         )}
-        {activeTab === 'csvDiff' && <PlaceholderTab title="CSV差異アラート" description="CSV差異アラートは専用ダッシュボードを設けず、CSVインポート画面での上書き保護（申請中以降のステータスの契約から参照される行は上書きしない）と、依頼の自動マッチ通知のみで対応する方針に簡略化しました（2026-07-15決定）。" icon="alert" />}
         {activeTab === 'renewal' && user && (
           <RenewalManagementTab
             candidates={renewalCandidates}

@@ -23,6 +23,7 @@ type MasterData = {
   workingHours: WorkingHours[]
   dispatchFees: DispatchFee[]
   officeNames: string[]
+  staffCountByDept: Record<string, number>
 }
 
 const SUB_TABS = ['部門', '最低賃金', '所定労働時間', '派遣料金額'] as const
@@ -63,7 +64,7 @@ export default function MasterManagementTab() {
         <p className="text-lg font-semibold text-[#1F2937]">マスタ管理</p>
         <p className="mt-2 text-sm font-medium leading-6 text-[#6B7280]">
           部門・最低賃金・所定労働時間・労働者派遣料金額の各マスタを管理します。
-          部門マスタは新規追加のみ、既存の部門名変更・削除が必要な場合はClaudeにご相談ください。
+          部門マスタは新規追加のみ、既存の部門名変更・削除が必要な場合はシステム担当者までご連絡ください。
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           {SUB_TABS.map(t => (
@@ -166,21 +167,35 @@ function DepartmentSection({ data, reload }: { data: MasterData; reload: () => P
 
       <section className={`${card} p-6 md:p-8`}>
         <p className="text-sm font-semibold text-[#1F2937]">登録済み部門（{data.departments.length}件）</p>
+        <p className="mt-1 text-xs font-medium leading-5 text-[#6B7280]">
+          「在籍スタッフ数」が0の部門は、スタッフマスタ上で実際に使われていない可能性がある部門です（HRシステム側の部門コード一覧をそのまま取り込んだままのため）。
+        </p>
         <div className="mt-4 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[#E8EDF5] text-left text-xs font-semibold text-[#6B7280]">
                 <th className="px-3 py-2">部門番号</th>
                 <th className="px-3 py-2">部門名</th>
+                <th className="px-3 py-2">在籍スタッフ数</th>
               </tr>
             </thead>
             <tbody>
-              {data.departments.map(d => (
-                <tr key={d.id} className="border-b border-[#F1F4F9]">
-                  <td className="px-3 py-2 font-medium text-[#1F2937]">{d.dept_no}</td>
-                  <td className="px-3 py-2 text-[#1F2937]">{d.dept_name}</td>
-                </tr>
-              ))}
+              {data.departments.map(d => {
+                const staffCount = data.staffCountByDept[d.dept_no] || 0
+                return (
+                  <tr key={d.id} className="border-b border-[#F1F4F9]">
+                    <td className="px-3 py-2 font-medium text-[#1F2937]">{d.dept_no}</td>
+                    <td className="px-3 py-2 text-[#1F2937]">{d.dept_name}</td>
+                    <td className="px-3 py-2">
+                      {staffCount > 0 ? (
+                        <span className="text-[#1F2937]">{staffCount}名</span>
+                      ) : (
+                        <span className="rounded-full bg-[#FDECEC] px-2 py-0.5 text-xs font-semibold text-[#E74C3C]">未使用の可能性</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -190,12 +205,24 @@ function DepartmentSection({ data, reload }: { data: MasterData; reload: () => P
 }
 
 // ===== 最低賃金マスタ =====
+// 2026-07-17改修：当初は「新規改定を追加」フォーム（部門をドロップダウンで検索して選ぶ）＋
+// 別セクションの一覧、という2段構成だったが、伊藤さんより「更新が面倒すぎる。派遣料金額マスタ
+// みたいな感じで更新できるとよい」とのご指摘。派遣料金額マスタと同様、部門を全件あらかじめ
+// 一覧表示し、その場で新しい時給・適用開始日を入力してすぐ保存できる表形式に再設計。
+// ただし派遣料金額マスタと異なり最低賃金マスタは「改定のたびに新しいレコードを追加して
+// 履歴を残す」設計のため、保存は上書き（upsert）ではなく常に新規追加（add_minimum_wage）。
+// あわせて、伊藤さんより「51部門のうち実際に使わないものもある」とのご指摘を受けて過去の
+// トーク履歴・実データを調査した結果、部門マスタはHRシステム側の部門コード一覧をそのまま
+// 機械的に取り込んだもので、上位の「まとめ部署」（SP営業部等）にはスタッフが直接所属せず
+// 実際は下位の「SP1課」等にのみ紐付く構造と判明（在籍スタッフ数0の部門が17件）。
+// 一覧を短くして更新の手間を減らすため、在籍スタッフ数0の部門はデフォルトで非表示にし、
+// 必要な場合のみ「未使用の可能性がある部門も表示」で全件表示できるようにした。
 function MinimumWageSection({ data, reload }: { data: MasterData; reload: () => Promise<void> }) {
-  const [addDeptNo, setAddDeptNo] = useState('')
-  const [addWage, setAddWage] = useState('')
-  const [addDate, setAddDate] = useState('')
-  const [addError, setAddError] = useState('')
-  const [addSubmitting, setAddSubmitting] = useState(false)
+  const [showUnused, setShowUnused] = useState(false)
+  const [drafts, setDrafts] = useState<Record<number, { wage: string; date: string }>>({})
+  const [savingDept, setSavingDept] = useState<number | null>(null)
+  const [errorByDept, setErrorByDept] = useState<Record<number, string>>({})
+  const [savedDept, setSavedDept] = useState<number | null>(null)
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editWage, setEditWage] = useState('')
@@ -204,24 +231,34 @@ function MinimumWageSection({ data, reload }: { data: MasterData; reload: () => 
   const [editSubmitting, setEditSubmitting] = useState(false)
   const [expandedDept, setExpandedDept] = useState<number | null>(null)
 
-  const deptNameOf = (deptNo: number) => data.departments.find(d => d.dept_no === deptNo)?.dept_name || `部門${deptNo}`
-
-  // dept_noごとにグルーピングし、適用開始日が最新の行を「現在の設定」、それ以外を履歴とする
+  // dept_noごとにグルーピングし、適用開始日が最新の行を「現在の設定」とする
   const byDept = new Map<number, MinimumWage[]>()
   for (const row of data.minimumWages) {
     const arr = byDept.get(row.dept_no) || []
     arr.push(row)
     byDept.set(row.dept_no, arr)
   }
-  const deptNos = Array.from(byDept.keys()).sort((a, b) => a - b)
 
-  const handleAdd = async () => {
-    setAddError('')
-    setAddSubmitting(true)
-    const result = await postAction('add_minimum_wage', { deptNo: Number(addDeptNo), hourlyWage: Number(addWage), effectiveFrom: addDate })
-    setAddSubmitting(false)
-    if (!result.ok) { setAddError(result.error || '登録に失敗しました。'); return }
-    setAddDeptNo(''); setAddWage(''); setAddDate('')
+  const visibleDepartments = data.departments
+    .filter(d => showUnused || (data.staffCountByDept[d.dept_no] || 0) > 0)
+    .slice()
+    .sort((a, b) => a.dept_no - b.dept_no)
+
+  const getDraft = (deptNo: number) => drafts[deptNo] || { wage: '', date: '' }
+  const setDraft = (deptNo: number, patch: Partial<{ wage: string; date: string }>) => {
+    setDrafts(prev => ({ ...prev, [deptNo]: { ...getDraft(deptNo), ...patch } }))
+  }
+
+  const handleSave = async (deptNo: number) => {
+    setErrorByDept(prev => ({ ...prev, [deptNo]: '' }))
+    setSavingDept(deptNo)
+    const draft = getDraft(deptNo)
+    const result = await postAction('add_minimum_wage', { deptNo, hourlyWage: Number(draft.wage), effectiveFrom: draft.date })
+    setSavingDept(null)
+    if (!result.ok) { setErrorByDept(prev => ({ ...prev, [deptNo]: result.error || '登録に失敗しました。' })); return }
+    setDrafts(prev => ({ ...prev, [deptNo]: { wage: '', date: '' } }))
+    setSavedDept(deptNo)
+    setTimeout(() => setSavedDept(cur => (cur === deptNo ? null : cur)), 2500)
     await reload()
   }
 
@@ -242,95 +279,95 @@ function MinimumWageSection({ data, reload }: { data: MasterData; reload: () => 
     await reload()
   }
 
-  return (
-    <div className="space-y-6">
-      <section className={`${card} p-6 md:p-8`}>
-        <p className="text-sm font-semibold text-[#1F2937]">新規改定を追加</p>
-        <p className="mt-1 text-xs font-medium leading-5 text-[#6B7280]">改定のたびに新しいレコードとして追加します（過去の記録は履歴として保持されます）。</p>
-        <div className="mt-4 grid gap-4 md:grid-cols-[1fr_160px_180px_auto]">
-          <div>
-            <label className="mb-2 block text-xs font-semibold text-[#6B7280]">部門</label>
-            <select value={addDeptNo} onChange={e => setAddDeptNo(e.target.value)} className={inputCls}>
-              <option value="">選択してください</option>
-              {data.departments.map(d => <option key={d.dept_no} value={d.dept_no}>{d.dept_name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="mb-2 block text-xs font-semibold text-[#6B7280]">時給額（円）</label>
-            <input type="number" value={addWage} onChange={e => setAddWage(e.target.value)} className={inputCls} placeholder="例：1100" />
-          </div>
-          <div>
-            <label className="mb-2 block text-xs font-semibold text-[#6B7280]">適用開始日</label>
-            <input type="date" value={addDate} onChange={e => setAddDate(e.target.value)} className={inputCls} />
-          </div>
-          <div className="flex items-end">
-            <button onClick={handleAdd} disabled={addSubmitting || !addDeptNo || !addWage || !addDate} className={primaryBtn}>
-              {addSubmitting ? '追加中…' : '追加する'}
-            </button>
-          </div>
-        </div>
-        {addError && <div className="mt-4"><ErrorBanner message={addError} /></div>}
-      </section>
+  const unusedCount = data.departments.length - data.departments.filter(d => (data.staffCountByDept[d.dept_no] || 0) > 0).length
 
-      <section className={`${card} p-6 md:p-8`}>
-        <p className="text-sm font-semibold text-[#1F2937]">現在の設定（部門ごとに最新の適用開始日のもの）</p>
-        <div className="mt-4 space-y-3">
-          {deptNos.length === 0 && <p className="text-sm font-medium text-[#6B7280]">登録がありません。</p>}
-          {deptNos.map(deptNo => {
-            const rows = (byDept.get(deptNo) || []).slice().sort((a, b) => (a.effective_from < b.effective_from ? 1 : -1))
-            const latest = rows[0]
-            const history = rows.slice(1)
-            const isEditing = editingId === latest.id
-            const isExpanded = expandedDept === deptNo
-            return (
-              <div key={deptNo} className="rounded-2xl border border-[#E8EDF5] p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-[#1F2937]">{deptNameOf(deptNo)}</p>
-                    {!isEditing ? (
-                      <p className="mt-1 text-xs font-medium text-[#6B7280]">
-                        時給 {latest.hourly_wage.toLocaleString()}円　適用開始：{latest.effective_from}
-                      </p>
+  return (
+    <section className={`${card} p-6 md:p-8`}>
+      <p className="text-sm font-semibold text-[#1F2937]">最低賃金マスタ（改定のたびに新しいレコードを追加・履歴を保持）</p>
+      <p className="mt-1 text-xs font-medium leading-5 text-[#6B7280]">
+        部門ごとの現在の設定を見ながら、その場で新しい時給・適用開始日を入力して保存できます。
+      </p>
+      <label className="mt-4 flex items-center gap-2 text-xs font-semibold text-[#6B7280]">
+        <input type="checkbox" checked={showUnused} onChange={e => setShowUnused(e.target.checked)} />
+        在籍スタッフ数0名の部門（未使用の可能性がある部門・{unusedCount}件）も表示する
+      </label>
+
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-[#E8EDF5] text-left text-xs font-semibold text-[#6B7280]">
+              <th className="px-3 py-2">部門</th>
+              <th className="px-3 py-2">現在の設定</th>
+              <th className="px-3 py-2">新しい時給（円）</th>
+              <th className="px-3 py-2">適用開始日</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleDepartments.map(dept => {
+              const rows = (byDept.get(dept.dept_no) || []).slice().sort((a, b) => (a.effective_from < b.effective_from ? 1 : -1))
+              const latest = rows[0]
+              const history = rows.slice(1)
+              const isEditingLatest = latest && editingId === latest.id
+              const isExpanded = expandedDept === dept.dept_no
+              const draft = getDraft(dept.dept_no)
+              return (
+                <tr key={dept.id} className="border-b border-[#F1F4F9] align-top">
+                  <td className="px-3 py-3 font-medium text-[#1F2937]">{dept.dept_name}</td>
+                  <td className="px-3 py-3 text-xs font-medium text-[#6B7280]">
+                    {!latest ? '未設定' : isEditingLatest ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input type="number" value={editWage} onChange={e => setEditWage(e.target.value)} className={`${inputCls} w-24`} />
+                        <span>円</span>
+                        <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} className={`${inputCls} w-36`} />
+                        <button onClick={() => handleUpdate(latest.id)} disabled={editSubmitting} className={primaryBtn}>{editSubmitting ? '保存中…' : '保存'}</button>
+                        <button onClick={() => setEditingId(null)} className={secondaryBtn}>キャンセル</button>
+                        {editError && <div className="mt-2 w-full"><ErrorBanner message={editError} /></div>}
+                      </div>
                     ) : (
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <input type="number" value={editWage} onChange={e => setEditWage(e.target.value)} className={`${inputCls} w-32`} />
-                        <span className="text-xs text-[#6B7280]">円　適用開始：</span>
-                        <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} className={`${inputCls} w-40`} />
+                      <div>
+                        <p>{latest.hourly_wage.toLocaleString()}円　{latest.effective_from}〜</p>
+                        <div className="mt-1 flex gap-3">
+                          <button onClick={() => startEdit(latest)} className="text-[#2F5FD0] hover:underline">直近の登録を修正</button>
+                          {history.length > 0 && (
+                            <button onClick={() => setExpandedDept(isExpanded ? null : dept.dept_no)} className="text-[#2F5FD0] hover:underline">
+                              履歴（{history.length}件）{isExpanded ? 'を閉じる' : 'を表示'}
+                            </button>
+                          )}
+                        </div>
+                        {isExpanded && (
+                          <div className="mt-2 space-y-1 border-t border-[#F1F4F9] pt-2">
+                            {history.map(h => (
+                              <p key={h.id}>{h.hourly_wage.toLocaleString()}円　{h.effective_from}〜（履歴・編集不可）</p>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {!isEditing ? (
-                      <button onClick={() => startEdit(latest)} className={secondaryBtn}>修正する</button>
-                    ) : (
-                      <>
-                        <button onClick={() => handleUpdate(latest.id)} disabled={editSubmitting} className={primaryBtn}>{editSubmitting ? '保存中…' : '保存する'}</button>
-                        <button onClick={() => setEditingId(null)} className={secondaryBtn}>キャンセル</button>
-                      </>
-                    )}
-                    {history.length > 0 && (
-                      <button onClick={() => setExpandedDept(isExpanded ? null : deptNo)} className={secondaryBtn}>
-                        履歴（{history.length}件）{isExpanded ? 'を閉じる' : 'を表示'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-                {isEditing && editError && <div className="mt-3"><ErrorBanner message={editError} /></div>}
-                {isExpanded && (
-                  <div className="mt-3 space-y-1 border-t border-[#F1F4F9] pt-3">
-                    {history.map(h => (
-                      <p key={h.id} className="text-xs font-medium text-[#6B7280]">
-                        時給 {h.hourly_wage.toLocaleString()}円　適用開始：{h.effective_from}（履歴・編集不可）
-                      </p>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      </section>
-    </div>
+                  </td>
+                  <td className="px-3 py-3">
+                    <input type="number" value={draft.wage} onChange={e => setDraft(dept.dept_no, { wage: e.target.value })} className={`${inputCls} w-24`} placeholder="例：1100" />
+                  </td>
+                  <td className="px-3 py-3">
+                    <input type="date" value={draft.date} onChange={e => setDraft(dept.dept_no, { date: e.target.value })} className={`${inputCls} w-36`} />
+                  </td>
+                  <td className="px-3 py-3">
+                    <button
+                      onClick={() => handleSave(dept.dept_no)}
+                      disabled={savingDept === dept.dept_no || !draft.wage || !draft.date}
+                      className={primaryBtn}
+                    >
+                      {savingDept === dept.dept_no ? '保存中…' : savedDept === dept.dept_no ? '保存しました✓' : '保存する'}
+                    </button>
+                    {errorByDept[dept.dept_no] && <div className="mt-2 w-56"><ErrorBanner message={errorByDept[dept.dept_no]} /></div>}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
   )
 }
 

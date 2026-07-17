@@ -30,15 +30,28 @@ export async function GET(req: NextRequest) {
   if (!auth) return NextResponse.json({ error: 'ログインが必要です。' }, { status: 401 })
   if (auth.role !== '管理部') return NextResponse.json({ error: 'この操作は管理部のみ実行できます。' }, { status: 403 })
 
-  const [{ data: departments, error: deptErr }, { data: minimumWages, error: mwErr }, { data: workingHours, error: whErr }, { data: dispatchFees, error: dfErr }] = await Promise.all([
+  const [{ data: departments, error: deptErr }, { data: minimumWages, error: mwErr }, { data: workingHours, error: whErr }, { data: dispatchFees, error: dfErr }, { data: staffDeptRows, error: staffErr }] = await Promise.all([
     supabaseAdmin.from('department_master').select('id, dept_no, dept_name, created_at').order('dept_no', { ascending: true }),
     supabaseAdmin.from('minimum_wage_master').select('id, dept_no, hourly_wage, effective_from, created_at, updated_at').order('dept_no', { ascending: true }).order('effective_from', { ascending: false }),
     supabaseAdmin.from('standard_working_hours_master').select('id, work_place, contract_type, pattern_name, monthly_hours, created_at, updated_at').order('work_place', { ascending: true }).order('contract_type', { ascending: true }),
     supabaseAdmin.from('dispatch_fee_master').select('id, office_name, fiscal_year_label, amount_per_day, updated_at'),
+    // 2026-07-17追加：部門ごとの在籍スタッフ数（「実際に使われている部門か」の目安として
+    // マスタ管理画面に表示する。伊藤さんより「51部門のうち実際に使わないものもある」との
+    // ご指摘を受け、過去のトーク履歴・実データを調査した結果、部門マスタはHRシステム側の
+    // 部門コード一覧をそのまま機械的に取り込んだもので、上位の「まとめ部署」（例：SP営業部）は
+    // スタッフが直接所属せず、実際は下位の「SP1課」等にスタッフが紐付く構造と判明。
+    // staff_countが0の部門＝実質未使用の可能性が高い部門、として画面上で可視化する。
+    supabaseAdmin.from('staff').select('dept_no'),
   ])
 
-  if (deptErr || mwErr || whErr || dfErr) {
-    return NextResponse.json({ error: 'マスタデータの取得に失敗しました：' + (deptErr?.message || mwErr?.message || whErr?.message || dfErr?.message || '') }, { status: 500 })
+  if (deptErr || mwErr || whErr || dfErr || staffErr) {
+    return NextResponse.json({ error: 'マスタデータの取得に失敗しました：' + (deptErr?.message || mwErr?.message || whErr?.message || dfErr?.message || staffErr?.message || '') }, { status: 500 })
+  }
+
+  const staffCountByDept: Record<number, number> = {}
+  for (const row of staffDeptRows || []) {
+    if (row.dept_no === null || row.dept_no === undefined) continue
+    staffCountByDept[row.dept_no] = (staffCountByDept[row.dept_no] || 0) + 1
   }
 
   // 派遣料金額マスタの「営業所名」候補：部門マスタの全dept_nameにgetOfficeName()と同じロジックを
@@ -47,7 +60,7 @@ export async function GET(req: NextRequest) {
   for (const d of departments || []) officeNameSet.add(getOfficeName(d.dept_name))
   const officeNames = Array.from(officeNameSet).sort((a, b) => (a === '本社' ? -1 : b === '本社' ? 1 : a.localeCompare(b, 'ja')))
 
-  return NextResponse.json({ departments, minimumWages, workingHours, dispatchFees, officeNames })
+  return NextResponse.json({ departments, minimumWages, workingHours, dispatchFees, officeNames, staffCountByDept })
 }
 
 // ===== POST：新規追加・修正（actionで分岐） =====

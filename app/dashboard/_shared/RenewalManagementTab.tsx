@@ -6,6 +6,7 @@
 'use client'
 
 import { useState, Fragment } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   remainingDays,
   RenewalCandidate,
@@ -145,6 +146,7 @@ export default function RenewalManagementTab({
   copyDispatchToEmploy, confirmNotRenewing, setTriageMode, executeBulkApply,
   currentUserId, currentUserEmail, currentUserDeptName, canFinalize = true,
 }: Props) {
+  const router = useRouter()
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [overrideReasonId, setOverrideReasonId] = useState<string | null>(null)
   const [overrideReasonText, setOverrideReasonText] = useState('')
@@ -369,6 +371,20 @@ export default function RenewalManagementTab({
                           { value: 'individual', label: TRIAGE_LABEL.individual },
                         ]}
                       />
+                      {/* 2026-07-17追加（チャットD・⑤個別申請）：「個別申請」に仕分けた行にのみ、
+                          専用の「個別に申請する」ボタンを表示する。押すと初めて/apply（原契約
+                          プリフィル・最終確認直行）に遷移する。一括申請と違い、この画面内では
+                          内容確認・編集を完結させず/apply側に任せる（意思決定ログ2026-07-16参照）。
+                          SSCは閲覧のみのため表示しない。 */}
+                      {c.triage_mode === 'individual' && canFinalize && (
+                        <button
+                          onClick={() => router.push(`/apply?renewal=${c.id}`)}
+                          className="rounded-2xl px-3 py-1.5 text-xs font-semibold text-white transition hover:-translate-y-0.5"
+                          style={{ background: '#5A3EC8' }}
+                        >
+                          個別に申請する →
+                        </button>
+                      )}
                     </div>
                   )}
 

@@ -25,6 +25,7 @@ import {
   SectionHeader, FinalSection, FinalGroupHeader, FinalRow, ModeToggle,
   NoBreakTextarea, TelInput, RadioGroup, CriticalWarning, SearchInput,
 } from './_components/FormParts'
+import { buildMergedFields } from '@/app/dashboard/_shared/renewalFieldMap'
 
 
 function ApplyPageInner() {
@@ -33,6 +34,12 @@ function ApplyPageInner() {
   const editContractId = searchParams.get('edit') // 再申請モード：/apply?edit=契約ID で開いた場合の契約ID
   const [editLoading, setEditLoading] = useState(!!editContractId)
   const [editNotFound, setEditNotFound] = useState(false)
+  // 2026-07-17追加（更新期限管理タブ・チャットD・⑤個別申請）：/apply?renewal=renewal_candidatesのID
+  // で開いた場合の、原契約プリフィル＋最終確認（STEP8）直行モード。差し戻し再申請（editContractId）
+  // とは別物で、真新しい申請として最後にinsertされる（updateではない）。
+  const renewalCandidateId = searchParams.get('renewal')
+  const [renewalLoading, setRenewalLoading] = useState(!!renewalCandidateId)
+  const [renewalNotFound, setRenewalNotFound] = useState(false)
   const [user, setUser] = useState<any>(null)
   // STEP1スタッフ検索の自部門制限用：担当営業自身の部門番号。
   // undefined=まだ取得していない／null=担当営業だが部門が特定できない（staffテーブルに一致行なし）
@@ -591,6 +598,168 @@ function ApplyPageInner() {
     loadForEdit()
   }, [user, editContractId])
 
+  // 2026-07-17追加（更新期限管理タブ・チャットD・⑤個別申請）：/apply?renewal=候補ID で開いた場合、
+  // 前回契約の内容を土台に、CSVから反映される最新内容・確定済みの新しい雇用期間/派遣期間/就業場所で
+  // 上書きしたデータを全STEPのstateに復元し、最終確認（STEP8相当）へ直行する。
+  // executeBulkApply()（一括申請の裏側処理）と同じマージロジック（buildMergedFields）を使うことで、
+  // 一括申請・個別申請のどちらでも同じ「前回＋最新反映」の内容になることを保証する。
+  // 差し戻し再申請（editContractId）と違い、これは真新しい申請なので isRejected 等は一切設定しない
+  // （送信時も通常のinsertパスをそのまま通る）。
+  useEffect(() => {
+    if (!renewalCandidateId) { setRenewalLoading(false); return }
+    if (!user) return
+    const loadForRenewal = async () => {
+      const { data: candidate, error: candidateError } = await supabase
+        .from('renewal_candidates')
+        .select('*')
+        .eq('id', renewalCandidateId)
+        .maybeSingle()
+      if (candidateError || !candidate) { setRenewalNotFound(true); setRenewalLoading(false); return }
+
+      const { data: prevContract, error: prevError } = await supabase
+        .from('contracts')
+        .select('*')
+        .eq('id', candidate.source_contract_id)
+        .maybeSingle()
+      if (prevError || !prevContract) { setRenewalNotFound(true); setRenewalLoading(false); return }
+
+      const prevFields = (prevContract.input_data as any)?.fields || {}
+
+      let csvFields: Record<string, any> | null = null
+      if (candidate.new_csv_raw_data_id) {
+        const { data: csvRow } = await supabase
+          .from('csv_raw_data')
+          .select('raw_data')
+          .eq('id', candidate.new_csv_raw_data_id)
+          .maybeSingle()
+        if (csvRow?.raw_data) {
+          csvFields = extractCsvFields(candidate.csv_system || '', csvRow.raw_data) as Record<string, any>
+        }
+      }
+
+      const f: Record<string, any> = {
+        ...buildMergedFields(prevFields, csvFields),
+        employStart: candidate.new_employ_start || prevFields.employStart || '',
+        employEnd: candidate.new_employ_end || prevFields.employEnd || '',
+        dispatchStart: candidate.new_dispatch_start || prevFields.dispatchStart || '',
+        dispatchEnd: candidate.new_dispatch_end || prevFields.dispatchEnd || '',
+        workLocationName: candidate.new_work_location_name || prevFields.workLocationName || '',
+        workLocationAddress: candidate.new_work_address || prevFields.workLocationAddress || '',
+        // 更新のたびに試用期間を引き継がない（2026-07-17伊藤さんとの確認・一括申請と同じ扱い）。
+        // 個別申請は最終確認画面で営業が内容を見ながら送信するため、必要であれば画面上で
+        // 「有」に戻して入力し直すことも可能。
+        trialPeriod: '無',
+        trialStart: '',
+        trialEnd: '',
+      }
+      const csvMeta = (prevContract.input_data as any)?.csvMeta || {}
+
+      // スタッフ情報：staffテーブルに"department"列は存在せずdepartment_masterとの結合が必要
+      // （executeBulkApply()の実機テストで発覚した不具合と同じ注意点）。
+      const { data: staffRow } = await supabase
+        .from('staff')
+        .select('id, employee_number, name, crew_code, address, department_master(dept_name)')
+        .eq('employee_number', candidate.employee_number)
+        .maybeSingle()
+
+      // STEP1：対象スタッフ・雇用区分・就業場所区分・書類種別
+      setSelectedStaff(staffRow ? {
+        id: staffRow.id,
+        employee_number: staffRow.employee_number,
+        name: staffRow.name,
+        department: (staffRow as any).department_master?.dept_name || null,
+        crew_code: staffRow.crew_code,
+        address: staffRow.address,
+      } : {
+        id: prevContract.staff_id,
+        employee_number: candidate.employee_number,
+        name: candidate.staff_name,
+        department: null,
+        crew_code: null,
+        address: null,
+      })
+      setSearched(true)
+      setContractType(f.contractType || '')
+      setWorkPlace(f.workPlace || '現場')
+      setDocumentType(f.documentType || '')
+
+      // STEP2：就業先情報
+      setCsvMode(csvMeta.csvMode || 'manual')
+      setCsvSystem(csvMeta.csvSystem || 'e-staffing')
+      setCsvDispatchStart(csvMeta.csvDispatchStart || '')
+      setCsvSnapshot(csvMeta.csvSnapshot || {})
+      setWorkLocationName(f.workLocationName || '')
+      setWorkLocationAddress(f.workLocationAddress || '')
+      setWorkLocationTel(f.workLocationTel || '')
+      setBusinessContent(f.businessContent || '')
+      setStartTime(f.startTime || '')
+      setEndTime(f.endTime || '')
+      setIsShift(!!f.isShift)
+      setBreakTime(f.breakTime || '')
+      setWorkingHoursH(f.workingHoursH || '')
+      setWorkingHoursM(f.workingHoursM || '')
+      setWorkDays(f.workDays || '')
+      setWorkDaysOther(f.workDaysOther || '')
+      setOrganizationUnit(f.organizationUnit || '')
+      setConflictDate(f.conflictDate || '')
+      setResponsibility(f.responsibility || '')
+
+      // STEP3：派遣先担当者
+      setCmdDept(f.cmd_dept || ''); setCmdRole(f.cmd_role || ''); setCmdName(f.cmd_name || ''); setCmdTel(f.cmd_tel || '')
+      setRespDept(f.resp_dept || ''); setRespRole(f.resp_role || ''); setRespName(f.resp_name || ''); setRespTel(f.resp_tel || '')
+      setCompDept(f.comp_dept || ''); setCompRole(f.comp_role || ''); setCompName(f.comp_name || ''); setCompTel(f.comp_tel || '')
+      setWelfare(f.welfare || '')
+      setSafetyMode(f.safetyMode || 'default')
+      setSafetyText(f.safetyText || DEFAULT_SAFETY)
+      setConflictMode(f.conflictMode || 'default')
+      setConflictText(f.conflictText || DEFAULT_CONFLICT)
+
+      // STEP4：派遣元担当者
+      setMgrDept(f.mgr_dept || ''); setMgrRole(f.mgr_role || ''); setMgrName(f.mgr_name || ''); setMgrTel(f.mgr_tel || '')
+      setCmpDept(f.cmp_dept || ''); setCmpRole(f.cmp_role || ''); setCmpName(f.cmp_name || ''); setCmpTel(f.cmp_tel || '')
+      setMgrCmpSource(csvMeta.mgrCmpSource || 'master')
+      setMasterSnapshot(csvMeta.masterSnapshot || {})
+
+      // STEP5：期間・労働条件
+      setDispatchStart(f.dispatchStart || '')
+      setDispatchEnd(f.dispatchEnd || '')
+      setConflictDateOrg(f.conflictDateOrg || '')
+      setEmployStart(f.employStart || '')
+      setEmployEnd(f.employEnd || '')
+      setContractStartDate(f.contractStartDate || '')
+      setTrialPeriod(f.trialPeriod || '')
+      setTrialStart(f.trialStart || '')
+      setTrialEnd(f.trialEnd || '')
+      setFlexTime(f.flexTime || '')
+      setOvertime(f.overtime || '')
+
+      // STEP6：契約条件
+      setClosingPattern(f.closingPattern || 'auto')
+      setBonusType(f.bonusType || '')
+
+      // STEP7：給与・保険
+      setSalaryType(f.salaryType || '時給')
+      setBasicSalary(f.basicSalary || '')
+      setSkillPay(f.skillPay || '0')
+      setRolePay(f.rolePay || '0')
+      setSalesPay(f.salesPay || '0')
+      setHousingPay(f.housingPay || '0')
+      setOvertimePay(f.overtimePay || '0')
+      setOvertimeHours(f.overtimeHours || '0')
+      setTransportType(f.transportType || 'default')
+      setHasEmployInsurance(f.hasEmployInsurance !== false)
+      setHasSocialInsurance(f.hasSocialInsurance !== false)
+
+      // 最終確認（STEP8相当）に直行する
+      const patternFromDoc = getPattern(f.documentType || '')
+      const targetSteps = patternFromDoc === 'A' ? STEPS_A.length : patternFromDoc === 'B' ? STEPS_B.length : patternFromDoc === 'C' ? STEPS_C.length : STEPS_A.length
+      setCurrentStep(targetSteps)
+
+      setRenewalLoading(false)
+    }
+    loadForRenewal()
+  }, [user, renewalCandidateId])
+
   // STEP2の「入力方法」（CSV検索／手動入力）を切り替えた時、新規作成時と同じ状態に完全にリセットする処理
   // ※CSV→手動、手動→CSVどちらの切り替えでもリセットする（確定仕様）
   const resetStep2Step3ForModeChange = () => {
@@ -981,6 +1150,15 @@ function ApplyPageInner() {
         setIsSubmitting(false)
         return
       }
+      // 2026-07-17追加（チャットD・⑤個別申請）：更新期限管理の「個別に申請する」経由で開いた場合、
+      // 送信成功後にrenewal_candidates側を「申請済み」にする（一括申請と同じ扱い。失敗しても
+      // 契約自体は正常に保存済みなので、ここのエラーは申請完了自体をブロックしない）。
+      if (renewalCandidateId) {
+        await supabase.from('renewal_candidates')
+          .update({ status: 'applied', triage_mode: 'undecided' })
+          .eq('id', renewalCandidateId)
+          .catch(() => {})
+      }
       setIsSubmitted(true)
     } catch (e: any) {
       setSubmitError('申請の保存中に問題が発生しました。お手数ですが、もう一度お試しください。')
@@ -1008,10 +1186,22 @@ function ApplyPageInner() {
   }
 
   const stepType = getStepType(currentStep)
-  if (!user || editLoading) return <div className="p-8" style={{ color: '#5A6A8A' }}>読み込み中...</div>
+  if (!user || editLoading || renewalLoading) return <div className="p-8" style={{ color: '#5A6A8A' }}>読み込み中...</div>
   if (editNotFound) return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ background: '#F5F7FC' }}>
       <p className="text-lg font-bold" style={{ color: '#1A2340' }}>再申請する差し戻し案件が見つかりませんでした</p>
+      <button onClick={() => {
+        const role = user?.user_metadata?.role
+        router.push(role === 'SSC' ? '/dashboard/ssc' : role === '管理部' ? '/dashboard/admin' : '/dashboard/sales')
+      }}
+        className="text-sm px-4 py-2 rounded-lg text-white" style={{ background: '#1B3A8C' }}>
+        ダッシュボードに戻る
+      </button>
+    </div>
+  )
+  if (renewalNotFound) return (
+    <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ background: '#F5F7FC' }}>
+      <p className="text-lg font-bold" style={{ color: '#1A2340' }}>個別申請の対象となる更新期限案件が見つかりませんでした</p>
       <button onClick={() => {
         const role = user?.user_metadata?.role
         router.push(role === 'SSC' ? '/dashboard/ssc' : role === '管理部' ? '/dashboard/admin' : '/dashboard/sales')

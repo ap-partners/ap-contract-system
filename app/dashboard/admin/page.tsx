@@ -50,6 +50,13 @@ type Contract = ContractForDisplay
 type ContractSubTab = '承認待ち' | '差し戻し中' | '承認済み'
 type IconName = 'file' | 'list' | 'shield' | 'upload' | 'alert' | 'clock' | 'search' | 'refresh' | 'check' | 'arrow' | 'logout' | 'map' | 'user' | 'building' | 'plus' | 'grid'
 
+const SYSTEM_LOGO_FILE: Record<string, string> = {
+  'e-staffing': '/logos/e-staffing.png',
+  HRstation: '/logos/hrstation.png',
+  winworks: '/logos/winworks.png',
+  Staffia: '/logos/staffia.png',
+  StaffExpress: '/logos/staffexpress.png',
+}
 const PAGE_SIZE = 50
 // 依頼一覧（「すべて／完了済みのみ／取消済みのみ」表示時）の既定絞り込み日数。
 // 「未対応のみ」表示は対応漏れ発見のため常に全期間対象（2026-07-14）
@@ -1410,16 +1417,29 @@ export default function AdminDashboard() {
 
               <div className="mt-6">
                 <p className="mb-3 text-sm font-semibold text-[#1F2937]">システムを選択</p>
-                <div className="flex flex-wrap gap-3">
-                  {(['e-staffing', 'HRstation', 'winworks', 'Staffia', 'StaffExpress'] as const).map(sys => (
-                    <button
-                      key={sys}
-                      onClick={() => { setCsvImportSystem(sys); resetCsvUploadForm(); setCsvUploadError(''); setCsvUploadResult(null) }}
-                      className={`rounded-2xl border px-5 py-3 text-sm font-semibold transition ${csvImportSystem === sys ? 'border-[#2F5FD0] bg-[#EAF1FF] text-[#2F5FD0]' : 'border-[#E8EDF5] bg-white text-[#1F2937] hover:border-[#2F5FD0] hover:text-[#2F5FD0]'}`}
-                    >
-                      {sys}
-                    </button>
-                  ))}
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                  {(['e-staffing', 'HRstation', 'winworks', 'Staffia', 'StaffExpress'] as const).map(sys => {
+                    const active = csvImportSystem === sys
+                    return (
+                      <button
+                        key={sys}
+                        onClick={() => { setCsvImportSystem(sys); resetCsvUploadForm(); setCsvUploadError(''); setCsvUploadResult(null) }}
+                        className={`relative flex flex-col items-center gap-2 rounded-2xl border px-3 py-4 transition ${active ? 'border-[#2F5FD0] bg-white shadow-[0_4px_12px_rgba(47,95,208,0.16)]' : 'border-[#E8EDF5] bg-white hover:border-[#2F5FD0]'}`}
+                      >
+                        {active && (
+                          <span className="absolute right-2 top-2 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#2F5FD0]">
+                            <svg viewBox="0 0 20 20" fill="none" className="h-2.5 w-2.5">
+                              <path d="M4 10l4 4 8-8" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </span>
+                        )}
+                        <span className="relative flex h-9 w-full items-center justify-center rounded-lg bg-[#F7F9FC]">
+                          <Image src={SYSTEM_LOGO_FILE[sys]} alt={sys} fill className="object-contain p-1.5" />
+                        </span>
+                        <span className="text-xs font-semibold text-[#1F2937]">{sys}</span>
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
 

@@ -489,16 +489,21 @@ export function useRenewalCandidates() {
           trialEnd: '',
         }
 
+        // 2026-07-17 実機テストで判明：staffテーブルに"department"列は存在しない（部署名は
+        // department_master(dept_name)の結合で取得する。/apply STEP1検索と同じ形。2026-07-14の
+        // handleSearch実装を参照）。存在しない列をSELECTするとエラーになりstaffRow自体がnullに
+        // なる、という無言の失敗があったため修正（最初の実機テストでstaff_snapshotが丸ごとnullに
+        // なるバグとして発覚）。
         const { data: staffRow } = await supabase
           .from('staff')
-          .select('employee_number, name, department, crew_code, address, dept_no, hired_at')
+          .select('employee_number, name, crew_code, address, dept_no, hired_at, department_master(dept_name)')
           .eq('employee_number', c.employee_number)
           .maybeSingle()
 
         const staffSnapshot = staffRow ? {
           employee_number: staffRow.employee_number,
           name: staffRow.name,
-          department: staffRow.department,
+          department: (staffRow as any).department_master?.dept_name || null,
           crew_code: staffRow.crew_code,
           address: staffRow.address || null,
         } : null

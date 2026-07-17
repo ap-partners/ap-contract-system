@@ -480,6 +480,13 @@ export function useRenewalCandidates() {
           dispatchEnd: c.new_dispatch_end,
           workLocationName: c.new_work_location_name || prevFields.workLocationName,
           workLocationAddress: c.new_work_address || prevFields.workLocationAddress,
+          // 2026-07-17決定（伊藤さんとの確認）：試用期間は入社時の見極めを目的とした制度のため、
+          // 更新のたびに前回の「有」を引き継ぐのは制度趣旨に反する。一括申請で作成する契約は、
+          // 前回の値に関わらず必ず「無」にする（例外的に更新時も試用期間を設けたいケースは
+          // 個別申請で明示的に入力する運用とする）。
+          trialPeriod: '無',
+          trialStart: '',
+          trialEnd: '',
         }
 
         const { data: staffRow } = await supabase

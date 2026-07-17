@@ -100,6 +100,16 @@ export default function RenewalContractConfirmModal({ candidate, onClose }: Prop
                     {[
                       { label: '雇用期間', before: formatPeriod(candidate.employ_start_date, candidate.employ_end_date), after: formatPeriod(candidate.new_employ_start, candidate.new_employ_end) },
                       { label: '派遣期間', before: formatPeriod(candidate.dispatch_start_date, candidate.dispatch_end_date), after: formatPeriod(candidate.new_dispatch_start, candidate.new_dispatch_end) },
+                      {
+                        // 2026-07-17決定：試用期間は更新のたびに引き継がず、一括申請では必ず「無」にする
+                        // （入社時の見極めが目的の制度のため。詳細はCLAUDE.md該当日の意思決定ログ参照）。
+                        // 前回の値に関わらず「今回」は常に「無（更新のため自動設定）」で固定表示する。
+                        label: '試用期間',
+                        before: getPrev('trialPeriod') === '有'
+                          ? `有　${formatPeriod(getPrev('trialStart'), getPrev('trialEnd'))}`
+                          : (getPrev('trialPeriod') === '無' ? '無' : '―'),
+                        after: '無（更新のため自動設定）',
+                      },
                     ].map(r => {
                       const changed = r.before !== r.after
                       return (

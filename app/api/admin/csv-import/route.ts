@@ -23,14 +23,15 @@ import {
   buildRecordForUpsert,
   resolveCsvSearchStaffCode,
 } from '@/lib/csvImportShared'
+import { readExcelBuffer, buildStaffRecord } from '@/lib/staffMasterImportShared'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// 画面から受け取るシステム指定（Staffiaのみ2ファイル）
-const UPLOAD_SYSTEMS = ['e-staffing', 'HRstation', 'winworks', 'Staffia'] as const
+// 画面から受け取るシステム指定（Staffiaのみ2ファイル、StaffExpressはスタッフ/部門マスタのExcel）
+const UPLOAD_SYSTEMS = ['e-staffing', 'HRstation', 'winworks', 'Staffia', 'StaffExpress'] as const
 type UploadSystem = typeof UPLOAD_SYSTEMS[number]
 
 type FileCounts = {
@@ -118,6 +119,80 @@ async function processSingleFile(
   return counts
 }
 
+// ===== StaffExpress取込：部門マスタ・スタッフマスタ（2026-07-17実装） =====
+// `scripts/import-master.js`のロジックをそのまま踏襲（lib/staffMasterImportShared.tsに
+// 変換ロジックを切り出し済み）。伊藤さんとの確認により、上書き方針は「全件上書き
+// （employee_numberキー）」：契約CSVと異なり保護対象という概念は無く、アップロードした
+// Excelの内容で該当行を毎回まるごと上書きする（退職・異動等の最新状態をそのまま反映するため）。
+// 部門マスタは staff.dept_no の外部キー参照元のため、必ず部門マスタを先に処理する
+// （呼び出し側で順序を保証）。
+type MasterImportCounts = { total: number; newCount: number; updatedCount: number; skippedCount: number; errorCount: number }
+
+async function processDepartmentMasterFile(buffer: Buffer, uploadedBy: string): Promise<MasterImportCounts> {
+  const rows = readExcelBuffer(buffer)
+  const counts: MasterImportCounts = { total: rows.length, newCount: 0, updatedCount: 0, skippedCount: 0, errorCount: 0 }
+
+  const { data: importRecord, error: importError } = await supabaseAdmin
+    .from('master_imports')
+    .insert({ master_type: 'department', file_name: '', total_rows: rows.length, uploaded_by: uploadedBy })
+    .select()
+    .single()
+  if (importError || !importRecord) return counts
+
+  for (const row of rows) {
+    const deptNo = row['部門NO']
+    const deptName = row['部門名1']
+    if (deptNo === null || deptNo === undefined) { counts.skippedCount++; continue }
+
+    const { data: existing } = await supabaseAdmin.from('department_master').select('id').eq('dept_no', deptNo).maybeSingle()
+    if (existing) {
+      const { error } = await supabaseAdmin.from('department_master').update({ dept_name: deptName }).eq('id', existing.id)
+      if (error) counts.errorCount++; else counts.updatedCount++
+    } else {
+      const { error } = await supabaseAdmin.from('department_master').insert({ dept_no: deptNo, dept_name: deptName })
+      if (error) counts.errorCount++; else counts.newCount++
+    }
+  }
+
+  await supabaseAdmin.from('master_imports').update({
+    new_rows: counts.newCount, updated_rows: counts.updatedCount, skipped_rows: counts.skippedCount, error_rows: counts.errorCount,
+  }).eq('id', importRecord.id)
+
+  return counts
+}
+
+async function processStaffMasterFile(buffer: Buffer, uploadedBy: string): Promise<MasterImportCounts> {
+  const rows = readExcelBuffer(buffer)
+  const counts: MasterImportCounts = { total: rows.length, newCount: 0, updatedCount: 0, skippedCount: 0, errorCount: 0 }
+
+  const { data: importRecord, error: importError } = await supabaseAdmin
+    .from('master_imports')
+    .insert({ master_type: 'staff', file_name: '', total_rows: rows.length, uploaded_by: uploadedBy })
+    .select()
+    .single()
+  if (importError || !importRecord) return counts
+
+  for (const row of rows) {
+    const record = buildStaffRecord(row)
+    if (!record) { counts.skippedCount++; continue }
+
+    const { data: existing } = await supabaseAdmin.from('staff').select('id').eq('employee_number', record.employee_number).maybeSingle()
+    if (existing) {
+      const { error } = await supabaseAdmin.from('staff').update({ ...record, updated_at: new Date().toISOString() }).eq('id', existing.id)
+      if (error) counts.errorCount++; else counts.updatedCount++
+    } else {
+      const { error } = await supabaseAdmin.from('staff').insert(record)
+      if (error) counts.errorCount++; else counts.newCount++
+    }
+  }
+
+  await supabaseAdmin.from('master_imports').update({
+    new_rows: counts.newCount, updated_rows: counts.updatedCount, skipped_rows: counts.skippedCount, error_rows: counts.errorCount,
+  }).eq('id', importRecord.id)
+
+  return counts
+}
+
 // CSVインポート依頼（requests）の自動マッチ・自動完了・通知
 async function runAutoMatch(dbSystemType: DbSystemType, uploaderId: string) {
   const { data: pendingRequests, error } = await supabaseAdmin
@@ -198,6 +273,43 @@ export async function POST(req: NextRequest) {
   const system = (formData.get('system') as string) || ''
   if (!UPLOAD_SYSTEMS.includes(system as UploadSystem)) {
     return NextResponse.json({ error: 'システム名が不正です。' }, { status: 400 })
+  }
+
+  // ===== StaffExpress（スタッフマスタ・部門マスタ）は契約CSVと仕組みが異なるため別処理 =====
+  // ・保存先が csv_raw_data ではなく department_master / staff（履歴は master_imports）。
+  // ・上書き方針も「保護対象なし・全件上書き」で、依頼の自動マッチ（requests連携）も対象外。
+  // ・部門マスタは staff.dept_no の参照元のため、両ファイルとも指定された場合は必ず部門→スタッフの順で処理する。
+  if (system === 'StaffExpress') {
+    const fileDept = formData.get('fileDept') as File | null
+    const fileStaff = formData.get('fileStaff') as File | null
+    if (!fileDept && !fileStaff) {
+      return NextResponse.json({ error: '部門マスタ・スタッフマスタのうち、少なくとも一方のファイルを選択してください。' }, { status: 400 })
+    }
+    try {
+      const fileNames: string[] = []
+      let deptResult: MasterImportCounts | null = null
+      let staffResult: MasterImportCounts | null = null
+      if (fileDept) {
+        const buf = Buffer.from(await fileDept.arrayBuffer())
+        fileNames.push(fileDept.name)
+        deptResult = await processDepartmentMasterFile(buf, auth.userId)
+      }
+      if (fileStaff) {
+        const buf = Buffer.from(await fileStaff.arrayBuffer())
+        fileNames.push(fileStaff.name)
+        staffResult = await processStaffMasterFile(buf, auth.userId)
+      }
+      return NextResponse.json({
+        success: true,
+        fileNames,
+        staffExpressResult: {
+          department: deptResult,
+          staff: staffResult,
+        },
+      })
+    } catch (e: any) {
+      return NextResponse.json({ error: 'Excelの読み込み・保存中にエラーが発生しました：' + (e?.message || '') }, { status: 500 })
+    }
   }
 
   const fileNames: string[] = []

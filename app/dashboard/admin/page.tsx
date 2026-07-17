@@ -22,6 +22,7 @@ import { useApprovedAccumulator, APPROVED_WINDOW_DAYS, CONTRACT_COLUMNS } from '
 import RenewalManagementTab from '../_shared/RenewalManagementTab'
 import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
 import MasterManagementTab from '../_shared/MasterManagementTab'
+import { STAFF_EXPRESS_COLUMNS } from '@/lib/staffExpressColumns'
 
 type RequestRow = {
   id: string
@@ -273,16 +274,19 @@ export default function AdminDashboard() {
     copyDispatchToEmploy, confirmNotRenewing, setTriageMode, executeBulkApply,
   } = useRenewalCandidates()
 
-  // ===== CSVインポートタブ（2026-07-15実装） =====
-  const [csvImportSystem, setCsvImportSystem] = useState<'e-staffing' | 'HRstation' | 'winworks' | 'Staffia'>('e-staffing')
+  // ===== CSVインポートタブ（2026-07-15実装。2026-07-17：StaffExpress（スタッフ/部門マスタ）追加） =====
+  const [csvImportSystem, setCsvImportSystem] = useState<'e-staffing' | 'HRstation' | 'winworks' | 'Staffia' | 'StaffExpress'>('e-staffing')
   const [csvFile, setCsvFile] = useState<File | null>(null)
   const [csvFile103, setCsvFile103] = useState<File | null>(null)
   const [csvFile104, setCsvFile104] = useState<File | null>(null)
+  const [staffExpressFileDept, setStaffExpressFileDept] = useState<File | null>(null)
+  const [staffExpressFileStaff, setStaffExpressFileStaff] = useState<File | null>(null)
   const [csvUploading, setCsvUploading] = useState(false)
   const [csvUploadError, setCsvUploadError] = useState('')
   const [csvUploadResult, setCsvUploadResult] = useState<any>(null)
   const [csvHistory, setCsvHistory] = useState<any[]>([])
   const [csvHistoryLoading, setCsvHistoryLoading] = useState(true)
+  const [staffExpressColumnsOpen, setStaffExpressColumnsOpen] = useState(false)
 
   const fetchCsvHistory = useCallback(async () => {
     setCsvHistoryLoading(true)
@@ -295,13 +299,29 @@ export default function AdminDashboard() {
     setCsvHistoryLoading(false)
   }, [])
 
+  // StaffExpress（スタッフ/部門マスタ）の取込履歴は別テーブル（master_imports）のため個別に取得
+  const [masterImportHistory, setMasterImportHistory] = useState<any[]>([])
+  const [masterImportHistoryLoading, setMasterImportHistoryLoading] = useState(true)
+  const fetchMasterImportHistory = useCallback(async () => {
+    setMasterImportHistoryLoading(true)
+    const { data } = await supabase
+      .from('master_imports')
+      .select('*')
+      .order('uploaded_at', { ascending: false })
+      .limit(20)
+    setMasterImportHistory(data || [])
+    setMasterImportHistoryLoading(false)
+  }, [])
+
   useEffect(() => {
     if (!user) return
     fetchCsvHistory()
-  }, [user, fetchCsvHistory])
+    fetchMasterImportHistory()
+  }, [user, fetchCsvHistory, fetchMasterImportHistory])
 
   const resetCsvUploadForm = () => {
     setCsvFile(null); setCsvFile103(null); setCsvFile104(null)
+    setStaffExpressFileDept(null); setStaffExpressFileStaff(null)
   }
 
   const handleCsvUpload = async () => {
@@ -311,7 +331,11 @@ export default function AdminDashboard() {
       setCsvUploadError('Staffiaは「契約詳細（KEF00103）」「スタッフ個人・派遣期間（KEF00104）」の両方のファイルを選択してください。')
       return
     }
-    if (csvImportSystem !== 'Staffia' && !csvFile) {
+    if (csvImportSystem === 'StaffExpress' && !staffExpressFileDept && !staffExpressFileStaff) {
+      setCsvUploadError('部門マスタ・スタッフマスタのうち、少なくとも一方のファイルを選択してください。')
+      return
+    }
+    if (csvImportSystem !== 'Staffia' && csvImportSystem !== 'StaffExpress' && !csvFile) {
       setCsvUploadError('ファイルを選択してください。')
       return
     }
@@ -322,6 +346,9 @@ export default function AdminDashboard() {
       if (csvImportSystem === 'Staffia') {
         formData.append('file103', csvFile103 as File)
         formData.append('file104', csvFile104 as File)
+      } else if (csvImportSystem === 'StaffExpress') {
+        if (staffExpressFileDept) formData.append('fileDept', staffExpressFileDept)
+        if (staffExpressFileStaff) formData.append('fileStaff', staffExpressFileStaff)
       } else {
         formData.append('file', csvFile as File)
       }
@@ -333,7 +360,8 @@ export default function AdminDashboard() {
       } else {
         setCsvUploadResult(json)
         resetCsvUploadForm()
-        await fetchCsvHistory()
+        if (csvImportSystem === 'StaffExpress') await fetchMasterImportHistory()
+        else await fetchCsvHistory()
       }
     } catch (e: any) {
       setCsvUploadError('通信エラーが発生しました：' + (e?.message || ''))
@@ -1377,12 +1405,13 @@ export default function AdminDashboard() {
                 4システム（e-staffing・HRstation・winworks・Staffia）のCSVファイルを取り込みます。
                 Staffiaのみ「契約詳細（KEF00103）」「スタッフ個人・派遣期間（KEF00104）」の2ファイルが必要です。
                 同じ内容のCSVは上書きOKですが、申請中もしくはそれ以降のステータスの契約から参照されている行は保護され、上書きされません。
+                StaffExpress（スタッフマスタ・部門マスタ）のみExcelファイル（.xlsx）で、こちらは保護の対象外（アップロードした内容で常に全件上書き）です。
               </p>
 
               <div className="mt-6">
                 <p className="mb-3 text-sm font-semibold text-[#1F2937]">システムを選択</p>
                 <div className="flex flex-wrap gap-3">
-                  {(['e-staffing', 'HRstation', 'winworks', 'Staffia'] as const).map(sys => (
+                  {(['e-staffing', 'HRstation', 'winworks', 'Staffia', 'StaffExpress'] as const).map(sys => (
                     <button
                       key={sys}
                       onClick={() => { setCsvImportSystem(sys); resetCsvUploadForm(); setCsvUploadError(''); setCsvUploadResult(null) }}
@@ -1418,6 +1447,33 @@ export default function AdminDashboard() {
                       {csvFile104 && <p className="mt-2 text-xs font-medium text-[#6B7280]">{csvFile104.name}</p>}
                     </div>
                   </>
+                ) : csvImportSystem === 'StaffExpress' ? (
+                  <>
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold text-[#1F2937]">部門マスタ.xlsx（先に取り込む・任意）</label>
+                      <input
+                        type="file"
+                        accept=".xlsx"
+                        onChange={e => setStaffExpressFileDept(e.target.files?.[0] || null)}
+                        className="block w-full rounded-2xl border border-[#E8EDF5] bg-white p-3 text-sm text-[#1F2937] file:mr-4 file:rounded-xl file:border-0 file:bg-[#EAF1FF] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#2F5FD0]"
+                      />
+                      {staffExpressFileDept && <p className="mt-2 text-xs font-medium text-[#6B7280]">{staffExpressFileDept.name}</p>}
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold text-[#1F2937]">スタッフマスタ.xlsx（任意）</label>
+                      <input
+                        type="file"
+                        accept=".xlsx"
+                        onChange={e => setStaffExpressFileStaff(e.target.files?.[0] || null)}
+                        className="block w-full rounded-2xl border border-[#E8EDF5] bg-white p-3 text-sm text-[#1F2937] file:mr-4 file:rounded-xl file:border-0 file:bg-[#EAF1FF] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#2F5FD0]"
+                      />
+                      {staffExpressFileStaff && <p className="mt-2 text-xs font-medium text-[#6B7280]">{staffExpressFileStaff.name}</p>}
+                    </div>
+                    <p className="md:col-span-2 text-xs font-medium leading-5 text-[#6B7280]">
+                      少なくとも一方のファイルを選択してください。両方選択した場合は部門マスタ→スタッフマスタの順で処理します
+                      （スタッフの所属部門は部門マスタを参照するため）。
+                    </p>
+                  </>
                 ) : (
                   <div>
                     <label className="mb-2 block text-sm font-semibold text-[#1F2937]">CSVファイル</label>
@@ -1431,6 +1487,47 @@ export default function AdminDashboard() {
                   </div>
                 )}
               </div>
+
+              {csvImportSystem === 'StaffExpress' && (
+                <div className="mt-4 rounded-2xl border border-[#E8EDF5] bg-white">
+                  <button
+                    onClick={() => setStaffExpressColumnsOpen(o => !o)}
+                    className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold text-[#1F2937]"
+                  >
+                    <span>列の並び順・取込項目一覧（{staffExpressColumnsOpen ? '閉じる' : '開く'}）</span>
+                    <span className="text-[#2F5FD0]">{staffExpressColumnsOpen ? '▲' : '▼'}</span>
+                  </button>
+                  {staffExpressColumnsOpen && (
+                    <div className="border-t border-[#E8EDF5] p-4">
+                      <p className="mb-3 text-xs font-semibold leading-5 text-[#E74C3C]">
+                        ⚠️項目の順番が違うと正しく取り込まれません。StaffExpressのエクスポート設定は必ずこの順番にしてください。
+                      </p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b border-[#E8EDF5] text-left font-semibold text-[#6B7280]">
+                              <th className="px-2 py-1">#</th>
+                              <th className="px-2 py-1">StaffExpress列名</th>
+                              <th className="px-2 py-1">取込先</th>
+                              <th className="px-2 py-1">備考</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {STAFF_EXPRESS_COLUMNS.map(c => (
+                              <tr key={c.no} className="border-b border-[#F1F4F9]">
+                                <td className="px-2 py-1 text-[#1F2937]">{c.no}</td>
+                                <td className="px-2 py-1 font-medium text-[#1F2937]">{c.label}</td>
+                                <td className="px-2 py-1 text-[#6B7280]">{c.target}</td>
+                                <td className="px-2 py-1 text-[#6B7280]">{c.note}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {csvUploadError && (
                 <div className="mt-4 rounded-2xl border border-[#FDE0E0] bg-[#FDECEC] p-4">
@@ -1449,7 +1546,35 @@ export default function AdminDashboard() {
                 </button>
               </div>
 
-              {csvUploadResult && (
+              {csvUploadResult && csvImportSystem === 'StaffExpress' && (
+                <div className="mt-6 rounded-2xl border border-[#BFE7CF] bg-[#F0FBF4] p-5">
+                  <p className="text-sm font-semibold text-[#1F2937]">アップロードが完了しました</p>
+                  {csvUploadResult.staffExpressResult?.department && (
+                    <div className="mt-4">
+                      <p className="text-xs font-semibold text-[#1F2937]">部門マスタ</p>
+                      <div className="mt-2 grid grid-cols-2 gap-3 md:grid-cols-4">
+                        <ResultStat label="新規" value={csvUploadResult.staffExpressResult.department.newCount ?? 0} />
+                        <ResultStat label="更新" value={csvUploadResult.staffExpressResult.department.updatedCount ?? 0} />
+                        <ResultStat label="スキップ" value={csvUploadResult.staffExpressResult.department.skippedCount ?? 0} />
+                        <ResultStat label="エラー" value={csvUploadResult.staffExpressResult.department.errorCount ?? 0} />
+                      </div>
+                    </div>
+                  )}
+                  {csvUploadResult.staffExpressResult?.staff && (
+                    <div className="mt-4">
+                      <p className="text-xs font-semibold text-[#1F2937]">スタッフマスタ</p>
+                      <div className="mt-2 grid grid-cols-2 gap-3 md:grid-cols-4">
+                        <ResultStat label="新規" value={csvUploadResult.staffExpressResult.staff.newCount ?? 0} />
+                        <ResultStat label="更新" value={csvUploadResult.staffExpressResult.staff.updatedCount ?? 0} />
+                        <ResultStat label="スキップ（対象外）" value={csvUploadResult.staffExpressResult.staff.skippedCount ?? 0} />
+                        <ResultStat label="エラー" value={csvUploadResult.staffExpressResult.staff.errorCount ?? 0} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {csvUploadResult && csvImportSystem !== 'StaffExpress' && (
                 <div className="mt-6 rounded-2xl border border-[#BFE7CF] bg-[#F0FBF4] p-5">
                   <p className="text-sm font-semibold text-[#1F2937]">アップロードが完了しました</p>
                   <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -1485,6 +1610,32 @@ export default function AdminDashboard() {
                         <Pill tone="blue">新規 {h.new_rows ?? 0}</Pill>
                         <Pill tone="green">更新 {h.updated_rows ?? 0}</Pill>
                         <Pill tone="orange">保護 {h.pending_rows ?? 0}</Pill>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className={`${cardBase} p-6 md:p-8`}>
+              <p className="text-sm font-semibold text-[#1F2937]">StaffExpress（スタッフ/部門マスタ）取込履歴（直近20件）</p>
+              {masterImportHistoryLoading ? (
+                <p className="mt-4 text-sm font-medium text-[#6B7280]">読み込み中…</p>
+              ) : masterImportHistory.length === 0 ? (
+                <p className="mt-4 text-sm font-medium text-[#6B7280]">まだ取込履歴はありません</p>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {masterImportHistory.map(h => (
+                    <div key={h.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#E8EDF5] p-4">
+                      <div>
+                        <p className="text-sm font-semibold text-[#1F2937]">{h.master_type === 'department' ? '部門マスタ' : 'スタッフマスタ'}</p>
+                        <p className="mt-1 text-xs font-medium text-[#6B7280]">{formatDateTime(h.uploaded_at)}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                        <Pill tone="blue">新規 {h.new_rows ?? 0}</Pill>
+                        <Pill tone="green">更新 {h.updated_rows ?? 0}</Pill>
+                        <Pill tone="orange">スキップ {h.skipped_rows ?? 0}</Pill>
+                        {h.error_rows > 0 && <Pill tone="red">エラー {h.error_rows}</Pill>}
                       </div>
                     </div>
                   ))}

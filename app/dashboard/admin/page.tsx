@@ -928,7 +928,7 @@ export default function AdminDashboard() {
 
     return (
       <nav className="border-b border-[#E8EDF5]">
-        <div className="flex gap-8 overflow-x-auto">
+        <div className="flex gap-8 overflow-x-auto overflow-y-hidden">
           {items.map(item => {
             const active = value === item.key
             return (
@@ -1039,7 +1039,7 @@ export default function AdminDashboard() {
 
       <main className="mx-auto max-w-[1600px] px-6 py-8 lg:px-8">
         <nav className="mb-6 border-b border-[#E8EDF5]">
-          <div className="flex gap-8 overflow-x-auto">
+          <div className="flex gap-8 overflow-x-auto overflow-y-hidden">
             {tabs.map(tab => {
               const active = activeTab === tab.key
               return (

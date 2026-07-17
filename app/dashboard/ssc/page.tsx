@@ -416,7 +416,7 @@ export default function SSCDashboard() {
         </section>
 
         <nav className="mt-6 border-b border-[#E8EDF5]">
-          <div className="flex gap-8 overflow-x-auto">
+          <div className="flex gap-8 overflow-x-auto overflow-y-hidden">
             {tabs.map(tab => {
               const isActive = activeTab === tab.key
               return (

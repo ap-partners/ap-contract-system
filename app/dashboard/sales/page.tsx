@@ -613,7 +613,7 @@ export default function SalesDashboard() {
         {/* 総合レビュー指摘B対応（2026-07-16）：管理部と同じ「機能タブ→ステータスのサブタブ」の
             2階層構造に変更。機能タブは「契約一覧／依頼状況／更新期限管理」の3つ */}
         <nav className="mt-6 border-b border-[#E8EDF5]">
-          <div className="flex gap-8 overflow-x-auto">
+          <div className="flex gap-8 overflow-x-auto overflow-y-hidden">
             {[
               { key: 'contracts' as const, label: '契約一覧', icon: 'file' as IconName, count: contractsTotalCount, isActive: isContractGroupActive, onClick: () => setActiveFilter(lastContractFilterRef.current) },
               { key: 'other' as const, label: '依頼状況', icon: 'mail' as IconName, count: visibleMyRequests.length, isActive: activeFilter === 'other', onClick: () => setActiveFilter('other') },

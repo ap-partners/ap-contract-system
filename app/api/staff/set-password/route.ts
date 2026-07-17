@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyStaffResetToken } from '@/lib/staffResetToken'
-import { hashPassword, isPasswordValid } from '@/lib/staffPassword'
+import { hashPassword, isPasswordValid, PASSWORD_REQUIREMENT_MESSAGE } from '@/lib/staffPassword'
 import { setStaffSessionCookie } from '@/lib/staffAuth'
 
 const supabaseAdmin = createClient(
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '入力内容をご確認ください。' }, { status: 400 })
   }
   if (!isPasswordValid(newPassword)) {
-    return NextResponse.json({ error: 'パスワードは8文字以上で設定してください。' }, { status: 400 })
+    return NextResponse.json({ error: PASSWORD_REQUIREMENT_MESSAGE }, { status: 400 })
   }
 
   const { data: staff, error } = await supabaseAdmin
@@ -57,6 +57,6 @@ export async function POST(req: NextRequest) {
   }
 
   const res = NextResponse.json({ success: true, staffName: staff.name })
-  setStaffSessionCookie(res, staff.id)
+  await setStaffSessionCookie(res, staff.id)
   return res
 }

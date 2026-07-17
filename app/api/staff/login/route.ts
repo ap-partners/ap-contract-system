@@ -62,6 +62,6 @@ export async function POST(req: NextRequest) {
   await supabaseAdmin.from('staff').update({ login_password_attempts: 0 }).eq('id', staff.id)
 
   const res = NextResponse.json({ success: true, staffName: staff.name })
-  setStaffSessionCookie(res, staff.id)
+  await setStaffSessionCookie(res, staff.id)
   return res
 }

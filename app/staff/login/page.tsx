@@ -113,8 +113,11 @@ export default function StaffLoginPage() {
   // ===== 新しいパスワードの設定 =====
   const handleSetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (newPassword.length < 8) {
-      setError('パスワードは8文字以上で設定してください。')
+    const hasUpper = /[A-Z]/.test(newPassword)
+    const hasLower = /[a-z]/.test(newPassword)
+    const hasDigit = /[0-9]/.test(newPassword)
+    if (newPassword.length < 8 || !hasUpper || !hasLower || !hasDigit) {
+      setError('パスワードは8文字以上で、半角英大文字・小文字・数字をすべて含めてください。')
       return
     }
     if (newPassword !== newPasswordConfirm) {
@@ -371,11 +374,16 @@ export default function StaffLoginPage() {
                     type="password"
                     value={newPassword}
                     onChange={e => setNewPassword(e.target.value)}
-                    placeholder="8文字以上"
+                    placeholder="8文字以上・英大文字小文字数字を含む"
                     required
                     className="w-full px-4 py-3 rounded-xl text-sm border focus:outline-none focus:ring-2 transition-all"
                     style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                   />
+                  <p className="mt-1.5 text-[11px] leading-relaxed" style={{ color: '#5A6A8A' }}>
+                    8文字以上で、半角英大文字・小文字・数字を
+                    <br />
+                    すべて含めてください。
+                  </p>
                 </div>
                 <div>
                   <label className="block text-xs font-medium mb-1.5" style={{ color: '#1A2340' }}>確認のため再入力</label>

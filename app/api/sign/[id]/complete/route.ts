@@ -76,7 +76,7 @@ export async function POST(
   // 2026-07-17追加：マイページ導入に伴い、ログインセッション（社員番号＋パスワード等で
   // ログイン済み）があればそれを本人確認として扱う。旧方式（社員番号＋契約ごとの認証コード。
   // /sign/[id]の一回限りリンク）は、まだセッションを持たない場合のフォールバックとして残す。
-  const sessionStaffId = getStaffIdFromRequest(req)
+  const sessionStaffId = await getStaffIdFromRequest(req)
 
   if (!sessionStaffId && (!employeeNumber || !authCode)) {
     return NextResponse.json({ error: '社員番号と認証コードを入力してください。' }, { status: 400 })

@@ -19,7 +19,7 @@ const getDocumentLabel = (documentType: string, contractType: string): string =>
 }
 
 export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
-  const staffId = getStaffIdFromRequest(req)
+  const staffId = await getStaffIdFromRequest(req)
   if (!staffId) {
     return NextResponse.json({ error: 'ログインが必要です。' }, { status: 401 })
   }

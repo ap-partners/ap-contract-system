@@ -28,8 +28,14 @@ export function verifyPassword(password: string, storedHash: string | null | und
   }
 }
 
-// パスワードの最低要件：8文字以上（過度に複雑な要件は従業員にとって負担が大きいため、
-// 長さのみをシンプルに要求する方針。2026-07-17決定）
+// パスワードの最低要件：8文字以上、かつ半角英大文字・半角英小文字・数字の3種類をすべて含む
+// （2026-07-17伊藤さん指定）。
 export function isPasswordValid(password: string): boolean {
-  return typeof password === 'string' && password.length >= 8
+  if (typeof password !== 'string' || password.length < 8) return false
+  const hasUpper = /[A-Z]/.test(password)
+  const hasLower = /[a-z]/.test(password)
+  const hasDigit = /[0-9]/.test(password)
+  return hasUpper && hasLower && hasDigit
 }
+
+export const PASSWORD_REQUIREMENT_MESSAGE = 'パスワードは8文字以上で、半角英大文字・小文字・数字をすべて含めてください。'

@@ -33,7 +33,7 @@ function computeRemainingDays(contract: any): number | null {
 }
 
 export async function GET(req: NextRequest) {
-  const staffId = getStaffIdFromRequest(req)
+  const staffId = await getStaffIdFromRequest(req)
   if (!staffId) {
     return NextResponse.json({ error: 'ログインが必要です。' }, { status: 401 })
   }

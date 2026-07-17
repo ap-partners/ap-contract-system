@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { supabase, getAuthHeader } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
@@ -218,6 +218,141 @@ const Pill = ({ children, tone = 'gray' }: { children: ReactNode; tone?: 'blue' 
     purple: 'bg-[#F3ECFF] text-[#7C3AED]',
   }
   return <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${tones[tone]}`}>{children}</span>
+}
+
+// ドラッグ&ドロップ対応のファイル選択欄（2026-07-17：CSVインポート画面のリデザインで導入）。
+// クリックでの選択と、ファイルをドラッグしてドロップする操作の両方に対応。
+function FileDropzone({
+  label,
+  file,
+  onChange,
+  accept,
+}: {
+  label: string
+  file: File | null
+  onChange: (f: File | null) => void
+  accept: string
+}) {
+  const [dragOver, setDragOver] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-semibold text-[#1F2937]">{label}</label>
+      <div
+        onClick={() => inputRef.current?.click()}
+        onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={e => {
+          e.preventDefault()
+          setDragOver(false)
+          const f = e.dataTransfer.files?.[0]
+          if (f) onChange(f)
+        }}
+        className={`cursor-pointer rounded-2xl border-2 border-dashed p-6 text-center transition ${dragOver ? 'border-[#2F5FD0] bg-[#EAF1FF]' : 'border-[#C7D2FE] bg-[#F8F9FF] hover:border-[#2F5FD0]'}`}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept={accept}
+          onChange={e => onChange(e.target.files?.[0] || null)}
+          className="hidden"
+        />
+        <div className="mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-white text-[#2F5FD0] shadow-[0_2px_6px_rgba(47,95,208,.15)]">
+          <Icon name="file" className="h-5 w-5" />
+        </div>
+        <p className="text-sm font-medium text-[#4B5563]">ここにファイルをドラッグ、またはクリックして選択</p>
+        {file && (
+          <p className="mt-2 inline-flex items-center gap-1 rounded-lg bg-[#EAF1FF] px-3 py-1 text-xs font-semibold text-[#2F5FD0]">
+            <Icon name="file" className="h-3.5 w-3.5" />
+            {file.name}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// システム選択→ファイル選択→結果確認、の進行状況を示すステッパー（2026-07-17導入）
+function ImportStepper({ step }: { step: 1 | 2 | 3 }) {
+  const steps: { n: 1 | 2 | 3; label: string }[] = [
+    { n: 1, label: 'システム選択' },
+    { n: 2, label: 'ファイル選択' },
+    { n: 3, label: '結果確認' },
+  ]
+  return (
+    <div className="flex items-center">
+      {steps.map((s, i) => (
+        <div key={s.n} className="flex flex-1 items-center last:flex-none">
+          <div className="flex items-center gap-2">
+            <div
+              className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
+                s.n < step ? 'bg-[#2F5FD0] text-white' : s.n === step ? 'bg-[#2F5FD0] text-white' : 'bg-[#F3F4F6] text-[#9CA3AF]'
+              }`}
+            >
+              {s.n < step ? <Icon name="check" className="h-3.5 w-3.5" /> : s.n}
+            </div>
+            <p className={`text-xs font-semibold whitespace-nowrap ${s.n <= step ? 'text-[#1F2937]' : 'text-[#9CA3AF]'}`}>{s.label}</p>
+          </div>
+          {i < steps.length - 1 && (
+            <div className={`mx-3 h-0.5 flex-1 ${s.n < step ? 'bg-[#2F5FD0]' : 'bg-[#E8EDF5]'}`} />
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// インポート履歴のタイムライン表示（2026-07-17導入）。成功=緑チェック、エラーあり=赤い！のドット。
+// エラーがある場合はクリックでエラー詳細（error_detail列）を開閉できる。
+function ImportHistoryTimeline({
+  items,
+}: {
+  items: { id: string; title: string; datetime: string; pills: ReactNode; hasError: boolean; errorDetail: string | null }[]
+}) {
+  const [openId, setOpenId] = useState<string | null>(null)
+  return (
+    <div className="relative mt-4 pl-1">
+      <div className="absolute bottom-1.5 left-[15px] top-1.5 w-0.5 bg-[#E8EDF5]" />
+      <div className="flex flex-col gap-3">
+        {items.map(item => (
+          <div key={item.id} className="relative flex gap-3">
+            <div
+              className={`z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-white ring-4 ring-white ${
+                item.hasError ? 'bg-[#E74C3C]' : 'bg-[#4CAF50]'
+              }`}
+            >
+              <Icon name={item.hasError ? 'alert' : 'check'} className="h-3.5 w-3.5" />
+            </div>
+            <div
+              className={`flex-1 rounded-2xl border p-4 ${
+                item.hasError ? 'border-[#FDD9D9] bg-[#FEF6F6]' : 'border-[#E8EDF5] bg-white'
+              }`}
+            >
+              <p className="text-sm font-semibold text-[#1F2937]">
+                {item.title} <span className="ml-1.5 text-xs font-medium text-[#9CA3AF]">{item.datetime}</span>
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {item.pills}
+                {item.hasError && item.errorDetail && (
+                  <button
+                    onClick={() => setOpenId(o => (o === item.id ? null : item.id))}
+                    className="text-xs font-semibold text-[#E74C3C] underline underline-offset-2"
+                  >
+                    エラー内容を{openId === item.id ? '閉じる' : '見る'}
+                  </button>
+                )}
+              </div>
+              {item.hasError && openId === item.id && item.errorDetail && (
+                <pre className="mt-3 whitespace-pre-wrap rounded-xl bg-white border border-[#FDD9D9] p-3 text-xs leading-5 text-[#9F1239]">
+                  {item.errorDetail}
+                </pre>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 function isPending(r: RequestRow) {
@@ -1425,6 +1560,22 @@ export default function AdminDashboard() {
               </p>
 
               <div className="mt-6">
+                <ImportStepper
+                  step={
+                    csvUploadResult
+                      ? 3
+                      : (csvImportSystem === 'Staffia'
+                          ? !!(csvFile103 || csvFile104)
+                          : csvImportSystem === 'StaffExpress'
+                          ? !!(staffExpressFileDept || staffExpressFileStaff)
+                          : !!csvFile)
+                      ? 2
+                      : 1
+                  }
+                />
+              </div>
+
+              <div className="mt-6">
                 <p className="mb-3 text-sm font-semibold text-[#1F2937]">システムを選択</p>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
                   {(['e-staffing', 'HRstation', 'winworks', 'Staffia', 'StaffExpress'] as const).map(sys => {
@@ -1462,65 +1613,20 @@ export default function AdminDashboard() {
               <div className="mt-6 grid gap-4 md:grid-cols-2">
                 {csvImportSystem === 'Staffia' ? (
                   <>
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-[#1F2937]">契約詳細（KEF00103）</label>
-                      <input
-                        type="file"
-                        accept=".csv"
-                        onChange={e => setCsvFile103(e.target.files?.[0] || null)}
-                        className="block w-full rounded-2xl border border-[#E8EDF5] bg-white p-3 text-sm text-[#1F2937] file:mr-4 file:rounded-xl file:border-0 file:bg-[#EAF1FF] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#2F5FD0]"
-                      />
-                      {csvFile103 && <p className="mt-2 text-xs font-medium text-[#6B7280]">{csvFile103.name}</p>}
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-[#1F2937]">スタッフ個人・派遣期間（KEF00104）</label>
-                      <input
-                        type="file"
-                        accept=".csv"
-                        onChange={e => setCsvFile104(e.target.files?.[0] || null)}
-                        className="block w-full rounded-2xl border border-[#E8EDF5] bg-white p-3 text-sm text-[#1F2937] file:mr-4 file:rounded-xl file:border-0 file:bg-[#EAF1FF] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#2F5FD0]"
-                      />
-                      {csvFile104 && <p className="mt-2 text-xs font-medium text-[#6B7280]">{csvFile104.name}</p>}
-                    </div>
+                    <FileDropzone label="契約詳細（KEF00103）" file={csvFile103} onChange={setCsvFile103} accept=".csv" />
+                    <FileDropzone label="スタッフ個人・派遣期間（KEF00104）" file={csvFile104} onChange={setCsvFile104} accept=".csv" />
                   </>
                 ) : csvImportSystem === 'StaffExpress' ? (
                   <>
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-[#1F2937]">部門マスタ.xlsx（先に取り込む・任意）</label>
-                      <input
-                        type="file"
-                        accept=".xlsx"
-                        onChange={e => setStaffExpressFileDept(e.target.files?.[0] || null)}
-                        className="block w-full rounded-2xl border border-[#E8EDF5] bg-white p-3 text-sm text-[#1F2937] file:mr-4 file:rounded-xl file:border-0 file:bg-[#EAF1FF] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#2F5FD0]"
-                      />
-                      {staffExpressFileDept && <p className="mt-2 text-xs font-medium text-[#6B7280]">{staffExpressFileDept.name}</p>}
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-[#1F2937]">スタッフマスタ.xlsx（任意）</label>
-                      <input
-                        type="file"
-                        accept=".xlsx"
-                        onChange={e => setStaffExpressFileStaff(e.target.files?.[0] || null)}
-                        className="block w-full rounded-2xl border border-[#E8EDF5] bg-white p-3 text-sm text-[#1F2937] file:mr-4 file:rounded-xl file:border-0 file:bg-[#EAF1FF] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#2F5FD0]"
-                      />
-                      {staffExpressFileStaff && <p className="mt-2 text-xs font-medium text-[#6B7280]">{staffExpressFileStaff.name}</p>}
-                    </div>
+                    <FileDropzone label="部門マスタ.xlsx（先に取り込む・任意）" file={staffExpressFileDept} onChange={setStaffExpressFileDept} accept=".xlsx" />
+                    <FileDropzone label="スタッフマスタ.xlsx（任意）" file={staffExpressFileStaff} onChange={setStaffExpressFileStaff} accept=".xlsx" />
                     <p className="md:col-span-2 text-xs font-medium leading-5 text-[#6B7280]">
                       少なくとも一方のファイルを選択してください。両方選択した場合は部門マスタ→スタッフマスタの順で処理します
                       （スタッフの所属部門は部門マスタを参照するため）。
                     </p>
                   </>
                 ) : (
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-[#1F2937]">CSVファイル</label>
-                    <input
-                      type="file"
-                      accept=".csv"
-                      onChange={e => setCsvFile(e.target.files?.[0] || null)}
-                      className="block w-full rounded-2xl border border-[#E8EDF5] bg-white p-3 text-sm text-[#1F2937] file:mr-4 file:rounded-xl file:border-0 file:bg-[#EAF1FF] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#2F5FD0]"
-                    />
-                    {csvFile && <p className="mt-2 text-xs font-medium text-[#6B7280]">{csvFile.name}</p>}
-                  </div>
+                  <FileDropzone label="CSVファイル" file={csvFile} onChange={setCsvFile} accept=".csv" />
                 )}
               </div>
 
@@ -1635,21 +1741,23 @@ export default function AdminDashboard() {
               ) : csvHistory.length === 0 ? (
                 <p className="mt-4 text-sm font-medium text-[#6B7280]">まだインポート履歴はありません</p>
               ) : (
-                <div className="mt-4 space-y-3">
-                  {csvHistory.map(h => (
-                    <div key={h.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#E8EDF5] p-4">
-                      <div>
-                        <p className="text-sm font-semibold text-[#1F2937]">{h.system_type}</p>
-                        <p className="mt-1 text-xs font-medium text-[#6B7280]">{formatDateTime(h.uploaded_at)}</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                <ImportHistoryTimeline
+                  items={csvHistory.map(h => ({
+                    id: h.id,
+                    title: h.system_type,
+                    datetime: formatDateTime(h.uploaded_at),
+                    hasError: (h.error_rows ?? 0) > 0,
+                    errorDetail: h.error_detail ?? null,
+                    pills: (
+                      <>
                         <Pill tone="blue">新規 {h.new_rows ?? 0}</Pill>
                         <Pill tone="green">更新 {h.updated_rows ?? 0}</Pill>
                         <Pill tone="orange">保護 {h.pending_rows ?? 0}</Pill>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                        {(h.error_rows ?? 0) > 0 && <Pill tone="red">エラー {h.error_rows}</Pill>}
+                      </>
+                    ),
+                  }))}
+                />
               )}
             </section>
 
@@ -1660,22 +1768,23 @@ export default function AdminDashboard() {
               ) : masterImportHistory.length === 0 ? (
                 <p className="mt-4 text-sm font-medium text-[#6B7280]">まだ取込履歴はありません</p>
               ) : (
-                <div className="mt-4 space-y-3">
-                  {masterImportHistory.map(h => (
-                    <div key={h.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#E8EDF5] p-4">
-                      <div>
-                        <p className="text-sm font-semibold text-[#1F2937]">{h.master_type === 'department' ? '部門マスタ' : 'スタッフマスタ'}</p>
-                        <p className="mt-1 text-xs font-medium text-[#6B7280]">{formatDateTime(h.uploaded_at)}</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                <ImportHistoryTimeline
+                  items={masterImportHistory.map(h => ({
+                    id: h.id,
+                    title: h.master_type === 'department' ? '部門マスタ' : 'スタッフマスタ',
+                    datetime: formatDateTime(h.uploaded_at),
+                    hasError: (h.error_rows ?? 0) > 0,
+                    errorDetail: h.error_detail ?? null,
+                    pills: (
+                      <>
                         <Pill tone="blue">新規 {h.new_rows ?? 0}</Pill>
                         <Pill tone="green">更新 {h.updated_rows ?? 0}</Pill>
                         <Pill tone="orange">スキップ {h.skipped_rows ?? 0}</Pill>
-                        {h.error_rows > 0 && <Pill tone="red">エラー {h.error_rows}</Pill>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                        {(h.error_rows ?? 0) > 0 && <Pill tone="red">エラー {h.error_rows}</Pill>}
+                      </>
+                    ),
+                  }))}
+                />
               )}
             </section>
           </div>

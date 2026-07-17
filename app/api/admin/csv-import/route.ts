@@ -41,6 +41,16 @@ type FileCounts = {
   pendingProtectedCount: number
   skippedNoKeyCount: number
   errorCount: number
+  errorDetails: string[]
+}
+
+// エラー詳細メッセージが際限なく長くなるのを防ぐため、保存件数の上限とその旨の注記を統一するヘルパー
+const MAX_ERROR_DETAIL_LINES = 20
+function buildErrorDetailText(details: string[]): string | null {
+  if (details.length === 0) return null
+  const shown = details.slice(0, MAX_ERROR_DETAIL_LINES)
+  const rest = details.length - shown.length
+  return shown.join('\n') + (rest > 0 ? `\n…ほか${rest}件のエラー` : '')
 }
 
 // 1ファイル分のCSVを処理し、csv_raw_dataへ反映する（csv_importsの作成・更新は呼び出し元で行う）
@@ -51,7 +61,7 @@ async function processSingleFile(
   importId: string
 ): Promise<FileCounts> {
   const rows = parseCsvBuffer(buffer)
-  const counts: FileCounts = { total: rows.length, newCount: 0, updatedCount: 0, pendingProtectedCount: 0, skippedNoKeyCount: 0, errorCount: 0 }
+  const counts: FileCounts = { total: rows.length, newCount: 0, updatedCount: 0, pendingProtectedCount: 0, skippedNoKeyCount: 0, errorCount: 0, errorDetails: [] }
 
   const parsedRows: { uniqueKey: string; record: NonNullable<ReturnType<typeof buildRecordForUpsert>['record']> }[] = []
   for (const row of rows) {
@@ -72,7 +82,7 @@ async function processSingleFile(
       .select('id, unique_key')
       .eq('system_type', dbSystemType)
       .in('unique_key', chunk)
-    if (error) { counts.errorCount += chunk.length; continue }
+    if (error) { counts.errorCount += chunk.length; counts.errorDetails.push(`既存データ確認エラー（${chunk.length}件分）：${error.message}`); continue }
     for (const r of existingRows || []) existingByKey.set(r.unique_key, r.id)
   }
 
@@ -113,6 +123,7 @@ async function processSingleFile(
       counts.errorCount += chunk.length
       counts.newCount -= chunk.filter(c => !c.is_overwrite_pending).length
       counts.updatedCount -= chunk.filter(c => c.is_overwrite_pending).length
+      counts.errorDetails.push(`保存エラー（${chunk.length}件分）：${error.message}`)
     }
   }
 
@@ -126,11 +137,11 @@ async function processSingleFile(
 // Excelの内容で該当行を毎回まるごと上書きする（退職・異動等の最新状態をそのまま反映するため）。
 // 部門マスタは staff.dept_no の外部キー参照元のため、必ず部門マスタを先に処理する
 // （呼び出し側で順序を保証）。
-type MasterImportCounts = { total: number; newCount: number; updatedCount: number; skippedCount: number; errorCount: number }
+type MasterImportCounts = { total: number; newCount: number; updatedCount: number; skippedCount: number; errorCount: number; errorDetails: string[] }
 
 async function processDepartmentMasterFile(buffer: Buffer, uploadedBy: string): Promise<MasterImportCounts> {
   const rows = readExcelBuffer(buffer)
-  const counts: MasterImportCounts = { total: rows.length, newCount: 0, updatedCount: 0, skippedCount: 0, errorCount: 0 }
+  const counts: MasterImportCounts = { total: rows.length, newCount: 0, updatedCount: 0, skippedCount: 0, errorCount: 0, errorDetails: [] }
 
   const { data: importRecord, error: importError } = await supabaseAdmin
     .from('master_imports')
@@ -147,15 +158,16 @@ async function processDepartmentMasterFile(buffer: Buffer, uploadedBy: string): 
     const { data: existing } = await supabaseAdmin.from('department_master').select('id').eq('dept_no', deptNo).maybeSingle()
     if (existing) {
       const { error } = await supabaseAdmin.from('department_master').update({ dept_name: deptName }).eq('id', existing.id)
-      if (error) counts.errorCount++; else counts.updatedCount++
+      if (error) { counts.errorCount++; counts.errorDetails.push(`部門NO ${deptNo}（${deptName}）の更新に失敗：${error.message}`) } else counts.updatedCount++
     } else {
       const { error } = await supabaseAdmin.from('department_master').insert({ dept_no: deptNo, dept_name: deptName })
-      if (error) counts.errorCount++; else counts.newCount++
+      if (error) { counts.errorCount++; counts.errorDetails.push(`部門NO ${deptNo}（${deptName}）の新規登録に失敗：${error.message}`) } else counts.newCount++
     }
   }
 
   await supabaseAdmin.from('master_imports').update({
     new_rows: counts.newCount, updated_rows: counts.updatedCount, skipped_rows: counts.skippedCount, error_rows: counts.errorCount,
+    error_detail: buildErrorDetailText(counts.errorDetails),
   }).eq('id', importRecord.id)
 
   return counts
@@ -163,7 +175,7 @@ async function processDepartmentMasterFile(buffer: Buffer, uploadedBy: string): 
 
 async function processStaffMasterFile(buffer: Buffer, uploadedBy: string): Promise<MasterImportCounts> {
   const rows = readExcelBuffer(buffer)
-  const counts: MasterImportCounts = { total: rows.length, newCount: 0, updatedCount: 0, skippedCount: 0, errorCount: 0 }
+  const counts: MasterImportCounts = { total: rows.length, newCount: 0, updatedCount: 0, skippedCount: 0, errorCount: 0, errorDetails: [] }
 
   const { data: importRecord, error: importError } = await supabaseAdmin
     .from('master_imports')
@@ -179,15 +191,16 @@ async function processStaffMasterFile(buffer: Buffer, uploadedBy: string): Promi
     const { data: existing } = await supabaseAdmin.from('staff').select('id').eq('employee_number', record.employee_number).maybeSingle()
     if (existing) {
       const { error } = await supabaseAdmin.from('staff').update({ ...record, updated_at: new Date().toISOString() }).eq('id', existing.id)
-      if (error) counts.errorCount++; else counts.updatedCount++
+      if (error) { counts.errorCount++; counts.errorDetails.push(`社員番号 ${record.employee_number}（${record.name ?? ''}）の更新に失敗：${error.message}`) } else counts.updatedCount++
     } else {
       const { error } = await supabaseAdmin.from('staff').insert(record)
-      if (error) counts.errorCount++; else counts.newCount++
+      if (error) { counts.errorCount++; counts.errorDetails.push(`社員番号 ${record.employee_number}（${record.name ?? ''}）の新規登録に失敗：${error.message}`) } else counts.newCount++
     }
   }
 
   await supabaseAdmin.from('master_imports').update({
     new_rows: counts.newCount, updated_rows: counts.updatedCount, skipped_rows: counts.skippedCount, error_rows: counts.errorCount,
+    error_detail: buildErrorDetailText(counts.errorDetails),
   }).eq('id', importRecord.id)
 
   return counts
@@ -314,6 +327,7 @@ export async function POST(req: NextRequest) {
 
   const fileNames: string[] = []
   let combinedTotal = 0, combinedNew = 0, combinedUpdated = 0, combinedProtected = 0, combinedSkipped = 0, combinedError = 0
+  const combinedErrorDetails: string[] = []
 
   // csv_importsの履歴レコードを先に作成（総行数は後で更新）
   const { data: importRecord, error: importInsertError } = await supabaseAdmin
@@ -341,6 +355,7 @@ export async function POST(req: NextRequest) {
       for (const r of [result103, result104]) {
         combinedTotal += r.total; combinedNew += r.newCount; combinedUpdated += r.updatedCount
         combinedProtected += r.pendingProtectedCount; combinedSkipped += r.skippedNoKeyCount; combinedError += r.errorCount
+        combinedErrorDetails.push(...r.errorDetails)
       }
     } else {
       const file = formData.get('file') as File | null
@@ -350,6 +365,7 @@ export async function POST(req: NextRequest) {
       const result = await processSingleFile(buf, system as ImportSystemKey, system as DbSystemType, importRecord.id)
       combinedTotal = result.total; combinedNew = result.newCount; combinedUpdated = result.updatedCount
       combinedProtected = result.pendingProtectedCount; combinedSkipped = result.skippedNoKeyCount; combinedError = result.errorCount
+      combinedErrorDetails.push(...result.errorDetails)
     }
   } catch (e: any) {
     return NextResponse.json({ error: 'CSVの読み込み・保存中にエラーが発生しました：' + (e?.message || '') }, { status: 500 })
@@ -365,6 +381,7 @@ export async function POST(req: NextRequest) {
       pending_rows: combinedProtected,
       skipped_rows: combinedSkipped,
       error_rows: combinedError,
+      error_detail: buildErrorDetailText(combinedErrorDetails),
     })
     .eq('id', importRecord.id)
 

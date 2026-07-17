@@ -17,8 +17,6 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const PATTERN_C_DOCUMENT_TYPE = '雇用契約書 兼\n就業条件明示書'
-
 const getDocumentLabel = (documentType: string, contractType: string): string => {
   const suffix = contractType === 'アルバイト' ? '（アルバイト）' : contractType === '無期契約' ? '（無期）' : ''
   return `${documentType.replace(/\n/g, ' ')}${suffix}`
@@ -107,7 +105,6 @@ export async function POST(
     staffName: staff.name,
     documentLabel: getDocumentLabel(contract.document_type, contract.contract_type),
     signAction,
-    isPatternC: contract.document_type === PATTERN_C_DOCUMENT_TYPE,
     // 総合レビュー指摘1対応（2026-07-15）：本人確認できたこの契約についてだけ、
     // PDFプレビュー用の短命トークンを発行する（/api/contracts/[id]/pdf?t=...）。
     pdfToken: createPdfAccessToken(id),

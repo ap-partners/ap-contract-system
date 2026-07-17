@@ -99,14 +99,14 @@ export async function POST(
   // 加算処理をここにも追加する。
   if ((contract.sign_auth_attempts || 0) >= SIGN_AUTH_MAX_ATTEMPTS) {
     return NextResponse.json(
-      { error: '認証コードの入力回数が上限を超えました。\nお手数ですが、最初の画面からやり直してください。', reason: 'locked' },
+      { error: '認証コードの入力回数が上限を超えました。\nお手数ですが、下の「認証コードを再発行する」ボタンから新しいコードを取得してください。', reason: 'locked' },
       { status: 423 }
     )
   }
 
   if (!contract.sign_auth_code || !contract.sign_auth_code_expires_at || new Date(contract.sign_auth_code_expires_at).getTime() < Date.now()) {
     return NextResponse.json(
-      { error: '認証コードの有効期限が切れています。お手数ですが、最初の画面からやり直してください。', reason: 'expired' },
+      { error: '認証コードの有効期限が切れています。\nお手数ですが、下の「認証コードを再発行する」ボタンから新しいコードを取得してください。', reason: 'expired' },
       { status: 410 }
     )
   }
@@ -123,11 +123,11 @@ export async function POST(
     await supabaseAdmin.from('contracts').update({ sign_auth_attempts: nextAttempts }).eq('id', id)
     if (nextAttempts >= SIGN_AUTH_MAX_ATTEMPTS) {
       return NextResponse.json(
-        { error: '認証コードの入力回数が上限を超えました。\nお手数ですが、最初の画面からやり直してください。', reason: 'locked' },
+        { error: '認証コードの入力回数が上限を超えました。\nお手数ですが、下の「認証コードを再発行する」ボタンから新しいコードを取得してください。', reason: 'locked' },
         { status: 423 }
       )
     }
-    return NextResponse.json({ error: '確認できませんでした。お手数ですが、最初の画面からやり直してください。', reason: 'invalid' }, { status: 401 })
+    return NextResponse.json({ error: '社員番号または認証コードが正しくありません。ご確認のうえ、もう一度入力してください。', reason: 'invalid' }, { status: 401 })
   }
 
   const signAction: 'signature' | 'confirmation' =

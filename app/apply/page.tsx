@@ -49,6 +49,9 @@ function ApplyPageInner() {
   const [currentStep, setCurrentStep] = useState(1)
   const [searched, setSearched] = useState(false)
   const [searchResults, setSearchResults] = useState<any[]>([])
+  // 総合レビュー指摘25対応（2026-07-17）：自部門情報が読み込み中／未登録で検索を止めた場合に、
+  // 「該当なし」（実際に検索した結果0件）と誤認させないための区別用フラグ。
+  const [searchBlockedReason, setSearchBlockedReason] = useState<null | 'loading' | 'no_dept'>(null)
   const [selectedStaff, setSelectedStaff] = useState<any>(null)
   const [contractType, setContractType] = useState('')
   // スタッフマスタの雇用区分が自動反映されている場合、変更不可にする（確定仕様）
@@ -929,14 +932,15 @@ function ApplyPageInner() {
     const restrictToOwnDept = role === '担当営業'
     if (restrictToOwnDept && (myDeptNo === undefined)) {
       // 自部門情報がまだ取得できていない（読み込み中）。安全側に倒し、今回の検索は行わない
-      setSearchResults([]); setSearched(true)
+      setSearchBlockedReason('loading'); setSearchResults([]); setSearched(true)
       return
     }
     if (restrictToOwnDept && myDeptNo === null) {
       // 担当営業だがstaffテーブルに自分の行が見つからず、部門を特定できない → 検索させない
-      setSearchResults([]); setSearched(true)
+      setSearchBlockedReason('no_dept'); setSearchResults([]); setSearched(true)
       return
     }
+    setSearchBlockedReason(null)
 
     // 社員番号での検索と氏名での検索を別クエリに分け、結果をマージする。
     // （.or()にqueryを直接埋め込むと、入力に「,」や「(」「)」が含まれた場合にフィルタ構文が壊れたり、
@@ -1141,7 +1145,10 @@ function ApplyPageInner() {
           }).select('id')
 
       if (error) {
-        setSubmitError('申請の保存に失敗しました。お手数ですが、もう一度お試しください。（' + error.message + '）')
+        // 総合レビュー指摘27対応（2026-07-17）：Postgresの生エラーをそのまま画面に出さず、
+        // 詳細はコンソールにのみ残す。
+        console.error('契約保存エラー:', error)
+        setSubmitError('申請の保存に失敗しました。お手数ですが、もう一度お試しください。改善しない場合はシステム担当者にご連絡ください。')
         setIsSubmitting(false)
         return
       }
@@ -1324,7 +1331,8 @@ function ApplyPageInner() {
       }])
 
       if (error) {
-        setReqError('依頼の送信に失敗しました。お手数ですが、もう一度お試しください。（' + error.message + '）')
+        console.error('依頼送信エラー:', error)
+        setReqError('依頼の送信に失敗しました。お手数ですが、もう一度お試しください。改善しない場合はシステム担当者にご連絡ください。')
         setReqSubmitting(false)
         return
       }
@@ -1373,7 +1381,8 @@ function ApplyPageInner() {
       }])
 
       if (error) {
-        setCsvRequestError('依頼の送信に失敗しました。お手数ですが、もう一度お試しください。（' + error.message + '）')
+        console.error('CSVインポート依頼送信エラー:', error)
+        setCsvRequestError('依頼の送信に失敗しました。お手数ですが、もう一度お試しください。改善しない場合はシステム担当者にご連絡ください。')
         setCsvRequestSubmitting(false)
         return
       }
@@ -1512,7 +1521,17 @@ function ApplyPageInner() {
                 ) : (
                   <div className="max-w-xl">
                     {!reqSubmitted && <SearchInput onSearch={handleSearch} />}
-                    {searched && searchResults.length === 0 && (
+                    {searched && searchBlockedReason === 'loading' && (
+                      <div className="mt-2">
+                        <p className="text-xs mb-2" style={{ color: '#5A6A8A' }}>所属部門の情報を読み込んでいます。少し待ってからもう一度検索してください。</p>
+                      </div>
+                    )}
+                    {searched && searchBlockedReason === 'no_dept' && (
+                      <div className="mt-2">
+                        <p className="text-xs mb-2 text-red-400">ご自身の所属部門情報が確認できないため検索できません。管理部にご連絡ください。</p>
+                      </div>
+                    )}
+                    {searched && !searchBlockedReason && searchResults.length === 0 && (
                       <div className="mt-2">
                         {!reqSubmitted && <p className="text-xs text-red-400 mb-2">該当するスタッフが見つかりませんでした</p>}
                         {!showRequestForm && !reqSubmitted && (

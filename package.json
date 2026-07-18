@@ -16,7 +16,6 @@
     "dotenv": "^17.4.2",
     "googleapis": "latest",
     "iconv-lite": "^0.7.2",
-    "lucide-react": "^1.25.0",
     "next": "16.2.7",
     "nodemailer": "latest",
     "papaparse": "^5.5.4",

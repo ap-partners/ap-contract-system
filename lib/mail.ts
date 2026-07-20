@@ -64,7 +64,8 @@ export async function sendSignRequestMail(
 
   const text = [
     staffName ? `${staffName}　様` : '',
-    'お疲れ様です。APパートナーズです。',
+    'お疲れ様です。',
+    'APパートナーズ 契約書管理システムです。',
     '',
     `書類の${actionLabel}をお願いいたします。`,
     docTypeLine,
@@ -87,7 +88,7 @@ export async function sendSignRequestMail(
     <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:8px;max-width:480px;width:100%;">
       ${greetingHtml}
       <tr><td style="padding:${staffName ? '8px' : '32px'} 32px 8px 32px;font-family:sans-serif;font-size:14px;color:#1A2340;">
-        お疲れ様です。APパートナーズです。
+        お疲れ様です。<br>APパートナーズ 契約書管理システムです。
       </td></tr>
       <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;">
         書類の${actionLabel}をお願いいたします。
@@ -167,7 +168,8 @@ export async function sendStaffLoginCodeMail(
 
   const text = [
     staffName ? `${staffName}　様` : '',
-    'お疲れ様です。APパートナーズです。',
+    'お疲れ様です。',
+    'APパートナーズ 契約書管理システムです。',
     '',
     introLine,
     '',
@@ -192,7 +194,7 @@ export async function sendStaffLoginCodeMail(
     <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:8px;max-width:480px;width:100%;">
       ${greetingHtml}
       <tr><td style="padding:${staffName ? '8px' : '32px'} 32px 8px 32px;font-family:sans-serif;font-size:14px;color:#1A2340;">
-        お疲れ様です。APパートナーズです。
+        お疲れ様です。<br>APパートナーズ 契約書管理システムです。
       </td></tr>
       <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
         ${introLine}
@@ -250,7 +252,8 @@ export async function sendStaffDocumentReadyMail(
 
   const text = [
     staffName ? `${staffName}　様` : '',
-    'お疲れ様です。APパートナーズです。',
+    'お疲れ様です。',
+    'APパートナーズ 契約書管理システムです。',
     '',
     `確認・署名が必要な書類（${documentLabel}）が届いています。`,
     'マイページにログインしてご確認ください。',
@@ -266,7 +269,7 @@ export async function sendStaffDocumentReadyMail(
     <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:8px;max-width:480px;width:100%;">
       ${greetingHtml}
       <tr><td style="padding:${staffName ? '8px' : '32px'} 32px 8px 32px;font-family:sans-serif;font-size:14px;color:#1A2340;">
-        お疲れ様です。APパートナーズです。
+        お疲れ様です。<br>APパートナーズ 契約書管理システムです。
       </td></tr>
       <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
         確認・署名が必要な書類（${documentLabel}）が届いています。<br>マイページにログインしてご確認ください。
@@ -470,7 +473,8 @@ export async function sendCsvImportMatchedMail(
     to: toEmail,
     subject,
     text: [
-      'お疲れ様です。APパートナーズです。',
+      'お疲れ様です。',
+      'APパートナーズ 契約書管理システムです。',
       '',
       `以前ご依頼いただいたCSVインポート依頼について、該当データが取り込まれ、自動的に完了しました。`,
       '',

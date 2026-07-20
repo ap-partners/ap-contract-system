@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/renewal-notify",
-      "schedule": "0 23 * * *"
+      "schedule": "0 1 * * *"
     }
   ]
 }

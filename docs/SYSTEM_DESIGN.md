@@ -1430,3 +1430,10 @@ STEP2の検索は「使用システム＋派遣開始日＋スタッフ社員番
   4. 配色（既存の紺`#1B3A8C`から新しい青`#0E5BD8`への変更）・グラデーション演出・カード型レイアウトなど、その他のビジュアル方針についてはAskUserQuestionで伊藤さんに確認のうえ「そのまま反映」を選択。書類確認・署名画面（`app/staff/mypage/documents/[id]/page.tsx`）はロジック変更なし・純粋なスタイル刷新のみで、上記1・3以外の修正は行っていない。
   5. バックエンドAPI（`/api/staff/me`・`/api/staff/documents/[id]`・`/api/sign/[id]/complete`）とのフィールド名対応（`documentLabel`・`signAction`・`pdfToken`・`signedDocumentsTotalCount`等）はデザイナー版の時点で既に正しく、変更不要だった。
   - **未実施・次回の課題**：コード変更を伴うため、Vercelへのデプロイと、Claude in Chromeでの見た目・動作の実機確認（3画面の表示崩れが無いか、特にモバイル幅での確認）が必要。
+
+- **【マイページ3画面のデザインをリニューアル前の状態に差し戻し・2026-07-21】**：デプロイ・実機確認後、伊藤さんの判断で「共有したTSXファイルの前の状態に戻してほしい」との指示を受け、`app/staff/login/page.tsx`・`app/staff/mypage/page.tsx`・`app/staff/mypage/documents/[id]/page.tsx`の3ファイルを、デザインリニューアル直前のコミット（パスワード複雑性要件対応後の状態）の内容にgit履歴から復元。`package.json`から`lucide-react`も削除し、`package-lock.json`も同コミット時点の内容と完全一致することを確認（`npx tsc --noEmit`エラーなし）。デプロイ後、Claude in Chromeで元のシンプルなデザイン（紺色ヘッダー・カード型UI）に戻っていること、パスワードログイン・マイページ表示が正常動作することを実機確認済み。プロのWebデザイナーによるリニューアル版は不採用となった。
+
+- **【自動送信メールの挨拶文統一・要デプロイ・2026-07-21】**：伊藤さんより、メール冒頭の名乗り文言が`sendSignRequestMail`・`sendStaffLoginCodeMail`・`sendStaffDocumentReadyMail`・`sendCsvImportMatchedMail`の4関数では「お疲れ様です。APパートナーズです。」（会社名のみ、1行）、`sendRenewalDigestMail`（社内向け更新期限ダイジェスト）だけ「お疲れ様です。<br>APパートナーズ 契約書管理システムです。」（システム名まで含めて2行）と表記が不統一である指摘を受け、`sendRenewalDigestMail`の書き方に統一。`lib/mail.ts`内の6箇所（text版4＋html版3＋renewal既存1、実際に変更したのは5関数のtext/html版）を修正し、全メールで「お疲れ様です。」「APパートナーズ 契約書管理システムです。」の2行構成に統一した。`npx tsc --noEmit`でエラーなし。未デプロイ。
+
+- **【更新期限ダイジェストメールの送信時刻変更・要デプロイ・2026-07-21】**：伊藤さんの指定で、`vercel.json`の`crons`設定を`"0 23 * * *"`（UTC 23:00＝JST 8:00台）から`"0 1 * * *"`（UTC 1:00＝JST 10:00ちょうど）に変更。対象は`/api/cron/renewal-notify`（更新期限管理の残日数しきい値ダイジェスト）。未デプロイ。上記の挨拶文統一と合わせて次回デプロイ予定。
+  - **未着手（伊藤さんへの提案のみ・実装待ち）**：①土日祝は自動通知メール（更新期限ダイジェスト）を届かせないようにしたい、との要望を受け方向性を提示。Vercel Cron自体には曜日・祝日除外の機能が無いため、`app/api/cron/renewal-notify/route.ts`側で土日判定＋祝日判定（自前の祝日リスト保守 or `japanese-holidays`等のnpmパッケージ利用のいずれか）を追加する方針。伊藤さんの意向確認後に着手予定。

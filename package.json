@@ -16,6 +16,7 @@
     "dotenv": "^17.4.2",
     "googleapis": "latest",
     "iconv-lite": "^0.7.2",
+    "japanese-holidays": "^1.0.10",
     "next": "16.2.7",
     "nodemailer": "latest",
     "papaparse": "^5.5.4",
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/japanese-holidays": "^1.0.3",
     "@types/node": "^20",
     "@types/nodemailer": "latest",
     "@types/react": "^19",

@@ -19,6 +19,7 @@
 // ・RENEWAL_NOTIFY_ENABLED を明示的に 'false' にすると送信自体を完全に止められる（緊急停止用）。
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import * as JapaneseHolidays from 'japanese-holidays'
 import { sendRenewalDigestMail, type RenewalDigestItem } from '@/lib/mail'
 
 const supabaseAdmin = createClient(
@@ -47,6 +48,24 @@ export async function GET(req: NextRequest) {
 
   if (process.env.RENEWAL_NOTIFY_ENABLED === 'false') {
     return NextResponse.json({ skipped: true, reason: 'RENEWAL_NOTIFY_ENABLED=false' })
+  }
+
+  // 2026-07-21追加（伊藤さん決定）：弊社は土日祝が休みのため、その日は自動通知メールを送らない。
+  // サーバーはUTCで動くため、日本時間（Asia/Tokyo）の日付に変換した上で土日・祝日を判定する
+  // （Vercel Cronの実行時刻自体はJST10:00固定・vercel.json参照だが、念のため日付計算はここで
+  // 明示的にJSTに揃える）。祝日判定は`japanese-holidays`ライブラリに委譲し、自前でのリスト
+  // 保守は行わない方針とした（伊藤さんとの相談・2026-07-21決定。ライブラリの更新停止リスクは
+  // あるが、導入・運用の手間が最小のため採用）。
+  const jstTodayStr = new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' })
+  const jstToday = new Date(jstTodayStr)
+  const jstDayOfWeek = jstToday.getDay() // 0=日, 6=土
+  const isWeekend = jstDayOfWeek === 0 || jstDayOfWeek === 6
+  const holidayName = JapaneseHolidays.isHoliday(jstToday)
+  if (isWeekend || holidayName) {
+    return NextResponse.json({
+      skipped: true,
+      reason: isWeekend ? '土日のため送信をスキップしました' : `祝日（${holidayName}）のため送信をスキップしました`,
+    })
   }
 
   const overrideEmail = process.env.RENEWAL_NOTIFY_OVERRIDE_EMAIL || null

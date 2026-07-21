@@ -21,6 +21,7 @@ import { supabase } from '@/lib/supabase'
 import { extractCsvFields } from '@/app/apply/_lib/helpers'
 import { buildMergedFields } from './renewalFieldMap'
 import { runAutoChecks, MinimumWageRow } from '@/lib/autoChecks'
+import { excludeRetiredStaffOr } from '@/lib/staffFilters'
 
 export const RENEWAL_ALERT_WINDOW_DAYS = 45
 
@@ -198,19 +199,18 @@ export function useRenewalCandidates() {
 
       if (rows.length === 0) return
 
-      // 退職済み・退職予定のスタッフを除外
+      // 退職済み・退職予定のスタッフを除外する（2026-07-21・タスク④：DBクエリ側の条件で
+      // 絞り込む形に変更。staffクエリの時点で現役スタッフのみが返るため、rowsのうち
+      // employee_numberがstaffRowsに存在しないものが「退職済み・退職予定で除外対象」となる）
       const empNos = rows.map(r => r.employee_number)
+      const [retiredAtOk, retirementScheduledOk] = excludeRetiredStaffOr()
       const { data: staffRows } = await supabase
         .from('staff')
-        .select('employee_number, retired_at, retirement_scheduled_at')
+        .select('employee_number')
         .in('employee_number', empNos)
-      const todayStr = today.toISOString().split('T')[0]
-      const retiredSet = new Set(
-        (staffRows || [])
-          .filter(s => (s.retired_at && s.retired_at < todayStr) || (s.retirement_scheduled_at && s.retirement_scheduled_at < todayStr))
-          .map(s => s.employee_number)
-      )
-      const targetRows = rows.filter(r => !retiredSet.has(r.employee_number))
+        .or(retiredAtOk).or(retirementScheduledOk)
+      const activeEmpNoSet = new Set((staffRows || []).map(s => s.employee_number))
+      const targetRows = rows.filter(r => activeEmpNoSet.has(r.employee_number))
       if (targetRows.length === 0) return
 
       // 既存行（スタッフ入力済みの値）は上書きしないよう、スナップショット項目のみ更新
@@ -238,17 +238,16 @@ export function useRenewalCandidates() {
     const rows = (data || []) as RenewalCandidate[]
 
     if (rows.length > 0) {
+      // 退職済み・退職予定のスタッフは、DBクエリ側の条件（2026-07-21・タスク④）で除外する。
+      // staffクエリが現役スタッフのみを返すため、以降はstaffByEmpNoに存在するかどうかで
+      // 「登録後に退職・退職予定になったスタッフ」を判定できる（従来のretiredSetは不要）。
       const empNos = Array.from(new Set(rows.map(r => r.employee_number)))
+      const [retiredAtOk, retirementScheduledOk] = excludeRetiredStaffOr()
       const { data: staffRows } = await supabase
         .from('staff')
-        .select('employee_number, retired_at, retirement_scheduled_at, dept_no, contract_type')
+        .select('employee_number, dept_no, contract_type')
         .in('employee_number', empNos)
-      const todayStr = new Date().toISOString().split('T')[0]
-      const retiredSet = new Set(
-        (staffRows || [])
-          .filter(s => (s.retired_at && s.retired_at < todayStr) || (s.retirement_scheduled_at && s.retirement_scheduled_at < todayStr))
-          .map(s => s.employee_number)
-      )
+        .or(retiredAtOk).or(retirementScheduledOk)
 
       const deptNosForStaff = Array.from(new Set((staffRows || []).map(s => s.dept_no).filter((n): n is number => n != null)))
       let deptNameByNo = new Map<number, string>()
@@ -263,7 +262,7 @@ export function useRenewalCandidates() {
 
       setCandidates(
         rows
-          .filter(r => !retiredSet.has(r.employee_number))
+          .filter(r => staffByEmpNo.has(r.employee_number))
           .map(r => {
             const s = staffByEmpNo.get(r.employee_number)
             return {

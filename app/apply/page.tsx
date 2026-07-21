@@ -26,6 +26,7 @@ import {
   NoBreakTextarea, TelInput, RadioGroup, CriticalWarning, SearchInput,
 } from './_components/FormParts'
 import { buildMergedFields } from '@/app/dashboard/_shared/renewalFieldMap'
+import { excludeRetiredStaffOr } from '@/lib/staffFilters'
 import StepSourceContact from './_components/StepSourceContact'
 import StepDispatchContact from './_components/StepDispatchContact'
 import StepContractCondition from './_components/StepContractCondition'
@@ -931,7 +932,6 @@ function ApplyPageInner() {
   const handleSearch = useCallback(async (query: string) => {
     if (!query.trim()) { setSearchResults([]); setSearched(false); return }
     const normalized = query.replace(/[\s　]+/g, '')
-    const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD（検索した瞬間の日付）
 
     // STEP1スタッフ検索の自部門制限（2026-07-14〜）：担当営業ロールのみ、自分の所属部門（dept_no）の
     // スタッフしか検索・選択できないようにする（他部門スタッフの住所・給与関連情報等の閲覧を防止）。
@@ -953,8 +953,12 @@ function ApplyPageInner() {
     // 社員番号での検索と氏名での検索を別クエリに分け、結果をマージする。
     // （.or()にqueryを直接埋め込むと、入力に「,」や「(」「)」が含まれた場合にフィルタ構文が壊れたり、
     //   意図しない条件が注入される可能性があるため、.ilike()の値として安全に渡せる形に分離している）
-    let byNumberQuery = supabase.from('staff').select('*, department_master(dept_name)').ilike('employee_number', `%${query}%`).limit(20)
-    let byNameQuery = supabase.from('staff').select('*, department_master(dept_name)').ilike('name', `%${normalized}%`).limit(20)
+    // 退職済み・退職予定のスタッフは、DBクエリ側の条件（.or()を2回連結＝AND結合）で除外する
+    // （2026-07-21・タスク④：従来はここで全件取得後にJS側で日付比較していたが、
+    //   lib/staffFilters.tsの共通条件をDB側のWHEREとして適用する形に変更した）。
+    const [retiredAtOk, retirementScheduledOk] = excludeRetiredStaffOr()
+    let byNumberQuery = supabase.from('staff').select('*, department_master(dept_name)').ilike('employee_number', `%${query}%`).or(retiredAtOk).or(retirementScheduledOk).limit(20)
+    let byNameQuery = supabase.from('staff').select('*, department_master(dept_name)').ilike('name', `%${normalized}%`).or(retiredAtOk).or(retirementScheduledOk).limit(20)
     if (restrictToOwnDept) {
       byNumberQuery = byNumberQuery.eq('dept_no', myDeptNo)
       byNameQuery = byNameQuery.eq('dept_no', myDeptNo)
@@ -964,13 +968,7 @@ function ApplyPageInner() {
     const data = Array.from(new Map(merged.map((s: any) => [s.employee_number, s])).values()) // employee_number/nameの両方に一致した場合の重複を除去
     // department_master(dept_name) は { department_master: { dept_name: '...' } } の形で返るため、
     // page.tsx側の表示コード（selectedStaff.department）と互換性を持たせるためフラットな形に変換する
-    // 同時に、退職年月日・退職予定日が今日より前のスタッフは検索結果から除外する（リアルタイム判定）
     const flattened = (data || [])
-      .filter((s: any) => {
-        if (s.retired_at && s.retired_at < today) return false
-        if (s.retirement_scheduled_at && s.retirement_scheduled_at < today) return false
-        return true
-      })
       .slice(0, 10)
       .map((s: any) => ({
         ...s,

@@ -11,11 +11,13 @@
 //
 // 処理の流れ：①本人確認・状態再検証 → ②sign_action_typeに応じてPDF再生成
 // （署名の場合は署名画像を埋め込み、確認のみの場合はそのまま）→ ③Google Driveへアップロード
-// → ④contractsをstatus='署名済み'・signed_at・drive_file_id・sign_action_typeで更新
+// → ③-2 input_data.csvMetaのバックアップをGoogle Driveへ追加保存（2026-07-21追加・タスク⑤対応。
+// 失敗しても非致命的） → ④contractsをstatus='署名済み'・signed_at・drive_file_id・
+// sign_action_type・csvmeta_backup_file_idで更新
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { renderContractPdfBuffer } from '@/lib/pdf/renderContractPdf'
-import { uploadSignedPdf, deleteDriveFile } from '@/lib/googleDrive'
+import { uploadSignedPdf, deleteDriveFile, uploadJsonBackup } from '@/lib/googleDrive'
 import { SIGN_AUTH_MAX_ATTEMPTS } from '@/lib/signAuthCode'
 import { getStaffIdFromRequest } from '@/lib/staffAuth'
 
@@ -221,6 +223,24 @@ export async function POST(
     )
   }
 
+  // ②-2 csvMetaのバックアップ（2026-07-21追加・タスク⑤対応）
+  // input_data.csvMetaは「CSVからどう自動反映されたか」の記録で、将来的な容量対策として
+  // 削除する可能性がある想定のため、削除する前から追加のみのバックアップを取っておく。
+  // あくまで安全網であり、失敗しても署名・確認の完了自体は止めない（非致命的処理）。
+  let csvMetaBackupFileId: string | null = null
+  if (contract.input_data?.csvMeta) {
+    try {
+      csvMetaBackupFileId = await uploadJsonBackup({
+        data: contract.input_data.csvMeta,
+        yearMonth: resolveYearMonth(contract),
+        departmentName,
+        fileName: `${staff.name}_${staff.employee_number}_${documentLabel}_csvMetaバックアップ.json`.replace(/[\\/]/g, '_'),
+      })
+    } catch (e: any) {
+      console.error(`[complete] csvMetaバックアップの保存に失敗しました（contract.id=${id}）`, e)
+    }
+  }
+
   // ③ ステータス更新（二重送信防止のため、まだ「署名待ち」の場合のみ更新する条件付きUPDATE）
   const now = new Date().toISOString()
   const { data: updatedRow, error: updateError } = await supabaseAdmin
@@ -230,6 +250,7 @@ export async function POST(
       signed_at: now,
       drive_file_id: driveFileId,
       sign_action_type: signAction,
+      ...(csvMetaBackupFileId ? { csvmeta_backup_file_id: csvMetaBackupFileId } : {}),
       updated_at: now,
     })
     .eq('id', id)
@@ -242,10 +263,12 @@ export async function POST(
   // ここで削除しておく（削除自体の失敗は握りつぶしてログのみ。ユーザー応答は止めない）。
   if (updateError) {
     await deleteDriveFile(driveFileId)
+    if (csvMetaBackupFileId) await deleteDriveFile(csvMetaBackupFileId)
     return NextResponse.json({ error: 'ステータス更新に失敗しました。' }, { status: 500 })
   }
   if (!updatedRow) {
     await deleteDriveFile(driveFileId)
+    if (csvMetaBackupFileId) await deleteDriveFile(csvMetaBackupFileId)
     return NextResponse.json({ error: 'この書類は既に手続きが完了しています。' }, { status: 409 })
   }
 

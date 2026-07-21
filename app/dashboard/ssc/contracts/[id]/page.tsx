@@ -45,6 +45,8 @@ type ContractDetail = {
   created_by: string
   created_by_name: string | null
   created_at: string
+  csvmeta_backup_file_id: string | null
+  csvmeta_restored_at: string | null
 }
 
 // ===== ユーティリティ =====
@@ -283,6 +285,15 @@ export default function SSCContractDetail() {
   // 理由入力に加えて「取り消し不可であることを理解した」チェックを入れないと実行できないようにする
   const [forceApproveAcknowledged, setForceApproveAcknowledged] = useState(false)
 
+  // csvMetaバックアップ復元のUI状態（2026-07-21追加・タスク⑤対応。管理部専用メンテナンス操作）
+  const [restorePanelOpen, setRestorePanelOpen] = useState(false)
+  const [restoreInfoLoading, setRestoreInfoLoading] = useState(false)
+  const [restoreInfoError, setRestoreInfoError] = useState('')
+  const [restoreBackedUpAt, setRestoreBackedUpAt] = useState<string | null>(null)
+  const [restoreLoading, setRestoreLoading] = useState(false)
+  const [restoreError, setRestoreError] = useState('')
+  const [restoreDone, setRestoreDone] = useState(false)
+
   useEffect(() => {
     const init = async () => {
       // 認証チェック（2026-07-13追記：「SSCが出来ることは管理部もすべて出来る」という伊藤さんの
@@ -440,6 +451,42 @@ export default function SSCContractDetail() {
     setActionDone('rejected')
     setActionLoading(false)
     setShowRejectForm(false)
+  }
+
+  // csvMetaバックアップ復元処理（2026-07-21追加・タスク⑤対応）
+  // ①ボタン押下でバックアップの保存日時を取得して確認画面を表示 → ②確認後に実際の復元を実行
+  const handleOpenRestorePanel = async () => {
+    setRestorePanelOpen(true)
+    setRestoreInfoLoading(true)
+    setRestoreInfoError('')
+    setRestoreBackedUpAt(null)
+    try {
+      const res = await fetch(`/api/admin/contracts/${id}/restore-csvmeta`, { headers: await getAuthHeader() })
+      const json = await res.json()
+      if (!res.ok) { setRestoreInfoError(json.error || 'バックアップ情報の取得に失敗しました。'); return }
+      setRestoreBackedUpAt(json.backedUpAt)
+    } catch {
+      setRestoreInfoError('バックアップ情報の取得に失敗しました。通信状態をご確認のうえ、もう一度お試しください。')
+    } finally {
+      setRestoreInfoLoading(false)
+    }
+  }
+
+  const handleRestore = async () => {
+    if (restoreLoading) return
+    setRestoreLoading(true)
+    setRestoreError('')
+    try {
+      const res = await fetch(`/api/admin/contracts/${id}/restore-csvmeta`, { method: 'POST', headers: await getAuthHeader() })
+      const json = await res.json()
+      if (!res.ok) { setRestoreError(json.error || '復元に失敗しました。'); return }
+      setRestoreDone(true)
+      await refetchContract()
+    } catch {
+      setRestoreError('復元に失敗しました。通信状態をご確認のうえ、もう一度お試しください。')
+    } finally {
+      setRestoreLoading(false)
+    }
   }
 
   const handleLogout = async () => {
@@ -1039,6 +1086,85 @@ export default function SSCContractDetail() {
               </>
             )}
         </div>
+
+        {/* ===== 管理部専用メンテナンス操作（2026-07-21追加・タスク⑤対応） =====
+            将来的にinput_data.csvMeta（CSVからどう自動反映されたかの記録）を容量対策として
+            削除する可能性に備え、署名完了時にGoogle Driveへ追加保存しているバックアップから
+            復元できるようにする操作。管理部のみ表示し、SSCには表示しない。
+            伊藤さんとの合意事項：①復元前に必ずバックアップの保存日時を表示してから確認を取る、
+            ②内部的な変数名「csvMeta」をそのままボタン文言に出さず分かりやすい表現にする。 */}
+        {isAdmin && contract.csvmeta_backup_file_id && (
+          <div className="bg-white rounded-xl border shadow-sm p-6 mt-6" style={{ borderColor: '#D0DAF0' }}>
+            <p className="text-sm font-bold mb-1" style={{ color: '#1A2340' }}>🔧 管理部専用メンテナンス操作</p>
+            <p className="text-xs mb-4 leading-relaxed" style={{ color: '#5A6A8A' }}>
+              この申請には、CSV自動反映内容のバックアップが保存されています。表示内容に問題がある場合、このバックアップから復元できます。
+            </p>
+
+            {restoreDone ? (
+              <div className="rounded-lg p-3 border" style={{ background: '#ECFDF5', borderColor: '#A7F3D0' }}>
+                <p className="text-sm font-bold" style={{ color: '#065F46' }}>✅ 復元しました</p>
+              </div>
+            ) : !restorePanelOpen ? (
+              <>
+                {contract.csvmeta_restored_at && (
+                  <p className="text-xs mb-3" style={{ color: '#9CA3AF' }}>
+                    前回の復元日時：{formatDateTime(contract.csvmeta_restored_at)}
+                  </p>
+                )}
+                <button
+                  onClick={handleOpenRestorePanel}
+                  className="text-sm px-4 py-2 rounded-lg border font-medium"
+                  style={{ color: '#1B3A8C', borderColor: '#1B3A8C' }}>
+                  CSV自動反映内容のバックアップから復元する
+                </button>
+              </>
+            ) : (
+              <div className="rounded-xl p-4 border-2" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
+                {restoreInfoLoading ? (
+                  <p className="text-sm" style={{ color: '#5A6A8A' }}>バックアップ情報を確認しています...</p>
+                ) : restoreInfoError ? (
+                  <>
+                    <p className="text-sm mb-3" style={{ color: '#B91C1C' }}>{restoreInfoError}</p>
+                    <button
+                      onClick={() => setRestorePanelOpen(false)}
+                      className="px-4 py-2 rounded-lg text-sm border" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
+                      閉じる
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-bold mb-2" style={{ color: '#1A2340' }}>この内容で復元しますか？</p>
+                    <p className="text-sm mb-1 leading-relaxed" style={{ color: '#1A2340' }}>
+                      バックアップの保存日時：{formatDateTime(restoreBackedUpAt)}
+                    </p>
+                    <p className="text-xs mb-3 leading-relaxed" style={{ color: '#5A6A8A' }}>
+                      現在表示されているCSV自動反映内容は、このバックアップの内容で上書きされます。
+                    </p>
+                    {restoreError && (
+                      <div className="rounded-lg p-3 mb-3 border" style={{ background: '#FEF2F2', borderColor: '#FECACA' }}>
+                        <p className="text-sm" style={{ color: '#B91C1C' }}>{restoreError}</p>
+                      </div>
+                    )}
+                    <div className="flex gap-3">
+                      <button
+                        onClick={handleRestore}
+                        disabled={restoreLoading}
+                        className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white transition-all disabled:opacity-50"
+                        style={{ background: '#1B3A8C' }}>
+                        {restoreLoading ? '復元中...' : 'この内容で復元する'}
+                      </button>
+                      <button
+                        onClick={() => { setRestorePanelOpen(false); setRestoreError('') }}
+                        className="px-4 py-2.5 rounded-lg text-sm border" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
+                        キャンセル
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
       </main>
     </div>

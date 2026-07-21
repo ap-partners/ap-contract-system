@@ -26,6 +26,9 @@ import {
   NoBreakTextarea, TelInput, RadioGroup, CriticalWarning, SearchInput,
 } from './_components/FormParts'
 import { buildMergedFields } from '@/app/dashboard/_shared/renewalFieldMap'
+import StepSourceContact from './_components/StepSourceContact'
+import StepDispatchContact from './_components/StepDispatchContact'
+import StepContractCondition from './_components/StepContractCondition'
 
 
 function ApplyPageInner() {
@@ -2458,152 +2461,35 @@ function ApplyPageInner() {
 
           {/* ===== STEP3：派遣先担当者 ===== */}
           {stepType === 'dispatchContact' && (
-            <>
-              <SectionHeader label="指揮命令者" />
-              <FormRow label="部署名" required badge={<CsvBadge name="cmdDept" />} wide
-                isEmpty={showEmptyHint && !cmd_dept} emptyHint="入力してください">
-                <input className={inp} style={deptInputStyle} value={cmd_dept} onChange={e => { setCmdDept(e.target.value) }}
-                  placeholder="例）東日本ｴﾘｱ営業本部 関東営業統括部 第3営業部" />
-              </FormRow>
-              <FormRow label="役職" required badge={<CsvBadge name="cmdRole" />}
-                isEmpty={showEmptyHint && !cmd_role} emptyHint="入力してください">
-                <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                  value={cmd_role} onChange={e => { setCmdRole(e.target.value) }} placeholder="例）課長" />
-              </FormRow>
-              <FormRow label="氏名" required badge={<CsvBadge name="cmdName" />}
-                isEmpty={showEmptyHint && !cmd_name} emptyHint="入力してください">
-                <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                  value={cmd_name} onChange={e => { setCmdName(e.target.value) }} placeholder="例）山田 太郎" />
-              </FormRow>
-              <FormRow label="電話番号" required badge={<CsvBadge name="cmdTel" />}
-                isEmpty={showEmptyHint && !cmd_tel} emptyHint="入力してください">
-                <TelInput value={cmd_tel} onChange={v => { setCmdTel(v) }} />
-              </FormRow>
-
-              <SectionHeader label="派遣先責任者" />
-              <FormRow label="部署名" required badge={<CsvBadge name="respDept" />} wide
-                isEmpty={showEmptyHint && !resp_dept} emptyHint="入力してください">
-                <input className={inp} style={deptInputStyle} value={resp_dept} onChange={e => { setRespDept(e.target.value) }} placeholder="例）人事部" />
-              </FormRow>
-              <FormRow label="役職" required badge={<CsvBadge name="respRole" />}
-                isEmpty={showEmptyHint && !resp_role} emptyHint="入力してください">
-                <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                  value={resp_role} onChange={e => { setRespRole(e.target.value) }} placeholder="例）部長" />
-              </FormRow>
-              <FormRow label="氏名" required badge={<CsvBadge name="respName" />}
-                isEmpty={showEmptyHint && !resp_name} emptyHint="入力してください">
-                <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                  value={resp_name} onChange={e => { setRespName(e.target.value) }} placeholder="例）鈴木 花子" />
-              </FormRow>
-              <FormRow label="電話番号" required badge={<CsvBadge name="respTel" />}
-                isEmpty={showEmptyHint && !resp_tel} emptyHint="入力してください">
-                <TelInput value={resp_tel} onChange={v => { setRespTel(v) }} />
-              </FormRow>
-
-              <SectionHeader label="苦情処理申出先（派遣先）" />
-              <FormRow label="部署名" required badge={<CsvBadge name="compDept" />} wide
-                isEmpty={showEmptyHint && !comp_dept} emptyHint="入力してください">
-                <input className={inp} style={deptInputStyle} value={comp_dept} onChange={e => { setCompDept(e.target.value) }} placeholder="例）総務部" />
-              </FormRow>
-              <FormRow label="役職" required badge={<CsvBadge name="compRole" />}
-                isEmpty={showEmptyHint && !comp_role} emptyHint="入力してください">
-                <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                  value={comp_role} onChange={e => { setCompRole(e.target.value) }} placeholder="例）担当者" />
-              </FormRow>
-              <FormRow label="氏名" required badge={<CsvBadge name="compName" />}
-                isEmpty={showEmptyHint && !comp_name} emptyHint="入力してください">
-                <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-                  value={comp_name} onChange={e => { setCompName(e.target.value) }} placeholder="例）田中 次郎" />
-              </FormRow>
-              <FormRow label="電話番号" required badge={<CsvBadge name="compTel" />}
-                isEmpty={showEmptyHint && !comp_tel} emptyHint="入力してください">
-                <TelInput value={comp_tel} onChange={v => { setCompTel(v) }} />
-              </FormRow>
-
-              <SectionHeader label="追加項目" />
-              <FormRow label="福利厚生施設の利用等" required badge={<CsvBadge name="welfare" />} wide
-                isEmpty={showEmptyHint && !welfare} emptyHint="入力してください">
-                <NoBreakTextarea value={welfare} onChange={v => { setWelfare(v) }} placeholder="例）社員食堂・更衣室の利用可" minHeight="60px" />
-              </FormRow>
-              <FormRow label="安全及び衛生" required badge={<CsvBadge name="safety" />}>
-                <ModeToggle mode={safetyMode} onChange={m => { setSafetyMode(m); setSafetyText(m === 'default' ? DEFAULT_SAFETY : '') }} />
-                <NoBreakTextarea value={safetyText} onChange={v => { setSafetyText(v); if (csvBadges['safety'] === 'reflected') setCsvBadge('safety', 'modified') }}
-                  placeholder="安全及び衛生に関する内容を入力してください" minHeight="80px"
-                  bg={safetyMode === 'default' ? '#F5F7FC' : 'white'} />
-                <p className="text-xs" style={{ color: '#5A6A8A' }}>
-                  {safetyMode === 'default' ? '※デフォルト文言を表示しています。必要に応じて編集してください。' : '※自由に入力してください。'}
-                </p>
-              </FormRow>
-              <FormRow label="紛争防止措置" required badge={<CsvBadge name="conflict2" />}>
-                <ModeToggle mode={conflictMode} onChange={m => { setConflictMode(m); setConflictText(m === 'default' ? DEFAULT_CONFLICT : '') }} />
-                <NoBreakTextarea value={conflictText} onChange={v => { setConflictText(v); if (csvBadges['conflict2'] === 'reflected') setCsvBadge('conflict2', 'modified') }}
-                  placeholder="紛争防止措置に関する内容を入力してください" minHeight="80px"
-                  bg={conflictMode === 'default' ? '#F5F7FC' : 'white'} />
-                <p className="text-xs" style={{ color: '#5A6A8A' }}>
-                  {conflictMode === 'default' ? '※デフォルト文言を表示しています。必要に応じて編集してください。' : '※自由に入力してください。'}
-                </p>
-              </FormRow>
-
-              <NavButtons onNext={() => {
-                if (!cmd_dept || !cmd_role || !cmd_name || !cmd_tel) { alert('指揮命令者の全項目を入力してください'); return }
-                if (!resp_dept || !resp_role || !resp_name || !resp_tel) { alert('派遣先責任者の全項目を入力してください'); return }
-                if (!comp_dept || !comp_role || !comp_name || !comp_tel) { alert('苦情処理申出先（派遣先）の全項目を入力してください'); return }
-                if (!welfare) { alert('福利厚生施設の利用等を入力してください'); return }
-                if (!safetyText) { alert('安全及び衛生を入力してください'); return }
-                if (!conflictText) { alert('紛争防止措置を入力してください'); return }
-                if (validateTel(cmd_tel) || validateTel(resp_tel) || validateTel(comp_tel)) { alert('電話番号の形式が正しくありません'); return }
-                handleNext()
-              }} />
-            </>
+            <StepDispatchContact
+              showEmptyHint={showEmptyHint} CsvBadge={CsvBadge}
+              cmd_dept={cmd_dept} cmd_role={cmd_role} cmd_name={cmd_name} cmd_tel={cmd_tel}
+              setCmdDept={setCmdDept} setCmdRole={setCmdRole} setCmdName={setCmdName} setCmdTel={setCmdTel}
+              resp_dept={resp_dept} resp_role={resp_role} resp_name={resp_name} resp_tel={resp_tel}
+              setRespDept={setRespDept} setRespRole={setRespRole} setRespName={setRespName} setRespTel={setRespTel}
+              comp_dept={comp_dept} comp_role={comp_role} comp_name={comp_name} comp_tel={comp_tel}
+              setCompDept={setCompDept} setCompRole={setCompRole} setCompName={setCompName} setCompTel={setCompTel}
+              welfare={welfare} setWelfare={setWelfare}
+              safetyMode={safetyMode} setSafetyMode={setSafetyMode} safetyText={safetyText} setSafetyText={setSafetyText}
+              conflictMode={conflictMode} setConflictMode={setConflictMode} conflictText={conflictText} setConflictText={setConflictText}
+              csvBadges={csvBadges} setCsvBadge={setCsvBadge}
+              handleNext={handleNext}
+              NavButtons={NavButtons}
+            />
           )}
 
           {/* ===== STEP4：派遣元担当者 ===== */}
           {stepType === 'sourceContact' && (
-            <>
-              <div className="px-5 py-3 border-b text-sm" style={{ background: '#EEF2FA', borderColor: '#D0DAF0', color: '#5A6A8A' }}>
-                ℹ️ 以下は{mgrCmpSource === 'csv' ? 'CSVデータ' : '自社マスタ'}から自動入力されています。内容を確認し、必要であれば修正してください。
-              </div>
-              <SectionHeader label="派遣元責任者" />
-              <FormRowAuto label="部署名" modified={masterSnapshot.mgr_dept !== undefined && mgr_dept !== masterSnapshot.mgr_dept} source={mgrCmpSource} wide
-                isEmpty={!mgr_dept} emptyHint="入力してください">
-                <input className={inp} style={{ borderColor: !mgr_dept ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={mgr_dept} onChange={e => setMgrDept(e.target.value)} />
-              </FormRowAuto>
-              <FormRowAuto label="役職" modified={masterSnapshot.mgr_role !== undefined && mgr_role !== masterSnapshot.mgr_role} source={mgrCmpSource}
-                isEmpty={!mgr_role} emptyHint="入力してください">
-                <input className={`${inp} max-w-xs`} style={{ borderColor: !mgr_role ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={mgr_role} onChange={e => setMgrRole(e.target.value)} />
-              </FormRowAuto>
-              <FormRowAuto label="氏名" modified={masterSnapshot.mgr_name !== undefined && mgr_name !== masterSnapshot.mgr_name} source={mgrCmpSource}
-                isEmpty={!mgr_name} emptyHint="入力してください">
-                <input className={`${inp} max-w-xs`} style={{ borderColor: !mgr_name ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={mgr_name} onChange={e => setMgrName(e.target.value)} />
-              </FormRowAuto>
-              <FormRowAuto label="電話番号" modified={masterSnapshot.mgr_tel !== undefined && mgr_tel !== masterSnapshot.mgr_tel} source={mgrCmpSource}
-                isEmpty={!mgr_tel} emptyHint="入力してください">
-                <TelInput value={mgr_tel} onChange={setMgrTel} />
-              </FormRowAuto>
-              <SectionHeader label="苦情処理申出先（派遣元）" />
-              <FormRowAuto label="部署名" modified={masterSnapshot.cmp_dept !== undefined && cmp_dept !== masterSnapshot.cmp_dept} source={mgrCmpSource} wide
-                isEmpty={!cmp_dept} emptyHint="入力してください">
-                <input className={inp} style={{ borderColor: !cmp_dept ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={cmp_dept} onChange={e => setCmpDept(e.target.value)} />
-              </FormRowAuto>
-              <FormRowAuto label="役職" modified={masterSnapshot.cmp_role !== undefined && cmp_role !== masterSnapshot.cmp_role} source={mgrCmpSource}
-                isEmpty={!cmp_role} emptyHint="入力してください">
-                <input className={`${inp} max-w-xs`} style={{ borderColor: !cmp_role ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={cmp_role} onChange={e => setCmpRole(e.target.value)} />
-              </FormRowAuto>
-              <FormRowAuto label="氏名" modified={masterSnapshot.cmp_name !== undefined && cmp_name !== masterSnapshot.cmp_name} source={mgrCmpSource}
-                isEmpty={!cmp_name} emptyHint="入力してください">
-                <input className={`${inp} max-w-xs`} style={{ borderColor: !cmp_name ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={cmp_name} onChange={e => setCmpName(e.target.value)} />
-              </FormRowAuto>
-              <FormRowAuto label="電話番号" modified={masterSnapshot.cmp_tel !== undefined && cmp_tel !== masterSnapshot.cmp_tel} source={mgrCmpSource}
-                isEmpty={!cmp_tel} emptyHint="入力してください">
-                <TelInput value={cmp_tel} onChange={setCmpTel} />
-              </FormRowAuto>
-              <NavButtons onNext={() => {
-                if (!mgr_dept || !mgr_role || !mgr_name || !mgr_tel) { alert('派遣元責任者の全項目を入力してください'); return }
-                if (!cmp_dept || !cmp_role || !cmp_name || !cmp_tel) { alert('苦情処理申出先（派遣元）の全項目を入力してください'); return }
-                if (validateTel(mgr_tel) || validateTel(cmp_tel)) { alert('電話番号の形式が正しくありません'); return }
-                handleNext()
-              }} />
-            </>
+            <StepSourceContact
+              mgrCmpSource={mgrCmpSource}
+              masterSnapshot={masterSnapshot}
+              mgr_dept={mgr_dept} mgr_role={mgr_role} mgr_name={mgr_name} mgr_tel={mgr_tel}
+              setMgrDept={setMgrDept} setMgrRole={setMgrRole} setMgrName={setMgrName} setMgrTel={setMgrTel}
+              cmp_dept={cmp_dept} cmp_role={cmp_role} cmp_name={cmp_name} cmp_tel={cmp_tel}
+              setCmpDept={setCmpDept} setCmpRole={setCmpRole} setCmpName={setCmpName} setCmpTel={setCmpTel}
+              handleNext={handleNext}
+              NavButtons={NavButtons}
+            />
           )}
 
           {/* ===== STEP5（A=STEP3 / B・C=STEP5）：期間・労働条件 ===== */}
@@ -2821,74 +2707,14 @@ function ApplyPageInner() {
 
           {/* ===== STEP6（A=STEP4 / C=STEP6）：契約条件 ===== */}
           {stepType === 'contractCondition' && (
-            <>
-              <SectionHeader label="締結パターン" />
-              <FormRow label="締結パターン" required>
-                <div className="grid grid-cols-3 gap-3">
-                  {CLOSING_PATTERNS.map(p => (
-                    <button key={p.id}
-                      onClick={e => { e.preventDefault(); setClosingPattern(p.id) }}
-                      className="flex flex-col items-center gap-3 p-4 rounded-lg border-2 transition-all text-center"
-                      style={{
-                        borderColor: closingPattern === p.id ? '#1B3A8C' : '#D0DAF0',
-                        background: closingPattern === p.id ? '#EEF2FA' : 'white',
-                      }}>
-                      <img src={p.icon} alt={p.label} className="w-20 h-20 object-contain" />
-                      <p className="text-xs font-bold" style={{ color: '#1B3A8C' }}>{p.label}</p>
-                      <p className="text-xs leading-snug" style={{ color: '#5A6A8A' }}>{p.desc}</p>
-                    </button>
-                  ))}
-                </div>
-              </FormRow>
-
-              <SectionHeader label="備考文言" />
-
-              {needsBonusSelection(pattern, contractType) ? (
-                <FormRow label="賞与" required>
-                  <div className="flex gap-3">
-                    {(['あり', 'なし'] as const).map(v => (
-                      <button key={v}
-                        onClick={e => { e.preventDefault(); setBonusType(v) }}
-                        className="flex-1 py-3 rounded-lg border-2 text-sm font-medium transition-all"
-                        style={{
-                          borderColor: bonusType === v ? '#1B3A8C' : '#D0DAF0',
-                          background: bonusType === v ? '#EEF2FA' : 'white',
-                          color: bonusType === v ? '#1B3A8C' : '#5A6A8A',
-                        }}>
-                        賞与{v}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-xs mt-1" style={{ color: '#5A6A8A' }}>
-                    賞与（ボーナス）が契約上支給される場合は「賞与あり」。決算賞与のみで契約書上に記載が不要な場合は「賞与なし」を選んでください。
-                  </p>
-                </FormRow>
-              ) : (
-                <FormRow label="賞与">
-                  <p className="text-xs rounded-lg px-3 py-2 inline-block border"
-                    style={{ color: '#5A6A8A', background: '#F5F7FC', borderColor: '#D0DAF0' }}>
-                    自動確定（選択不要）
-                  </p>
-                </FormRow>
-              )}
-
-              {pattern !== 'B' && (
-                <FormRow label="備考欄プレビュー">
-                  <div className="rounded-lg p-4 border" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                    <p className="text-xs font-medium mb-2" style={{ color: '#1B3A8C' }}>📄 帳票プレビュー（自動生成）</p>
-                    <p className="text-xs leading-relaxed whitespace-pre-line" style={{ color: '#1A2340' }}>
-                      {remarksText}
-                    </p>
-                  </div>
-                </FormRow>
-              )}
-
-              <NavButtons onNext={() => {
-                if (!closingPattern) { alert('締結パターンを選択してください'); return }
-                if (needsBonusSelection(pattern, contractType) && !bonusType) { alert('賞与の有無を選択してください'); return }
-                handleNext()
-              }} />
-            </>
+            <StepContractCondition
+              pattern={pattern} contractType={contractType}
+              closingPattern={closingPattern} setClosingPattern={setClosingPattern}
+              bonusType={bonusType} setBonusType={setBonusType}
+              remarksText={remarksText}
+              handleNext={handleNext}
+              NavButtons={NavButtons}
+            />
           )}
 
           {/* ===== STEP7（A=STEP5 / C=STEP7）：給与・保険 ===== */}

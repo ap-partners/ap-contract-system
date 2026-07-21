@@ -15,7 +15,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getAuthenticatedStaff } from '@/lib/apiAuth'
-import { sendCsvImportMatchedMail } from '@/lib/mail'
+import { sendCsvImportMatchedMail, sendStaffRegisterMatchedMail } from '@/lib/mail'
 import {
   ImportSystemKey,
   DbSystemType,
@@ -173,6 +173,12 @@ async function processDepartmentMasterFile(buffer: Buffer, uploadedBy: string): 
   return counts
 }
 
+// 2026-07-21改修：実データ規模（約1780件）で1行ずつSELECT→UPDATE/INSERTを行う旧実装は
+// Vercelの関数タイムアウトに抵触するリスクがあったため、processSingleFile（契約CSV取込）と
+// 同じ「まとめて既存確認→JS側で分類→チャンク単位でupsert」方式に統一した。
+// あわせて、今回のStaffExpressエクスポートにSBクルーコード列が含まれていない問題（伊藤さん指摘）
+// にも対応：新しいファイルのSBクルーコードが空欄の場合は、DBに既にある値を保持し、
+// 値が入っている場合のみ上書きする（既存157件のcrew_codeを消さないための必須対応）。
 async function processStaffMasterFile(buffer: Buffer, uploadedBy: string): Promise<MasterImportCounts> {
   const rows = readExcelBuffer(buffer)
   const counts: MasterImportCounts = { total: rows.length, newCount: 0, updatedCount: 0, skippedCount: 0, errorCount: 0, errorDetails: [] }
@@ -184,17 +190,54 @@ async function processStaffMasterFile(buffer: Buffer, uploadedBy: string): Promi
     .single()
   if (importError || !importRecord) return counts
 
+  const parsedRecords: NonNullable<ReturnType<typeof buildStaffRecord>>[] = []
   for (const row of rows) {
     const record = buildStaffRecord(row)
     if (!record) { counts.skippedCount++; continue }
+    parsedRecords.push(record)
+  }
 
-    const { data: existing } = await supabaseAdmin.from('staff').select('id').eq('employee_number', record.employee_number).maybeSingle()
-    if (existing) {
-      const { error } = await supabaseAdmin.from('staff').update({ ...record, updated_at: new Date().toISOString() }).eq('id', existing.id)
-      if (error) { counts.errorCount++; counts.errorDetails.push(`社員番号 ${record.employee_number}（${record.name ?? ''}）の更新に失敗：${error.message}`) } else counts.updatedCount++
+  const CHUNK = 300
+
+  // 既存データ（id・crew_code）をまとめて取得
+  const existingMap = new Map<string, { id: string; crew_code: string | null }>()
+  const allEmployeeNumbers = parsedRecords.map(r => r.employee_number)
+  for (let i = 0; i < allEmployeeNumbers.length; i += CHUNK) {
+    const chunk = allEmployeeNumbers.slice(i, i + CHUNK)
+    const { data: existingRows, error } = await supabaseAdmin
+      .from('staff')
+      .select('id, employee_number, crew_code')
+      .in('employee_number', chunk)
+    if (error) {
+      counts.errorCount += chunk.length
+      counts.errorDetails.push(`既存データ確認エラー（${chunk.length}件分）：${error.message}`)
+      continue
+    }
+    for (const r of existingRows || []) existingMap.set(r.employee_number, { id: r.id, crew_code: r.crew_code })
+  }
+
+  const upsertBatch: (NonNullable<ReturnType<typeof buildStaffRecord>> & { updated_at: string })[] = []
+  const isExistingFlags: boolean[] = []
+  const now = new Date().toISOString()
+  for (const record of parsedRecords) {
+    const existing = existingMap.get(record.employee_number)
+    // SBクルーコードが今回のファイルで空欄の場合、既存値があればそれを保持する（伊藤さん指示・2026-07-21）
+    const crewCode = record.crew_code || existing?.crew_code || null
+    upsertBatch.push({ ...record, crew_code: crewCode, updated_at: now })
+    isExistingFlags.push(!!existing)
+  }
+
+  for (let i = 0; i < upsertBatch.length; i += CHUNK) {
+    const chunk = upsertBatch.slice(i, i + CHUNK)
+    const flags = isExistingFlags.slice(i, i + CHUNK)
+    const { error } = await supabaseAdmin
+      .from('staff')
+      .upsert(chunk, { onConflict: 'employee_number' })
+    if (error) {
+      counts.errorCount += chunk.length
+      counts.errorDetails.push(`保存エラー（${chunk.length}件分）：${error.message}`)
     } else {
-      const { error } = await supabaseAdmin.from('staff').insert(record)
-      if (error) { counts.errorCount++; counts.errorDetails.push(`社員番号 ${record.employee_number}（${record.name ?? ''}）の新規登録に失敗：${error.message}`) } else counts.newCount++
+      for (const isExisting of flags) { if (isExisting) counts.updatedCount++; else counts.newCount++ }
     }
   }
 
@@ -204,6 +247,63 @@ async function processStaffMasterFile(buffer: Buffer, uploadedBy: string): Promi
   }).eq('id', importRecord.id)
 
   return counts
+}
+
+// スタッフマスタ登録依頼（requests.staff_register_status='pending'）の自動マッチ・自動完了・通知
+// （2026-07-21新規実装。過去に「STEP1/2の依頼をrequestsへ保存する」対応＝2026-07-02決定・
+// staff_register_completed_at/byカラムの事前用意まで済んでいたが、自動完了処理自体は
+// これまで一度も実装されていなかった機能ギャップだったため、今回のスタッフマスタ取込と
+// 同じタイミングで実装した）。
+async function runStaffRegisterAutoMatch(uploaderId: string) {
+  const { data: pendingRequests, error } = await supabaseAdmin
+    .from('requests')
+    .select('id, staff_code, staff_name, requested_by')
+    .eq('staff_register_status', 'pending')
+
+  if (error || !pendingRequests || pendingRequests.length === 0) {
+    return { matchedCount: 0, notifiedCount: 0, notifyErrors: [] as string[] }
+  }
+
+  let matchedCount = 0
+  let notifiedCount = 0
+  const notifyErrors: string[] = []
+
+  const employeeNumbers = Array.from(new Set(pendingRequests.map(r => r.staff_code).filter(Boolean))) as string[]
+  const { data: staffRows } = await supabaseAdmin
+    .from('staff')
+    .select('employee_number')
+    .in('employee_number', employeeNumbers)
+  const registeredNumbers = new Set((staffRows || []).map(s => s.employee_number))
+
+  for (const req of pendingRequests) {
+    if (!req.staff_code || !registeredNumbers.has(req.staff_code)) continue
+
+    const now = new Date().toISOString()
+    const { error: updateError } = await supabaseAdmin
+      .from('requests')
+      .update({ staff_register_status: 'completed', staff_register_completed_at: now, staff_register_completed_by: uploaderId })
+      .eq('id', req.id)
+      .eq('staff_register_status', 'pending') // 二重マッチ防止の条件付き更新
+    if (updateError) continue
+    matchedCount++
+
+    if (req.requested_by) {
+      try {
+        const { data: userData } = await supabaseAdmin.auth.admin.getUserById(req.requested_by)
+        const toEmail = userData?.user?.email
+        if (toEmail) {
+          await sendStaffRegisterMatchedMail(toEmail, req.staff_name, req.staff_code)
+          notifiedCount++
+        } else {
+          notifyErrors.push(`依頼ID ${req.id}：依頼者のメールアドレスが見つかりませんでした`)
+        }
+      } catch (e: any) {
+        notifyErrors.push(`依頼ID ${req.id}：通知メール送信エラー（${e?.message || ''}）`)
+      }
+    }
+  }
+
+  return { matchedCount, notifiedCount, notifyErrors }
 }
 
 // CSVインポート依頼（requests）の自動マッチ・自動完了・通知
@@ -307,10 +407,12 @@ export async function POST(req: NextRequest) {
         fileNames.push(fileDept.name)
         deptResult = await processDepartmentMasterFile(buf, auth.userId)
       }
+      let staffRegisterAutoMatch: { matchedCount: number; notifiedCount: number; notifyErrors: string[] } | null = null
       if (fileStaff) {
         const buf = Buffer.from(await fileStaff.arrayBuffer())
         fileNames.push(fileStaff.name)
         staffResult = await processStaffMasterFile(buf, auth.userId)
+        staffRegisterAutoMatch = await runStaffRegisterAutoMatch(auth.userId)
       }
       return NextResponse.json({
         success: true,
@@ -319,6 +421,7 @@ export async function POST(req: NextRequest) {
           department: deptResult,
           staff: staffResult,
         },
+        staffRegisterAutoMatch,
       })
     } catch (e: any) {
       return NextResponse.json({ error: 'Excelの読み込み・保存中にエラーが発生しました：' + (e?.message || '') }, { status: 500 })

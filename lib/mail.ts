@@ -488,3 +488,30 @@ export async function sendCsvImportMatchedMail(
     ].join('\n'),
   })
 }
+
+export async function sendStaffRegisterMatchedMail(
+  toEmail: string,
+  staffName: string | null,
+  staffCode: string | null
+): Promise<void> {
+  const subject = `【APパートナーズ】スタッフマスタ登録依頼が完了しました（${staffName || '対象スタッフ'}様）`
+  await transporter.sendMail({
+    from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject,
+    text: [
+      'お疲れ様です。',
+      'APパートナーズ 契約書管理システムです。',
+      '',
+      `以前ご依頼いただいたスタッフマスタ登録依頼について、該当データが取り込まれ、自動的に完了しました。`,
+      '',
+      `対象スタッフ：${staffName || '(氏名不明)'}`,
+      `社員番号：${staffCode || '(社員番号不明)'}`,
+      '',
+      '申請画面（STEP1）からスタッフ検索を行うと、内容が反映できる状態になっています。',
+      `担当営業の方はこちら：${APP_URL}/dashboard/sales`,
+      '',
+      '※本メールは自動送信です。このアドレスへの返信には対応しておりません。ご不明点は管理部までご連絡ください。',
+    ].join('\n'),
+  })
+}

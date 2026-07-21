@@ -1712,6 +1712,11 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                   )}
+                  {typeof csvUploadResult.staffRegisterAutoMatch?.matchedCount === 'number' && csvUploadResult.staffRegisterAutoMatch.matchedCount > 0 && (
+                    <p className="mt-4 text-sm font-medium leading-6 text-[#4CAF50]">
+                      スタッフ登録依頼の自動マッチが{csvUploadResult.staffRegisterAutoMatch.matchedCount}件成立し、依頼元へ通知メールを送信しました。
+                    </p>
+                  )}
                 </div>
               )}
 

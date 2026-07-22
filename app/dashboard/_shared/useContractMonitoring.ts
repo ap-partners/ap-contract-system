@@ -178,7 +178,7 @@ export function useContractMonitoring() {
         }
 
         if (issues.length === 0) continue
-        const topSeverity = issues.reduce((min, i) => (i.severity < min ? i.severity : min), 4) as 1 | 2 | 3 | 4
+        const topSeverity = issues.reduce<1 | 2 | 3 | 4>((min, i) => (i.severity < min ? i.severity : min), 4)
         result.push({ ...base, issues, topSeverity })
       }
 

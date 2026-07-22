@@ -465,11 +465,13 @@ export default function PledgeApplyPage() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <button onClick={handleCancel}
-              className="text-sm px-4 py-2 rounded-lg border font-medium transition-all"
-              style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: '#EEF2FA' }}>
-              この申請をやめる
-            </button>
+            {!isSubmitted && (
+              <button onClick={handleCancel}
+                className="text-sm px-4 py-2 rounded-lg border font-medium transition-all"
+                style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: '#EEF2FA' }}>
+                この申請をやめる
+              </button>
+            )}
             <button onClick={handleLogout} className="text-sm" style={{ color: '#5A6A8A' }}>ログアウト</button>
           </div>
         </div>
@@ -667,7 +669,7 @@ export default function PledgeApplyPage() {
                   {([
                     { id: 'single_multi', label: '単日・複数日選択', desc: '特定の日を1日ずつ登録\n登録日数分の書類を発行', icon: 'calendarMulti' },
                     { id: 'range', label: '期間指定', desc: '開始日〜終了日で登録\n期間全体で書類1枚発行', icon: 'calendarRange' },
-                    { id: 'mix', label: 'MIX', desc: '期間と単日の両方登録\n期間で1枚+単日ごとに1枚発行', icon: 'calendarMix' },
+                    { id: 'mix', label: 'MIX', desc: '期間と単日の両方登録\n期間で1枚+単日毎に1枚発行', icon: 'calendarMix' },
                   ] as const).map(p => {
                     const selected = periodPattern === p.id
                     return (
@@ -825,7 +827,7 @@ export default function PledgeApplyPage() {
                           </div>
                         </div>
                         <div className="flex flex-col gap-1">
-                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>所定労働時間（自動計算）</label>
+                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>所定労働時間</label>
                           <div className="flex items-center gap-1">
                             <input type="text" value={s.contractHours} readOnly
                               placeholder="自動計算" className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-full placeholder:text-gray-400" style={{ borderColor: '#D0DAF0', color: '#1A2340', background: '#F0F2F7' }} />
@@ -946,7 +948,7 @@ export default function PledgeApplyPage() {
                 </div>
                 <p className="text-base font-bold" style={{ color: '#1A2340' }}>申請が完了しました</p>
                 <p className="text-xs text-center leading-relaxed" style={{ color: '#5A6A8A' }}>
-                  {buildDocumentPeriods().length}枚の書類として申請を受け付けました。<br />
+                  申請を受け付けました。<br />
                   確認・承認の状況はダッシュボードからご確認いただけます。
                 </p>
                 <button onClick={e => { e.preventDefault(); handleCancel2() }}

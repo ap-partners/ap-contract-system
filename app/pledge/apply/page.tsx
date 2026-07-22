@@ -763,7 +763,7 @@ export default function PledgeApplyPage() {
           {currentStep === 3 && (
             <>
               <FormRow label="業務内容" required>
-                {documentType === 'AP・CL研修用' && workDescriptionTemplates.length > 0 && (
+                {workDescriptionTemplates.length > 0 && (
                   <div className="flex flex-col gap-1.5 mb-1 max-w-md">
                     <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>よく使う文言から選択</label>
                     <select value=""

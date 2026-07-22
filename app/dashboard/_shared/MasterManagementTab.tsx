@@ -16,6 +16,7 @@ type Department = { id: string; dept_no: number; dept_name: string; created_at: 
 type MinimumWage = { id: string; dept_no: number; hourly_wage: number; effective_from: string; created_at: string; updated_at: string }
 type WorkingHours = { id: string; work_place: string; contract_type: string; pattern_name: string; monthly_hours: number; created_at: string; updated_at: string }
 type DispatchFee = { id: string; office_name: string; fiscal_year_label: string; amount_per_day: number; updated_at: string }
+type Office = { id: string; office_name: string; postal_code: string | null; address: string | null; tel: string | null; updated_at: string }
 
 type MasterData = {
   departments: Department[]
@@ -24,9 +25,10 @@ type MasterData = {
   dispatchFees: DispatchFee[]
   officeNames: string[]
   staffCountByDept: Record<string, number>
+  offices: Office[]
 }
 
-const SUB_TABS = ['部門', '最低賃金', '所定労働時間', '派遣料金額'] as const
+const SUB_TABS = ['部門', '最低賃金', '所定労働時間', '派遣料金額', '自社拠点'] as const
 type SubTab = typeof SUB_TABS[number]
 
 const card = 'rounded-2xl border border-[#E8EDF5] bg-white'
@@ -63,7 +65,7 @@ export default function MasterManagementTab() {
       <section className={`${card} p-6 md:p-8`}>
         <p className="text-lg font-semibold text-[#1F2937]">マスタ管理</p>
         <p className="mt-2 text-sm font-medium leading-6 text-[#6B7280]">
-          部門・最低賃金・所定労働時間・労働者派遣料金額の各マスタを管理します。
+          部門・最低賃金・所定労働時間・労働者派遣料金額・自社拠点の各マスタを管理します。
           部門マスタは新規追加のみ、既存の部門名変更・削除が必要な場合はシステム担当者までご連絡ください。
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
@@ -94,6 +96,7 @@ export default function MasterManagementTab() {
           {subTab === '最低賃金' && <MinimumWageSection data={data} reload={load} />}
           {subTab === '所定労働時間' && <WorkingHoursSection data={data} reload={load} />}
           {subTab === '派遣料金額' && <DispatchFeeSection data={data} reload={load} />}
+          {subTab === '自社拠点' && <OfficeSection data={data} reload={load} />}
         </>
       ) : null}
     </div>
@@ -574,6 +577,118 @@ function DispatchFeeSection({ data, reload }: { data: MasterData; reload: () => 
                     <button
                       onClick={() => handleSave(office)}
                       disabled={savingOffice === office || !draft.fiscalYearLabel || !draft.amountPerDay}
+                      className={primaryBtn}
+                    >
+                      {savingOffice === office ? '保存中…' : savedOffice === office ? '保存しました✓' : '保存する'}
+                    </button>
+                    {errorByOffice[office] && <div className="mt-2 w-64"><ErrorBanner message={errorByOffice[office]} /></div>}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
+// ===== 自社拠点マスタ =====
+// 2026-07-22新設。アルバイト誓約書STEP2「就業先情報」で就業先が自社（研修等）の場合に、
+// 拠点を選ぶだけで名称・郵便番号・住所・電話番号を自動反映するために使う。
+// 派遣料金額マスタと同じく、営業所をあらかじめ全件表示し、その場で入力・保存する表形式。
+function OfficeSection({ data, reload }: { data: MasterData; reload: () => Promise<void> }) {
+  const [drafts, setDrafts] = useState<Record<string, { postalCode: string; address: string; tel: string }>>(() => {
+    const initial: Record<string, { postalCode: string; address: string; tel: string }> = {}
+    for (const office of data.officeNames) {
+      const existing = data.offices.find(o => o.office_name === office)
+      initial[office] = {
+        postalCode: existing?.postal_code || '',
+        address: existing?.address || '',
+        tel: existing?.tel || '',
+      }
+    }
+    return initial
+  })
+  const [savingOffice, setSavingOffice] = useState<string | null>(null)
+  const [errorByOffice, setErrorByOffice] = useState<Record<string, string>>({})
+  const [savedOffice, setSavedOffice] = useState<string | null>(null)
+
+  const setDraft = (office: string, patch: Partial<{ postalCode: string; address: string; tel: string }>) => {
+    setDrafts(prev => ({ ...prev, [office]: { ...prev[office], ...patch } }))
+  }
+
+  const handleSave = async (office: string) => {
+    setErrorByOffice(prev => ({ ...prev, [office]: '' }))
+    setSavingOffice(office)
+    const draft = drafts[office]
+    const result = await postAction('upsert_office', { officeName: office, postalCode: draft.postalCode, address: draft.address, tel: draft.tel })
+    setSavingOffice(null)
+    if (!result.ok) { setErrorByOffice(prev => ({ ...prev, [office]: result.error || '更新に失敗しました。' })); return }
+    setSavedOffice(office)
+    setTimeout(() => setSavedOffice(cur => (cur === office ? null : cur)), 2500)
+    await reload()
+  }
+
+  return (
+    <section className={`${card} p-6 md:p-8`}>
+      <p className="text-sm font-semibold text-[#1F2937]">自社拠点マスタ</p>
+      <p className="mt-1 text-xs font-medium leading-5 text-[#6B7280]">
+        アルバイト誓約書の申請画面で、就業先が「自社（研修等）」の場合にこの拠点情報が自動反映されます。営業所は部門マスタから自動的に一覧表示されます。すべての拠点で郵便番号・住所・電話番号を登録してください。
+      </p>
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-[#E8EDF5] text-left text-xs font-semibold text-[#6B7280]">
+              <th className="px-3 py-2">拠点名</th>
+              <th className="px-3 py-2">郵便番号</th>
+              <th className="px-3 py-2">住所</th>
+              <th className="px-3 py-2">電話番号</th>
+              <th className="px-3 py-2">最終更新</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.officeNames.map(office => {
+              const existing = data.offices.find(o => o.office_name === office)
+              const draft = drafts[office] || { postalCode: '', address: '', tel: '' }
+              return (
+                <tr key={office} className="border-b border-[#F1F4F9] align-top">
+                  <td className="px-3 py-3 font-medium text-[#1F2937]">{office}</td>
+                  <td className="px-3 py-3">
+                    <input
+                      type="text"
+                      value={draft.postalCode}
+                      onChange={e => setDraft(office, { postalCode: e.target.value })}
+                      className={`${inputCls} w-28`}
+                      placeholder="例：123-4567"
+                    />
+                  </td>
+                  <td className="px-3 py-3">
+                    <input
+                      type="text"
+                      value={draft.address}
+                      onChange={e => setDraft(office, { address: e.target.value })}
+                      className={`${inputCls} w-64`}
+                      placeholder="例：東京都渋谷区〇〇1-2-3"
+                    />
+                  </td>
+                  <td className="px-3 py-3">
+                    <input
+                      type="text"
+                      value={draft.tel}
+                      onChange={e => setDraft(office, { tel: e.target.value })}
+                      className={`${inputCls} w-36`}
+                      placeholder="例：03-1234-5678"
+                    />
+                  </td>
+                  <td className="px-3 py-3 text-xs font-medium text-[#6B7280]">
+                    {existing ? new Date(existing.updated_at).toLocaleDateString('ja-JP') : '未登録'}
+                  </td>
+                  <td className="px-3 py-3">
+                    <button
+                      onClick={() => handleSave(office)}
+                      disabled={savingOffice === office || !draft.postalCode || !draft.address || !draft.tel}
                       className={primaryBtn}
                     >
                       {savingOffice === office ? '保存中…' : savedOffice === office ? '保存しました✓' : '保存する'}

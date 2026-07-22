@@ -570,6 +570,10 @@ export default function SalesDashboard() {
               <Icon name="plus" className="h-5 w-5" />
               新規発行申請
             </button>
+            <button onClick={() => router.push('/pledge/apply')} className={secondaryButton}>
+              <Icon name="plus" className="h-4 w-4" />
+              アルバイト誓約書 新規発行
+            </button>
             <button onClick={handleLogout} className={secondaryButton}>
               <Icon name="logout" className="h-4 w-4" />
               ログアウト

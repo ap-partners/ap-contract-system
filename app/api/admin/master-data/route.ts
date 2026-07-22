@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
   if (!auth) return NextResponse.json({ error: 'ログインが必要です。' }, { status: 401 })
   if (auth.role !== '管理部') return NextResponse.json({ error: 'この操作は管理部のみ実行できます。' }, { status: 403 })
 
-  const [{ data: departments, error: deptErr }, { data: minimumWages, error: mwErr }, { data: workingHours, error: whErr }, { data: dispatchFees, error: dfErr }, { data: staffDeptRows, error: staffErr }] = await Promise.all([
+  const [{ data: departments, error: deptErr }, { data: minimumWages, error: mwErr }, { data: workingHours, error: whErr }, { data: dispatchFees, error: dfErr }, { data: staffDeptRows, error: staffErr }, { data: offices, error: officeErr }] = await Promise.all([
     supabaseAdmin.from('department_master').select('id, dept_no, dept_name, created_at').order('dept_no', { ascending: true }),
     supabaseAdmin.from('minimum_wage_master').select('id, dept_no, hourly_wage, effective_from, created_at, updated_at').order('dept_no', { ascending: true }).order('effective_from', { ascending: false }),
     supabaseAdmin.from('standard_working_hours_master').select('id, work_place, contract_type, pattern_name, monthly_hours, created_at, updated_at').order('work_place', { ascending: true }).order('contract_type', { ascending: true }),
@@ -42,10 +42,14 @@ export async function GET(req: NextRequest) {
     // スタッフが直接所属せず、実際は下位の「SP1課」等にスタッフが紐付く構造と判明。
     // staff_countが0の部門＝実質未使用の可能性が高い部門、として画面上で可視化する。
     supabaseAdmin.from('staff').select('dept_no'),
+    // 2026-07-22追加：自社拠点マスタ（アルバイト誓約書STEP2「就業先情報」の自社選択時に使用）。
+    // 派遣料金額マスタと同じく、営業所候補（officeNames）をあらかじめ全件表示し、
+    // 郵便番号・住所・電話番号を入力する表形式で管理する。
+    supabaseAdmin.from('office_master').select('id, office_name, postal_code, address, tel, updated_at'),
   ])
 
-  if (deptErr || mwErr || whErr || dfErr || staffErr) {
-    return NextResponse.json({ error: 'マスタデータの取得に失敗しました：' + (deptErr?.message || mwErr?.message || whErr?.message || dfErr?.message || staffErr?.message || '') }, { status: 500 })
+  if (deptErr || mwErr || whErr || dfErr || staffErr || officeErr) {
+    return NextResponse.json({ error: 'マスタデータの取得に失敗しました：' + (deptErr?.message || mwErr?.message || whErr?.message || dfErr?.message || staffErr?.message || officeErr?.message || '') }, { status: 500 })
   }
 
   const staffCountByDept: Record<number, number> = {}
@@ -60,7 +64,7 @@ export async function GET(req: NextRequest) {
   for (const d of departments || []) officeNameSet.add(getOfficeName(d.dept_name))
   const officeNames = Array.from(officeNameSet).sort((a, b) => (a === '本社' ? -1 : b === '本社' ? 1 : a.localeCompare(b, 'ja')))
 
-  return NextResponse.json({ departments, minimumWages, workingHours, dispatchFees, officeNames, staffCountByDept })
+  return NextResponse.json({ departments, minimumWages, workingHours, dispatchFees, officeNames, staffCountByDept, offices })
 }
 
 // ===== POST：新規追加・修正（actionで分岐） =====
@@ -170,6 +174,28 @@ export async function POST(req: NextRequest) {
         }
         const { error } = await supabaseAdmin.from('dispatch_fee_master').upsert(
           { office_name: officeName, fiscal_year_label: fiscalYearLabel, amount_per_day: amountPerDay, updated_at: new Date().toISOString() },
+          { onConflict: 'office_name' }
+        )
+        if (error) return NextResponse.json({ error: '更新に失敗しました：' + error.message }, { status: 500 })
+        return NextResponse.json({ ok: true })
+      }
+
+      case 'upsert_office': {
+        const officeName = String(payload?.officeName || '').trim()
+        const postalCode = String(payload?.postalCode || '').trim()
+        const address = String(payload?.address || '').trim()
+        const tel = String(payload?.tel || '').trim()
+        if (!officeName || !postalCode || !address || !tel) {
+          return NextResponse.json({ error: '郵便番号・住所・電話番号をすべて入力してください。' }, { status: 400 })
+        }
+        // 営業所名は department_master から機械的に導出される候補以外を弾く（dispatch_fee_masterと同じガード）
+        const { data: departments } = await supabaseAdmin.from('department_master').select('dept_name')
+        const allowed = new Set((departments || []).map(d => getOfficeName(d.dept_name)))
+        if (!allowed.has(officeName)) {
+          return NextResponse.json({ error: '不正な営業所名です。' }, { status: 400 })
+        }
+        const { error } = await supabaseAdmin.from('office_master').upsert(
+          { office_name: officeName, postal_code: postalCode, address, tel, updated_at: new Date().toISOString() },
           { onConflict: 'office_name' }
         )
         if (error) return NextResponse.json({ error: '更新に失敗しました：' + error.message }, { status: 500 })

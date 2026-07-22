@@ -24,6 +24,7 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { excludeRetiredStaffOr } from '@/lib/staffFilters'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
+import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 import { SALARY_RULES, toHalfWidthDigits, parseAmount } from '@/app/apply/_lib/helpers'
 import { WAGE_PAYMENT_TEXT } from '@/lib/pdf/documentText'
 
@@ -143,6 +144,11 @@ export default function PledgeApplyPage() {
   const [user, setUser] = useState<any>(null)
   const [myDeptNo, setMyDeptNo] = useState<any>(undefined) // undefined=読み込み中 / null=特定できない
   const [currentStep, setCurrentStep] = useState(1)
+  // 2026-07-22追加（alert/confirm置き換えPhase3・①必須項目チェック）：各STEPの「次へ進む」チェックで
+  // 従来alert()表示していたエラーメッセージを、ボタン近くのインライン警告バナー(ValidationBanner)で表示するためのstate。
+  // STEP2の就業日重複チェック（addWorkDate内）のみ、日付追加ボタンの近くに表示したいため別state（dateAddError）を用いる。
+  const [stepError, setStepError] = useState<string | null>(null)
+  const [dateAddError, setDateAddError] = useState<string | null>(null)
 
   // ===== STEP1：スタッフ検索・帳票種別選択 =====
   const [searched, setSearched] = useState(false)
@@ -322,9 +328,10 @@ export default function PledgeApplyPage() {
 
   const addWorkDate = () => {
     if (!dateInput) return
+    setDateAddError(null)
     if (workDates.includes(dateInput)) { setDateInput(''); return }
     if (periodPattern === 'mix' && rangeStart && rangeEnd && dateInput >= rangeStart && dateInput <= rangeEnd) {
-      alert('指定した期間に含まれる日付です。期間内の日付は単日として追加する必要はありません。')
+      setDateAddError('指定した期間に含まれる日付です。期間内の日付は単日として追加する必要はありません。')
       setDateInput('')
       return
     }
@@ -586,8 +593,13 @@ export default function PledgeApplyPage() {
                 </div>
               </FormRow>
 
+              {stepError && (
+                <div className="px-5">
+                  <ValidationBanner message={stepError} />
+                </div>
+              )}
               <div className="border-t px-5 py-4 flex justify-end" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
-                <button onClick={e => { e.preventDefault(); if (!step1Valid) { alert('対象スタッフと帳票種別を選択してください'); return }; setCurrentStep(2) }}
+                <button onClick={e => { e.preventDefault(); if (!step1Valid) { setStepError('対象スタッフと帳票種別を選択してください'); return }; setStepError(null); setCurrentStep(2) }}
                   className="text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-all" style={{ background: '#1B3A8C' }}>次へ進む →</button>
               </div>
             </>
@@ -720,6 +732,7 @@ export default function PledgeApplyPage() {
                       <button onClick={e => { e.preventDefault(); addWorkDate() }}
                         className="text-xs px-3 py-2 rounded-lg border font-medium" style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: '#EEF2FA' }}>追加</button>
                     </div>
+                    <ValidationBanner message={dateAddError} />
                     {workDates.length > 0 && (
                       <div className="flex flex-col gap-1.5">
                         {workDates.map(d => (
@@ -752,10 +765,15 @@ export default function PledgeApplyPage() {
                 )}
               </FormRow>
 
+              {stepError && (
+                <div className="px-5">
+                  <ValidationBanner message={stepError} />
+                </div>
+              )}
               <div className="border-t px-5 py-4 flex justify-between" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
-                <button onClick={e => { e.preventDefault(); setCurrentStep(1) }}
+                <button onClick={e => { e.preventDefault(); setStepError(null); setCurrentStep(1) }}
                   className="bg-white border px-5 py-2.5 rounded-lg text-sm transition-all" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>← 前へ</button>
-                <button onClick={e => { e.preventDefault(); if (!step2Valid) { alert('就業先情報と雇用期間の入力を完了してください'); return }; setCurrentStep(3) }}
+                <button onClick={e => { e.preventDefault(); if (!step2Valid) { setStepError('就業先情報と雇用期間の入力を完了してください'); return }; setStepError(null); setDateAddError(null); setCurrentStep(3) }}
                   className="text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-all" style={{ background: '#1B3A8C' }}>次へ進む →</button>
               </div>
             </>
@@ -849,10 +867,15 @@ export default function PledgeApplyPage() {
                 )}
               </FormRow>
 
+              {stepError && (
+                <div className="px-5">
+                  <ValidationBanner message={stepError} />
+                </div>
+              )}
               <div className="border-t px-5 py-4 flex justify-between" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
-                <button onClick={e => { e.preventDefault(); setCurrentStep(2) }}
+                <button onClick={e => { e.preventDefault(); setStepError(null); setCurrentStep(2) }}
                   className="bg-white border px-5 py-2.5 rounded-lg text-sm transition-all" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>← 前へ</button>
-                <button onClick={e => { e.preventDefault(); if (!step3Valid) { alert('業務内容と就業時間（開始・終了）を入力してください'); return }; setCurrentStep(4) }}
+                <button onClick={e => { e.preventDefault(); if (!step3Valid) { setStepError('業務内容と就業時間（開始・終了）を入力してください'); return }; setStepError(null); setCurrentStep(4) }}
                   className="text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-all" style={{ background: '#1B3A8C' }}>次へ進む →</button>
               </div>
             </>
@@ -932,10 +955,15 @@ export default function PledgeApplyPage() {
                 </div>
               </FormRow>
 
+              {stepError && (
+                <div className="px-5">
+                  <ValidationBanner message={stepError} />
+                </div>
+              )}
               <div className="border-t px-5 py-4 flex justify-between" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
-                <button onClick={e => { e.preventDefault(); setCurrentStep(3) }}
+                <button onClick={e => { e.preventDefault(); setStepError(null); setCurrentStep(3) }}
                   className="bg-white border px-5 py-2.5 rounded-lg text-sm transition-all" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>← 前へ</button>
-                <button onClick={e => { e.preventDefault(); const err = validateSalary(); if (err) { alert(err); return }; setCurrentStep(5) }}
+                <button onClick={e => { e.preventDefault(); const err = validateSalary(); if (err) { setStepError(err); return }; setStepError(null); setCurrentStep(5) }}
                   className="text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-all" style={{ background: '#1B3A8C' }}>次へ進む →</button>
               </div>
             </>

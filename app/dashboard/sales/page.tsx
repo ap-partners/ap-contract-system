@@ -20,6 +20,7 @@ import { useContractListToolbar, buildDateSortOptions } from '../_shared/useCont
 import { useApprovedAccumulator, APPROVED_WINDOW_DAYS } from '../_shared/useApprovedAccumulator'
 import RenewalManagementTab from '../_shared/RenewalManagementTab'
 import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
+import { useDebouncedSearch } from '../_shared/useDebouncedSearch'
 
 type Contract = ContractForDisplay & {
   created_by_dept_no: number | null
@@ -221,6 +222,11 @@ export default function SalesDashboard() {
   const [myRequests, setMyRequests] = useState<MyRequest[]>([])
   const [myRequestsLoading, setMyRequestsLoading] = useState(true)
   const [includeCompletedRequests, setIncludeCompletedRequests] = useState(false)
+  // 総合レビュー指摘33対応（2026-07-22）：依頼状況タブに検索欄が無く、管理部「依頼管理」との
+  // 使い勝手の差が指摘されていたため追加。担当営業側は自部門・直近期間で既に件数が絞られた
+  // データを画面側に持っているため、管理部のようにサーバーへ再クエリはせず、取得済みの
+  // myRequestsに対してクライアント側でスタッフ名・社員番号を絞り込む（挙動はデバウンス込みで統一）。
+  const { searchText: myRequestsSearchText, setSearchText: setMyRequestsSearchText, debouncedSearchText: myRequestsDebouncedSearchText } = useDebouncedSearch()
   // 依頼状況タブも、契約側と同じ理由（年数が経つとどんどん蓄積し件数が意味を持たなくなる）で
   // 既定は直近REQUEST_WINDOW_DAYS日のみ取得し、「全期間で表示」を押した時だけ全件取得する
   // （伊藤さん指摘・2026-07-14）
@@ -327,7 +333,13 @@ export default function SalesDashboard() {
     const csvVisible = !!r.csv_import_status && r.csv_import_status !== 'not_required' && (r.csv_import_status !== 'completed' || includeCompleted)
     return srVisible || csvVisible
   }
-  const visibleMyRequests = myRequests.filter(r => hasVisibleTask(r, includeCompletedRequests))
+  const visibleMyRequests = myRequests
+    .filter(r => hasVisibleTask(r, includeCompletedRequests))
+    .filter(r => {
+      const q = myRequestsDebouncedSearchText.trim()
+      if (!q) return true
+      return (r.staff_name || '').includes(q) || (r.staff_code || '').includes(q)
+    })
 
   const filterCards: { key: FilterKey; label: string; count: number | null; color: string; tone: 'blue' | 'orange' | 'red' | 'green' | 'gray' | 'purple'; icon: IconName }[] = [
     { key: 'pending', label: '進行中', count: pendingList.length, color: '#2F5FD0', tone: 'blue', icon: 'file' },
@@ -731,6 +743,12 @@ export default function SalesDashboard() {
                     完了したものも表示する
                   </label>
                 </div>
+                <input
+                  value={myRequestsSearchText}
+                  onChange={e => setMyRequestsSearchText(e.target.value)}
+                  placeholder="社員番号または氏名で検索"
+                  className="h-12 w-full rounded-2xl border border-[#E8EDF5] bg-white px-4 text-sm font-medium text-[#1F2937] outline-none transition placeholder:text-[#8B98B1] focus:border-[#2F5FD0] sm:max-w-xs"
+                />
                 <div className="flex flex-wrap items-center gap-3">
                   {myRequestsWindowMode === 'recent' ? (
                     <>

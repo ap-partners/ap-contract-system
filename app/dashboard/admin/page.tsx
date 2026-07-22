@@ -23,6 +23,7 @@ import { useApprovedAccumulator, APPROVED_WINDOW_DAYS, CONTRACT_COLUMNS } from '
 import RenewalManagementTab from '../_shared/RenewalManagementTab'
 import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
 import MasterManagementTab from '../_shared/MasterManagementTab'
+import { useDebouncedSearch, escapeForPostgrestFilter } from '../_shared/useDebouncedSearch'
 import { STAFF_EXPRESS_COLUMNS } from '@/lib/staffExpressColumns'
 
 type RequestRow = {
@@ -382,7 +383,9 @@ export default function AdminDashboard() {
   // 別に、常に全期間・全条件のpending件数だけを数える専用state・取得処理を持つ。
   const [pendingTotalCountAll, setPendingTotalCountAll] = useState(0)
 
-  const [searchText, setSearchText] = useState('')
+  // 総合レビュー指摘32・33対応（2026-07-22）：デバウンス＋PostgRESTエスケープを
+  // 担当営業「依頼状況」タブと共通のフックに切り出した（app/dashboard/_shared/useDebouncedSearch.ts）。
+  const { searchText, setSearchText, debouncedSearchText } = useDebouncedSearch()
   const [deptFilter, setDeptFilter] = useState('')
   const [requesterFilter, setRequesterFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState<'' | 'staff_register' | 'csv_import'>('')
@@ -722,8 +725,9 @@ export default function AdminDashboard() {
       try {
         let query = supabase.from('requests').select('*').order('requested_at', { ascending: false })
 
-        if (searchText) {
-          query = query.or(`staff_name.ilike.%${searchText}%,staff_code.ilike.%${searchText}%`)
+        if (debouncedSearchText) {
+          const escaped = escapeForPostgrestFilter(debouncedSearchText)
+          query = query.or(`staff_name.ilike.%${escaped}%,staff_code.ilike.%${escaped}%`)
         }
         if (systemFilter) query = query.eq('system_type', systemFilter)
         if (requesterFilter) query = query.ilike('requested_by_name', `%${requesterFilter}%`)
@@ -784,7 +788,7 @@ export default function AdminDashboard() {
       }
     }
     loadRequests()
-  }, [user, searchText, deptFilter, requesterFilter, typeFilter, systemFilter, statusFilter, dateFrom, dateTo])
+  }, [user, debouncedSearchText, deptFilter, requesterFilter, typeFilter, systemFilter, statusFilter, dateFrom, dateTo])
 
   // 総合レビュー指摘19対応：タブバッジ・サマリーカード用の「未対応」件数は、上の一覧取得とは
   // 独立して、絞り込み・検索・期間指定の影響を一切受けない全期間・全件のクエリで数える。

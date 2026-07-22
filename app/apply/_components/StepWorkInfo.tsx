@@ -59,7 +59,7 @@ interface StepWorkInfoProps {
 
   validateStep2: () => string | null | undefined
   handleNext: () => void
-  NavButtons: React.ComponentType<{ onNext: () => void }>
+  NavButtons: React.ComponentType<{ onNext: () => void; error?: string | null }>
 }
 
 export default function StepWorkInfo({

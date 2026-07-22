@@ -4,6 +4,7 @@
 // app/apply/page.tsx の stepType === 'dispatchContact' ブロックをそのまま切り出したもの。
 // ロジック・表示は変更なし。状態は親（ApplyPageInner）に残したまま、値とsetterをpropsで受け取る。
 
+import { useState } from 'react'
 import { inp, deptInputStyle, validateTel, DEFAULT_SAFETY, DEFAULT_CONFLICT } from '../_lib/helpers'
 import { FormRow, SectionHeader, TelInput, NoBreakTextarea, ModeToggle } from './FormParts'
 
@@ -29,7 +30,7 @@ interface StepDispatchContactProps {
   setCsvBadge: (key: string, state: 'reflected' | 'modified') => void
 
   handleNext: () => void
-  NavButtons: React.ComponentType<{ onNext: () => void }>
+  NavButtons: React.ComponentType<{ onNext: () => void; error?: string | null }>
 }
 
 export default function StepDispatchContact({
@@ -43,6 +44,9 @@ export default function StepDispatchContact({
   csvBadges, setCsvBadge,
   handleNext, NavButtons,
 }: StepDispatchContactProps) {
+  // 2026-07-22追加（alert/confirm置き換えPhase3・①必須項目チェック）：NavButtonsのerror propに
+  // 渡すためのローカルstate。従来alert()表示していたエラーメッセージをバナー化する。
+  const [stepError, setStepError] = useState<string | null>(null)
   return (
     <>
       <SectionHeader label="指揮命令者" />
@@ -131,15 +135,16 @@ export default function StepDispatchContact({
       </FormRow>
 
       <NavButtons onNext={() => {
-        if (!cmd_dept || !cmd_role || !cmd_name || !cmd_tel) { alert('指揮命令者の全項目を入力してください'); return }
-        if (!resp_dept || !resp_role || !resp_name || !resp_tel) { alert('派遣先責任者の全項目を入力してください'); return }
-        if (!comp_dept || !comp_role || !comp_name || !comp_tel) { alert('苦情処理申出先（派遣先）の全項目を入力してください'); return }
-        if (!welfare) { alert('福利厚生施設の利用等を入力してください'); return }
-        if (!safetyText) { alert('安全及び衛生を入力してください'); return }
-        if (!conflictText) { alert('紛争防止措置を入力してください'); return }
-        if (validateTel(cmd_tel) || validateTel(resp_tel) || validateTel(comp_tel)) { alert('電話番号の形式が正しくありません'); return }
+        if (!cmd_dept || !cmd_role || !cmd_name || !cmd_tel) { setStepError('指揮命令者の全項目を入力してください'); return }
+        if (!resp_dept || !resp_role || !resp_name || !resp_tel) { setStepError('派遣先責任者の全項目を入力してください'); return }
+        if (!comp_dept || !comp_role || !comp_name || !comp_tel) { setStepError('苦情処理申出先（派遣先）の全項目を入力してください'); return }
+        if (!welfare) { setStepError('福利厚生施設の利用等を入力してください'); return }
+        if (!safetyText) { setStepError('安全及び衛生を入力してください'); return }
+        if (!conflictText) { setStepError('紛争防止措置を入力してください'); return }
+        if (validateTel(cmd_tel) || validateTel(resp_tel) || validateTel(comp_tel)) { setStepError('電話番号の形式が正しくありません'); return }
+        setStepError(null)
         handleNext()
-      }} />
+      }} error={stepError} />
     </>
   )
 }

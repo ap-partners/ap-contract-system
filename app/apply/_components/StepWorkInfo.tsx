@@ -5,6 +5,7 @@
 // ロジック・表示は変更なし。状態は親（ApplyPageInner）に残したまま、値とsetter・派生値・
 // 大きな非同期ハンドラ（handleCsvSearch・handleCsvResultSelect）をpropsで受け取る。
 
+import { useState } from 'react'
 import { inp, toHalfWidthDigits, padTwoDigits, TOOLTIPS } from '../_lib/helpers'
 import { Req, FormRow, SectionHeader, EmptyHintBubble, TelInput, RadioGroup } from './FormParts'
 
@@ -80,6 +81,9 @@ export default function StepWorkInfo({
   showEmptyHint,
   validateStep2, handleNext, NavButtons,
 }: StepWorkInfoProps) {
+  // 2026-07-22追加（alert/confirm置き換えPhase3・①必須項目チェック）：NavButtonsのerror propに
+  // 渡すためのローカルstate。従来alert()表示していたエラーメッセージをバナー化する。
+  const [stepError, setStepError] = useState<string | null>(null)
   return (
     <>
       {/* CSV依頼完了画面 */}
@@ -443,9 +447,10 @@ export default function StepWorkInfo({
           )}
           <NavButtons onNext={() => {
             const err = validateStep2()
-            if (err) { alert(err); return }
+            if (err) { setStepError(err); return }
+            setStepError(null)
             handleNext()
-          }} />
+          }} error={stepError} />
         </>
       )}
     </>

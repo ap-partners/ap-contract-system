@@ -4,7 +4,7 @@
 // app/apply/page.tsx の stepType === 'period' ブロックをそのまま切り出したもの。
 // ロジック・表示は変更なし。状態は親（ApplyPageInner）に残したまま、値とsetter・派生値をpropsで受け取る。
 
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { inp, inpDate, TOOLTIPS, isDateBefore, calcTrialMonths } from '../_lib/helpers'
 import { FormRow, SectionHeader, EmptyHintBubble, RadioGroup, CriticalWarning } from './FormParts'
 
@@ -49,7 +49,7 @@ interface StepPeriodProps {
 
   validatePeriod: () => string | null | undefined
   handleNext: () => void
-  NavButtons: React.ComponentType<{ onNext: () => void }>
+  NavButtons: React.ComponentType<{ onNext: () => void; error?: string | null }>
 }
 
 export default function StepPeriod({
@@ -66,6 +66,9 @@ export default function StepPeriod({
   flexTime, setFlexTime, overtime, setOvertime,
   validatePeriod, handleNext, NavButtons,
 }: StepPeriodProps) {
+  // 2026-07-22追加（alert/confirm置き換えPhase3・①必須項目チェック）：NavButtonsのerror propに
+  // 渡すためのローカルstate。従来alert()表示していたエラーメッセージをバナー化する。
+  const [stepError, setStepError] = useState<string | null>(null)
   return (
     <>
       {(pattern === 'B' || pattern === 'C') && (
@@ -272,9 +275,10 @@ export default function StepPeriod({
 
       <NavButtons onNext={() => {
         const err = validatePeriod()
-        if (err) { alert(err); return }
+        if (err) { setStepError(err); return }
+        setStepError(null)
         handleNext()
-      }} />
+      }} error={stepError} />
     </>
   )
 }

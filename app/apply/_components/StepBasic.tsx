@@ -4,8 +4,10 @@
 // app/apply/page.tsx の stepType === 'basic' ブロックをそのまま切り出したもの。
 // ロジック・表示は変更なし。状態は親（ApplyPageInner）に残したまま、値とsetter・派生値をpropsで受け取る。
 
+import { useState } from 'react'
 import { getDocumentTypes } from '../_lib/helpers'
 import { FormRow, SearchInput } from './FormParts'
+import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 
 interface StepBasicProps {
   selectedStaff: any
@@ -63,6 +65,9 @@ export default function StepBasic({
   fullDocumentName, pattern, deptWageMasterMissing,
   handleNext,
 }: StepBasicProps) {
+  // 2026-07-22追加（alert/confirm置き換えPhase3・①必須項目チェック）：「次へ進む」時のalert()を
+  // インライン警告バナー(ValidationBanner)に置き換えるためのローカルstate。
+  const [stepError, setStepError] = useState<string | null>(null)
   return (
     <>
       <FormRow label="対象スタッフ" required>
@@ -402,11 +407,17 @@ export default function StepBasic({
             </div>
           )}
 
+          {stepError && (
+            <div className="px-5">
+              <ValidationBanner message={stepError} />
+            </div>
+          )}
           <div className="border-t px-5 py-4 flex justify-end" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
             <button onClick={e => {
               e.preventDefault()
-              if (!selectedStaff || !documentType || !contractType) { alert('すべての項目を選択してください'); return }
-              if (deptWageMasterMissing) { alert('この部門は最低賃金マスタが未登録のため、申請できません。管理部にお問い合わせください。'); return }
+              if (!selectedStaff || !documentType || !contractType) { setStepError('すべての項目を選択してください'); return }
+              if (deptWageMasterMissing) { setStepError('この部門は最低賃金マスタが未登録のため、申請できません。管理部にお問い合わせください。'); return }
+              setStepError(null)
               handleNext()
             }} disabled={deptWageMasterMissing}
               className="text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-all"

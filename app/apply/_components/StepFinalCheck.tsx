@@ -6,9 +6,11 @@
 // 関数をpropsで受け取る。router.push()だけは next/navigation の useRouter() を直接呼び出す
 // （next/navigationのuseRouter自体は親と同じシングルトンのため挙動は変わらない）。
 
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CLOSING_PATTERNS, parseAmount } from '../_lib/helpers'
 import { FinalSection, FinalRow, FinalGroupHeader, CriticalWarning, AutoBadge } from './FormParts'
+import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 
 type TrialCalc = { over6: boolean; months: number; days: number } | null
 
@@ -133,6 +135,9 @@ export default function StepFinalCheck({
   handleBack,
 }: StepFinalCheckProps) {
   const router = useRouter()
+  // 2026-07-22追加（alert/confirm置き換えPhase3・①必須項目チェック）：CSV反映項目修正の確認チェック
+  // 忘れによるalert()をインライン警告バナーに置き換えるためのローカルstate。
+  const [checkboxError, setCheckboxError] = useState<string | null>(null)
 
   return (
     <>
@@ -386,6 +391,11 @@ export default function StepFinalCheck({
           />
         )}
 
+        {checkboxError && (
+          <div className="mb-3">
+            <ValidationBanner message={checkboxError} />
+          </div>
+        )}
         {submitError && (
           <div className="rounded-lg px-4 py-3 mb-3 border" style={{ background: '#FEF2F2', borderColor: '#DC2626' }}>
             <p className="text-xs leading-relaxed" style={{ color: '#DC2626' }}>{submitError}</p>
@@ -396,9 +406,10 @@ export default function StepFinalCheck({
           disabled={isSubmitting}
           onClick={() => {
             if (hasCsvModifiedFields && !csvModWarningChecked) {
-              alert('CSV反映項目の修正について、内容を確認しチェックを入れてください')
+              setCheckboxError('CSV反映項目の修正について、内容を確認しチェックを入れてください')
               return
             }
+            setCheckboxError(null)
             setShowConfirmModal(true)
           }}
           className="w-full py-3.5 rounded-lg text-white font-bold text-sm mb-2 mt-3"

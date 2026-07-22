@@ -28,6 +28,7 @@ import {
 import { buildMergedFields } from '@/app/dashboard/_shared/renewalFieldMap'
 import { excludeRetiredStaffOr } from '@/lib/staffFilters'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
+import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 import StepSourceContact from './_components/StepSourceContact'
 import StepDispatchContact from './_components/StepDispatchContact'
 import StepContractCondition from './_components/StepContractCondition'
@@ -1322,7 +1323,7 @@ function ApplyPageInner() {
 
   const handleSubmitRequest = async () => {
     const err = validateRequestForm()
-    if (err) { alert(err); return }
+    if (err) { setReqError(err); return }
     if (reqSubmitting) return // 二重送信防止
     setReqSubmitting(true)
     setReqError('')
@@ -1656,15 +1657,25 @@ function ApplyPageInner() {
 
   const remarksText = getRemarksText(pattern, contractType, bonusType)
 
-  const NavButtons = ({ onNext }: { onNext: () => void }) => (
-    <div className="border-t px-5 py-4 flex justify-between" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
-      <button onClick={e => { e.preventDefault(); handleBack() }}
-        className="bg-white border px-5 py-2.5 rounded-lg text-sm transition-all"
-        style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>← 前へ</button>
-      <button onClick={e => { e.preventDefault(); onNext() }}
-        className="text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-all"
-        style={{ background: '#1B3A8C' }}>次へ進む →</button>
-    </div>
+  // 2026-07-22追加（alert/confirm置き換えPhase3・①必須項目チェック）：各Stepコンポーネントの
+  // 「次へ進む」チェックalert()をインライン警告バナーに置き換えるため、error propを追加。
+  // 各Stepコンポーネント側でローカルstateを持ち、バリデーション失敗時にerrorを渡す。
+  const NavButtons = ({ onNext, error }: { onNext: () => void; error?: string | null }) => (
+    <>
+      {error && (
+        <div className="px-5">
+          <ValidationBanner message={error} />
+        </div>
+      )}
+      <div className="border-t px-5 py-4 flex justify-between" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
+        <button onClick={e => { e.preventDefault(); handleBack() }}
+          className="bg-white border px-5 py-2.5 rounded-lg text-sm transition-all"
+          style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>← 前へ</button>
+        <button onClick={e => { e.preventDefault(); onNext() }}
+          className="text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-all"
+          style={{ background: '#1B3A8C' }}>次へ進む →</button>
+      </div>
+    </>
   )
 
   return (

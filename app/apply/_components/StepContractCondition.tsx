@@ -4,6 +4,7 @@
 // app/apply/page.tsx の stepType === 'contractCondition' ブロックをそのまま切り出したもの。
 // ロジック・表示は変更なし。状態は親（ApplyPageInner）に残したまま、値とsetterをpropsで受け取る。
 
+import { useState } from 'react'
 import { CLOSING_PATTERNS, needsBonusSelection } from '../_lib/helpers'
 import { FormRow, SectionHeader } from './FormParts'
 
@@ -20,7 +21,7 @@ interface StepContractConditionProps {
   remarksText: string
 
   handleNext: () => void
-  NavButtons: React.ComponentType<{ onNext: () => void }>
+  NavButtons: React.ComponentType<{ onNext: () => void; error?: string | null }>
 }
 
 export default function StepContractCondition({
@@ -30,6 +31,9 @@ export default function StepContractCondition({
   remarksText,
   handleNext, NavButtons,
 }: StepContractConditionProps) {
+  // 2026-07-22追加（alert/confirm置き換えPhase3・①必須項目チェック）：NavButtonsのerror propに
+  // 渡すためのローカルstate。従来alert()表示していたエラーメッセージをバナー化する。
+  const [stepError, setStepError] = useState<string | null>(null)
   return (
     <>
       <SectionHeader label="締結パターン" />
@@ -94,10 +98,11 @@ export default function StepContractCondition({
       )}
 
       <NavButtons onNext={() => {
-        if (!closingPattern) { alert('締結パターンを選択してください'); return }
-        if (needsBonusSelection(pattern, contractType) && !bonusType) { alert('賞与の有無を選択してください'); return }
+        if (!closingPattern) { setStepError('締結パターンを選択してください'); return }
+        if (needsBonusSelection(pattern, contractType) && !bonusType) { setStepError('賞与の有無を選択してください'); return }
+        setStepError(null)
         handleNext()
-      }} />
+      }} error={stepError} />
     </>
   )
 }

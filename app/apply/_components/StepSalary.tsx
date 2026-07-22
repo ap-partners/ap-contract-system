@@ -4,6 +4,7 @@
 // app/apply/page.tsx の stepType === 'salary' ブロックをそのまま切り出したもの。
 // ロジック・表示は変更なし。状態は親（ApplyPageInner）に残したまま、値とsetter・派生値をpropsで受け取る。
 
+import { useState } from 'react'
 import { TRANSPORT_TYPES, toHalfWidthDigits } from '../_lib/helpers'
 import { FormRow, SectionHeader, CriticalWarning } from './FormParts'
 
@@ -36,7 +37,7 @@ interface StepSalaryProps {
 
   validateSalary: () => string | null | undefined
   handleNext: () => void
-  NavButtons: React.ComponentType<{ onNext: () => void }>
+  NavButtons: React.ComponentType<{ onNext: () => void; error?: string | null }>
 }
 
 export default function StepSalary({
@@ -51,6 +52,9 @@ export default function StepSalary({
   insurancePreview, deductionText,
   validateSalary, handleNext, NavButtons,
 }: StepSalaryProps) {
+  // 2026-07-22追加（alert/confirm置き換えPhase3・①必須項目チェック）：NavButtonsのerror propに
+  // 渡すためのローカルstate。従来alert()表示していたエラーメッセージをバナー化する。
+  const [stepError, setStepError] = useState<string | null>(null)
   return (
     <>
       <SectionHeader label="賃金" />
@@ -267,9 +271,10 @@ export default function StepSalary({
 
       <NavButtons onNext={() => {
         const err = validateSalary()
-        if (err) { alert(err); return }
+        if (err) { setStepError(err); return }
+        setStepError(null)
         handleNext()
-      }} />
+      }} error={stepError} />
     </>
   )
 }

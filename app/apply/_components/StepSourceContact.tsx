@@ -4,6 +4,7 @@
 // app/apply/page.tsx の stepType === 'sourceContact' ブロックをそのまま切り出したもの。
 // ロジック・表示は変更なし。状態は親（ApplyPageInner）に残したまま、値とsetterをpropsで受け取る。
 
+import { useState } from 'react'
 import { inp, validateTel } from '../_lib/helpers'
 import { FormRowAuto, SectionHeader, TelInput } from './FormParts'
 
@@ -32,7 +33,7 @@ interface StepSourceContactProps {
   setCmpTel: (v: string) => void
 
   handleNext: () => void
-  NavButtons: React.ComponentType<{ onNext: () => void }>
+  NavButtons: React.ComponentType<{ onNext: () => void; error?: string | null }>
 }
 
 export default function StepSourceContact({
@@ -41,6 +42,9 @@ export default function StepSourceContact({
   cmp_dept, cmp_role, cmp_name, cmp_tel, setCmpDept, setCmpRole, setCmpName, setCmpTel,
   handleNext, NavButtons,
 }: StepSourceContactProps) {
+  // 2026-07-22追加（alert/confirm置き換えPhase3・①必須項目チェック）：NavButtonsのerror propに
+  // 渡すためのローカルstate。従来alert()表示していたエラーメッセージをバナー化する。
+  const [stepError, setStepError] = useState<string | null>(null)
   return (
     <>
       <div className="px-5 py-3 border-b text-sm" style={{ background: '#EEF2FA', borderColor: '#D0DAF0', color: '#5A6A8A' }}>
@@ -81,11 +85,12 @@ export default function StepSourceContact({
         <TelInput value={cmp_tel} onChange={setCmpTel} />
       </FormRowAuto>
       <NavButtons onNext={() => {
-        if (!mgr_dept || !mgr_role || !mgr_name || !mgr_tel) { alert('派遣元責任者の全項目を入力してください'); return }
-        if (!cmp_dept || !cmp_role || !cmp_name || !cmp_tel) { alert('苦情処理申出先（派遣元）の全項目を入力してください'); return }
-        if (validateTel(mgr_tel) || validateTel(cmp_tel)) { alert('電話番号の形式が正しくありません'); return }
+        if (!mgr_dept || !mgr_role || !mgr_name || !mgr_tel) { setStepError('派遣元責任者の全項目を入力してください'); return }
+        if (!cmp_dept || !cmp_role || !cmp_name || !cmp_tel) { setStepError('苦情処理申出先（派遣元）の全項目を入力してください'); return }
+        if (validateTel(mgr_tel) || validateTel(cmp_tel)) { setStepError('電話番号の形式が正しくありません'); return }
+        setStepError(null)
         handleNext()
-      }} />
+      }} error={stepError} />
     </>
   )
 }

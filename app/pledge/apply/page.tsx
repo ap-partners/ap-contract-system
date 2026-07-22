@@ -35,7 +35,7 @@ const MAX_SHIFT_ROWS = 5
 const PLEDGE_TRANSPORT_TYPES = [
   {
     id: 'default',
-    label: '実費または定期代（デフォルト）',
+    label: '実費または定期代',
     icon: '/icons/transport-pass.png',
     preview: '実費または定期代(デフォルト)\n原則として定期代支給　①最寄駅から勤務先までの最安経路での定期代とする。②支払上限は3万円/月とする。③交通費明細書及び定期ICカードの写し（エビデンス）が必要。ICカードは各自で用意。④エビデンスの提出確認が取れない交通費は、支払い対象外とする。',
   },
@@ -609,10 +609,10 @@ export default function PledgeApplyPage() {
                           <PledgeIcon name={v === 'client' ? 'store' : 'building'} className="w-5 h-5" style={{ color: selected ? 'white' : '#1B3A8C' }} />
                         </div>
                         <p className="text-sm font-bold" style={{ color: selected ? '#1B3A8C' : '#1A2340' }}>
-                          {v === 'client' ? 'クライアント先' : '自社（研修等）'}
+                          {v === 'client' ? 'クライアント先' : '自社拠点'}
                         </p>
                         <p className="text-xs mt-1 leading-relaxed" style={{ color: '#5A6A8A' }}>
-                          {v === 'client' ? '外部の就業先で勤務する場合' : '自社拠点での研修等の場合'}
+                          {v === 'client' ? '外部の就業先で勤務する場合' : '自社拠点での勤務の場合'}
                         </p>
                       </button>
                     )
@@ -663,16 +663,16 @@ export default function PledgeApplyPage() {
                     {'選択したパターンによって、発行される書類の枚数が変わります。\n下から働き方に合うものを選んでください。'}
                   </p>
                 </div>
-                <div className="grid grid-cols-3 gap-2 max-w-2xl mb-2">
+                <div className="grid grid-cols-3 gap-2 max-w-2xl mb-2 items-stretch">
                   {([
-                    { id: 'single_multi', label: '単日・複数日選択', desc: '特定の日を1日ずつ登録\n（例：7/1と7/23）\n→選んだ日数分、書類を発行', icon: 'calendarMulti' },
-                    { id: 'range', label: '期間指定', desc: '開始日〜終了日で契約\n（例：8/1〜8/10）\n→期間全体で書類を1枚発行', icon: 'calendarRange' },
-                    { id: 'mix', label: 'MIX', desc: '期間指定に単日も追加可能\n→期間分1枚＋単日ごとに1枚発行', icon: 'calendarMix' },
+                    { id: 'single_multi', label: '単日・複数日選択', desc: '特定の日を1日ずつ登録\n登録日数分の書類を発行', icon: 'calendarMulti' },
+                    { id: 'range', label: '期間指定', desc: '開始日〜終了日で登録\n期間全体で書類1枚発行', icon: 'calendarRange' },
+                    { id: 'mix', label: 'MIX', desc: '期間と単日の両方登録\n期間で1枚+単日ごとに1枚発行', icon: 'calendarMix' },
                   ] as const).map(p => {
                     const selected = periodPattern === p.id
                     return (
                       <button key={p.id} onClick={e => { e.preventDefault(); setPeriodPattern(p.id) }}
-                        className="relative text-left p-3 rounded-xl border-2 transition-all"
+                        className="relative flex flex-col text-left p-3 rounded-xl border-2 transition-all h-full"
                         style={{ borderColor: selected ? '#1B3A8C' : '#D0DAF0', background: selected ? '#EEF2FA' : 'white' }}>
                         {selected && (
                           <span className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center" style={{ background: '#1B3A8C' }}>
@@ -817,19 +817,19 @@ export default function PledgeApplyPage() {
                             className="border rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                         </div>
                         <div className="flex flex-col gap-1">
-                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>所定労働時間（自動計算）</label>
-                          <div className="flex items-center gap-1">
-                            <input type="text" value={s.contractHours} readOnly
-                              placeholder="開始・終了・休憩を入力すると自動計算されます" className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-full placeholder:text-gray-400" style={{ borderColor: '#D0DAF0', color: '#1A2340', background: '#F0F2F7' }} />
-                            <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>時間</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-1">
                           <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>休憩時間</label>
                           <div className="flex items-center gap-1">
                             <input type="text" value={s.breakMinutes} onChange={e => updateShift(idx, { breakMinutes: toHalfWidthDigits(e.target.value) })}
                               placeholder="例）60" className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none bg-white w-full placeholder:text-gray-400" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                             <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>分</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>所定労働時間（自動計算）</label>
+                          <div className="flex items-center gap-1">
+                            <input type="text" value={s.contractHours} readOnly
+                              placeholder="自動計算" className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-full placeholder:text-gray-400" style={{ borderColor: '#D0DAF0', color: '#1A2340', background: '#F0F2F7' }} />
+                            <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>時間</span>
                           </div>
                         </div>
                       </div>
@@ -940,7 +940,7 @@ export default function PledgeApplyPage() {
           {/* ===== STEP5：最終確認・送信 ===== */}
           {currentStep === 5 && (
             isSubmitted ? (
-              <div className="px-5 py-14 flex flex-col items-center gap-4">
+              <div className="px-5 py-14 flex flex-col items-center gap-4" style={{ background: 'white' }}>
                 <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: '#EEF2FA' }}>
                   <PledgeIcon name="check" className="w-7 h-7" style={{ color: '#1B3A8C' }} />
                 </div>
@@ -973,7 +973,7 @@ export default function PledgeApplyPage() {
 
                   <PledgeFinalSection id="s2" title="STEP2：就業先情報・雇用期間" sub="就業先の情報と雇用期間"
                     collapsedSections={collapsedSections} setCollapsedSections={setCollapsedSections} onEdit={() => setCurrentStep(2)}>
-                    <PledgeFinalRow label="就業先区分" value={workPlaceType === 'client' ? 'クライアント先' : '自社（研修等）'} />
+                    <PledgeFinalRow label="就業先区分" value={workPlaceType === 'client' ? 'クライアント先' : '自社拠点'} />
                     <PledgeFinalRow label="就業先"
                       value={workPlaceType === 'client'
                         ? `${clientName}\n〒${clientPostalCode}　${clientAddress}\nTEL：${clientTel}`

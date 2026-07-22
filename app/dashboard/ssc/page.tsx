@@ -373,6 +373,13 @@ export default function SSCDashboard() {
 
           <div className="flex items-center gap-3">
             <button
+              onClick={() => router.push('/apply')}
+              className="flex h-12 shrink-0 items-center gap-2 whitespace-nowrap rounded-2xl bg-[#2F5FD0] px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(47,95,208,.22)] transition hover:-translate-y-0.5 hover:bg-[#244CB3] hover:shadow-[0_15px_34px_rgba(47,95,208,.26)]"
+            >
+              <Icon name="plus" className="h-4 w-4" />
+              雇用契約書 新規発行
+            </button>
+            <button
               onClick={() => router.push('/pledge/apply')}
               className="flex h-12 shrink-0 items-center gap-2 whitespace-nowrap rounded-2xl bg-[#F59E42] px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(245,158,66,.2)] transition hover:-translate-y-0.5 hover:bg-[#E88525] hover:shadow-[0_15px_34px_rgba(245,158,66,.28)]"
             >

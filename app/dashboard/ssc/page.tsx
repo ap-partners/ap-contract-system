@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
 import { supabase, getAuthHeader } from '@/lib/supabase'
+import { useSessionCollisionGuard } from '@/lib/useSessionCollisionGuard'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import {
@@ -144,6 +145,9 @@ const Icon = ({ name, className = '' }: { name: IconName; className?: string }) 
 export default function SSCDashboard() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
+  // 総合レビュー（QA監査2026-07-22）指摘C1対応：別タブで別アカウントにログインされ
+  // 認証情報が裏で切り替わったことを検知したら、安全のため強制ログアウトする
+  useSessionCollisionGuard(user?.id)
   // 「承認待ち」「差し戻し中」は対応が終われば別タブへ移るフロー型のため、件数は自然に少数のまま
   // 留まる。全件取得のままで問題ない（docs/SYSTEM_DESIGN.md 10章 2026-07-14参照）。
   const [flowContracts, setFlowContracts] = useState<Contract[]>([])

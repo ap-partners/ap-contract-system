@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { supabase, getAuthHeader } from '@/lib/supabase'
+import { useSessionCollisionGuard } from '@/lib/useSessionCollisionGuard'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import {
@@ -193,6 +194,9 @@ const SignDeadlineBadge = ({ signRequestedAt }: { signRequestedAt: string | null
 export default function SalesDashboard() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
+  // 総合レビュー（QA監査2026-07-22）指摘C1対応：別タブで別アカウントにログインされ
+  // 認証情報が裏で切り替わったことを検知したら、安全のため強制ログアウトする
+  useSessionCollisionGuard(user?.id)
   const [deptLookupError, setDeptLookupError] = useState('')
   // 「完了」（署名済み・完了）は蓄積型のため共通フックで直近45日・ページ単位で取得する。
   // それ以外（進行中・要説明・差し戻し・署名待ち）はフロー型なので全件取得のまま。

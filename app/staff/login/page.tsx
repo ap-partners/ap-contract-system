@@ -214,6 +214,7 @@ export default function StaffLoginPage() {
                     <input
                       type="text"
                       inputMode="numeric"
+                      autoComplete="off"
                       value={employeeNumber}
                       onChange={e => setEmployeeNumber(e.target.value)}
                       placeholder="100047"
@@ -282,6 +283,7 @@ export default function StaffLoginPage() {
                   <input
                     type="text"
                     inputMode="numeric"
+                    autoComplete="off"
                     value={employeeNumber}
                     onChange={e => setEmployeeNumber(e.target.value)}
                     placeholder="100047"

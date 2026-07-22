@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase, getAuthHeader } from '@/lib/supabase'
+import { useSessionCollisionGuard } from '@/lib/useSessionCollisionGuard'
 import { useRouter, useParams } from 'next/navigation'
 import Image from 'next/image'
 
@@ -235,6 +236,9 @@ export default function SalesContractDetail() {
   const id = params?.id as string
 
   const [user, setUser] = useState<any>(null)
+  // 総合レビュー（QA監査2026-07-22）指摘C1対応：別タブで別アカウントにログインされ
+  // 認証情報が裏で切り替わったことを検知したら、安全のため強制ログアウトする
+  useSessionCollisionGuard(user?.id)
   const [contract, setContract] = useState<ContractDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)

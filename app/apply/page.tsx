@@ -1134,6 +1134,26 @@ function ApplyPageInner() {
         warning_level: warningLevel,
       }
 
+      // 総合レビュー（QA監査2026-07-22）指摘C2対応：新規申請（editContractIdが無い場合）の直前に、
+      // 同一スタッフ・同一書類種別で既に「申請中」の契約が無いかを確認する。ほぼ同時に同じスタッフの
+      // 契約を2件申請してしまうと、SSC・管理部の一覧に重複案件が並び混乱するため。
+      // 同一スタッフでも書類種別が異なれば（雇用契約書と就業条件明示書を別々に申請するパターンB運用等）
+      // 正当な同時申請となるため、document_typeも条件に含めて誤検知を防ぐ。
+      if (!editContractId && selectedStaff?.id) {
+        const { data: duplicateRows } = await supabase
+          .from('contracts')
+          .select('id')
+          .eq('staff_id', selectedStaff.id)
+          .eq('document_type', documentType)
+          .eq('status', '申請中')
+          .limit(1)
+        if (duplicateRows && duplicateRows.length > 0) {
+          setSubmitError('このスタッフについて、同じ書類種別の「申請中」の案件が既に存在します。重複申請を防ぐため、この画面からの送信は行えません。既存の申請状況をダッシュボードでご確認ください。')
+          setIsSubmitting(false)
+          return
+        }
+      }
+
       // 再申請（update）は、画面を開いたままの間に他の人が処理を進めている可能性があるため、
       // 保存直前に status='差し戻し中' であることも条件に含める（指摘15対応）。
       // これが無いと、承認済み等に進んだ契約を古い画面からの送信で上書きしてしまう恐れがある。

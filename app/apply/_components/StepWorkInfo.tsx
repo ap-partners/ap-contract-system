@@ -319,7 +319,8 @@ export default function StepWorkInfo({
               value={businessContent}
               onChange={e => { setBusinessContent(e.target.value) }}
               onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }}
-              placeholder="例）携帯電話販売促進業務" />
+              placeholder="例）携帯電話販売促進業務"
+              maxLength={2000} />
             <p className="text-xs" style={{ color: '#5A6A8A' }}>Enterキーでの改行はできません</p>
           </FormRow>
 

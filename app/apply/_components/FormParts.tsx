@@ -276,8 +276,11 @@ export const ModeToggle = ({ mode, onChange }: { mode: 'default' | 'new'; onChan
   </div>
 )
 
-export const NoBreakTextarea = ({ value, onChange, placeholder, minHeight = '60px', bg = 'white' }: {
-  value: string; onChange: (v: string) => void; placeholder?: string; minHeight?: string; bg?: string
+// 総合レビュー（QA監査2026-07-22）指摘B1対応：自由記述欄に文字数上限が無かったため、
+// 既定で2000文字までに制限する（帳票に埋め込む文言として現実的に十分な長さで、通常の
+// 入力を妨げない値。呼び出し側で個別に上限を変えたい場合はmaxLengthを指定できる）。
+export const NoBreakTextarea = ({ value, onChange, placeholder, minHeight = '60px', bg = 'white', maxLength = 2000 }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; minHeight?: string; bg?: string; maxLength?: number
 }) => (
   <textarea
     className="w-full text-sm rounded-lg px-3 py-2 border focus:outline-none placeholder:text-gray-400"
@@ -286,6 +289,7 @@ export const NoBreakTextarea = ({ value, onChange, placeholder, minHeight = '60p
     onChange={e => onChange(e.target.value)}
     onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }}
     placeholder={placeholder}
+    maxLength={maxLength}
   />
 )
 

@@ -286,8 +286,11 @@ export default function SignPage() {
                       height={280}
                       style={{ width: 140, height: 140 }}
                     />
-                    {/* 実際にPDFへ埋め込む高解像度版（非表示・同じ内容を大きめに描画） */}
-                    <canvas ref={exportCanvasRef} width={280} height={280} style={{ display: 'none' }} />
+                    {/* 実際にPDFへ埋め込む高解像度版（非表示・同じ内容を大きめに描画。
+                        drawSeal()はcanvas.widthを基準に全要素を比率で描くため、
+                        サイズを変えるだけで印刷時の粗さを改善できる。2026-07-22：
+                        プレビューと同じ280pxのままだった不一致を修正し560pxに拡大。） */}
+                    <canvas ref={exportCanvasRef} width={560} height={560} style={{ display: 'none' }} />
                   </div>
 
                   <label className="flex items-start gap-2 cursor-pointer">

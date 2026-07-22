@@ -12,7 +12,8 @@ export type StatusOption = { value: string; label: string }
 export type SortOption<T> = { key: string; label: string; compare: (a: T, b: T) => number }
 
 export type ContractListToolbarConfig<T> = {
-  // ステータス別の絞り込みピル。2件未満（「すべて」しか出せない場合）は行自体を表示しない。
+  // ステータス別の絞り込みピル。実装は「1件も無い（未設定）」場合のみ行自体を非表示にする
+  // （長らくコメントが「2件未満」となっていたが実装は`length > 0`判定。2026-07-22訂正）。
   statusOptions?: StatusOption[]
   // 並び替えの選択肢。先頭がデフォルトの並び順になる。
   sortOptions: SortOption<T>[]

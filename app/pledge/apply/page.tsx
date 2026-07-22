@@ -23,17 +23,41 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { excludeRetiredStaffOr } from '@/lib/staffFilters'
-import { TRANSPORT_TYPES, SALARY_RULES, toHalfWidthDigits, parseAmount } from '@/app/apply/_lib/helpers'
+import { SALARY_RULES, toHalfWidthDigits, parseAmount } from '@/app/apply/_lib/helpers'
 import { WAGE_PAYMENT_TEXT } from '@/lib/pdf/documentText'
 
 const DOCUMENT_TYPES = ['AP・CL研修用', 'CP・SPOT用'] as const
 const STEP_LABELS = ['スタッフ・帳票種別', '就業先情報・雇用期間', '業務内容・就業時間', '給与', '最終確認']
 const MAX_SHIFT_ROWS = 5
 
-type ShiftRow = { start: string; end: string; contractHours: string; breakMinutes: string; breakTimeRange: string }
-const emptyShiftRow = (): ShiftRow => ({ start: '', end: '', contractHours: '', breakMinutes: '', breakTimeRange: '' })
+// アルバイト誓約書専用の交通費区分（2026-07-22伊藤さん指摘：「定期代＋ガソリン代」はこのファイルのみ除外。
+// 雇用契約書(/apply)側の共通TRANSPORT_TYPESは変更せず、影響範囲をこのファイルに限定するためローカルに複製）
+const PLEDGE_TRANSPORT_TYPES = [
+  {
+    id: 'default',
+    label: '実費または定期代（デフォルト）',
+    icon: '/icons/transport-pass.png',
+    preview: '実費または定期代(デフォルト)\n原則として定期代支給　①最寄駅から勤務先までの最安経路での定期代とする。②支払上限は3万円/月とする。③交通費明細書及び定期ICカードの写し（エビデンス）が必要。ICカードは各自で用意。④エビデンスの提出確認が取れない交通費は、支払い対象外とする。',
+  },
+  {
+    id: 'included',
+    label: '交通費込',
+    icon: '/icons/transport-included.png',
+    preview: '交通費込\n基本給に含む。但し、業務交通費については定期区間外のみ実費支給とする。※定期区間とは、自宅～就業場所までの最適経路とする。',
+  },
+  {
+    id: 'gas',
+    label: 'ガソリン代',
+    icon: '/icons/transport-gas.png',
+    preview: 'ガソリン代\n私有車通勤：ガソリン代支給　【 12円 / km】\n①別途私有車通勤を許可する書面を提出し、規定を遵守すること。②その他上記以外の業務交通費については実費支給とする。③実費支給の場合、エビデンスの提出確認が取れない交通費は、支払い対象外とする。',
+  },
+]
+
+type ShiftRow = { start: string; end: string; contractHours: string; breakMinutes: string }
+const emptyShiftRow = (): ShiftRow => ({ start: '', end: '', contractHours: '', breakMinutes: '' })
 
 type Office = { id: string; office_name: string; postal_code: string | null; address: string | null; tel: string | null }
+type WorkDescriptionTemplate = { id: string; template_text: string }
 
 // ===== アイコン（ダッシュボード画面のIcon実装と同じ手描きSVG方式。Tabler等の外部アイコンフォントは
 //      本アプリでは一切読み込んでいないため使用不可。viewBox・ストローク仕様を既存画面に合わせている） =====
@@ -144,17 +168,17 @@ export default function PledgeApplyPage() {
   // ===== STEP3：業務内容・就業時間 =====
   const [workDescription, setWorkDescription] = useState('')
   const [shifts, setShifts] = useState<ShiftRow[]>([emptyShiftRow()])
+  const [workDescriptionTemplates, setWorkDescriptionTemplates] = useState<WorkDescriptionTemplate[]>([])
 
-  // ===== STEP4：給与（StepSalaryの賃金・交通費ブロックの簡略版。保険ブロックなし） =====
+  // ===== STEP4：給与（StepSalaryの賃金・交通費ブロックの簡略版。保険ブロックなし。
+  //      2026-07-22伊藤さん指摘によりアルバイト向けに簡略化：月給・定額残業手当・住宅手当は削除、
+  //      月額換算基準は1日7時間×20日（140時間）に変更） =====
   const [salaryType, setSalaryType] = useState('時給')
   const [basicSalary, setBasicSalary] = useState('')
   const [rolePay, setRolePay] = useState('')
   const [skillPay, setSkillPay] = useState('')
   const [salesPay, setSalesPay] = useState('')
-  const [overtimePay, setOvertimePay] = useState('')
-  const [overtimeHours, setOvertimeHours] = useState('')
-  const [housingPay, setHousingPay] = useState('')
-  const [transportType, setTransportType] = useState(TRANSPORT_TYPES[0].id)
+  const [transportType, setTransportType] = useState(PLEDGE_TRANSPORT_TYPES[0].id)
   const [salaryWarningChecked, setSalaryWarningChecked] = useState(false)
 
   const basicSalaryError = (() => {
@@ -166,34 +190,23 @@ export default function PledgeApplyPage() {
     return null
   })()
 
-  const overtimeHoursError = (() => {
-    const pay = parseAmount(overtimePay)
-    const hours = parseAmount(overtimeHours)
-    if (pay < 1) return null
-    if (hours === 0) return '時間数を入力してください'
-    if (hours < 5 || hours > 60) return '時間数は5以上60以下で入力してください'
-    return null
-  })()
-
-  const allowancesTotal = parseAmount(skillPay) + parseAmount(rolePay) + parseAmount(salesPay) + parseAmount(housingPay) + parseAmount(overtimePay)
+  const allowancesTotal = parseAmount(skillPay) + parseAmount(rolePay) + parseAmount(salesPay)
   const salaryTotal = (() => {
     const basic = parseAmount(basicSalary)
-    if (salaryType === '時給') return basic * 160 + allowancesTotal
+    if (salaryType === '時給') return basic * 140 + allowancesTotal
     return basic + allowancesTotal
   })()
   const hourlyMonthlyBreakdown = (() => {
     if (salaryType !== '時給') return null
     const basic = parseAmount(basicSalary)
     if (!basic) return null
-    const lines = [`基本給：${basic.toLocaleString()}円 × 160時間 = ${(basic * 160).toLocaleString()}円`]
+    const lines = [`基本給：${basic.toLocaleString()}円 × 140時間 = ${(basic * 140).toLocaleString()}円`]
     if (parseAmount(rolePay) > 0) lines.push(`役職手当：${parseAmount(rolePay).toLocaleString()}円`)
     if (parseAmount(skillPay) > 0) lines.push(`職能給：${parseAmount(skillPay).toLocaleString()}円`)
     if (parseAmount(salesPay) > 0) lines.push(`営業手当：${parseAmount(salesPay).toLocaleString()}円`)
-    if (parseAmount(overtimePay) > 0) lines.push(`定額残業手当：${parseAmount(overtimePay).toLocaleString()}円（${parseAmount(overtimeHours)}時間分）`)
-    if (parseAmount(housingPay) > 0) lines.push(`住宅手当：${parseAmount(housingPay).toLocaleString()}円`)
     return lines
   })()
-  const selectedTransport = TRANSPORT_TYPES.find(t => t.id === transportType) || TRANSPORT_TYPES[0]
+  const selectedTransport = PLEDGE_TRANSPORT_TYPES.find(t => t.id === transportType) || PLEDGE_TRANSPORT_TYPES[0]
 
   // ===== STEP5：最終確認・保存 =====
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -231,6 +244,15 @@ export default function PledgeApplyPage() {
       setOffices(data || [])
     }
     loadOffices()
+  }, [])
+
+  // 業務内容テンプレートマスタの読み込み（STEP3で使用。2026-07-22追加）
+  useEffect(() => {
+    const loadTemplates = async () => {
+      const { data } = await supabase.from('work_description_templates').select('id, template_text').order('sort_order', { ascending: true })
+      setWorkDescriptionTemplates(data || [])
+    }
+    loadTemplates()
   }, [])
 
   const handleSearch = useCallback(async (query: string) => {
@@ -309,7 +331,6 @@ export default function PledgeApplyPage() {
   const validateSalary = (): string | null => {
     if (!basicSalary) return '基本給を入力してください'
     if (basicSalaryError) return basicSalaryError
-    if (overtimeHoursError) return overtimeHoursError
     if (salaryTotal > 1000000 && !salaryWarningChecked) return '合計支給額が100万円超の警告について、上長の了承確認が必要です'
     return null
   }
@@ -350,7 +371,7 @@ export default function PledgeApplyPage() {
         periodPattern,
         documentPeriods,
         salary: {
-          salaryType, basicSalary, rolePay, skillPay, salesPay, overtimePay, overtimeHours, housingPay,
+          salaryType, basicSalary, rolePay, skillPay, salesPay,
           salaryTotal, transportType,
         },
         wagePaymentText: WAGE_PAYMENT_TEXT,
@@ -542,8 +563,13 @@ export default function PledgeApplyPage() {
                     const selected = workPlaceType === v
                     return (
                       <button key={v} onClick={e => { e.preventDefault(); setWorkPlaceType(v) }}
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-md text-sm transition-all"
-                        style={{ background: selected ? '#1B3A8C' : 'transparent', color: selected ? 'white' : '#5A6A8A', fontWeight: selected ? 600 : 400 }}>
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-md text-sm border transition-all hover:bg-white"
+                        style={{
+                          background: selected ? '#1B3A8C' : 'white',
+                          color: selected ? 'white' : '#5A6A8A',
+                          fontWeight: selected ? 600 : 500,
+                          borderColor: selected ? '#1B3A8C' : '#D0DAF0',
+                        }}>
                         <PledgeIcon name={v === 'client' ? 'store' : 'building'} className="w-4 h-4" />
                         {v === 'client' ? 'クライアント先' : '自社（研修等）'}
                       </button>
@@ -589,12 +615,15 @@ export default function PledgeApplyPage() {
               </FormRow>
 
               <FormRow label="雇用期間の指定方法" required>
-                <p className="text-xs -mt-1 mb-1" style={{ color: '#5A6A8A' }}>選択したパターンによって、発行される書類の枚数が変わります。</p>
+                <div className="flex items-center gap-2 rounded-lg px-3 py-2 mb-1" style={{ background: '#EEF2FA', border: '1px solid #D0DAF0' }}>
+                  <PledgeIcon name="check" className="w-4 h-4 shrink-0" style={{ color: '#1B3A8C' }} />
+                  <p className="text-xs font-bold" style={{ color: '#1B3A8C' }}>選択したパターンによって、発行される書類の枚数が変わります。下から働き方に合うものを選んでください。</p>
+                </div>
                 <div className="grid grid-cols-3 gap-2 max-w-2xl mb-2">
                   {([
-                    { id: 'single_multi', label: '単日・複数日選択', desc: '選択した日数分、各1枚発行', icon: 'calendarMulti' },
-                    { id: 'range', label: '期間指定', desc: '期間で1枚発行', icon: 'calendarRange' },
-                    { id: 'mix', label: 'MIX', desc: '期間分1枚＋単日ごと各1枚', icon: 'calendarMix' },
+                    { id: 'single_multi', label: '単日・複数日選択', desc: '特定の日を1日ずつ登録（例：7/1と7/23）→選んだ日数分、書類を発行', icon: 'calendarMulti' },
+                    { id: 'range', label: '期間指定', desc: '開始日〜終了日で契約（例：8/1〜8/10）→期間全体で書類を1枚発行', icon: 'calendarRange' },
+                    { id: 'mix', label: 'MIX', desc: '期間指定に単日も追加可能→期間分1枚＋単日ごとに1枚発行', icon: 'calendarMix' },
                   ] as const).map(p => {
                     const selected = periodPattern === p.id
                     return (
@@ -646,10 +675,10 @@ export default function PledgeApplyPage() {
                     {workDates.length > 0 && (
                       <div className="flex flex-col gap-1.5">
                         {workDates.map(d => (
-                          <div key={d} className="flex items-center justify-between rounded-lg px-3 py-2 border" style={{ borderColor: '#D0DAF0', background: 'white' }}>
+                          <div key={d} className="inline-flex items-center gap-6 rounded-lg pl-3 pr-2 py-2 border w-fit" style={{ borderColor: '#D0DAF0', background: 'white' }}>
                             <span className="text-sm" style={{ color: '#1A2340' }}>{d.replaceAll('-', '/')}</span>
                             <button onClick={e => { e.preventDefault(); removeWorkDate(d) }}
-                              className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md" style={{ color: '#DC2626' }}>
+                              className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md shrink-0" style={{ color: '#DC2626' }}>
                               <PledgeIcon name="trash" className="w-3.5 h-3.5" />
                               削除
                             </button>
@@ -684,6 +713,20 @@ export default function PledgeApplyPage() {
           {currentStep === 3 && (
             <>
               <FormRow label="業務内容" required>
+                {documentType === 'AP・CL研修用' && workDescriptionTemplates.length > 0 && (
+                  <div className="flex flex-col gap-1.5 mb-1">
+                    <p className="text-xs font-medium" style={{ color: '#5A6A8A' }}>よく使う文言から選択（クリックで入力欄に反映）</p>
+                    <div className="flex flex-wrap gap-2">
+                      {workDescriptionTemplates.map(t => (
+                        <button key={t.id} onClick={e => { e.preventDefault(); setWorkDescription(t.template_text) }}
+                          className="text-xs px-3 py-1.5 rounded-lg border font-medium transition-all hover:bg-white"
+                          style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: '#EEF2FA' }}>
+                          {t.template_text}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <textarea value={workDescription} onChange={e => setWorkDescription(e.target.value)}
                   maxLength={2000} placeholder="例）店舗内での接客・レジ業務全般"
                   className="w-full text-sm rounded-lg px-3 py-2 border focus:outline-none placeholder:text-gray-400"
@@ -735,11 +778,6 @@ export default function PledgeApplyPage() {
                             <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>分</span>
                           </div>
                         </div>
-                        <div className="flex flex-col gap-1 col-span-2 md:col-span-4">
-                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>休憩時間帯</label>
-                          <input type="text" value={s.breakTimeRange} onChange={e => updateShift(idx, { breakTimeRange: e.target.value })}
-                            placeholder="例）12:00〜13:00" className="border rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white placeholder:text-gray-400" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
-                        </div>
                       </div>
                     </div>
                   ))}
@@ -769,7 +807,7 @@ export default function PledgeApplyPage() {
 
               <FormRow label="給与の種類" required>
                 <div className="flex border rounded-lg overflow-hidden bg-white w-fit" style={{ borderColor: '#D0DAF0' }}>
-                  {['時給', '日給', '月給'].map(v => (
+                  {['時給', '日給'].map(v => (
                     <button key={v} onClick={e => { e.preventDefault(); setSalaryType(v) }}
                       className="px-6 py-2 text-sm border-r last:border-0 transition-colors whitespace-nowrap"
                       style={{ borderColor: '#D0DAF0', background: salaryType === v ? '#1B3A8C' : 'white', color: salaryType === v ? 'white' : '#1A2340', fontWeight: salaryType === v ? 600 : 400 }}>{v}</button>
@@ -782,35 +820,20 @@ export default function PledgeApplyPage() {
                   <div className="grid grid-cols-2">
                     <SalaryField label="基本給" value={basicSalary} onChange={setBasicSalary} error={basicSalaryError} example="250000" borderRight borderBottom />
                     <SalaryField label="役職手当" value={rolePay} onChange={setRolePay} example="10000" borderBottom />
-                    <SalaryField label="職能給" value={skillPay} onChange={setSkillPay} example="10000" borderRight borderBottom />
-                    <SalaryField label="営業手当" value={salesPay} onChange={setSalesPay} example="10000" borderBottom />
-                    <div className="p-3 border-r flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
-                      <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>定額残業手当</span>
-                      <div className="flex items-center gap-1.5 flex-nowrap">
-                        <input type="text" value={overtimePay} onChange={e => setOvertimePay(toHalfWidthDigits(e.target.value))}
-                          className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-24 placeholder:text-gray-400" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
-                        <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
-                        <span className="text-xs" style={{ color: '#D0DAF0' }}>/</span>
-                        <input type="text" value={overtimeHours} onChange={e => setOvertimeHours(toHalfWidthDigits(e.target.value))}
-                          className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-14 placeholder:text-gray-400" style={{ borderColor: overtimeHoursError ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} />
-                        <span className="text-sm" style={{ color: '#5A6A8A' }}>時間分</span>
-                      </div>
-                      <p className="text-xs" style={{ color: '#5A6A8A' }}>例）30000 / 20時間分</p>
-                      {overtimeHoursError && <p className="text-xs" style={{ color: '#DC2626' }}>{overtimeHoursError}</p>}
-                    </div>
-                    <SalaryField label="住宅手当" value={housingPay} onChange={setHousingPay} example="10000" />
+                    <SalaryField label="職能給" value={skillPay} onChange={setSkillPay} example="10000" borderRight />
+                    <SalaryField label="営業手当" value={salesPay} onChange={setSalesPay} example="10000" />
                   </div>
                 </div>
 
                 {hourlyMonthlyBreakdown && (
                   <div className="rounded-lg px-4 py-3 border flex flex-col gap-1" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
                     {hourlyMonthlyBreakdown.map((line, i) => <p key={i} className="text-xs" style={{ color: '#1A2340' }}>{line}</p>)}
-                    <p className="text-xs mt-1" style={{ color: '#5A6A8A' }}>※月所定労働日数20日・1日8時間（160時間）での計算例です。実際の支給額は勤務実績により異なります。</p>
+                    <p className="text-xs mt-1" style={{ color: '#5A6A8A' }}>※月所定労働日数20日・1日7時間（140時間）での計算例です。実際の支給額は勤務実績により異なります。</p>
                   </div>
                 )}
                 <div className="flex items-center justify-between rounded-lg px-4 py-3 border" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
                   <span className="text-xs font-medium" style={{ color: '#5A6A8A' }}>
-                    {salaryType === '時給' ? '月額換算例（基本給×160時間＋各種手当）' : '合計支給額（基本給＋各種手当）'}
+                    {salaryType === '時給' ? '月額換算例（基本給×140時間＋各種手当）' : '合計支給額（基本給＋各種手当）'}
                   </span>
                   <div className="flex items-baseline gap-1">
                     <span className="text-base font-bold" style={{ color: '#1B3A8C' }}>{salaryTotal.toLocaleString()}</span>
@@ -826,9 +849,6 @@ export default function PledgeApplyPage() {
                 )}
               </FormRow>
 
-              <FormRow label="諸手当">
-                <p className="text-sm rounded-lg px-3 py-2 inline-block border" style={{ color: '#5A6A8A', background: '#F5F7FC', borderColor: '#D0DAF0' }}>－（該当なし）</p>
-              </FormRow>
               <FormRow label="諸控除">
                 <p className="text-sm rounded-lg px-3 py-2 inline-block border" style={{ color: '#5A6A8A', background: '#F5F7FC', borderColor: '#D0DAF0' }}>源泉所得税</p>
               </FormRow>
@@ -839,7 +859,7 @@ export default function PledgeApplyPage() {
               <PledgeSectionHeader label="交通費" />
               <FormRow label="交通費区分" required>
                 <div className="grid grid-cols-2 gap-2.5">
-                  {TRANSPORT_TYPES.map(t => (
+                  {PLEDGE_TRANSPORT_TYPES.map(t => (
                     <button key={t.id} onClick={e => { e.preventDefault(); setTransportType(t.id) }}
                       className="flex flex-col items-center gap-2 p-3 rounded-lg border-2 transition-all text-center"
                       style={{ borderColor: transportType === t.id ? '#1B3A8C' : '#D0DAF0', background: transportType === t.id ? '#EEF2FA' : 'white' }}>
@@ -894,7 +914,7 @@ export default function PledgeApplyPage() {
                   multiline suffix={`（計${buildDocumentPeriods().length}枚）`} />
                 <PledgeFinalRow label="業務内容" value={workDescription} multiline />
                 <PledgeFinalRow label="所定労働時間・休憩"
-                  value={shifts.map((s, i) => `パターン${i + 1}：${s.start}〜${s.end}（所定${s.contractHours || '－'}時間／休憩${s.breakMinutes || '－'}分：${s.breakTimeRange || '－'}）`).join('\n')}
+                  value={shifts.map((s, i) => `パターン${i + 1}：${s.start}〜${s.end}（所定${s.contractHours || '－'}時間／休憩${s.breakMinutes || '－'}分）`).join('\n')}
                   multiline />
                 <PledgeFinalRow label="給与"
                   value={`${salaryType}：${basicSalary ? parseAmount(basicSalary).toLocaleString() : '－'}円\n${salaryType === '時給' ? '月額換算例' : '合計支給額'}：${salaryTotal.toLocaleString()}円`}

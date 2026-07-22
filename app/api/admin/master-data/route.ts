@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
   if (!auth) return NextResponse.json({ error: 'ログインが必要です。' }, { status: 401 })
   if (auth.role !== '管理部') return NextResponse.json({ error: 'この操作は管理部のみ実行できます。' }, { status: 403 })
 
-  const [{ data: departments, error: deptErr }, { data: minimumWages, error: mwErr }, { data: workingHours, error: whErr }, { data: dispatchFees, error: dfErr }, { data: staffDeptRows, error: staffErr }, { data: offices, error: officeErr }] = await Promise.all([
+  const [{ data: departments, error: deptErr }, { data: minimumWages, error: mwErr }, { data: workingHours, error: whErr }, { data: dispatchFees, error: dfErr }, { data: staffDeptRows, error: staffErr }, { data: offices, error: officeErr }, { data: workDescriptionTemplates, error: wdtErr }] = await Promise.all([
     supabaseAdmin.from('department_master').select('id, dept_no, dept_name, created_at').order('dept_no', { ascending: true }),
     supabaseAdmin.from('minimum_wage_master').select('id, dept_no, hourly_wage, effective_from, created_at, updated_at').order('dept_no', { ascending: true }).order('effective_from', { ascending: false }),
     supabaseAdmin.from('standard_working_hours_master').select('id, work_place, contract_type, pattern_name, monthly_hours, created_at, updated_at').order('work_place', { ascending: true }).order('contract_type', { ascending: true }),
@@ -46,10 +46,13 @@ export async function GET(req: NextRequest) {
     // 派遣料金額マスタと同じく、営業所候補（officeNames）をあらかじめ全件表示し、
     // 郵便番号・住所・電話番号を入力する表形式で管理する。
     supabaseAdmin.from('office_master').select('id, office_name, postal_code, address, tel, updated_at'),
+    // 2026-07-22追加：アルバイト誓約書STEP3「業務内容」のテンプレート選択機能用マスタ。
+    // office_masterと異なり固定候補ではなく自由追加・編集・削除が可能なリスト。
+    supabaseAdmin.from('work_description_templates').select('id, template_text, sort_order, updated_at').order('sort_order', { ascending: true }),
   ])
 
-  if (deptErr || mwErr || whErr || dfErr || staffErr || officeErr) {
-    return NextResponse.json({ error: 'マスタデータの取得に失敗しました：' + (deptErr?.message || mwErr?.message || whErr?.message || dfErr?.message || staffErr?.message || officeErr?.message || '') }, { status: 500 })
+  if (deptErr || mwErr || whErr || dfErr || staffErr || officeErr || wdtErr) {
+    return NextResponse.json({ error: 'マスタデータの取得に失敗しました：' + (deptErr?.message || mwErr?.message || whErr?.message || dfErr?.message || staffErr?.message || officeErr?.message || wdtErr?.message || '') }, { status: 500 })
   }
 
   const staffCountByDept: Record<number, number> = {}
@@ -64,7 +67,7 @@ export async function GET(req: NextRequest) {
   for (const d of departments || []) officeNameSet.add(getOfficeName(d.dept_name))
   const officeNames = Array.from(officeNameSet).sort((a, b) => (a === '本社' ? -1 : b === '本社' ? 1 : a.localeCompare(b, 'ja')))
 
-  return NextResponse.json({ departments, minimumWages, workingHours, dispatchFees, officeNames, staffCountByDept, offices })
+  return NextResponse.json({ departments, minimumWages, workingHours, dispatchFees, officeNames, staffCountByDept, offices, workDescriptionTemplates })
 }
 
 // ===== POST：新規追加・修正（actionで分岐） =====
@@ -199,6 +202,37 @@ export async function POST(req: NextRequest) {
           { onConflict: 'office_name' }
         )
         if (error) return NextResponse.json({ error: '更新に失敗しました：' + error.message }, { status: 500 })
+        return NextResponse.json({ ok: true })
+      }
+
+      case 'add_work_description_template': {
+        const templateText = String(payload?.templateText || '').trim()
+        if (!templateText) {
+          return NextResponse.json({ error: 'テンプレート文言を入力してください。' }, { status: 400 })
+        }
+        const { data: maxRow } = await supabaseAdmin.from('work_description_templates').select('sort_order').order('sort_order', { ascending: false }).limit(1).maybeSingle()
+        const nextSortOrder = (maxRow?.sort_order ?? 0) + 1
+        const { error } = await supabaseAdmin.from('work_description_templates').insert({ template_text: templateText, sort_order: nextSortOrder })
+        if (error) return NextResponse.json({ error: '登録に失敗しました：' + error.message }, { status: 500 })
+        return NextResponse.json({ ok: true })
+      }
+
+      case 'update_work_description_template': {
+        const id = String(payload?.id || '')
+        const templateText = String(payload?.templateText || '').trim()
+        if (!id || !templateText) {
+          return NextResponse.json({ error: 'テンプレート文言を入力してください。' }, { status: 400 })
+        }
+        const { error } = await supabaseAdmin.from('work_description_templates').update({ template_text: templateText, updated_at: new Date().toISOString() }).eq('id', id)
+        if (error) return NextResponse.json({ error: '更新に失敗しました：' + error.message }, { status: 500 })
+        return NextResponse.json({ ok: true })
+      }
+
+      case 'delete_work_description_template': {
+        const id = String(payload?.id || '')
+        if (!id) return NextResponse.json({ error: '対象を特定できませんでした。' }, { status: 400 })
+        const { error } = await supabaseAdmin.from('work_description_templates').delete().eq('id', id)
+        if (error) return NextResponse.json({ error: '削除に失敗しました：' + error.message }, { status: 500 })
         return NextResponse.json({ ok: true })
       }
 

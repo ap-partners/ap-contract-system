@@ -17,6 +17,7 @@ type MinimumWage = { id: string; dept_no: number; hourly_wage: number; effective
 type WorkingHours = { id: string; work_place: string; contract_type: string; pattern_name: string; monthly_hours: number; created_at: string; updated_at: string }
 type DispatchFee = { id: string; office_name: string; fiscal_year_label: string; amount_per_day: number; updated_at: string }
 type Office = { id: string; office_name: string; postal_code: string | null; address: string | null; tel: string | null; updated_at: string }
+type WorkDescriptionTemplate = { id: string; template_text: string; sort_order: number; updated_at: string }
 
 type MasterData = {
   departments: Department[]
@@ -26,9 +27,10 @@ type MasterData = {
   officeNames: string[]
   staffCountByDept: Record<string, number>
   offices: Office[]
+  workDescriptionTemplates: WorkDescriptionTemplate[]
 }
 
-const SUB_TABS = ['部門', '最低賃金', '所定労働時間', '派遣料金額', '自社拠点'] as const
+const SUB_TABS = ['部門', '最低賃金', '所定労働時間', '派遣料金額', '自社拠点', '業務内容テンプレート'] as const
 type SubTab = typeof SUB_TABS[number]
 
 const card = 'rounded-2xl border border-[#E8EDF5] bg-white'
@@ -65,7 +67,7 @@ export default function MasterManagementTab() {
       <section className={`${card} p-6 md:p-8`}>
         <p className="text-lg font-semibold text-[#1F2937]">マスタ管理</p>
         <p className="mt-2 text-sm font-medium leading-6 text-[#6B7280]">
-          部門・最低賃金・所定労働時間・労働者派遣料金額・自社拠点の各マスタを管理します。
+          部門・最低賃金・所定労働時間・労働者派遣料金額・自社拠点・業務内容テンプレートの各マスタを管理します。
           部門マスタは新規追加のみ、既存の部門名変更・削除が必要な場合はシステム担当者までご連絡ください。
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
@@ -97,6 +99,7 @@ export default function MasterManagementTab() {
           {subTab === '所定労働時間' && <WorkingHoursSection data={data} reload={load} />}
           {subTab === '派遣料金額' && <DispatchFeeSection data={data} reload={load} />}
           {subTab === '自社拠点' && <OfficeSection data={data} reload={load} />}
+          {subTab === '業務内容テンプレート' && <WorkDescriptionTemplateSection data={data} reload={load} />}
         </>
       ) : null}
     </div>
@@ -700,6 +703,123 @@ function OfficeSection({ data, reload }: { data: MasterData; reload: () => Promi
             })}
           </tbody>
         </table>
+      </div>
+    </section>
+  )
+}
+
+// ===== 業務内容テンプレートマスタ（アルバイト誓約書STEP3専用。2026-07-22追加） =====
+// office_masterと違い候補が固定でないため、新規追加・編集・削除が自由にできる一覧形式とする。
+function WorkDescriptionTemplateSection({ data, reload }: { data: MasterData; reload: () => Promise<void> }) {
+  const [newText, setNewText] = useState('')
+  const [addError, setAddError] = useState('')
+  const [adding, setAdding] = useState(false)
+
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editText, setEditText] = useState('')
+  const [editError, setEditError] = useState('')
+  const [savingId, setSavingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const handleAdd = async () => {
+    setAddError('')
+    if (!newText.trim()) { setAddError('テンプレート文言を入力してください。'); return }
+    setAdding(true)
+    const result = await postAction('add_work_description_template', { templateText: newText.trim() })
+    setAdding(false)
+    if (!result.ok) { setAddError(result.error || '登録に失敗しました。'); return }
+    setNewText('')
+    await reload()
+  }
+
+  const startEdit = (t: WorkDescriptionTemplate) => {
+    setEditingId(t.id)
+    setEditText(t.template_text)
+    setEditError('')
+  }
+
+  const handleSaveEdit = async (id: string) => {
+    setEditError('')
+    if (!editText.trim()) { setEditError('テンプレート文言を入力してください。'); return }
+    setSavingId(id)
+    const result = await postAction('update_work_description_template', { id, templateText: editText.trim() })
+    setSavingId(null)
+    if (!result.ok) { setEditError(result.error || '更新に失敗しました。'); return }
+    setEditingId(null)
+    await reload()
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('このテンプレートを削除しますか？')) return
+    setDeletingId(id)
+    await postAction('delete_work_description_template', { id })
+    setDeletingId(null)
+    await reload()
+  }
+
+  return (
+    <section className={`${card} p-6 md:p-8`}>
+      <p className="text-sm font-semibold text-[#1F2937]">業務内容テンプレートマスタ</p>
+      <p className="mt-1 text-xs font-medium leading-5 text-[#6B7280]">
+        アルバイト誓約書の申請画面STEP3「業務内容」で、担当営業が選択して入力できる定型文の一覧です。ここで追加・編集・削除した内容がそのまま選択肢に反映されます。
+      </p>
+
+      <div className="mt-4 flex flex-col gap-2">
+        {data.workDescriptionTemplates.map(t => (
+          <div key={t.id} className="rounded-xl border border-[#E8EDF5] p-3">
+            {editingId === t.id ? (
+              <div className="flex flex-col gap-2">
+                <input
+                  type="text"
+                  value={editText}
+                  onChange={e => setEditText(e.target.value)}
+                  className={inputCls}
+                />
+                {editError && <ErrorBanner message={editError} />}
+                <div className="flex gap-2">
+                  <button onClick={() => handleSaveEdit(t.id)} disabled={savingId === t.id} className={primaryBtn}>
+                    {savingId === t.id ? '保存中…' : '保存する'}
+                  </button>
+                  <button onClick={() => setEditingId(null)} className={secondaryBtn}>キャンセル</button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-medium text-[#1F2937]">{t.template_text}</p>
+                <div className="flex shrink-0 gap-2">
+                  <button onClick={() => startEdit(t)} className={secondaryBtn}>編集</button>
+                  <button
+                    onClick={() => handleDelete(t.id)}
+                    disabled={deletingId === t.id}
+                    className="inline-flex items-center gap-2 rounded-xl border border-[#FDE0E0] bg-white px-4 py-2 text-sm font-semibold text-[#E74C3C] transition hover:bg-[#FDECEC] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {deletingId === t.id ? '削除中…' : '削除'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+        {data.workDescriptionTemplates.length === 0 && (
+          <p className="text-sm font-medium text-[#6B7280]">登録済みのテンプレートはありません。</p>
+        )}
+      </div>
+
+      <div className="mt-6 rounded-xl border border-[#E8EDF5] p-4">
+        <p className="text-xs font-semibold text-[#6B7280]">新規テンプレートを追加</p>
+        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+          <input
+            type="text"
+            value={newText}
+            onChange={e => setNewText(e.target.value)}
+            placeholder="例：店舗内での接客・レジ業務全般"
+            className={inputCls}
+          />
+          <button onClick={handleAdd} disabled={adding} className={`${primaryBtn} shrink-0`}>
+            {adding ? '追加中…' : '追加する'}
+          </button>
+        </div>
+        {addError && <div className="mt-2"><ErrorBanner message={addError} /></div>}
       </div>
     </section>
   )

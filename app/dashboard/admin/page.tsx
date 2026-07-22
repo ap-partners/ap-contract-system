@@ -25,6 +25,8 @@ import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
 import MasterManagementTab from '../_shared/MasterManagementTab'
 import { useDebouncedSearch, escapeForPostgrestFilter } from '../_shared/useDebouncedSearch'
 import { STAFF_EXPRESS_COLUMNS } from '@/lib/staffExpressColumns'
+import { useToast } from '@/app/_shared/ui/ToastProvider'
+import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 
 type RequestRow = {
   id: string
@@ -367,6 +369,7 @@ function hasCancelled(r: RequestRow) {
 
 export default function AdminDashboard() {
   const router = useRouter()
+  const { showError } = useToast()
   const [user, setUser] = useState<any>(null)
   // 総合レビュー（QA監査2026-07-22）指摘C1対応：別タブで別アカウントにログインされ
   // 認証情報が裏で切り替わったことを検知したら、安全のため強制ログアウトする
@@ -607,7 +610,7 @@ export default function AdminDashboard() {
       .eq('status', '申請中')
       .select('id')
     if (error) {
-      alert('一括承認に失敗しました: ' + error.message)
+      showError('一括承認に失敗しました: ' + error.message)
       setBulkApproving(false)
       return
     }
@@ -683,7 +686,7 @@ export default function AdminDashboard() {
       .eq('status', '申請中')
       .select('id')
     if (error) {
-      alert('一括承認に失敗しました: ' + error.message)
+      showError('一括承認に失敗しました: ' + error.message)
       setInternalBulkApproving(false)
       return
     }
@@ -817,7 +820,7 @@ export default function AdminDashboard() {
       .from('requests')
       .update({ [statusField]: 'cancelled', [reasonField]: reason })
       .eq('id', requestId)
-    if (error) { alert('取消の保存に失敗しました: ' + error.message); return false }
+    if (error) { showError('取消の保存に失敗しました: ' + error.message); return false }
     setRequests(prev => prev.map(r => r.id === requestId ? { ...r, [statusField]: 'cancelled', [reasonField]: reason } : r))
     // 取消により「未対応」から外れる可能性があるため、独立集計のバッジ件数も更新する
     fetchPendingTotalCountAll()
@@ -2039,6 +2042,9 @@ function StatusRow({ label, status, cancelReason, onCancel }: {
   const [showCancelForm, setShowCancelForm] = useState(false)
   const [reasonText, setReasonText] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  // 2026-07-22追加（alert/confirm置き換えPhase4・①必須項目チェック扱い）：取消理由未入力時のalert()を
+  // インライン警告バナー(ValidationBanner)に置き換えるためのローカルstate。
+  const [reasonError, setReasonError] = useState<string | null>(null)
 
   const isDone = status === 'completed'
   const isCancelled = status === 'cancelled'
@@ -2047,7 +2053,8 @@ function StatusRow({ label, status, cancelReason, onCancel }: {
   const rowTone = isDone ? 'border-[#BFE7CF] bg-[#F0FBF4]' : isCancelled ? 'border-[#E8EDF5] bg-[#F8FAFD]' : 'border-[#F7C7C1] bg-[#FDECEC]'
 
   const submitCancel = async () => {
-    if (!reasonText.trim()) { alert('取消理由を入力してください'); return }
+    if (!reasonText.trim()) { setReasonError('取消理由を入力してください'); return }
+    setReasonError(null)
     setSubmitting(true)
     const ok = await onCancel(reasonText.trim())
     setSubmitting(false)
@@ -2081,12 +2088,13 @@ function StatusRow({ label, status, cancelReason, onCancel }: {
             placeholder="取消理由を入力"
             className="h-11 rounded-2xl border border-[#E8EDF5] bg-white px-4 text-sm font-medium text-[#1F2937] outline-none transition placeholder:text-[#8B98B1] focus:border-[#2F5FD0]"
           />
+          <ValidationBanner message={reasonError} />
           <div className="flex flex-wrap gap-2">
             <button onClick={submitCancel} disabled={submitting}
               className="inline-flex h-10 items-center justify-center rounded-xl bg-[#F59E42] px-4 text-xs font-semibold text-white transition hover:bg-[#E88525] disabled:opacity-60">
               {submitting ? '送信中...' : 'この理由で取消する'}
             </button>
-            <button onClick={() => { setShowCancelForm(false); setReasonText('') }} disabled={submitting}
+            <button onClick={() => { setShowCancelForm(false); setReasonText(''); setReasonError(null) }} disabled={submitting}
               className="inline-flex h-10 items-center justify-center rounded-xl border border-[#E8EDF5] bg-white px-4 text-xs font-semibold text-[#6B7280] transition hover:border-[#2F5FD0] hover:text-[#2F5FD0]">
               キャンセル
             </button>

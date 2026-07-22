@@ -5,6 +5,7 @@ import { supabase, getAuthHeader } from '@/lib/supabase'
 import { useSessionCollisionGuard } from '@/lib/useSessionCollisionGuard'
 import { useRouter, useParams } from 'next/navigation'
 import Image from 'next/image'
+import { useToast } from '@/app/_shared/ui/ToastProvider'
 
 // ===== 型定義 =====
 
@@ -232,6 +233,7 @@ const WarningBox = ({ type, confirmedAt }: { type: string; confirmedAt: string }
 
 export default function SalesContractDetail() {
   const router = useRouter()
+  const { showError } = useToast()
   const params = useParams()
   const id = params?.id as string
 
@@ -492,7 +494,7 @@ export default function SalesContractDetail() {
                       // 総合レビュー指摘1対応（2026-07-15）：PDF取得APIがログイン確認を
                       // 必須にしたため、単なる<a href>ではなく認証ヘッダー付きfetchで取得する。
                       const res = await fetch(`/api/contracts/${contract.id}/pdf`, { headers: await getAuthHeader() })
-                      if (!res.ok) { alert('PDFの取得に失敗しました。'); return }
+                      if (!res.ok) { showError('PDFの取得に失敗しました。'); return }
                       const blobUrl = URL.createObjectURL(await res.blob())
                       window.open(blobUrl, '_blank')
                     }}

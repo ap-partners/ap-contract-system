@@ -21,6 +21,7 @@ import { useApprovedAccumulator, APPROVED_WINDOW_DAYS } from '../_shared/useAppr
 import RenewalManagementTab from '../_shared/RenewalManagementTab'
 import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
 import { useDebouncedSearch } from '../_shared/useDebouncedSearch'
+import { useToast } from '@/app/_shared/ui/ToastProvider'
 
 type Contract = ContractForDisplay & {
   created_by_dept_no: number | null
@@ -194,6 +195,7 @@ const SignDeadlineBadge = ({ signRequestedAt }: { signRequestedAt: string | null
 
 export default function SalesDashboard() {
   const router = useRouter()
+  const { showError } = useToast()
   const [user, setUser] = useState<any>(null)
   // 総合レビュー（QA監査2026-07-22）指摘C1対応：別タブで別アカウントにログインされ
   // 認証情報が裏で切り替わったことを検知したら、安全のため強制ログアウトする
@@ -412,7 +414,7 @@ export default function SalesDashboard() {
     const res = await fetch(`/api/contracts/${contractId}/notify-sign-request?trigger=explain`, { method: 'POST', headers: await getAuthHeader() })
     const result = await res.json().catch(() => ({}))
     if (!res.ok) {
-      alert('更新に失敗しました: ' + (result.error || '不明なエラー'))
+      showError('更新に失敗しました: ' + (result.error || '不明なエラー'))
       setExplainLoading(false)
       return
     }

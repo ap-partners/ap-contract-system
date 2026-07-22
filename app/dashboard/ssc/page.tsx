@@ -23,6 +23,7 @@ import { useContractListToolbar, buildDateSortOptions } from '../_shared/useCont
 import { useApprovedAccumulator, APPROVED_WINDOW_DAYS, CONTRACT_COLUMNS } from '../_shared/useApprovedAccumulator'
 import RenewalManagementTab from '../_shared/RenewalManagementTab'
 import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
+import { useToast } from '@/app/_shared/ui/ToastProvider'
 
 type Contract = ContractForDisplay
 
@@ -153,6 +154,7 @@ const Icon = ({ name, className = '' }: { name: IconName; className?: string }) 
 
 export default function SSCDashboard() {
   const router = useRouter()
+  const { showError } = useToast()
   const [user, setUser] = useState<any>(null)
   // 総合レビュー（QA監査2026-07-22）指摘C1対応：別タブで別アカウントにログインされ
   // 認証情報が裏で切り替わったことを検知したら、安全のため強制ログアウトする
@@ -296,7 +298,7 @@ export default function SSCDashboard() {
       .eq('status', '申請中')
       .select('id')
     if (error) {
-      alert('一括承認に失敗しました: ' + error.message)
+      showError('一括承認に失敗しました: ' + error.message)
       setBulkApproving(false)
       return
     }

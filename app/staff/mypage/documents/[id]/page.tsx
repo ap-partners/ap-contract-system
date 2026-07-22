@@ -175,7 +175,8 @@ export default function StaffDocumentPage() {
                   </p>
                   <div className="flex justify-center mb-3">
                     <canvas ref={previewCanvasRef} width={280} height={280} style={{ width: 140, height: 140 }} />
-                    <canvas ref={exportCanvasRef} width={280} height={280} style={{ display: 'none' }} />
+                    {/* PDFへ埋め込む高解像度版。/sign/[id]と同じ2026-07-22の修正（280→560）をこちらにも適用 */}
+                    <canvas ref={exportCanvasRef} width={560} height={560} style={{ display: 'none' }} />
                   </div>
 
                   <label className="flex items-start gap-2 cursor-pointer">

@@ -210,7 +210,13 @@ export default function StaffLoginPage() {
                 <div>
                   <label className="block text-xs font-medium mb-1.5" style={{ color: '#1A2340' }}>社員番号</label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-lg" style={{ color: '#8A94AA' }}>👤</span>
+                    {/* 2026-07-22：絵文字（👤）は端末・OSによって色が固定され明るさを調整できないため、
+                        色指定可能な線画SVGアイコンに置き換え（伊藤さん確認・案B＝#7FA3E8で確定）。
+                        パスワード欄の鍵アイコンと同じ色・線幅で統一している。 */}
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7FA3E8" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="8" r="4" />
+                      <path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8" />
+                    </svg>
                     <input
                       type="text"
                       inputMode="numeric"
@@ -227,7 +233,10 @@ export default function StaffLoginPage() {
                 <div>
                   <label className="block text-xs font-medium mb-1.5" style={{ color: '#1A2340' }}>パスワード</label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-lg" style={{ color: '#8A94AA' }}>🔒</span>
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7FA3E8" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="5" y="11" width="14" height="9" rx="2" />
+                      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                    </svg>
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={password}

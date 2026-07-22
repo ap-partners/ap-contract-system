@@ -46,6 +46,16 @@ const validateSignatureImageDataUrl = (dataUrl: string): string | null => {
 // 全角・半角スペース、通常スペースをすべて除去して比較する（氏名の区切り方の揺れを許容するため）
 const normalizeNameForCompare = (name: string): string => name.replace(/[\s　]/g, '').toLowerCase()
 
+// 総合レビュー指摘40対応（2026-07-22）：署名・確認完了の監査ログ。
+// パターンBの「内容を確認しました」を含め、押下時点のIPアドレス・User-Agentを記録する
+// （将来トラブル時の証跡目的。伊藤さんと相談のうえ、UI側の強制スクロール等は見送り、
+// サーバー側でのみ記録する方式に決定。追加コストなし＝Vercelのリクエストヘッダーを読むだけ）。
+const getClientIp = (req: NextRequest): string | null => {
+  const forwardedFor = req.headers.get('x-forwarded-for')
+  if (forwardedFor) return forwardedFor.split(',')[0].trim()
+  return req.headers.get('x-real-ip')
+}
+
 const getDocumentLabel = (documentType: string, contractType: string): string => {
   const suffix = contractType === 'アルバイト' ? '（アルバイト）' : contractType === '無期契約' ? '（無期）' : ''
   return `${documentType.replace(/\n/g, ' ')}${suffix}`
@@ -250,6 +260,8 @@ export async function POST(
       signed_at: now,
       drive_file_id: driveFileId,
       sign_action_type: signAction,
+      sign_confirmed_ip: getClientIp(req),
+      sign_confirmed_user_agent: req.headers.get('user-agent'),
       ...(csvMetaBackupFileId ? { csvmeta_backup_file_id: csvMetaBackupFileId } : {}),
       updated_at: now,
     })

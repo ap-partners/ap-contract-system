@@ -22,6 +22,8 @@ import { useContractListToolbar, buildDateSortOptions } from '../_shared/useCont
 import { useApprovedAccumulator, APPROVED_WINDOW_DAYS, CONTRACT_COLUMNS } from '../_shared/useApprovedAccumulator'
 import RenewalManagementTab from '../_shared/RenewalManagementTab'
 import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
+import ContractMonitoringSection from '../_shared/ContractMonitoringSection'
+import { useContractMonitoring } from '../_shared/useContractMonitoring'
 import MasterManagementTab from '../_shared/MasterManagementTab'
 import { useDebouncedSearch, escapeForPostgrestFilter } from '../_shared/useDebouncedSearch'
 import { STAFF_EXPRESS_COLUMNS } from '@/lib/staffExpressColumns'
@@ -434,6 +436,9 @@ export default function AdminDashboard() {
     searchCsvRenewal, requestCsvImport, switchToManualOverride,
     copyDispatchToEmploy, confirmNotRenewing, setTriageMode, executeBulkApply,
   } = useRenewalCandidates()
+
+  // 契約状況モニタリング（フェーズ1・2026-07-23実装。管理部専用）
+  const { rows: monitoringRows, loading: monitoringLoading, fetchMonitoring } = useContractMonitoring()
 
   // ===== CSVインポートタブ（2026-07-15実装。2026-07-17：StaffExpress（スタッフ/部門マスタ）追加） =====
   const [csvImportSystem, setCsvImportSystem] = useState<'e-staffing' | 'HRstation' | 'winworks' | 'Staffia' | 'StaffExpress'>('e-staffing')
@@ -1807,6 +1812,16 @@ export default function AdminDashboard() {
               )}
             </section>
           </div>
+        )}
+        {activeTab === 'renewal' && user && (
+          <ContractMonitoringSection
+            rows={monitoringRows}
+            loading={monitoringLoading}
+            onRefresh={fetchMonitoring}
+          />
+        )}
+        {activeTab === 'renewal' && user && (
+          <h3 className="text-sm font-bold text-[#1B2233] mb-3">期限間近の更新候補（現場）</h3>
         )}
         {activeTab === 'renewal' && user && (
           <RenewalManagementTab

@@ -23,6 +23,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { excludeRetiredStaffOr } from '@/lib/staffFilters'
+import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import { SALARY_RULES, toHalfWidthDigits, parseAmount } from '@/app/apply/_lib/helpers'
 import { WAGE_PAYMENT_TEXT } from '@/lib/pdf/documentText'
 
@@ -138,6 +139,7 @@ function PledgeIcon({ name, className = 'w-5 h-5', style }: { name: PledgeIconNa
 
 export default function PledgeApplyPage() {
   const router = useRouter()
+  const confirmDialog = useConfirm()
   const [user, setUser] = useState<any>(null)
   const [myDeptNo, setMyDeptNo] = useState<any>(undefined) // undefined=読み込み中 / null=特定できない
   const [currentStep, setCurrentStep] = useState(1)
@@ -294,13 +296,13 @@ export default function PledgeApplyPage() {
   }, [user, myDeptNo])
 
   const handleLogout = async () => {
-    if (!confirm('ログアウトしますか？')) return
+    if (!(await confirmDialog('ログアウトしますか？'))) return
     await supabase.auth.signOut()
     router.push('/login')
   }
 
-  const handleCancel = () => {
-    if (!confirm('入力中の申請を中断します。入力した内容は保存されません。よろしいですか？')) return
+  const handleCancel = async () => {
+    if (!(await confirmDialog('入力中の申請を中断します。入力した内容は保存されません。よろしいですか？'))) return
     handleCancel2()
   }
   const handleCancel2 = () => {
@@ -767,13 +769,13 @@ export default function PledgeApplyPage() {
                   <div className="flex flex-col gap-1.5 mb-1 max-w-md">
                     <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>よく使う文言から選択</label>
                     <select value=""
-                      onChange={e => {
+                      onChange={async e => {
                         const id = e.target.value
                         if (!id) return
                         const t = workDescriptionTemplates.find(x => x.id === id)
                         if (!t) return
                         if (workDescription.trim() && workDescription !== t.template_text) {
-                          if (!confirm('入力中の内容を、選択したテンプレートの文言で上書きします。よろしいですか？')) return
+                          if (!(await confirmDialog('入力中の内容を、選択したテンプレートの文言で上書きします。よろしいですか？'))) return
                         }
                         setWorkDescription(t.template_text)
                       }}

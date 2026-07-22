@@ -27,6 +27,7 @@ import {
 } from './_components/FormParts'
 import { buildMergedFields } from '@/app/dashboard/_shared/renewalFieldMap'
 import { excludeRetiredStaffOr } from '@/lib/staffFilters'
+import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import StepSourceContact from './_components/StepSourceContact'
 import StepDispatchContact from './_components/StepDispatchContact'
 import StepContractCondition from './_components/StepContractCondition'
@@ -39,6 +40,7 @@ import StepFinalCheck from './_components/StepFinalCheck'
 
 function ApplyPageInner() {
   const router = useRouter()
+  const confirmDialog = useConfirm()
   const searchParams = useSearchParams()
   const editContractId = searchParams.get('edit') // 再申請モード：/apply?edit=契約ID で開いた場合の契約ID
   const [editLoading, setEditLoading] = useState(!!editContractId)
@@ -990,13 +992,13 @@ function ApplyPageInner() {
   }, [user, myDeptNo])
 
   const handleLogout = async () => {
-    if (!confirm('ログアウトしますか？')) return
+    if (!(await confirmDialog('ログアウトしますか？'))) return
     await supabase.auth.signOut()
     router.push('/login')
   }
 
-  const handleCancel = () => {
-    if (!confirm('入力中の申請を中断します。入力した内容は保存されません。よろしいですか？')) return
+  const handleCancel = async () => {
+    if (!(await confirmDialog('入力中の申請を中断します。入力した内容は保存されません。よろしいですか？'))) return
     const role = user?.user_metadata?.role
     router.push(role === 'SSC' ? '/dashboard/ssc' : role === '管理部' ? '/dashboard/admin' : '/dashboard/sales')
   }

@@ -11,6 +11,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { getAuthHeader } from '@/lib/supabase'
+import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 
 type Department = { id: string; dept_no: number; dept_name: string; created_at: string }
 type MinimumWage = { id: string; dept_no: number; hourly_wage: number; effective_from: string; created_at: string; updated_at: string }
@@ -711,6 +712,7 @@ function OfficeSection({ data, reload }: { data: MasterData; reload: () => Promi
 // ===== 業務内容テンプレートマスタ（アルバイト誓約書STEP3専用。2026-07-22追加） =====
 // office_masterと違い候補が固定でないため、新規追加・編集・削除が自由にできる一覧形式とする。
 function WorkDescriptionTemplateSection({ data, reload }: { data: MasterData; reload: () => Promise<void> }) {
+  const confirmDialog = useConfirm()
   const [newText, setNewText] = useState('')
   const [addError, setAddError] = useState('')
   const [adding, setAdding] = useState(false)
@@ -750,7 +752,7 @@ function WorkDescriptionTemplateSection({ data, reload }: { data: MasterData; re
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('このテンプレートを削除しますか？')) return
+    if (!(await confirmDialog({ title: '削除の確認', message: 'このテンプレートを削除しますか？', tone: 'danger', confirmLabel: '削除する' }))) return
     setDeletingId(id)
     await postAction('delete_work_description_template', { id })
     setDeletingId(null)

@@ -374,7 +374,7 @@ export default function SSCDashboard() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => router.push('/pledge/apply')}
-              className="flex h-12 items-center gap-2 rounded-2xl border border-[#E8EDF5] bg-white px-4 text-sm font-semibold text-[#1F2937] shadow-[0_10px_30px_rgba(15,23,42,.04)] transition hover:-translate-y-0.5 hover:border-[#2F5FD0] hover:text-[#2F5FD0] hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]"
+              className="flex h-12 shrink-0 items-center gap-2 whitespace-nowrap rounded-2xl bg-[#F59E42] px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(245,158,66,.2)] transition hover:-translate-y-0.5 hover:bg-[#E88525] hover:shadow-[0_15px_34px_rgba(245,158,66,.28)]"
             >
               <Icon name="plus" className="h-4 w-4" />
               アルバイト誓約書 新規発行

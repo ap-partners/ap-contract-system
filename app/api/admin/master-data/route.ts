@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
     // 2026-07-22追加：自社拠点マスタ（アルバイト誓約書STEP2「就業先情報」の自社選択時に使用）。
     // 派遣料金額マスタと同じく、営業所候補（officeNames）をあらかじめ全件表示し、
     // 郵便番号・住所・電話番号を入力する表形式で管理する。
-    supabaseAdmin.from('office_master').select('id, office_name, postal_code, address, tel, updated_at'),
+    supabaseAdmin.from('office_master').select('id, office_name, postal_code, address, tel, sort_order, updated_at').order('sort_order', { ascending: true }),
     // 2026-07-22追加：アルバイト誓約書STEP3「業務内容」のテンプレート選択機能用マスタ。
     // office_masterと異なり固定候補ではなく自由追加・編集・削除が可能なリスト。
     supabaseAdmin.from('work_description_templates').select('id, template_text, sort_order, updated_at').order('sort_order', { ascending: true }),
@@ -63,9 +63,17 @@ export async function GET(req: NextRequest) {
 
   // 派遣料金額マスタの「営業所名」候補：部門マスタの全dept_nameにgetOfficeName()と同じロジックを
   // かけて重複除去したもの。ここに無い名前はPDF側のロジックでも生成され得ないため候補から外す。
+  // 2026-07-22伊藤さん指摘④：表示順はoffice_master.sort_orderに準拠した固定順（本社→北海道→…→沖縄）に統一。
+  // office_masterにまだ登録されていない候補（新設部門等）は末尾にアイウエオ順で並べるフォールバック。
   const officeNameSet = new Set<string>()
   for (const d of departments || []) officeNameSet.add(getOfficeName(d.dept_name))
-  const officeNames = Array.from(officeNameSet).sort((a, b) => (a === '本社' ? -1 : b === '本社' ? 1 : a.localeCompare(b, 'ja')))
+  const officeSortOrderByName = new Map((offices || []).map((o: any) => [o.office_name, o.sort_order ?? 999]))
+  const officeNames = Array.from(officeNameSet).sort((a, b) => {
+    const orderA = officeSortOrderByName.has(a) ? officeSortOrderByName.get(a)! : 999
+    const orderB = officeSortOrderByName.has(b) ? officeSortOrderByName.get(b)! : 999
+    if (orderA !== orderB) return orderA - orderB
+    return a.localeCompare(b, 'ja')
+  })
 
   return NextResponse.json({ departments, minimumWages, workingHours, dispatchFees, officeNames, staffCountByDept, offices, workDescriptionTemplates })
 }

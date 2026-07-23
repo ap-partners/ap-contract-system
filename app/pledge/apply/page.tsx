@@ -713,7 +713,9 @@ export default function PledgeApplyPage() {
                       <div className="rounded-lg p-4 border" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
                         <p className="text-xs font-medium mb-2" style={{ color: '#1B3A8C' }}>📄 帳票プレビュー（修正不可）</p>
                         <p className="text-xs leading-relaxed" style={{ color: '#1A2340' }}>
-                          {selectedOffice.office_name}<br />
+                          {/* 2026-07-23伊藤さん指摘：PDF側の表示（lib/pdf/renderPledgePdf.ts）と合わせ、
+                              「株式会社APパートナーズ　拠点名」形式で表示する（本社のみ拠点名を付けない）。 */}
+                          {selectedOffice.office_name === '本社' ? '株式会社APパートナーズ' : `株式会社APパートナーズ　${selectedOffice.office_name}`}<br />
                           〒{selectedOffice.postal_code || '未登録'}　{selectedOffice.address || '住所未登録'}<br />
                           TEL：{selectedOffice.tel || '未登録'}
                         </p>
@@ -752,9 +754,9 @@ export default function PledgeApplyPage() {
                 </div>
                 <div className="grid grid-cols-3 gap-2 max-w-2xl mb-2 items-stretch">
                   {([
-                    { id: 'single_multi', label: '単日・複数日選択', desc: '日付ごとに就業時間が違う場合\n1日ずつ「日付＋時刻」を登録', icon: 'calendarMulti' },
-                    { id: 'range', label: '期間指定', desc: '開始日〜終了日、同じ時間帯で\n毎日勤務する場合', icon: 'calendarRange' },
-                    { id: 'mix', label: 'MIX', desc: '期間指定に加えて\n単日も個別に登録したい場合', icon: 'calendarMix' },
+                    { id: 'single_multi', label: '単日', desc: '1日ずつ「日付＋就業時間」を\n登録する場合', icon: 'calendarMulti' },
+                    { id: 'range', label: '期間指定', desc: '期間として登録する場合\n※就業時間は共通', icon: 'calendarRange' },
+                    { id: 'mix', label: 'MIX', desc: '期間と単日を\nそれぞれ登録する場合', icon: 'calendarMix' },
                   ] as const).map(p => {
                     const selected = periodPattern === p.id
                     return (
@@ -787,18 +789,18 @@ export default function PledgeApplyPage() {
                       {rangeStart && rangeEnd && rangeStart > rangeEnd && <span className="text-xs" style={{ color: '#DC2626' }}>開始日は終了日より前にしてください</span>}
                     </div>
                     <div className="rounded-xl border p-3.5" style={{ borderColor: '#D0DAF0', background: '#F5F7FC' }}>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-                        <div className="flex flex-col gap-1">
-                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>就業時間（開始）</label>
+                      <div className="flex flex-wrap items-end gap-3">
+                        <div className="flex flex-col gap-1 min-w-[110px]">
+                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>始業時間</label>
                           <input type="time" value={periodShift.start} onChange={e => updatePeriodShift({ start: e.target.value })}
-                            className="border rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                            className="border rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white w-full" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                         </div>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>就業時間（終了）</label>
+                        <div className="flex flex-col gap-1 min-w-[110px]">
+                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>終業時間</label>
                           <input type="time" value={periodShift.end} onChange={e => updatePeriodShift({ end: e.target.value })}
-                            className="border rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                            className="border rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white w-full" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                         </div>
-                        <div className="flex flex-col gap-1">
+                        <div className="flex flex-col gap-1 min-w-[100px]">
                           <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>休憩時間</label>
                           <div className="flex items-center gap-1">
                             <input type="text" value={periodShift.breakMinutes} onChange={e => updatePeriodShift({ breakMinutes: toHalfWidthDigits(e.target.value) })}
@@ -806,7 +808,7 @@ export default function PledgeApplyPage() {
                             <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>分</span>
                           </div>
                         </div>
-                        <div className="flex flex-col gap-1">
+                        <div className="flex flex-col gap-1 min-w-[110px]">
                           <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>所定労働時間</label>
                           <div className="flex items-center gap-1">
                             <input type="text" value={periodShift.contractHours} readOnly
@@ -825,23 +827,23 @@ export default function PledgeApplyPage() {
                       単日を1件ずつ登録してください（日付＋時刻をセットで追加。最大{MAX_SINGLE_ENTRIES}件）
                     </p>
                     <div className="rounded-xl border p-3.5" style={{ borderColor: '#D0DAF0', background: '#F5F7FC' }}>
-                      <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
-                        <div className="flex flex-col gap-1">
+                      <div className="flex flex-wrap items-end gap-3">
+                        <div className="flex flex-col gap-1 min-w-[150px]">
                           <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>日付</label>
                           <input type="date" value={singleDateInput} onChange={e => setSingleDateInput(e.target.value)}
-                            className="border rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                            className="border rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white w-full" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                         </div>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>就業時間（開始）</label>
+                        <div className="flex flex-col gap-1 min-w-[110px]">
+                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>始業時間</label>
                           <input type="time" value={singleStartInput} onChange={e => setSingleStartInput(e.target.value)}
-                            className="border rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                            className="border rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white w-full" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                         </div>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>就業時間（終了）</label>
+                        <div className="flex flex-col gap-1 min-w-[110px]">
+                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>終業時間</label>
                           <input type="time" value={singleEndInput} onChange={e => setSingleEndInput(e.target.value)}
-                            className="border rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                            className="border rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white w-full" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                         </div>
-                        <div className="flex flex-col gap-1">
+                        <div className="flex flex-col gap-1 min-w-[100px]">
                           <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>休憩時間</label>
                           <div className="flex items-center gap-1">
                             <input type="text" value={singleBreakInput} onChange={e => setSingleBreakInput(toHalfWidthDigits(e.target.value))}
@@ -849,9 +851,9 @@ export default function PledgeApplyPage() {
                             <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>分</span>
                           </div>
                         </div>
-                        <div className="flex items-end">
+                        <div>
                           <button onClick={e => { e.preventDefault(); addSingleEntry() }}
-                            className="w-full text-xs px-3 py-2 rounded-lg border font-medium" style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: 'white' }}>＋ 追加</button>
+                            className="text-xs px-4 py-2 rounded-lg border font-medium whitespace-nowrap" style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: 'white' }}>＋ 追加</button>
                         </div>
                       </div>
                     </div>
@@ -1127,7 +1129,7 @@ export default function PledgeApplyPage() {
 
 function FormRow({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
-    <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
+    <div className="grid" style={{ gridTemplateColumns: '200px 1fr' }}>
       <div className="border-r border-b px-4 py-4 flex flex-col items-start justify-center gap-1.5" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
         <div className="flex items-center flex-wrap gap-1">
           <span className="text-sm font-medium leading-snug" style={{ color: '#1A2340' }}>{label}</span>
@@ -1157,7 +1159,7 @@ function SearchInput({ onSearch }: { onSearch: (query: string) => void }) {
       <div className="flex gap-2">
         <input type="text" value={localQuery} onChange={e => setLocalQuery(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') handleClick(e as any) }}
-          className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none placeholder:text-gray-400"
+          className="w-64 border rounded-lg px-3 py-2 text-sm focus:outline-none placeholder:text-gray-400"
           style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
           placeholder="社員番号または氏名で検索（例：100001）" autoComplete="off" />
         <button onClick={handleClick} disabled={localSearching}

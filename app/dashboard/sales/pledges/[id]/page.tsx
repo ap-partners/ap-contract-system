@@ -12,6 +12,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { supabase, getAuthHeader } from '@/lib/supabase'
 import { useSessionCollisionGuard } from '@/lib/useSessionCollisionGuard'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
+import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 
 type ScheduleRow = { label: string; start: string; end: string; breakMinutes: string; contractHours: string }
 
@@ -70,7 +71,7 @@ const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
 
 export default function SalesPledgeDetail() {
   const router = useRouter()
-  const { showError } = useToast()
+  const { showError, showSuccess } = useToast()
   const params = useParams()
   const id = params?.id as string
 
@@ -80,6 +81,41 @@ export default function SalesPledgeDetail() {
   const [officeLabel, setOfficeLabel] = useState('')
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+
+  // ===== 自己取り下げ機能（2026-07-24新設。contracts側と同じ設計） =====
+  // 「申請中」「差し戻し中」の間だけ、担当営業自身が申請を取り下げられるようにする。
+  const [showWithdrawForm, setShowWithdrawForm] = useState(false)
+  const [withdrawReason, setWithdrawReason] = useState('')
+  const [withdrawError, setWithdrawError] = useState<string | null>(null)
+  const [withdrawing, setWithdrawing] = useState(false)
+
+  const handleWithdraw = async () => {
+    if (!pledge) return
+    setWithdrawError(null)
+    setWithdrawing(true)
+    const { data, error } = await supabase
+      .from('pledges')
+      .update({
+        status: '取り下げ',
+        withdrawn_at: new Date().toISOString(),
+        withdrawn_by: user?.id || null,
+        withdrawn_reason: withdrawReason.trim() || null,
+      })
+      .eq('id', pledge.id)
+      .in('status', ['申請中', '差し戻し中'])
+      .select()
+      .maybeSingle()
+    setWithdrawing(false)
+    if (error) { showError('取り下げの保存に失敗しました: ' + error.message); return }
+    if (!data) {
+      showError('この申請はすでに状況が変わっているため、取り下げできませんでした。画面を更新してご確認ください。')
+      return
+    }
+    setPledge(data as PledgeDetail)
+    setShowWithdrawForm(false)
+    setWithdrawReason('')
+    showSuccess('申請を取り下げました。')
+  }
 
   useEffect(() => {
     const init = async () => {
@@ -219,6 +255,49 @@ export default function SalesPledgeDetail() {
           <div className="rounded-xl p-4 mb-6 border-2" style={{ background: '#FEF2F2', borderColor: '#F87171' }}>
             <p className="text-sm font-bold mb-1" style={{ color: '#B91C1C' }}>↩ 差し戻し理由（{formatDateTime(pledge.rejected_at)}）</p>
             <p className="text-sm whitespace-pre-wrap" style={{ color: '#1A2340' }}>{pledge.rejection_reason}</p>
+          </div>
+        )}
+
+        {(pledge.status === '申請中' || pledge.status === '差し戻し中') && (
+          <div className="rounded-xl p-4 mb-6 border" style={{ background: '#F9FAFB', borderColor: '#D1D5DB' }}>
+            {!showWithdrawForm ? (
+              <button
+                onClick={() => setShowWithdrawForm(true)}
+                className="text-sm px-4 py-2 rounded-lg border font-bold transition-all"
+                style={{ color: '#6B7280', borderColor: '#D1D5DB', background: 'white' }}>
+                この申請を取り下げる
+              </button>
+            ) : (
+              <div>
+                <p className="text-sm font-bold mb-2" style={{ color: '#1A2340' }}>この申請を取り下げますか？</p>
+                <p className="text-xs mb-3" style={{ color: '#6B7280' }}>取り下げると、この申請は一覧の承認待ち・差し戻し中から消え、再申請が必要になります。この操作は取り消せません。</p>
+                <textarea
+                  value={withdrawReason}
+                  onChange={e => setWithdrawReason(e.target.value)}
+                  placeholder="取り下げ理由（任意）"
+                  rows={2}
+                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none"
+                  style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                />
+                <ValidationBanner message={withdrawError} />
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={handleWithdraw}
+                    disabled={withdrawing}
+                    className="text-sm px-4 py-2 rounded-lg font-bold text-white transition-all disabled:opacity-60"
+                    style={{ background: '#DC2626' }}>
+                    {withdrawing ? '処理中...' : '取り下げる'}
+                  </button>
+                  <button
+                    onClick={() => { setShowWithdrawForm(false); setWithdrawReason(''); setWithdrawError(null) }}
+                    disabled={withdrawing}
+                    className="text-sm px-4 py-2 rounded-lg border font-medium transition-all"
+                    style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
+                    キャンセル
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

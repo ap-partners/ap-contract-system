@@ -6,6 +6,7 @@ import { useSessionCollisionGuard } from '@/lib/useSessionCollisionGuard'
 import { useRouter, useParams } from 'next/navigation'
 import Image from 'next/image'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
+import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 
 // ===== 型定義 =====
 
@@ -233,7 +234,7 @@ const WarningBox = ({ type, confirmedAt }: { type: string; confirmedAt: string }
 
 export default function SalesContractDetail() {
   const router = useRouter()
-  const { showError } = useToast()
+  const { showError, showSuccess } = useToast()
   const params = useParams()
   const id = params?.id as string
 
@@ -244,6 +245,46 @@ export default function SalesContractDetail() {
   const [contract, setContract] = useState<ContractDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+
+  // ===== 自己取り下げ機能（2026-07-24新設） =====
+  // 「申請したけど間違えた」場合に、SSC/管理部の差し戻しを待たずに担当営業自身が
+  // 申請を取り下げられるようにする。承認者側が既に何らかの判断を下した後
+  // （SSC承認済み・署名待ち・署名済み等）は対象外とし、「申請中」（まだ誰も見ていない）
+  // ・「差し戻し中」（一度差し戻されたが、申請自体をやめたい場合。伊藤さんの指摘：
+  // 差し戻し中のまま放置されると一覧に残り続けてしまうため対象に含める）の2状態のみ許可する。
+  const [showWithdrawForm, setShowWithdrawForm] = useState(false)
+  const [withdrawReason, setWithdrawReason] = useState('')
+  const [withdrawError, setWithdrawError] = useState<string | null>(null)
+  const [withdrawing, setWithdrawing] = useState(false)
+
+  const handleWithdraw = async () => {
+    if (!contract) return
+    setWithdrawError(null)
+    setWithdrawing(true)
+    const { data, error } = await supabase
+      .from('contracts')
+      .update({
+        status: '取り下げ',
+        withdrawn_at: new Date().toISOString(),
+        withdrawn_by: user?.id || null,
+        withdrawn_reason: withdrawReason.trim() || null,
+      })
+      .eq('id', contract.id)
+      .in('status', ['申請中', '差し戻し中'])
+      .select()
+      .maybeSingle()
+    setWithdrawing(false)
+    if (error) { showError('取り下げの保存に失敗しました: ' + error.message); return }
+    if (!data) {
+      // すでにSSC/管理部が承認・差し戻し等の操作を行い、対象ステータスから外れていた場合
+      showError('この申請はすでに状況が変わっているため、取り下げできませんでした。画面を更新してご確認ください。')
+      return
+    }
+    setContract(data as ContractDetail)
+    setShowWithdrawForm(false)
+    setWithdrawReason('')
+    showSuccess('申請を取り下げました。')
+  }
 
   useEffect(() => {
     const init = async () => {
@@ -415,10 +456,51 @@ export default function SalesContractDetail() {
           {contract.status === '差し戻し中' && (
             <button
               onClick={() => router.push(`/apply?edit=${contract.id}`)}
-              className="mt-3 text-sm px-4 py-2 rounded-lg font-bold text-white transition-all"
+              className="mt-3 mr-2 text-sm px-4 py-2 rounded-lg font-bold text-white transition-all"
               style={{ background: '#B91C1C' }}>
               ↩ 再申請する
             </button>
+          )}
+
+          {(contract.status === '申請中' || contract.status === '差し戻し中') && !showWithdrawForm && (
+            <button
+              onClick={() => setShowWithdrawForm(true)}
+              className="mt-3 text-sm px-4 py-2 rounded-lg border font-bold transition-all"
+              style={{ color: '#6B7280', borderColor: '#D1D5DB', background: 'white' }}>
+              この申請を取り下げる
+            </button>
+          )}
+
+          {showWithdrawForm && (
+            <div className="mt-4 rounded-lg p-4 border" style={{ background: 'white', borderColor: '#D1D5DB' }}>
+              <p className="text-sm font-bold mb-2" style={{ color: '#1A2340' }}>この申請を取り下げますか？</p>
+              <p className="text-xs mb-3" style={{ color: '#6B7280' }}>取り下げると、この申請は一覧の承認待ち・差し戻し中から消え、再申請が必要になります。この操作は取り消せません。</p>
+              <textarea
+                value={withdrawReason}
+                onChange={e => setWithdrawReason(e.target.value)}
+                placeholder="取り下げ理由（任意）"
+                rows={2}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none"
+                style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+              />
+              <ValidationBanner message={withdrawError} />
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={handleWithdraw}
+                  disabled={withdrawing}
+                  className="text-sm px-4 py-2 rounded-lg font-bold text-white transition-all disabled:opacity-60"
+                  style={{ background: '#DC2626' }}>
+                  {withdrawing ? '処理中...' : '取り下げる'}
+                </button>
+                <button
+                  onClick={() => { setShowWithdrawForm(false); setWithdrawReason(''); setWithdrawError(null) }}
+                  disabled={withdrawing}
+                  className="text-sm px-4 py-2 rounded-lg border font-medium transition-all"
+                  style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
+                  キャンセル
+                </button>
+              </div>
+            </div>
           )}
         </div>
 

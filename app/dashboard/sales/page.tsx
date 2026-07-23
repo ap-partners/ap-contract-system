@@ -23,6 +23,7 @@ import PledgeListSection from '../_shared/PledgeListSection'
 import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
 import { useDebouncedSearch } from '../_shared/useDebouncedSearch'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
+import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 
 type Contract = ContractForDisplay & {
   created_by_dept_no: number | null
@@ -196,7 +197,7 @@ const SignDeadlineBadge = ({ signRequestedAt }: { signRequestedAt: string | null
 
 export default function SalesDashboard() {
   const router = useRouter()
-  const { showError } = useToast()
+  const { showError, showSuccess } = useToast()
   const [user, setUser] = useState<any>(null)
   // 総合レビュー（QA監査2026-07-22）指摘C1対応：別タブで別アカウントにログインされ
   // 認証情報が裏で切り替わったことを検知したら、安全のため強制ログアウトする
@@ -316,6 +317,35 @@ export default function SalesDashboard() {
     setMyRequestsLoading(false)
   }
 
+  // ===== 依頼（スタッフマスタ登録依頼／CSVインポート依頼）の自己取消（2026-07-24新設） =====
+  // 従来は管理部の「依頼管理」タブにしか取消ボタンが無く、依頼した本人（担当営業）が
+  // 間違えて依頼した場合に自分で取り消す手段が無かった。管理部側のhandleCancelTaskと同じ
+  // 列（cancelled / cancel_reason）を使い、「未対応（pending）」の間だけ本人が取り消せるようにする。
+  // .eq(statusField, 'pending')の条件を付け、管理部が既に対応中/完了/取消済みにしていた場合は
+  // 上書きしない（競合防止）。
+  const handleSelfCancelRequest = async (
+    requestId: string,
+    statusField: 'staff_register_status' | 'csv_import_status',
+    reasonField: 'staff_register_cancel_reason' | 'csv_import_cancel_reason',
+    reason: string
+  ) => {
+    const { data, error } = await supabase
+      .from('requests')
+      .update({ [statusField]: 'cancelled', [reasonField]: reason })
+      .eq('id', requestId)
+      .eq(statusField, 'pending')
+      .select()
+      .maybeSingle()
+    if (error) { showError('取消の保存に失敗しました: ' + error.message); return false }
+    if (!data) {
+      showError('この依頼はすでに状況が変わっているため、取消できませんでした。画面を更新してご確認ください。')
+      return false
+    }
+    setMyRequests(prev => prev.map(r => r.id === requestId ? { ...r, [statusField]: 'cancelled', [reasonField]: reason } : r))
+    showSuccess('依頼を取り消しました。')
+    return true
+  }
+
   const loadContracts = async (deptNo: number) => {
     const { data: rows, error } = await supabase
       .from('contracts')
@@ -391,6 +421,7 @@ export default function SalesDashboard() {
     completed: completedList,
     other: [],
     renewal: [],
+    pledges: [],
   }
   const baseCurrentList = baseListForFilter[activeFilter]
   const currentLabel = filterCards.find(c => c.key === activeFilter)?.label || ''
@@ -409,6 +440,7 @@ export default function SalesDashboard() {
     completed: [],
     other: [],
     renewal: [],
+    pledges: [],
   }
 
   const { result: currentList, toolbar: listToolbar, searchText: contractSearchText } = useContractListToolbar(baseCurrentList, {
@@ -805,7 +837,7 @@ export default function SalesDashboard() {
                 <p className="py-8 text-sm font-medium text-[#6B7280]">該当する依頼はありません。</p>
               ) : (
                 <div className="grid gap-3">
-                  {visibleMyRequests.map(r => <MyRequestCard key={r.id} r={r} includeCompleted={includeCompletedRequests} />)}
+                  {visibleMyRequests.map(r => <MyRequestCard key={r.id} r={r} includeCompleted={includeCompletedRequests} onCancel={handleSelfCancelRequest} />)}
                 </div>
               )
             ) : currentList.length === 0 ? (
@@ -837,7 +869,16 @@ export default function SalesDashboard() {
   )
 }
 
-function MyRequestCard({ r, includeCompleted }: { r: MyRequest; includeCompleted: boolean }) {
+function MyRequestCard({ r, includeCompleted, onCancel }: {
+  r: MyRequest
+  includeCompleted: boolean
+  onCancel: (
+    requestId: string,
+    statusField: 'staff_register_status' | 'csv_import_status',
+    reasonField: 'staff_register_cancel_reason' | 'csv_import_cancel_reason',
+    reason: string
+  ) => Promise<boolean>
+}) {
   const badge = (status: string) => {
     const isDone = status === 'completed'
     const isCancelled = status === 'cancelled'
@@ -886,25 +927,39 @@ function MyRequestCard({ r, includeCompleted }: { r: MyRequest; includeCompleted
         <div className="grid gap-3">
           {showStaffRegister && (
             <div className="rounded-2xl border border-[#E8EDF5] bg-white px-4 py-3">
-              <div className="flex flex-wrap items-center gap-2">
-                {badge(r.staff_register_status as string)}
-                <span className="text-sm font-semibold text-[#1F2937]">スタッフマスタ登録</span>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {badge(r.staff_register_status as string)}
+                  <span className="text-sm font-semibold text-[#1F2937]">スタッフマスタ登録</span>
+                </div>
               </div>
               {r.staff_register_status === 'cancelled' && r.staff_register_cancel_reason && (
                 <p className="mt-2 break-words text-sm font-medium leading-6 text-[#F59E42]">取消理由：{r.staff_register_cancel_reason}</p>
+              )}
+              {r.staff_register_status === 'pending' && (
+                <SelfCancelControl
+                  onConfirm={reason => onCancel(r.id, 'staff_register_status', 'staff_register_cancel_reason', reason)}
+                />
               )}
             </div>
           )}
           {showCsvImport && (
             <div className="rounded-2xl border border-[#E8EDF5] bg-white px-4 py-3">
-              <div className="flex flex-wrap items-center gap-2">
-                {badge(r.csv_import_status as string)}
-                <span className="break-words text-sm font-semibold text-[#1F2937]">
-                  CSVインポート{r.system_type ? `（${r.system_type}${r.dispatch_start_date ? '・派遣開始日 ' + formatDate(new Date(r.dispatch_start_date)) : ''}）` : ''}
-                </span>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {badge(r.csv_import_status as string)}
+                  <span className="break-words text-sm font-semibold text-[#1F2937]">
+                    CSVインポート{r.system_type ? `（${r.system_type}${r.dispatch_start_date ? '・派遣開始日 ' + formatDate(new Date(r.dispatch_start_date)) : ''}）` : ''}
+                  </span>
+                </div>
               </div>
               {r.csv_import_status === 'cancelled' && r.csv_import_cancel_reason && (
                 <p className="mt-2 break-words text-sm font-medium leading-6 text-[#F59E42]">取消理由：{r.csv_import_cancel_reason}</p>
+              )}
+              {r.csv_import_status === 'pending' && (
+                <SelfCancelControl
+                  onConfirm={reason => onCancel(r.id, 'csv_import_status', 'csv_import_cancel_reason', reason)}
+                />
               )}
             </div>
           )}
@@ -912,4 +967,54 @@ function MyRequestCard({ r, includeCompleted }: { r: MyRequest; includeCompleted
       </div>
     </article>
     )
+}
+
+// 依頼（スタッフマスタ登録依頼／CSVインポート依頼）の自己取消用インライン操作。
+// 管理部ダッシュボードのStatusRow（取消フォーム）と同じUXパターンを踏襲（2026-07-24新設）。
+function SelfCancelControl({ onConfirm }: { onConfirm: (reason: string) => Promise<boolean> }) {
+  const [showForm, setShowForm] = useState(false)
+  const [reasonText, setReasonText] = useState('')
+  const [reasonError, setReasonError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  const submit = async () => {
+    if (!reasonText.trim()) { setReasonError('取消理由を入力してください'); return }
+    setReasonError(null)
+    setSubmitting(true)
+    const ok = await onConfirm(reasonText.trim())
+    setSubmitting(false)
+    if (ok) setShowForm(false)
+  }
+
+  if (!showForm) {
+    return (
+      <button
+        onClick={() => setShowForm(true)}
+        className="mt-2 rounded-xl border border-[#E8EDF5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B7280] transition hover:border-[#DC2626] hover:text-[#DC2626]">
+        この依頼を取り消す
+      </button>
+    )
+  }
+
+  return (
+    <div className="mt-3 grid gap-2">
+      <input
+        value={reasonText}
+        onChange={e => setReasonText(e.target.value)}
+        placeholder="取消理由を入力"
+        className="h-10 rounded-xl border border-[#E8EDF5] bg-white px-3 text-xs font-medium text-[#1F2937] outline-none transition placeholder:text-[#8B98B1] focus:border-[#2F5FD0]"
+      />
+      <ValidationBanner message={reasonError} />
+      <div className="flex flex-wrap gap-2">
+        <button onClick={submit} disabled={submitting}
+          className="inline-flex h-9 items-center justify-center rounded-xl bg-[#DC2626] px-3 text-xs font-semibold text-white transition hover:bg-[#B91C1C] disabled:opacity-60">
+          {submitting ? '送信中...' : 'この理由で取り消す'}
+        </button>
+        <button onClick={() => { setShowForm(false); setReasonText(''); setReasonError(null) }} disabled={submitting}
+          className="inline-flex h-9 items-center justify-center rounded-xl border border-[#E8EDF5] bg-white px-3 text-xs font-semibold text-[#6B7280] transition hover:border-[#2F5FD0] hover:text-[#2F5FD0]">
+          キャンセル
+        </button>
+      </div>
+    </div>
+  )
 }

@@ -5,7 +5,6 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { PledgePdf, PledgeScheduleRow } from './PledgePdf'
-import { getTransportText } from './documentText'
 
 const shouldShowSeal = (status: string): boolean => {
   return !['申請中', '差し戻し中', '取り下げ'].includes(status)
@@ -56,7 +55,12 @@ export async function renderPledgePdfBuffer(
       .select('office_name, postal_code, address, tel')
       .eq('id', pledge.office_id)
       .maybeSingle()
-    workLocationName = officeRow?.office_name || ''
+    // 2026-07-23伊藤さん指摘：就業先名は「株式会社APパートナーズ　拠点名」の形式で表示する
+    // （例：株式会社APパートナーズ　関西支社）。本社のみ「株式会社APパートナーズ」のみとし
+    // 「本社」の文字は入れない。
+    workLocationName = officeRow?.office_name && officeRow.office_name !== '本社'
+      ? `株式会社APパートナーズ　${officeRow.office_name}`
+      : '株式会社APパートナーズ'
     workLocationPostalCode = officeRow?.postal_code || ''
     workLocationAddress = officeRow?.address || ''
     workLocationTel = officeRow?.tel || ''
@@ -110,9 +114,7 @@ export async function renderPledgePdfBuffer(
       rolePay: salary.rolePay || 0,
       skillPay: salary.skillPay || 0,
       salesPay: salary.salesPay || 0,
-      wagePaymentText: inputData.wagePaymentText || '',
-      deductionText: inputData.deductionText || '',
-      transportText: getTransportText(salary.transportType || 'default'),
+      transportType: salary.transportType || 'default',
       companyOfficePostalCode,
       companyOfficeAddress,
       showSeal: shouldShowSeal(pledge.status),

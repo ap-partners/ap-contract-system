@@ -37,7 +37,18 @@ const formatDateTime = (iso: string | null) => {
 
 type FilterKey = '承認待ち' | '差し戻し中' | 'それ以外'
 
-export default function PledgeListSection() {
+type Props = {
+  // 担当営業ダッシュボードから使う場合、雇用契約書の「契約一覧」タブと同じ考え方で
+  // 自部門（created_by_dept_no）のみに絞り込む（2026-07-23追加）。SSC・管理部は
+  // 従来通り未指定＝全件表示のまま。
+  deptNoFilter?: number
+  // 詳細画面の遷移先。SSC・管理部は承認操作もできる/dashboard/ssc/pledges/[id]（ロール専用
+  // ガード付き）、担当営業は読み取り専用の/dashboard/sales/pledges/[id]を使う
+  // （2026-07-23追加。SSC側の画面は担当営業がアクセスするとログイン画面へ戻されてしまうため）。
+  detailBasePath?: string
+}
+
+export default function PledgeListSection({ deptNoFilter, detailBasePath = '/dashboard/ssc/pledges' }: Props) {
   const router = useRouter()
   const [rows, setRows] = useState<PledgeRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -45,16 +56,18 @@ export default function PledgeListSection() {
 
   const load = async () => {
     setLoading(true)
-    const { data } = await supabase
+    let query = supabase
       .from('pledges')
       .select('id, document_type, status, work_place_type, client_name, created_by_name, created_at, input_data')
       .order('created_at', { ascending: false })
       .limit(200)
+    if (deptNoFilter !== undefined) query = query.eq('created_by_dept_no', deptNoFilter)
+    const { data } = await query
     setRows((data || []) as PledgeRow[])
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [deptNoFilter])
 
   const filtered = rows.filter(r => {
     if (filter === '承認待ち') return r.status === '申請中'
@@ -98,7 +111,7 @@ export default function PledgeListSection() {
             return (
               <button
                 key={r.id}
-                onClick={() => router.push(`/dashboard/ssc/pledges/${r.id}`)}
+                onClick={() => router.push(`${detailBasePath}/${r.id}`)}
                 className="text-left rounded-xl border p-4 bg-white hover:shadow-sm transition-all"
                 style={{ borderColor: '#E5EAF5' }}
               >

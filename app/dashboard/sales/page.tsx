@@ -19,6 +19,7 @@ import {
 import { useContractListToolbar, buildDateSortOptions } from '../_shared/useContractListToolbar'
 import { useApprovedAccumulator, APPROVED_WINDOW_DAYS } from '../_shared/useApprovedAccumulator'
 import RenewalManagementTab from '../_shared/RenewalManagementTab'
+import PledgeListSection from '../_shared/PledgeListSection'
 import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
 import { useDebouncedSearch } from '../_shared/useDebouncedSearch'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
@@ -47,7 +48,7 @@ type MyRequest = {
   requested_at: string
 }
 
-type FilterKey = 'pending' | 'explain' | 'rejected' | 'waiting' | 'completed' | 'other' | 'renewal'
+type FilterKey = 'pending' | 'explain' | 'rejected' | 'waiting' | 'completed' | 'other' | 'renewal' | 'pledges'
 type IconName = 'file' | 'message' | 'refresh' | 'pen' | 'check' | 'mail' | 'search' | 'filter' | 'map' | 'arrow' | 'logout' | 'plus' | 'alert' | 'clock'
 
 const SIGN_DEADLINE_DAYS = 7 // 署名期日＝通知から7日（初期値。将来アラート日数マスタで変更可能にする予定）
@@ -273,12 +274,25 @@ export default function SalesDashboard() {
         fetchApprovedRecent(),
         loadMyRequests(deptName),
         (async () => { await syncCandidates(); await fetchCandidates(staffRow.dept_no) })(),
+        loadPledgesPendingCount(staffRow.dept_no),
       ])
       setLoading(false)
     }
     init()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router])
+
+  // アルバイト誓約書タブの承認待ち件数バッジ（2026-07-23追加。SSC・管理部と同じ考え方だが、
+  // 担当営業は契約一覧と同様に自部門（created_by_dept_no）のみに絞り込む）
+  const [pledgesPendingCount, setPledgesPendingCount] = useState(0)
+  const loadPledgesPendingCount = async (deptNo: number) => {
+    const { count } = await supabase
+      .from('pledges')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', '申請中')
+      .eq('created_by_dept_no', deptNo)
+    setPledgesPendingCount(count || 0)
+  }
 
   const loadMyRequests = async (deptName: string | null, windowMode: 'recent' | 'all' = 'recent') => {
     setMyRequestsLoading(true)
@@ -351,6 +365,7 @@ export default function SalesDashboard() {
     { key: 'completed', label: '完了', count: approvedTotalCount, color: '#4CAF50', tone: 'green', icon: 'check' },
     { key: 'other', label: '依頼状況', count: visibleMyRequests.length, color: '#7C3AED', tone: 'purple', icon: 'mail' },
     { key: 'renewal', label: '更新期限管理', count: renewalCandidates.length, color: '#F59E42', tone: 'orange', icon: 'clock' },
+    { key: 'pledges', label: 'アルバイト誓約書', count: pledgesPendingCount, color: '#F59E42', tone: 'orange', icon: 'file' },
   ]
 
   // 総合レビュー指摘B対応（2026-07-16）：契約のステータス別サブタブ（機能タブ「契約一覧」の中身）。
@@ -600,7 +615,7 @@ export default function SalesDashboard() {
               <div>
                 <p className="text-sm font-semibold text-[#1F2937]">本日の状況</p>
                 <h2 className="mt-2 text-4xl font-semibold tracking-normal text-[#2F5FD0] md:text-5xl">
-                  {currentLabel} {activeFilter === 'other' ? visibleMyRequests.length : activeFilter === 'completed' ? approvedTotalCount : activeFilter === 'renewal' ? renewalCandidates.length : baseCurrentList.length}件
+                  {currentLabel} {activeFilter === 'other' ? visibleMyRequests.length : activeFilter === 'completed' ? approvedTotalCount : activeFilter === 'renewal' ? renewalCandidates.length : activeFilter === 'pledges' ? pledgesPendingCount : baseCurrentList.length}件
                 </h2>
                 <p className="mt-4 text-sm font-medium leading-6 text-[#1F2937]">
                   対応が必要な案件を確認し、次のアクションへ進めてください。
@@ -638,6 +653,7 @@ export default function SalesDashboard() {
               { key: 'contracts' as const, label: '契約一覧', icon: 'file' as IconName, count: contractsTotalCount, isActive: isContractGroupActive, onClick: () => setActiveFilter(lastContractFilterRef.current) },
               { key: 'other' as const, label: '依頼状況', icon: 'mail' as IconName, count: visibleMyRequests.length, isActive: activeFilter === 'other', onClick: () => setActiveFilter('other') },
               { key: 'renewal' as const, label: '更新期限管理', icon: 'clock' as IconName, count: renewalCandidates.length, isActive: activeFilter === 'renewal', onClick: () => setActiveFilter('renewal') },
+              { key: 'pledges' as const, label: 'アルバイト誓約書', icon: 'file' as IconName, count: pledgesPendingCount, isActive: activeFilter === 'pledges', onClick: () => setActiveFilter('pledges') },
             ].map(group => (
               <button
                 key={group.key}
@@ -726,6 +742,11 @@ export default function SalesDashboard() {
                 currentUserDeptName={deptNameRef.current}
               />
             )}
+          </section>
+        ) : activeFilter === 'pledges' ? (
+          <section className={`${cardBase} mt-5 p-6`}>
+            <h2 className="mb-5 text-lg font-semibold text-[#1F2937]">アルバイト誓約書</h2>
+            <PledgeListSection deptNoFilter={deptNoRef.current ?? undefined} detailBasePath="/dashboard/sales/pledges" />
           </section>
         ) : loading ? (
           <div className="py-16 text-center">

@@ -155,7 +155,12 @@ export async function sendStaffLoginCodeMail(
   purpose: 'initial' | 'reset',
   pendingDocumentLabel?: string | null
 ): Promise<void> {
-  const url = `${APP_URL}/staff/login`
+  // 2026-07-23：メールのリンクから「認証コードを送信する」ボタンを経由せず直接コード入力画面へ
+  // 遷移できるよう、社員番号をクエリパラメータで渡す（案1・伊藤さん承認）。承認直後にすぐ
+  // アクセスした従業員が、既にコード発行済みなのに「送信する」ボタンでの新規発行を要求してしまい、
+  // 再発行クールダウン（3分）に引っかかって詰まっていた問題への対応。認証コード自体は別途必須
+  // なため、社員番号だけがURLに含まれてもログインは完了しない。
+  const url = `${APP_URL}/staff/login?emp=${encodeURIComponent(employeeNumber)}`
   const greetingHtml = staffName ? `<tr><td style="padding:32px 32px 0 32px;font-family:sans-serif;font-size:14px;color:#1A2340;font-weight:bold;">${staffName}　様</td></tr>` : ''
 
   const subject = purpose === 'initial'

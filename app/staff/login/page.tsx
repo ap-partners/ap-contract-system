@@ -5,7 +5,7 @@
 // （is_initial_login=true）の従業員、およびパスワードを忘れた従業員は、メール記載の
 // 認証コードで本人確認したうえでパスワードを（再）設定する。
 // docs/SYSTEM_DESIGN.md 過去のトーク履歴⑨確定仕様・2026-07-17伊藤さんデザイン指定に基づく。
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 
@@ -27,6 +27,23 @@ export default function StaffLoginPage() {
   const [error, setError] = useState('')
   const [errorReason, setErrorReason] = useState('')
   const [codeSent, setCodeSent] = useState(false)
+  const [fromEmailLink, setFromEmailLink] = useState(false)
+
+  // 2026-07-23：認証コード付きメールの「マイページを開く」リンクに社員番号（?emp=）が
+  // 付与されるようにした（lib/mail.ts sendStaffLoginCodeMail）。従業員は既にメールで
+  // コードを受け取っている状態でここに来るため、「認証コードを送信する」ボタンを経由させず
+  // 直接コード入力画面へ進める。これにより、承認直後の再発行クールダウン（3分）と
+  // 衝突して詰まっていた問題を回避する。認証コード自体は依然として必須のため、
+  // 社員番号だけがURLに含まれていてもログインは完了しない。
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const emp = params.get('emp')
+    if (emp) {
+      setEmployeeNumber(emp)
+      setFromEmailLink(true)
+      setMode('verifyCode')
+    }
+  }, [])
 
   // ===== パスワードログイン =====
   const handlePasswordLogin = async (e: React.FormEvent) => {
@@ -150,6 +167,7 @@ export default function StaffLoginPage() {
     setError('')
     setErrorReason('')
     setCodeSent(false)
+    setFromEmailLink(false)
     setAuthCode('')
     setNewPassword('')
     setNewPasswordConfirm('')
@@ -324,6 +342,11 @@ export default function StaffLoginPage() {
 
             {mode === 'verifyCode' && (
               <form onSubmit={handleVerifyCode} className="space-y-4 text-left">
+                {fromEmailLink && !codeSent && (
+                  <div className="rounded-lg px-4 py-3 text-xs leading-relaxed" style={{ background: '#ECFEFF', color: '#0E7490', border: '1px solid #A5F3FC' }}>
+                    メールに記載の認証コードを入力してください。
+                  </div>
+                )}
                 {codeSent && (
                   <div className="rounded-lg px-4 py-3 text-xs leading-relaxed" style={{ background: '#ECFEFF', color: '#0E7490', border: '1px solid #A5F3FC' }}>
                     認証コードをメールで送信しました。

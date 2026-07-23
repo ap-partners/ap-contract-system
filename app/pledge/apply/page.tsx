@@ -795,7 +795,7 @@ export default function PledgeApplyPage() {
                       <p className="text-sm font-bold" style={{ color: '#1B3A8C' }}>
                         期間：{rangeStart.replaceAll('-', '/')}〜{rangeEnd.replaceAll('-', '/')}　{periodShift.start}〜{periodShift.end}
                       </p>
-                      <p className="text-xs mt-0.5" style={{ color: '#5A6A8A' }}>休憩{periodShift.breakMinutes}分・所定{periodShift.contractHours}時間</p>
+                      <p className="text-xs mt-0.5" style={{ color: '#1A2340' }}>休憩{periodShift.breakMinutes}分・所定{periodShift.contractHours}時間</p>
                     </div>
                     <button onClick={e => { e.preventDefault(); setPeriodModalOpen(true) }}
                       className="text-xs font-medium shrink-0 px-2 py-1" style={{ color: '#1B3A8C' }}>編集</button>
@@ -834,10 +834,10 @@ export default function PledgeApplyPage() {
                         <div key={entry.date} className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 border" style={{ borderColor: '#D0DAF0', background: 'white' }}>
                           <div className="flex items-center gap-2 flex-wrap text-xs" style={{ color: '#1A2340' }}>
                             <span className="font-medium">{entry.date.replaceAll('-', '/')}</span>
-                            <span style={{ color: '#5A6A8A' }}>{entry.start}</span>
+                            <span>{entry.start}</span>
                             <PledgeIcon name="arrowRight" className="w-3 h-3" style={{ color: '#B4B8C4' }} />
-                            <span style={{ color: '#5A6A8A' }}>{entry.end}</span>
-                            <span style={{ color: '#8A93A8' }}>（休憩{entry.breakMinutes}分・所定{entry.contractHours}時間）</span>
+                            <span>{entry.end}</span>
+                            <span>（休憩{entry.breakMinutes}分・所定{entry.contractHours}時間）</span>
                           </div>
                           <button onClick={e => { e.preventDefault(); removeSingleEntry(entry.date) }} aria-label="この日程を削除"
                             className="flex items-center shrink-0" style={{ color: '#A32D2D' }}>
@@ -850,8 +850,8 @@ export default function PledgeApplyPage() {
                 )}
 
                 <div className="flex items-center gap-2 rounded-lg px-3 py-2.5 mt-3" style={{ background: '#F5F7FC', border: '1px solid #D0DAF0' }}>
-                  <PledgeIcon name="calendarMulti" className="w-3.5 h-3.5 shrink-0" style={{ color: '#8A93A8' }} />
-                  <p className="text-xs" style={{ color: '#5A6A8A' }}>発行される書類は、上記すべての日程をまとめた1枚になります。</p>
+                  <PledgeIcon name="calendarMulti" className="w-3.5 h-3.5 shrink-0" style={{ color: '#1B3A8C' }} />
+                  <p className="text-xs font-bold" style={{ color: '#1A2340' }}>発行される書類は、上記すべての日程をまとめた1枚になります。</p>
                 </div>
               </FormRow>
 
@@ -929,8 +929,8 @@ export default function PledgeApplyPage() {
                           <div className="text-sm py-2.5 border-t flex items-center gap-2" style={{ color: '#1A2340', borderColor: '#EDEFF5' }}>
                             {entry.start}<PledgeIcon name="arrowRight" className="w-3 h-3" style={{ color: '#B4B8C4' }} />{entry.end}
                           </div>
-                          <div className="text-sm py-2.5 border-t" style={{ color: '#5A6A8A', borderColor: '#EDEFF5' }}>{entry.breakMinutes}分</div>
-                          <div className="text-sm py-2.5 border-t" style={{ color: '#5A6A8A', borderColor: '#EDEFF5' }}>{entry.contractHours}h</div>
+                          <div className="text-sm py-2.5 border-t" style={{ color: '#1A2340', borderColor: '#EDEFF5' }}>{entry.breakMinutes}分</div>
+                          <div className="text-sm py-2.5 border-t" style={{ color: '#1A2340', borderColor: '#EDEFF5' }}>{entry.contractHours}h</div>
                           <div className="py-2.5 border-t flex items-center" style={{ borderColor: '#EDEFF5' }}>
                             <button onClick={e => { e.preventDefault(); removeSingleEntry(entry.date) }} aria-label="この日程を削除" style={{ color: '#8A93A8' }}>
                               <PledgeIcon name="trash" className="w-4 h-4" />

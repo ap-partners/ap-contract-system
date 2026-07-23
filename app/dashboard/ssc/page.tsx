@@ -449,9 +449,7 @@ export default function SSCDashboard() {
                     <span className={`text-4xl font-semibold tracking-normal ${card.tone}`}>{card.value}</span>
                     <span className={`pb-1 text-base font-semibold ${card.tone}`}>件</span>
                   </div>
-                  <div className="mt-6 h-1 rounded-full bg-[#E8EDF5]">
-                    <div className={`h-1 w-8 rounded-full ${card.bar}`} />
-                  </div>
+                  <div className={`mt-6 h-1 w-full rounded-full ${card.bar}`} />
                 </div>
               ))}
             </div>

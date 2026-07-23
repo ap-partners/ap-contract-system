@@ -623,9 +623,7 @@ export default function SalesDashboard() {
                     <span className="text-4xl font-semibold tracking-normal" style={{ color: card.color }}>{card.count}</span>
                     <span className="pb-1 text-sm font-semibold" style={{ color: card.color }}>件</span>
                   </div>
-                  <div className="mt-5 h-1 rounded-full bg-[#E8EDF5]">
-                    <div className="h-1 w-8 rounded-full" style={{ background: card.color }} />
-                  </div>
+                  <div className="mt-5 h-1 w-full rounded-full" style={{ background: card.color }} />
                 </button>
               ))}
             </div>

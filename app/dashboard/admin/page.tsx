@@ -1339,9 +1339,7 @@ export default function AdminDashboard() {
                       </div>
                       <Icon name={item.icon} className="h-6 w-6 text-[#6B7280]" />
                     </div>
-                    <div className="mt-5 h-1 rounded-full bg-[#E8EDF5]">
-                      <div className="h-1 w-8 rounded-full" style={{ background: item.color }} />
-                    </div>
+                    <div className="mt-5 h-1 w-full rounded-full" style={{ background: item.color }} />
                     {index === 0 && <p className="mt-3 text-sm font-medium text-[#6B7280]">対応が必要な依頼があります</p>}
                   </div>
                 ))}
@@ -1935,9 +1933,7 @@ function HeroSummary({
                 <span className="text-4xl font-semibold tracking-normal" style={{ color: item.color }}>{item.value}</span>
                 <span className="pb-1 text-base font-semibold" style={{ color: item.color }}>件</span>
               </div>
-              <div className="mt-6 h-1 rounded-full bg-[#E8EDF5]">
-                <div className="h-1 w-8 rounded-full" style={{ background: item.color }} />
-              </div>
+              <div className="mt-6 h-1 w-full rounded-full" style={{ background: item.color }} />
             </div>
           ))}
         </div>

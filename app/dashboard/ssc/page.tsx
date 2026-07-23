@@ -24,10 +24,11 @@ import { useApprovedAccumulator, APPROVED_WINDOW_DAYS, CONTRACT_COLUMNS } from '
 import RenewalManagementTab from '../_shared/RenewalManagementTab'
 import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
+import PledgeListSection from '../_shared/PledgeListSection'
 
 type Contract = ContractForDisplay
 
-type TabType = '承認待ち' | '差し戻し中' | '承認済み' | '更新期限管理'
+type TabType = '承認待ち' | '差し戻し中' | '承認済み' | '更新期限管理' | 'アルバイト誓約書'
 
 type IconName =
   | 'home'
@@ -238,6 +239,7 @@ export default function SSCDashboard() {
       { value: '署名済み', label: '署名済み' },
     ],
     '更新期限管理': [],
+    'アルバイト誓約書': [],
   }
 
   const { result: visibleContracts, toolbar: listToolbar, statusFilter: listStatusFilter, searchText, sortKey: listSortKey } = useContractListToolbar(filtered, {
@@ -266,6 +268,17 @@ export default function SSCDashboard() {
   const pendingCount = flowContracts.filter(c => c.status === '申請中').length
   const rejectedCount = flowContracts.filter(c => c.status === '差し戻し中').length
   const approvedCount = approvedTotalCount
+
+  // アルバイト誓約書タブの承認待ち件数バッジ（2026-07-23追加。一覧本体はPledgeListSectionが
+  // 独自にfetchするため、ここではタブのバッジ表示用に件数だけ軽量取得する）
+  const [pledgesPendingCount, setPledgesPendingCount] = useState(0)
+  useEffect(() => {
+    const loadPledgesPendingCount = async () => {
+      const { count } = await supabase.from('pledges').select('id', { count: 'exact', head: true }).eq('status', '申請中')
+      setPledgesPendingCount(count || 0)
+    }
+    loadPledgesPendingCount()
+  }, [])
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -340,6 +353,7 @@ export default function SSCDashboard() {
     { key: '差し戻し中', label: '差し戻し', count: rejectedCount },
     { key: '承認済み', label: '承認済み・署名状況', count: approvedCount },
     { key: '更新期限管理', label: '更新期限管理', count: renewalCandidates.length },
+    { key: 'アルバイト誓約書', label: 'アルバイト誓約書', count: pledgesPendingCount },
   ]
 
   const summaryCards = [
@@ -549,7 +563,7 @@ export default function SSCDashboard() {
           </section>
         )}
 
-        {activeTab !== '更新期限管理' && (
+        {activeTab !== '更新期限管理' && activeTab !== 'アルバイト誓約書' && (
         <div className="mt-7 flex items-center justify-between gap-4">
           <p className="text-sm font-medium text-[#6B7280]">
             <span className="font-semibold text-[#1F2937]">{visibleContracts.length}</span>件の申請が見つかりました
@@ -557,7 +571,7 @@ export default function SSCDashboard() {
         </div>
         )}
 
-        {activeTab !== '更新期限管理' && (loading ? (
+        {activeTab !== '更新期限管理' && activeTab !== 'アルバイト誓約書' && (loading ? (
           <div className="py-16 text-center">
             <p className="text-sm font-medium text-[#6B7280]">読み込み中</p>
           </div>
@@ -721,6 +735,12 @@ export default function SSCDashboard() {
               currentUserDeptName="SSC"
               canFinalize={false}
             />
+          </div>
+        )}
+
+        {activeTab === 'アルバイト誓約書' && (
+          <div className="mt-5 rounded-[18px] border border-[#E8EDF5] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)]">
+            <PledgeListSection />
           </div>
         )}
 

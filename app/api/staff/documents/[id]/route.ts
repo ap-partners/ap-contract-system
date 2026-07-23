@@ -3,6 +3,8 @@
 // ログインセッションで本人確認済みのため、社員番号・認証コードの入力は不要。
 // 署名待ち・署名済みどちらの書類も、ログイン中の本人のものであれば閲覧できる
 // （署名済みの場合はPDFプレビュー用トークンのみ返す＝再度署名操作はさせない）。
+// 2026-07-23追加：まずcontractsを探し、無ければpledgesを探す（idはUUIDのため衝突しない）。
+// 返却する`kind`（'contract'|'pledge'）で、画面側がPDF取得先・署名完了APIを出し分ける。
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getStaffIdFromRequest } from '@/lib/staffAuth'
@@ -18,6 +20,8 @@ const getDocumentLabel = (documentType: string, contractType: string): string =>
   return `${(documentType || '').replace(/\n/g, ' ')}${suffix}`
 }
 
+const PLEDGE_DOCUMENT_LABEL = 'アルバイト誓約書'
+
 export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const staffId = await getStaffIdFromRequest(req)
   if (!staffId) {
@@ -25,33 +29,56 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
   }
 
   const { id } = await context.params
-  const { data: contract, error } = await supabaseAdmin
+
+  const { data: contract } = await supabaseAdmin
     .from('contracts')
     .select('id, staff_id, status, document_type, contract_type, sign_action_type')
     .eq('id', id)
     .maybeSingle()
 
-  if (error || !contract) {
+  if (contract) {
+    if (contract.staff_id !== staffId) {
+      return NextResponse.json({ error: 'この書類を閲覧する権限がありません。' }, { status: 403 })
+    }
+    if (!['署名待ち', '署名済み', '完了'].includes(contract.status)) {
+      return NextResponse.json({ error: '現在この書類は閲覧できない状態です。' }, { status: 409 })
+    }
+    const signAction: 'signature' | 'confirmation' =
+      contract.sign_action_type === 'signature' || contract.sign_action_type === 'confirmation'
+        ? contract.sign_action_type
+        : contract.document_type === '就業条件明示書'
+          ? 'confirmation'
+          : 'signature'
+    return NextResponse.json({
+      kind: 'contract',
+      documentLabel: getDocumentLabel(contract.document_type, contract.contract_type),
+      signAction,
+      status: contract.status,
+      pdfToken: createPdfAccessToken(id),
+    })
+  }
+
+  const { data: pledge } = await supabaseAdmin
+    .from('pledges')
+    .select('id, staff_id, status, sign_action_type')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (!pledge) {
     return NextResponse.json({ error: '対象の書類が見つかりませんでした。' }, { status: 404 })
   }
-  if (contract.staff_id !== staffId) {
+  if (pledge.staff_id !== staffId) {
     return NextResponse.json({ error: 'この書類を閲覧する権限がありません。' }, { status: 403 })
   }
-  if (!['署名待ち', '署名済み', '完了'].includes(contract.status)) {
+  if (!['署名待ち', '署名済み'].includes(pledge.status)) {
     return NextResponse.json({ error: '現在この書類は閲覧できない状態です。' }, { status: 409 })
   }
 
-  const signAction: 'signature' | 'confirmation' =
-    contract.sign_action_type === 'signature' || contract.sign_action_type === 'confirmation'
-      ? contract.sign_action_type
-      : contract.document_type === '就業条件明示書'
-        ? 'confirmation'
-        : 'signature'
-
   return NextResponse.json({
-    documentLabel: getDocumentLabel(contract.document_type, contract.contract_type),
-    signAction,
-    status: contract.status,
+    kind: 'pledge',
+    documentLabel: PLEDGE_DOCUMENT_LABEL,
+    signAction: 'signature',
+    status: pledge.status,
     pdfToken: createPdfAccessToken(id),
   })
 }

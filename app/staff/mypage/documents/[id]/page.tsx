@@ -11,6 +11,7 @@ import { drawSeal } from '@/app/sign/[id]/seal'
 
 type Stage = 'loading' | 'view' | 'action' | 'done'
 type SignAction = 'signature' | 'confirmation'
+type DocKind = 'contract' | 'pledge'
 
 export default function StaffDocumentPage() {
   const params = useParams<{ id: string }>()
@@ -22,6 +23,7 @@ export default function StaffDocumentPage() {
   const [documentLabel, setDocumentLabel] = useState('')
   const [signAction, setSignAction] = useState<SignAction>('confirmation')
   const [pdfToken, setPdfToken] = useState('')
+  const [kind, setKind] = useState<DocKind>('contract')
   const [confirmChecked, setConfirmChecked] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [sealName, setSealName] = useState('')
@@ -47,6 +49,7 @@ export default function StaffDocumentPage() {
         setDocumentLabel(data.documentLabel)
         setSignAction(data.signAction)
         setPdfToken(data.pdfToken || '')
+        setKind(data.kind === 'pledge' ? 'pledge' : 'contract')
         setStage(data.status === '署名待ち' ? 'action' : 'view')
       } catch {
         setError('通信エラーが発生しました。電波状況をご確認のうえ、もう一度お試しください。')
@@ -72,7 +75,7 @@ export default function StaffDocumentPage() {
       const signatureImageDataUrl =
         signAction === 'signature' ? exportCanvasRef.current?.toDataURL('image/png') : undefined
 
-      const res = await fetch(`/api/sign/${id}/complete`, {
+      const res = await fetch(kind === 'pledge' ? `/api/pledges/${id}/complete` : `/api/sign/${id}/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -115,7 +118,7 @@ export default function StaffDocumentPage() {
                   <p className="text-sm font-bold mb-1" style={{ color: '#1A2340' }}>{documentLabel}</p>
                   <p className="text-xs mb-6" style={{ color: '#5A6A8A' }}>この書類の確認・署名は既に完了しています。</p>
                   <a
-                    href={`/api/contracts/${id}/pdf?t=${encodeURIComponent(pdfToken)}`}
+                    href={`${kind === 'pledge' ? `/api/pledges/${id}/pdf` : `/api/contracts/${id}/pdf`}?t=${encodeURIComponent(pdfToken)}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="block w-full text-center py-3 rounded-xl text-sm font-semibold mb-4"
@@ -141,7 +144,7 @@ export default function StaffDocumentPage() {
               <p className="text-xs mb-6" style={{ color: '#5A6A8A' }}>内容をご確認のうえ、下記にご対応ください。</p>
 
               <a
-                href={`/api/contracts/${id}/pdf?t=${encodeURIComponent(pdfToken)}`}
+                href={`${kind === 'pledge' ? `/api/pledges/${id}/pdf` : `/api/contracts/${id}/pdf`}?t=${encodeURIComponent(pdfToken)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-disabled={submitting}

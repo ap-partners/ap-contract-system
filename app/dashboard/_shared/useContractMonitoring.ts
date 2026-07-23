@@ -35,7 +35,7 @@ const STALE_DAYS = 30
 const NEAR_EXPIRY_DAYS = 45
 
 export type MonitoringIssue = {
-  docLabel: '雇用契約書' | '就業条件明示書'
+  docLabel: '雇用契約書' | '就業条件明示書' | 'アルバイト誓約書'
   kind: 'never_signed' | 'expired_no_followup' | 'stalled' | 'near_expiry'
   severity: 1 | 2 | 3 | 4
   detail: string
@@ -208,6 +208,69 @@ export function useContractMonitoring() {
         if (issues.length === 0) continue
         const topSeverity = issues.reduce<1 | 2 | 3 | 4>((min, i) => (i.severity < min ? i.severity : min), 4)
         result.push({ ...base, issues, topSeverity })
+      }
+
+      // 2026-07-23追加：アルバイト誓約書（pledges）の長期未対応検知。
+      // 伊藤さんとの確認の結果、アルバイトは既存の対象母集団（active_staff／有期契約・無期契約・
+      // 正社員のみ）には含めない（誓約書が必要かどうかは案件次第のため「台帳なし」判定は行わない）。
+      // その代わり、既に作成済みの誓約書がステータス未確定（署名済み・差し戻し中・取り下げ以外）
+      // のまま長期間動いていないものだけを、独立した警告として検知する。
+      const { data: staleRaw, error: pledgeError } = await supabase
+        .from('pledges')
+        .select('id, status, updated_at, staff(employee_number, name, dept_no, contract_type)')
+        .not('status', 'in', '(署名済み,差し戻し中,取り下げ)')
+      if (pledgeError) {
+        console.error('アルバイト誓約書モニタリング取得エラー:', pledgeError)
+      } else {
+        const pledgeDeptNos = Array.from(new Set((staleRaw || [])
+          .map((p: any) => p.staff?.dept_no).filter((n: any): n is number => n != null)))
+        let pledgeDeptNameByNo = deptNameByNo
+        const missingDeptNos = pledgeDeptNos.filter(n => !pledgeDeptNameByNo.has(n))
+        if (missingDeptNos.length > 0) {
+          const { data: extraDeptRows } = await supabase
+            .from('department_master')
+            .select('dept_no, dept_name')
+            .in('dept_no', missingDeptNos)
+          pledgeDeptNameByNo = new Map([...pledgeDeptNameByNo, ...((extraDeptRows || []).map((d: any) => [d.dept_no, d.dept_name] as const))])
+        }
+
+        for (const p of (staleRaw || []) as any[]) {
+          const staff = p.staff
+          if (!staff?.employee_number) continue
+          const stale = daysSince(p.updated_at)
+          if (stale === null || stale < STALE_DAYS) continue // 30日未満は正常進行中
+
+          const action = actionByEmpNo.get(staff.employee_number)
+          const existingRowIdx = result.findIndex(r => r.employeeNumber === staff.employee_number)
+          const issue: MonitoringIssue = {
+            docLabel: 'アルバイト誓約書',
+            kind: 'stalled',
+            severity: 3,
+            detail: `アルバイト誓約書の申請が${stale}日間動いていません`,
+          }
+          if (existingRowIdx >= 0) {
+            // 既存行（雇用契約書等）と同一スタッフの場合は課題を追加するだけ
+            const existing = result[existingRowIdx]
+            const issues = [...existing.issues, issue]
+            const topSeverity = issues.reduce<1 | 2 | 3 | 4>((min, i) => (i.severity < min ? i.severity : min), 4)
+            result[existingRowIdx] = { ...existing, issues, topSeverity }
+          } else {
+            result.push({
+              employeeNumber: staff.employee_number,
+              staffName: staff.name,
+              deptNo: staff.dept_no,
+              deptName: staff.dept_no != null ? (pledgeDeptNameByNo.get(staff.dept_no) || null) : null,
+              contractType: staff.contract_type,
+              inferredWorkPlace: null,
+              anyContractEver: true,
+              issues: [issue],
+              topSeverity: 3,
+              actionStatus: (action?.status || '未着手') as ActionStatus,
+              requestedAt: action?.requested_at || null,
+              requestedByName: action?.requested_by_name || null,
+            })
+          }
+        }
       }
 
       // 重大度順（数字が小さいほど深刻）→ 同順位は氏名順

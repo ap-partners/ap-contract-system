@@ -11,6 +11,15 @@
 // という、それまでのSTEP設計に無かった必須項目が帳票上に存在することが判明。伊藤さんと相談し、
 // この2項目のための新規STEPを追加、5STEP構成（①スタッフ・帳票種別→②就業先情報・雇用期間→
 // ③業務内容・就業時間→④給与→⑤最終確認）に変更して全STEP・pledgesへの保存処理まで実装した。
+//
+// 【2026-07-23 6STEP再設計】単日ごとに勤務時間が異なる実態にSTEP設計が対応できていなかった
+// （STEP3の勤務パターンが日付と紐付いていなかった）問題を解消するため、6STEP構成
+// （①スタッフ・帳票種別→②就業先情報→③就業日程→④業務内容→⑤給与→⑥最終確認）に再編。
+// 旧workDates（日付のみ）＋shifts（日付に紐付かない最大5パターン）を廃止し、単日は
+// 「日付＋開始〜終了＋休憩」を1セットで登録するsingleEntries（最大10件）、期間指定は
+// 就業時間を1パターンのみ持つperiodShiftに変更。発行書類は常にpledges1行＝1枚に統合し、
+// PDF内の「雇用期間」「所定労働時間及び休憩時間」は1つの表（scheduleRows）にまとめる方針
+// （帳票PDF実装＝次の作業項目で使用。docs/SYSTEM_DESIGN.md 10章2026-07-23参照）。
 // SSC確認画面・帳票PDF生成・署名フロー接続は別途対応する。
 //
 // スタッフ検索・自部門制限のロジックはapp/apply/page.tsxのhandleSearchと同じ考え方
@@ -29,8 +38,9 @@ import { SALARY_RULES, toHalfWidthDigits, parseAmount } from '@/app/apply/_lib/h
 import { WAGE_PAYMENT_TEXT } from '@/lib/pdf/documentText'
 
 const DOCUMENT_TYPES = ['AP・CL研修用', 'CP・SPOT用'] as const
-const STEP_LABELS = ['スタッフ・帳票種別', '就業先情報・雇用期間', '業務内容・就業時間', '給与', '最終確認']
-const MAX_SHIFT_ROWS = 5
+// 2026-07-23：6STEP再編（就業先情報と就業日程を分離）
+const STEP_LABELS = ['スタッフ・帳票種別', '就業先情報', '就業日程', '業務内容', '給与', '最終確認']
+const MAX_SINGLE_ENTRIES = 10
 
 // アルバイト誓約書専用の交通費区分（2026-07-22伊藤さん指摘：「定期代＋ガソリン代」はこのファイルのみ除外。
 // 雇用契約書(/apply)側の共通TRANSPORT_TYPESは変更せず、影響範囲をこのファイルに限定するためローカルに複製）
@@ -57,6 +67,13 @@ const PLEDGE_TRANSPORT_TYPES = [
 
 type ShiftRow = { start: string; end: string; contractHours: string; breakMinutes: string }
 const emptyShiftRow = (): ShiftRow => ({ start: '', end: '', contractHours: '', breakMinutes: '' })
+
+// 2026-07-23追加：STEP3（就業日程）単日エントリ。日付＋開始〜終了＋休憩を1セットで持つ
+// （旧workDatesは日付のみ・旧shiftsは日付に紐付かない汎用パターンだったため、単日ごとに
+// 勤務時間が異なる実態に対応できていなかった問題を解消）。
+type SingleEntry = { date: string; start: string; end: string; breakMinutes: string; contractHours: string }
+// 帳票PDF実装（次の作業項目）で使う、雇用期間＋所定労働時間及び休憩時間を1つの表にまとめた行データ。
+type ScheduleRow = { label: string; start: string; end: string; breakMinutes: string; contractHours: string }
 
 type Office = { id: string; office_name: string; postal_code: string | null; address: string | null; tel: string | null }
 type WorkDescriptionTemplate = { id: string; template_text: string }
@@ -146,7 +163,7 @@ export default function PledgeApplyPage() {
   const [currentStep, setCurrentStep] = useState(1)
   // 2026-07-22追加（alert/confirm置き換えPhase3・①必須項目チェック）：各STEPの「次へ進む」チェックで
   // 従来alert()表示していたエラーメッセージを、ボタン近くのインライン警告バナー(ValidationBanner)で表示するためのstate。
-  // STEP2の就業日重複チェック（addWorkDate内）のみ、日付追加ボタンの近くに表示したいため別state（dateAddError）を用いる。
+  // STEP3の就業日重複チェック（addSingleEntry内）のみ、日付追加ボタンの近くに表示したいため別state（dateAddError）を用いる。
   const [stepError, setStepError] = useState<string | null>(null)
   const [dateAddError, setDateAddError] = useState<string | null>(null)
 
@@ -157,7 +174,7 @@ export default function PledgeApplyPage() {
   const [selectedStaff, setSelectedStaff] = useState<any>(null)
   const [documentType, setDocumentType] = useState<typeof DOCUMENT_TYPES[number] | ''>('')
 
-  // ===== STEP2：就業先情報・雇用期間パターン =====
+  // ===== STEP2：就業先情報 =====
   const [workPlaceType, setWorkPlaceType] = useState<'client' | 'internal' | ''>('')
   const [clientName, setClientName] = useState('')
   const [clientPostalCode, setClientPostalCode] = useState('')
@@ -167,18 +184,25 @@ export default function PledgeApplyPage() {
   const [officeId, setOfficeId] = useState('')
   const selectedOffice = offices.find(o => o.id === officeId) || null
 
+  // ===== STEP3：就業日程（パターン選択＋日付・時刻。2026-07-23新設） =====
   const [periodPattern, setPeriodPattern] = useState<'single_multi' | 'range' | 'mix' | ''>('')
-  const [workDates, setWorkDates] = useState<string[]>([])
-  const [dateInput, setDateInput] = useState('')
+  // 期間指定（range・mix共通）の就業時間は1パターンのみ（2026-07-23簡略化：時間帯を分けたい場合は
+  // 単日で個別登録する運用とする）
+  const [periodShift, setPeriodShift] = useState<ShiftRow>(emptyShiftRow())
   const [rangeStart, setRangeStart] = useState('')
   const [rangeEnd, setRangeEnd] = useState('')
+  // 単日（single_multi・mix共通）：日付＋開始〜終了＋休憩を1セットで追加。最大10件。
+  const [singleEntries, setSingleEntries] = useState<SingleEntry[]>([])
+  const [singleDateInput, setSingleDateInput] = useState('')
+  const [singleStartInput, setSingleStartInput] = useState('')
+  const [singleEndInput, setSingleEndInput] = useState('')
+  const [singleBreakInput, setSingleBreakInput] = useState('')
 
-  // ===== STEP3：業務内容・就業時間 =====
+  // ===== STEP4：業務内容 =====
   const [workDescription, setWorkDescription] = useState('')
-  const [shifts, setShifts] = useState<ShiftRow[]>([emptyShiftRow()])
   const [workDescriptionTemplates, setWorkDescriptionTemplates] = useState<WorkDescriptionTemplate[]>([])
 
-  // ===== STEP4：給与（StepSalaryの賃金・交通費ブロックの簡略版。保険ブロックなし。
+  // ===== STEP5：給与（StepSalaryの賃金・交通費ブロックの簡略版。保険ブロックなし。
   //      2026-07-22伊藤さん指摘によりアルバイト向けに簡略化：月給・定額残業手当・住宅手当は削除、
   //      給与は単日（1日7時間）計算基準に変更。2026-07-22伊藤さん再訂正：月額ではなく
   //      単日での計算。時給は基本給×7時間、日給は入力値をそのまま使用） =====
@@ -218,13 +242,13 @@ export default function PledgeApplyPage() {
   })()
   const selectedTransport = PLEDGE_TRANSPORT_TYPES.find(t => t.id === transportType) || PLEDGE_TRANSPORT_TYPES[0]
 
-  // ===== STEP5：最終確認・保存 =====
+  // ===== STEP6：最終確認・保存 =====
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [isSubmitted, setIsSubmitted] = useState(false)
   // STEP5をapp/apply STEP8と同じ「セクション区切り＋修正するボタン＋展開/折りたたみ」形式にするための状態
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
-  const finalSectionIds = ['s1', 's2', 's3', 's4']
+  const finalSectionIds = ['s1', 's2', 's3', 's4', 's5']
   const expandAllSections = () => setCollapsedSections({})
   const collapseAllSections = () => setCollapsedSections(Object.fromEntries(finalSectionIds.map(id => [id, true])))
 
@@ -317,30 +341,12 @@ export default function PledgeApplyPage() {
   }
 
   const step1Valid = !!selectedStaff && !!documentType
-  const step2WorkPlaceValid = workPlaceType === 'client'
+
+  // STEP2：就業先情報のみ（2026-07-23：雇用期間・就業日程はSTEP3へ分離）
+  const step2Valid = workPlaceType === 'client'
     ? !!(clientName.trim() && clientPostalCode.trim() && clientAddress.trim() && clientTel.trim())
     : workPlaceType === 'internal' ? !!officeId : false
-  const step2PeriodValid = periodPattern === 'single_multi' ? workDates.length > 0
-    : periodPattern === 'range' ? !!(rangeStart && rangeEnd && rangeStart <= rangeEnd)
-    : periodPattern === 'mix' ? !!(rangeStart && rangeEnd && rangeStart <= rangeEnd) && workDates.length > 0
-    : false
-  const step2Valid = step2WorkPlaceValid && step2PeriodValid
 
-  const addWorkDate = () => {
-    if (!dateInput) return
-    setDateAddError(null)
-    if (workDates.includes(dateInput)) { setDateInput(''); return }
-    if (periodPattern === 'mix' && rangeStart && rangeEnd && dateInput >= rangeStart && dateInput <= rangeEnd) {
-      setDateAddError('指定した期間に含まれる日付です。期間内の日付は単日として追加する必要はありません。')
-      setDateInput('')
-      return
-    }
-    setWorkDates(prev => [...prev, dateInput].sort())
-    setDateInput('')
-  }
-  const removeWorkDate = (d: string) => setWorkDates(prev => prev.filter(x => x !== d))
-
-  // STEP3：就業時間表の行操作（必ず1行・最大5行）
   // 2026-07-22指摘⑦：就業時間（開始・終了）と休憩時間から所定労働時間を自動計算する
   const computeContractHours = (start: string, end: string, breakMinutes: string): string => {
     if (!start || !end) return ''
@@ -356,21 +362,56 @@ export default function PledgeApplyPage() {
     const hours = workMin / 60
     return Number.isInteger(hours) ? String(hours) : hours.toFixed(1)
   }
-  const updateShift = (idx: number, patch: Partial<ShiftRow>) => {
-    setShifts(prev => prev.map((row, i) => {
-      if (i !== idx) return row
-      const merged = { ...row, ...patch }
+
+  // STEP3：期間指定（range・mix）の就業時間1パターンの更新
+  const updatePeriodShift = (patch: Partial<ShiftRow>) => {
+    setPeriodShift(prev => {
+      const merged = { ...prev, ...patch }
       if ('start' in patch || 'end' in patch || 'breakMinutes' in patch) {
         merged.contractHours = computeContractHours(merged.start, merged.end, merged.breakMinutes)
       }
       return merged
-    }))
+    })
   }
-  const addShiftRow = () => setShifts(prev => (prev.length >= MAX_SHIFT_ROWS ? prev : [...prev, emptyShiftRow()]))
-  const removeShiftRow = (idx: number) => setShifts(prev => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx)))
+  const periodShiftValid = !!(periodShift.start && periodShift.end && periodShift.breakMinutes && periodShift.contractHours)
 
-  // 2026-07-22指摘（PdM自己レビュー）：所定労働時間・休憩時間も必須項目として扱う
-  const step3Valid = !!workDescription.trim() && shifts.every(s => !!s.start && !!s.end && !!s.contractHours && !!s.breakMinutes)
+  // STEP3：単日（single_multi・mix）の追加。日付＋開始〜終了＋休憩を1セットで検証してから追加する
+  // （2026-07-23：旧仕様は日付だけ先に追加し時刻は別枠の汎用パターンだったため、単日ごとに時刻が
+  // 異なる実態に対応できていなかった。1セットで追加する方式に変更）。
+  const addSingleEntry = () => {
+    setDateAddError(null)
+    if (!singleDateInput || !singleStartInput || !singleEndInput || !singleBreakInput) {
+      setDateAddError('日付・開始時刻・終了時刻・休憩時間をすべて入力してから追加してください。')
+      return
+    }
+    if (singleEntries.length >= MAX_SINGLE_ENTRIES) {
+      setDateAddError(`単日の登録は最大${MAX_SINGLE_ENTRIES}件までです。`)
+      return
+    }
+    if (singleEntries.some(e => e.date === singleDateInput)) {
+      setDateAddError('すでに追加済みの日付です。')
+      return
+    }
+    if (periodPattern === 'mix' && rangeStart && rangeEnd && singleDateInput >= rangeStart && singleDateInput <= rangeEnd) {
+      setDateAddError('指定した期間に含まれる日付です。期間内の日付は単日として追加する必要はありません。')
+      return
+    }
+    const contractHours = computeContractHours(singleStartInput, singleEndInput, singleBreakInput)
+    if (!contractHours) {
+      setDateAddError('終了時刻が開始時刻より後になるよう、休憩時間も含めて入力内容をご確認ください。')
+      return
+    }
+    setSingleEntries(prev => [...prev, { date: singleDateInput, start: singleStartInput, end: singleEndInput, breakMinutes: singleBreakInput, contractHours }].sort((a, b) => a.date.localeCompare(b.date)))
+    setSingleDateInput(''); setSingleStartInput(''); setSingleEndInput(''); setSingleBreakInput('')
+  }
+  const removeSingleEntry = (date: string) => setSingleEntries(prev => prev.filter(e => e.date !== date))
+
+  const step3Valid = periodPattern === 'single_multi' ? singleEntries.length > 0
+    : periodPattern === 'range' ? !!(rangeStart && rangeEnd && rangeStart <= rangeEnd) && periodShiftValid
+    : periodPattern === 'mix' ? !!(rangeStart && rangeEnd && rangeStart <= rangeEnd) && periodShiftValid && singleEntries.length > 0
+    : false
+
+  const step4Valid = !!workDescription.trim()
 
   const validateSalary = (): string | null => {
     if (!basicSalary) return '基本給を入力してください'
@@ -378,17 +419,24 @@ export default function PledgeApplyPage() {
     if (salaryTotal > 1000000 && !salaryWarningChecked) return '合計支給額が100万円超の警告について、上長の了承確認が必要です'
     return null
   }
-  const step4Valid = !validateSalary()
+  const step5Valid = !validateSalary()
 
-  // STEP2の雇用期間パターンから、実際に発行する帳票の枚数分の「雇用期間（開始日・終了日）」一覧を組み立てる。
-  // single_multi：選択した日ごとに1枚（開始=終了=その日）／range：期間で1枚／mix：期間で1枚＋単日ごとに1枚
-  const buildDocumentPeriods = (): { start: string; end: string }[] => {
-    const singleDocs = workDates.map(d => ({ start: d, end: d }))
-    const rangeDoc = rangeStart && rangeEnd ? [{ start: rangeStart, end: rangeEnd }] : []
-    if (periodPattern === 'single_multi') return singleDocs
-    if (periodPattern === 'range') return rangeDoc
-    if (periodPattern === 'mix') return [...rangeDoc, ...singleDocs]
-    return []
+  // 雇用期間・所定労働時間・休憩時間を1つの表にまとめる（帳票PDF実装で使用する行データ）。
+  // mixの場合は期間の行→単日の行の順（旧buildDocumentPeriodsの並び順を踏襲）。
+  const buildScheduleRows = (): ScheduleRow[] => {
+    const rows: ScheduleRow[] = []
+    if ((periodPattern === 'range' || periodPattern === 'mix') && rangeStart && rangeEnd) {
+      rows.push({
+        label: `${rangeStart.replaceAll('-', '/')}〜${rangeEnd.replaceAll('-', '/')}`,
+        start: periodShift.start, end: periodShift.end, breakMinutes: periodShift.breakMinutes, contractHours: periodShift.contractHours,
+      })
+    }
+    if (periodPattern === 'single_multi' || periodPattern === 'mix') {
+      for (const e of singleEntries) {
+        rows.push({ label: e.date.replaceAll('-', '/'), start: e.start, end: e.end, breakMinutes: e.breakMinutes, contractHours: e.contractHours })
+      }
+    }
+    return rows
   }
 
   const handleSubmit = async () => {
@@ -402,7 +450,7 @@ export default function PledgeApplyPage() {
         .limit(1)
         .maybeSingle()
 
-      const documentPeriods = buildDocumentPeriods()
+      const scheduleRows = buildScheduleRows()
 
       const inputData = {
         staff: {
@@ -411,9 +459,15 @@ export default function PledgeApplyPage() {
           department: selectedStaff.department,
         },
         workDescription,
-        shifts,
         periodPattern,
-        documentPeriods,
+        // 2026-07-23：発行書類は常に1枚に統合するため、旧documentPeriods（複数枚想定）は廃止。
+        // scheduleRowsが帳票PDF実装で使う「雇用期間＋所定労働時間及び休憩時間」の統合表データ。
+        // singleEntries・periodShift・rangeStart/rangeEndは編集画面再現用に生データとして保持する。
+        scheduleRows,
+        singleEntries,
+        periodShift: (periodPattern === 'range' || periodPattern === 'mix') ? periodShift : null,
+        rangeStart: (periodPattern === 'range' || periodPattern === 'mix') ? rangeStart : null,
+        rangeEnd: (periodPattern === 'range' || periodPattern === 'mix') ? rangeEnd : null,
         salary: {
           salaryType, basicSalary, rolePay, skillPay, salesPay,
           salaryTotal, transportType,
@@ -605,7 +659,7 @@ export default function PledgeApplyPage() {
             </>
           )}
 
-          {/* ===== STEP2：就業先情報・雇用期間パターン ===== */}
+          {/* ===== STEP2：就業先情報 ===== */}
           {currentStep === 2 && (
             <>
               <FormRow label="就業先情報" required>
@@ -672,18 +726,35 @@ export default function PledgeApplyPage() {
                 )}
               </FormRow>
 
+              {stepError && (
+                <div className="px-5">
+                  <ValidationBanner message={stepError} />
+                </div>
+              )}
+              <div className="border-t px-5 py-4 flex justify-between" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
+                <button onClick={e => { e.preventDefault(); setStepError(null); setCurrentStep(1) }}
+                  className="bg-white border px-5 py-2.5 rounded-lg text-sm transition-all" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>← 前へ</button>
+                <button onClick={e => { e.preventDefault(); if (!step2Valid) { setStepError('就業先情報の入力を完了してください'); return }; setStepError(null); setCurrentStep(3) }}
+                  className="text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-all" style={{ background: '#1B3A8C' }}>次へ進む →</button>
+              </div>
+            </>
+          )}
+
+          {/* ===== STEP3：就業日程（パターン選択＋日付・時刻。2026-07-23新設） ===== */}
+          {currentStep === 3 && (
+            <>
               <FormRow label="雇用期間の指定方法" required>
                 <div className="flex items-center gap-2 rounded-lg px-3 py-2 mb-1" style={{ background: '#EEF2FA', border: '1px solid #D0DAF0' }}>
                   <PledgeIcon name="check" className="w-4 h-4 shrink-0" style={{ color: '#1B3A8C' }} />
                   <p className="text-xs font-bold whitespace-pre-line" style={{ color: '#1B3A8C' }}>
-                    {'選択したパターンによって、発行される書類の枚数が変わります。\n下から働き方に合うものを選んでください。'}
+                    {'発行される書類は常に1枚です。働き方に合うパターンを選び、日付・就業時間を登録してください。'}
                   </p>
                 </div>
                 <div className="grid grid-cols-3 gap-2 max-w-2xl mb-2 items-stretch">
                   {([
-                    { id: 'single_multi', label: '単日・複数日選択', desc: '特定の日を1日ずつ登録\n登録日数分の書類を発行', icon: 'calendarMulti' },
-                    { id: 'range', label: '期間指定', desc: '開始日〜終了日で登録\n期間全体で書類1枚発行', icon: 'calendarRange' },
-                    { id: 'mix', label: 'MIX', desc: '期間と単日の両方登録\n期間で1枚+単日毎に1枚発行', icon: 'calendarMix' },
+                    { id: 'single_multi', label: '単日・複数日選択', desc: '日付ごとに就業時間が違う場合\n1日ずつ「日付＋時刻」を登録', icon: 'calendarMulti' },
+                    { id: 'range', label: '期間指定', desc: '開始日〜終了日、同じ時間帯で\n毎日勤務する場合', icon: 'calendarRange' },
+                    { id: 'mix', label: 'MIX', desc: '期間指定に加えて\n単日も個別に登録したい場合', icon: 'calendarMix' },
                   ] as const).map(p => {
                     const selected = periodPattern === p.id
                     return (
@@ -703,42 +774,97 @@ export default function PledgeApplyPage() {
                   })}
                 </div>
 
-                {periodPattern && (
-                  <p className="text-xs font-medium mb-2" style={{ color: '#1B3A8C' }}>
-                    {periodPattern === 'single_multi' && '就業日を1日ずつ追加してください。追加した日数分、書類を発行します。'}
-                    {periodPattern === 'range' && '雇用期間の開始日と終了日を指定してください。この期間で書類を1枚発行します。'}
-                    {periodPattern === 'mix' && '期間指定に加えて、単日の就業日も追加できます。期間分＋単日ごとに書類を発行します。'}
-                  </p>
-                )}
-
                 {(periodPattern === 'range' || periodPattern === 'mix') && (
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-xs" style={{ color: '#5A6A8A' }}>期間</span>
-                    <input type="date" value={rangeStart} onChange={e => setRangeStart(e.target.value)}
-                      className="border rounded-lg px-3 py-2 text-sm focus:outline-none" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
-                    <span className="text-xs" style={{ color: '#5A6A8A' }}>〜</span>
-                    <input type="date" value={rangeEnd} onChange={e => setRangeEnd(e.target.value)}
-                      className="border rounded-lg px-3 py-2 text-sm focus:outline-none" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
-                    {rangeStart && rangeEnd && rangeStart > rangeEnd && <span className="text-xs" style={{ color: '#DC2626' }}>開始日は終了日より前にしてください</span>}
+                  <div className="flex flex-col gap-2 mb-3">
+                    <p className="text-xs font-medium" style={{ color: '#1B3A8C' }}>期間と就業時間（1パターンのみ登録できます）</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs" style={{ color: '#5A6A8A' }}>期間</span>
+                      <input type="date" value={rangeStart} onChange={e => setRangeStart(e.target.value)}
+                        className="border rounded-lg px-3 py-2 text-sm focus:outline-none" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                      <span className="text-xs" style={{ color: '#5A6A8A' }}>〜</span>
+                      <input type="date" value={rangeEnd} onChange={e => setRangeEnd(e.target.value)}
+                        className="border rounded-lg px-3 py-2 text-sm focus:outline-none" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                      {rangeStart && rangeEnd && rangeStart > rangeEnd && <span className="text-xs" style={{ color: '#DC2626' }}>開始日は終了日より前にしてください</span>}
+                    </div>
+                    <div className="rounded-xl border p-3.5" style={{ borderColor: '#D0DAF0', background: '#F5F7FC' }}>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>就業時間（開始）</label>
+                          <input type="time" value={periodShift.start} onChange={e => updatePeriodShift({ start: e.target.value })}
+                            className="border rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>就業時間（終了）</label>
+                          <input type="time" value={periodShift.end} onChange={e => updatePeriodShift({ end: e.target.value })}
+                            className="border rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>休憩時間</label>
+                          <div className="flex items-center gap-1">
+                            <input type="text" value={periodShift.breakMinutes} onChange={e => updatePeriodShift({ breakMinutes: toHalfWidthDigits(e.target.value) })}
+                              placeholder="例）60" className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none bg-white w-full placeholder:text-gray-400" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                            <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>分</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>所定労働時間</label>
+                          <div className="flex items-center gap-1">
+                            <input type="text" value={periodShift.contractHours} readOnly
+                              placeholder="自動計算" className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-full placeholder:text-gray-400" style={{ borderColor: '#D0DAF0', color: '#1A2340', background: '#F0F2F7' }} />
+                            <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>時間</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
 
                 {(periodPattern === 'single_multi' || periodPattern === 'mix') && (
                   <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs" style={{ color: '#5A6A8A' }}>就業日</span>
-                      <input type="date" value={dateInput} onChange={e => setDateInput(e.target.value)}
-                        className="border rounded-lg px-3 py-2 text-sm focus:outline-none" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
-                      <button onClick={e => { e.preventDefault(); addWorkDate() }}
-                        className="text-xs px-3 py-2 rounded-lg border font-medium" style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: '#EEF2FA' }}>追加</button>
+                    <p className="text-xs font-medium" style={{ color: '#1B3A8C' }}>
+                      単日を1件ずつ登録してください（日付＋時刻をセットで追加。最大{MAX_SINGLE_ENTRIES}件）
+                    </p>
+                    <div className="rounded-xl border p-3.5" style={{ borderColor: '#D0DAF0', background: '#F5F7FC' }}>
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>日付</label>
+                          <input type="date" value={singleDateInput} onChange={e => setSingleDateInput(e.target.value)}
+                            className="border rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>就業時間（開始）</label>
+                          <input type="time" value={singleStartInput} onChange={e => setSingleStartInput(e.target.value)}
+                            className="border rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>就業時間（終了）</label>
+                          <input type="time" value={singleEndInput} onChange={e => setSingleEndInput(e.target.value)}
+                            className="border rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>休憩時間</label>
+                          <div className="flex items-center gap-1">
+                            <input type="text" value={singleBreakInput} onChange={e => setSingleBreakInput(toHalfWidthDigits(e.target.value))}
+                              placeholder="例）60" className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none bg-white w-full placeholder:text-gray-400" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                            <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>分</span>
+                          </div>
+                        </div>
+                        <div className="flex items-end">
+                          <button onClick={e => { e.preventDefault(); addSingleEntry() }}
+                            className="w-full text-xs px-3 py-2 rounded-lg border font-medium" style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: 'white' }}>＋ 追加</button>
+                        </div>
+                      </div>
                     </div>
                     <ValidationBanner message={dateAddError} />
-                    {workDates.length > 0 && (
+                    {singleEntries.length > 0 && (
                       <div className="flex flex-col gap-1.5">
-                        {workDates.map(d => (
-                          <div key={d} className="inline-flex items-center gap-6 rounded-lg pl-3 pr-2 py-2 border w-fit" style={{ borderColor: '#D0DAF0', background: 'white' }}>
-                            <span className="text-sm" style={{ color: '#1A2340' }}>{d.replaceAll('-', '/')}</span>
-                            <button onClick={e => { e.preventDefault(); removeWorkDate(d) }}
+                        {singleEntries.map(entry => (
+                          <div key={entry.date} className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 border" style={{ borderColor: '#D0DAF0', background: 'white' }}>
+                            <div className="flex items-center gap-4 flex-wrap">
+                              <span className="text-sm font-medium" style={{ color: '#1A2340' }}>{entry.date.replaceAll('-', '/')}</span>
+                              <span className="text-xs" style={{ color: '#5A6A8A' }}>{entry.start}〜{entry.end}（休憩{entry.breakMinutes}分／所定{entry.contractHours}時間）</span>
+                            </div>
+                            <button onClick={e => { e.preventDefault(); removeSingleEntry(entry.date) }}
                               className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md shrink-0" style={{ color: '#DC2626' }}>
                               <PledgeIcon name="trash" className="w-3.5 h-3.5" />
                               削除
@@ -747,20 +873,7 @@ export default function PledgeApplyPage() {
                         ))}
                       </div>
                     )}
-                    {workDates.length === 0 && <p className="text-xs" style={{ color: '#5A6A8A' }}>就業日を1件以上追加してください（選択した日数分、帳票を各1枚発行します）</p>}
-                  </div>
-                )}
-
-                {periodPattern && step2PeriodValid && (
-                  <div className="mt-3 flex items-center justify-between rounded-lg px-4 py-3 border" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
-                    <span className="text-xs font-medium flex items-center gap-1.5" style={{ color: '#1B3A8C' }}>
-                      <PledgeIcon name="check" className="w-4 h-4" />
-                      この内容で発行される書類
-                    </span>
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-2xl font-bold" style={{ color: '#1B3A8C' }}>{buildDocumentPeriods().length}</span>
-                      <span className="text-xs" style={{ color: '#5A6A8A' }}>枚</span>
-                    </div>
+                    {singleEntries.length === 0 && <p className="text-xs" style={{ color: '#5A6A8A' }}>単日を1件以上追加してください。</p>}
                   </div>
                 )}
               </FormRow>
@@ -771,16 +884,16 @@ export default function PledgeApplyPage() {
                 </div>
               )}
               <div className="border-t px-5 py-4 flex justify-between" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
-                <button onClick={e => { e.preventDefault(); setStepError(null); setCurrentStep(1) }}
+                <button onClick={e => { e.preventDefault(); setStepError(null); setCurrentStep(2) }}
                   className="bg-white border px-5 py-2.5 rounded-lg text-sm transition-all" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>← 前へ</button>
-                <button onClick={e => { e.preventDefault(); if (!step2Valid) { setStepError('就業先情報と雇用期間の入力を完了してください'); return }; setStepError(null); setDateAddError(null); setCurrentStep(3) }}
+                <button onClick={e => { e.preventDefault(); if (!periodPattern) { setStepError('雇用期間の指定方法を選択してください'); return }; if (!step3Valid) { setStepError('選択したパターンに応じて、日付・就業時間の入力を完了してください'); return }; setStepError(null); setDateAddError(null); setCurrentStep(4) }}
                   className="text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-all" style={{ background: '#1B3A8C' }}>次へ進む →</button>
               </div>
             </>
           )}
 
-          {/* ===== STEP3：業務内容・就業時間 ===== */}
-          {currentStep === 3 && (
+          {/* ===== STEP4：業務内容 ===== */}
+          {currentStep === 4 && (
             <>
               <FormRow label="業務内容" required>
                 {workDescriptionTemplates.length > 0 && (
@@ -810,79 +923,22 @@ export default function PledgeApplyPage() {
                 <p className="text-xs text-right" style={{ color: '#5A6A8A' }}>{workDescription.length} / 2000文字</p>
               </FormRow>
 
-              <FormRow label="所定労働時間及び休憩時間" required>
-                <p className="text-xs -mt-1" style={{ color: '#5A6A8A' }}>
-                  勤務パターンごとに1行ずつ登録してください（最大{MAX_SHIFT_ROWS}パターン）。
-                </p>
-                <div className="flex flex-col gap-2.5">
-                  {shifts.map((s, idx) => (
-                    <div key={idx} className="rounded-xl border p-3.5" style={{ borderColor: '#D0DAF0', background: '#F5F7FC' }}>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ background: '#1B3A8C', color: 'white' }}>パターン{idx + 1}</span>
-                        {shifts.length > 1 && (
-                          <button onClick={e => { e.preventDefault(); removeShiftRow(idx) }}
-                            className="flex items-center gap-1 text-xs font-medium" style={{ color: '#DC2626' }}>
-                            <PledgeIcon name="trash" className="w-3.5 h-3.5" />
-                            削除
-                          </button>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-                        <div className="flex flex-col gap-1">
-                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>就業時間（開始）</label>
-                          <input type="time" value={s.start} onChange={e => updateShift(idx, { start: e.target.value })}
-                            className="border rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>就業時間（終了）</label>
-                          <input type="time" value={s.end} onChange={e => updateShift(idx, { end: e.target.value })}
-                            className="border rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>休憩時間</label>
-                          <div className="flex items-center gap-1">
-                            <input type="text" value={s.breakMinutes} onChange={e => updateShift(idx, { breakMinutes: toHalfWidthDigits(e.target.value) })}
-                              placeholder="例）60" className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none bg-white w-full placeholder:text-gray-400" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
-                            <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>分</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>所定労働時間</label>
-                          <div className="flex items-center gap-1">
-                            <input type="text" value={s.contractHours} readOnly
-                              placeholder="自動計算" className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-full placeholder:text-gray-400" style={{ borderColor: '#D0DAF0', color: '#1A2340', background: '#F0F2F7' }} />
-                            <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>時間</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {shifts.length < MAX_SHIFT_ROWS && (
-                  <button onClick={e => { e.preventDefault(); addShiftRow() }}
-                    className="flex items-center justify-center gap-1.5 w-fit text-xs px-3 py-2 rounded-lg border font-medium"
-                    style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: '#EEF2FA' }}>
-                    ＋ 勤務パターンを追加
-                  </button>
-                )}
-              </FormRow>
-
               {stepError && (
                 <div className="px-5">
                   <ValidationBanner message={stepError} />
                 </div>
               )}
               <div className="border-t px-5 py-4 flex justify-between" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
-                <button onClick={e => { e.preventDefault(); setStepError(null); setCurrentStep(2) }}
+                <button onClick={e => { e.preventDefault(); setStepError(null); setCurrentStep(3) }}
                   className="bg-white border px-5 py-2.5 rounded-lg text-sm transition-all" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>← 前へ</button>
-                <button onClick={e => { e.preventDefault(); if (!step3Valid) { setStepError('業務内容と就業時間（開始・終了）を入力してください'); return }; setStepError(null); setCurrentStep(4) }}
+                <button onClick={e => { e.preventDefault(); if (!step4Valid) { setStepError('業務内容を入力してください'); return }; setStepError(null); setCurrentStep(5) }}
                   className="text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-all" style={{ background: '#1B3A8C' }}>次へ進む →</button>
               </div>
             </>
           )}
 
-          {/* ===== STEP4：給与（StepSalaryの賃金・交通費ブロックの簡略版） ===== */}
-          {currentStep === 4 && (
+          {/* ===== STEP5：給与（StepSalaryの賃金・交通費ブロックの簡略版） ===== */}
+          {currentStep === 5 && (
             <>
               <PledgeSectionHeader label="賃金" />
 
@@ -961,16 +1017,16 @@ export default function PledgeApplyPage() {
                 </div>
               )}
               <div className="border-t px-5 py-4 flex justify-between" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
-                <button onClick={e => { e.preventDefault(); setStepError(null); setCurrentStep(3) }}
+                <button onClick={e => { e.preventDefault(); setStepError(null); setCurrentStep(4) }}
                   className="bg-white border px-5 py-2.5 rounded-lg text-sm transition-all" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>← 前へ</button>
-                <button onClick={e => { e.preventDefault(); const err = validateSalary(); if (err) { setStepError(err); return }; setStepError(null); setCurrentStep(5) }}
+                <button onClick={e => { e.preventDefault(); const err = validateSalary(); if (err) { setStepError(err); return }; setStepError(null); setCurrentStep(6) }}
                   className="text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-all" style={{ background: '#1B3A8C' }}>次へ進む →</button>
               </div>
             </>
           )}
 
-          {/* ===== STEP5：最終確認・送信 ===== */}
-          {currentStep === 5 && (
+          {/* ===== STEP6：最終確認・送信 ===== */}
+          {currentStep === 6 && (
             isSubmitted ? (
               <div className="px-5 py-14 flex flex-col items-center gap-4" style={{ background: 'white' }}>
                 <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: '#EEF2FA' }}>
@@ -1003,7 +1059,7 @@ export default function PledgeApplyPage() {
                     <PledgeFinalRow label="帳票種別" value={documentType} />
                   </PledgeFinalSection>
 
-                  <PledgeFinalSection id="s2" title="STEP2：就業先情報・雇用期間" sub="就業先の情報と雇用期間"
+                  <PledgeFinalSection id="s2" title="STEP2：就業先情報" sub="就業先の情報"
                     collapsedSections={collapsedSections} setCollapsedSections={setCollapsedSections} onEdit={() => setCurrentStep(2)}>
                     <PledgeFinalRow label="就業先区分" value={workPlaceType === 'client' ? 'クライアント先' : '自社拠点'} />
                     <PledgeFinalRow label="就業先"
@@ -1011,23 +1067,24 @@ export default function PledgeApplyPage() {
                         ? `${clientName}\n〒${clientPostalCode}　${clientAddress}\nTEL：${clientTel}`
                         : `${selectedOffice?.office_name ?? ''}\n〒${selectedOffice?.postal_code || '未登録'}　${selectedOffice?.address || '住所未登録'}\nTEL：${selectedOffice?.tel || '未登録'}`}
                       multiline />
+                  </PledgeFinalSection>
+
+                  <PledgeFinalSection id="s3" title="STEP3：就業日程" sub="雇用期間の指定方法・日付・就業時間"
+                    collapsedSections={collapsedSections} setCollapsedSections={setCollapsedSections} onEdit={() => setCurrentStep(3)}>
                     <PledgeFinalRow label="雇用期間の指定方法"
                       value={periodPattern === 'single_multi' ? '単日・複数日選択' : periodPattern === 'range' ? '期間指定' : periodPattern === 'mix' ? 'MIX' : ''} />
-                    <PledgeFinalRow label="雇用期間"
-                      value={buildDocumentPeriods().map(p => p.start === p.end ? p.start.replaceAll('-', '/') : `${p.start.replaceAll('-', '/')}〜${p.end.replaceAll('-', '/')}`).join('\n')}
-                      multiline suffix={`（計${buildDocumentPeriods().length}枚）`} />
+                    <PledgeFinalRow label="就業日程（雇用期間・所定労働時間・休憩）"
+                      value={buildScheduleRows().map(r => `${r.label}：${r.start}〜${r.end}（所定${r.contractHours || '－'}時間／休憩${r.breakMinutes || '－'}分）`).join('\n')}
+                      multiline suffix="（発行書類は1枚に統合されます）" />
                   </PledgeFinalSection>
 
-                  <PledgeFinalSection id="s3" title="STEP3：業務内容・就業時間" sub="業務内容と所定労働時間"
-                    collapsedSections={collapsedSections} setCollapsedSections={setCollapsedSections} onEdit={() => setCurrentStep(3)}>
-                    <PledgeFinalRow label="業務内容" value={workDescription} multiline />
-                    <PledgeFinalRow label="所定労働時間・休憩"
-                      value={shifts.map((s, i) => `パターン${i + 1}：${s.start}〜${s.end}（所定${s.contractHours || '－'}時間／休憩${s.breakMinutes || '－'}分）`).join('\n')}
-                      multiline />
-                  </PledgeFinalSection>
-
-                  <PledgeFinalSection id="s4" title="STEP4：給与" sub="給与・交通費の内容"
+                  <PledgeFinalSection id="s4" title="STEP4：業務内容" sub="業務内容"
                     collapsedSections={collapsedSections} setCollapsedSections={setCollapsedSections} onEdit={() => setCurrentStep(4)}>
+                    <PledgeFinalRow label="業務内容" value={workDescription} multiline />
+                  </PledgeFinalSection>
+
+                  <PledgeFinalSection id="s5" title="STEP5：給与" sub="給与・交通費の内容"
+                    collapsedSections={collapsedSections} setCollapsedSections={setCollapsedSections} onEdit={() => setCurrentStep(5)}>
                     <PledgeFinalRow label="給与の種類" value={salaryType} />
                     <PledgeFinalRow label="基本給・各種手当"
                       value={[
@@ -1048,7 +1105,7 @@ export default function PledgeApplyPage() {
                 )}
 
                 <div className="border-t px-5 py-4 flex justify-between" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
-                  <button onClick={e => { e.preventDefault(); setCurrentStep(4) }}
+                  <button onClick={e => { e.preventDefault(); setCurrentStep(5) }}
                     className="bg-white border px-5 py-2.5 rounded-lg text-sm transition-all" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>← 前へ</button>
                   <button onClick={e => { e.preventDefault(); handleSubmit() }} disabled={isSubmitting}
                     className="text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-all"

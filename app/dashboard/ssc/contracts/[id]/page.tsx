@@ -6,6 +6,7 @@ import { useSessionCollisionGuard } from '@/lib/useSessionCollisionGuard'
 import { useRouter, useParams } from 'next/navigation'
 import Image from 'next/image'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
+import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 
 // ===== 型定義 =====
 
@@ -264,7 +265,7 @@ const AutoCheckWarningBanner = ({ level, results }: { level: WarningLevel; resul
 
 export default function SSCContractDetail() {
   const router = useRouter()
-  const { showError } = useToast()
+  const { showError, showSuccess } = useToast()
   const params = useParams()
   const id = params?.id as string
 
@@ -299,6 +300,15 @@ export default function SSCContractDetail() {
   const [restoreLoading, setRestoreLoading] = useState(false)
   const [restoreError, setRestoreError] = useState('')
   const [restoreDone, setRestoreDone] = useState(false)
+
+  // ===== 自己取り下げ機能（2026-07-24新設） =====
+  // SSC・管理部も/applyから自ら申請できるため、担当営業と同じく「自分自身が申請した案件」を
+  // 申請中・差し戻し中の間だけ取り下げられるようにする。この場合は承認・差し戻しUIの代わりに
+  // 取り下げUIのみを表示する（自分の申請を自分で承認する導線を作らないため）。
+  const [showWithdrawForm, setShowWithdrawForm] = useState(false)
+  const [withdrawReason, setWithdrawReason] = useState('')
+  const [withdrawError, setWithdrawError] = useState<string | null>(null)
+  const [withdrawing, setWithdrawing] = useState(false)
 
   useEffect(() => {
     const init = async () => {
@@ -341,6 +351,35 @@ export default function SSCContractDetail() {
   const refetchContract = async () => {
     const { data: row } = await supabase.from('contracts').select('*').eq('id', id).single()
     if (row) setContract(row as ContractDetail)
+  }
+
+  const handleWithdraw = async () => {
+    if (!contract) return
+    setWithdrawError(null)
+    setWithdrawing(true)
+    const { data, error } = await supabase
+      .from('contracts')
+      .update({
+        status: '取り下げ',
+        withdrawn_at: new Date().toISOString(),
+        withdrawn_by: user?.id || null,
+        withdrawn_reason: withdrawReason.trim() || null,
+      })
+      .eq('id', contract.id)
+      .in('status', ['申請中', '差し戻し中'])
+      .select()
+      .maybeSingle()
+    setWithdrawing(false)
+    if (error) { showError('取り下げの保存に失敗しました: ' + error.message); return }
+    if (!data) {
+      showError('この申請はすでに状況が変わっているため、取り下げできませんでした。画面を更新してご確認ください。')
+      await refetchContract()
+      return
+    }
+    setContract(data as ContractDetail)
+    setShowWithdrawForm(false)
+    setWithdrawReason('')
+    showSuccess('申請を取り下げました。')
   }
 
   // 承認処理（warning_level が none / yellow の場合。理由入力は不要）
@@ -568,6 +607,10 @@ export default function SSCContractDetail() {
   const trialCalc = calcTrialMonths(f.trialStart || '', f.trialEnd || '')
 
   const isAlreadyProcessed = contract.status !== '申請中'
+  // 自分自身が申請した案件かどうか（2026-07-24追加）。SSC・管理部は/applyから自ら申請できるため、
+  // 自分の申請を自分で承認する導線は作らず、代わりに取り下げのみ提示する。
+  const isOwnSubmission = contract.created_by === user?.id
+  const isWithdrawable = contract.status === '申請中' || contract.status === '差し戻し中'
 
   // 自動チェックの警告レベル（2026-07-02追加：中身未実装のため現状は必ず'none'）
   const warningLevel: WarningLevel = contract.warning_level || 'none'
@@ -937,7 +980,52 @@ export default function SSCContractDetail() {
                 一覧に戻る
               </button>
             </div>
-          ) : isAlreadyProcessed ? (
+          ) : isOwnSubmission && isWithdrawable ? (
+              <>
+                <div className="rounded-xl p-4 mb-2 border" style={{ background: '#FFFBEB', borderColor: '#FDE68A' }}>
+                  <p className="text-sm font-bold mb-1" style={{ color: '#92400E' }}>この申請はあなた自身が申請したものです</p>
+                  <p className="text-xs leading-relaxed" style={{ color: '#1A2340' }}>自分自身の申請を承認することはできません。内容を修正したい場合は、取り下げて再申請してください。</p>
+                </div>
+                {!showWithdrawForm ? (
+                  <button
+                    onClick={() => setShowWithdrawForm(true)}
+                    className="w-full py-3 rounded-xl text-sm font-bold border-2 transition-all"
+                    style={{ color: '#6B7280', borderColor: '#D1D5DB', background: 'white' }}>
+                    この申請を取り下げる
+                  </button>
+                ) : (
+                  <div className="rounded-xl p-4 border-2" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
+                    <p className="text-sm font-bold mb-2" style={{ color: '#1A2340' }}>この申請を取り下げますか？</p>
+                    <p className="text-xs mb-3" style={{ color: '#6B7280' }}>取り下げると、この申請は一覧の承認待ち・差し戻し中から消え、再申請が必要になります。この操作は取り消せません。</p>
+                    <textarea
+                      value={withdrawReason}
+                      onChange={e => setWithdrawReason(e.target.value)}
+                      placeholder="取り下げ理由（任意）"
+                      rows={2}
+                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none"
+                      style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                    />
+                    <ValidationBanner message={withdrawError} />
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        onClick={handleWithdraw}
+                        disabled={withdrawing}
+                        className="text-sm px-4 py-2 rounded-lg font-bold text-white transition-all disabled:opacity-60"
+                        style={{ background: '#DC2626' }}>
+                        {withdrawing ? '処理中...' : '取り下げる'}
+                      </button>
+                      <button
+                        onClick={() => { setShowWithdrawForm(false); setWithdrawReason(''); setWithdrawError(null) }}
+                        disabled={withdrawing}
+                        className="text-sm px-4 py-2 rounded-lg border font-medium transition-all"
+                        style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
+                        キャンセル
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : isAlreadyProcessed ? (
               <p className="text-sm text-center" style={{ color: '#9CA3AF' }}>この申請は処理済みです（ステータス：{contract.status}）</p>
             ) : (
               <>

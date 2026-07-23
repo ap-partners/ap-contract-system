@@ -10,6 +10,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { supabase, getAuthHeader } from '@/lib/supabase'
 import { useSessionCollisionGuard } from '@/lib/useSessionCollisionGuard'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
+import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 
 type ScheduleRow = { label: string; start: string; end: string; breakMinutes: string; contractHours: string }
 
@@ -18,6 +19,7 @@ type PledgeDetail = {
   staff_id: string
   document_type: string
   status: string
+  created_by: string
   work_place_type: string
   client_name: string | null
   client_postal_code: string | null
@@ -59,7 +61,7 @@ const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
 
 export default function SSCPledgeDetail() {
   const router = useRouter()
-  const { showError } = useToast()
+  const { showError, showSuccess } = useToast()
   const params = useParams()
   const id = params?.id as string
 
@@ -76,6 +78,12 @@ export default function SSCPledgeDetail() {
   const [rejectReason, setRejectReason] = useState('')
   const [showApproveConfirm, setShowApproveConfirm] = useState(false)
   const [actionDone, setActionDone] = useState<'approved' | 'rejected' | null>(null)
+
+  // 自己取り下げ機能（2026-07-24新設。contracts側と同じ設計）
+  const [showWithdrawForm, setShowWithdrawForm] = useState(false)
+  const [withdrawReason, setWithdrawReason] = useState('')
+  const [withdrawError, setWithdrawError] = useState<string | null>(null)
+  const [withdrawing, setWithdrawing] = useState(false)
 
   useEffect(() => {
     const init = async () => {
@@ -103,6 +111,35 @@ export default function SSCPledgeDetail() {
   const refetch = async () => {
     const { data: row } = await supabase.from('pledges').select('*').eq('id', id).single()
     if (row) setPledge(row as PledgeDetail)
+  }
+
+  const handleWithdraw = async () => {
+    if (!pledge) return
+    setWithdrawError(null)
+    setWithdrawing(true)
+    const { data, error } = await supabase
+      .from('pledges')
+      .update({
+        status: '取り下げ',
+        withdrawn_at: new Date().toISOString(),
+        withdrawn_by: user?.id || null,
+        withdrawn_reason: withdrawReason.trim() || null,
+      })
+      .eq('id', pledge.id)
+      .in('status', ['申請中', '差し戻し中'])
+      .select()
+      .maybeSingle()
+    setWithdrawing(false)
+    if (error) { showError('取り下げの保存に失敗しました: ' + error.message); return }
+    if (!data) {
+      showError('この申請はすでに状況が変わっているため、取り下げできませんでした。画面を更新してご確認ください。')
+      await refetch()
+      return
+    }
+    setPledge(data as PledgeDetail)
+    setShowWithdrawForm(false)
+    setWithdrawReason('')
+    showSuccess('申請を取り下げました。')
   }
 
   const handleApprove = async () => {
@@ -197,6 +234,8 @@ export default function SSCPledgeDetail() {
   const scheduleRows = pledge.input_data?.scheduleRows || []
   const salary = pledge.input_data?.salary || {}
   const isAlreadyProcessed = pledge.status !== '申請中'
+  const isOwnSubmission = pledge.created_by === user?.id
+  const isWithdrawable = pledge.status === '申請中' || pledge.status === '差し戻し中'
 
   return (
     <div className="min-h-screen" style={{ background: '#F8FAFD' }}>
@@ -292,6 +331,51 @@ export default function SSCPledgeDetail() {
               <p className="text-sm" style={{ color: '#B91C1C' }}>申請者へ差し戻し理由が表示されます。</p>
               <button onClick={() => router.push(backPath)} className="mt-3 text-sm px-4 py-2 rounded-lg text-white" style={{ background: '#1B3A8C' }}>一覧に戻る</button>
             </div>
+          ) : isOwnSubmission && isWithdrawable ? (
+            <>
+              <div className="rounded-xl p-4 mb-2 border" style={{ background: '#FFFBEB', borderColor: '#FDE68A' }}>
+                <p className="text-sm font-bold mb-1" style={{ color: '#92400E' }}>この申請はあなた自身が申請したものです</p>
+                <p className="text-xs leading-relaxed" style={{ color: '#1A2340' }}>自分自身の申請を承認することはできません。内容を修正したい場合は、取り下げて再申請してください。</p>
+              </div>
+              {!showWithdrawForm ? (
+                <button
+                  onClick={() => setShowWithdrawForm(true)}
+                  className="w-full py-3 rounded-xl text-sm font-bold border-2 transition-all"
+                  style={{ color: '#6B7280', borderColor: '#D1D5DB', background: 'white' }}>
+                  この申請を取り下げる
+                </button>
+              ) : (
+                <div className="rounded-xl p-4 border-2" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
+                  <p className="text-sm font-bold mb-2" style={{ color: '#1A2340' }}>この申請を取り下げますか？</p>
+                  <p className="text-xs mb-3" style={{ color: '#6B7280' }}>取り下げると、この申請は一覧の承認待ち・差し戻し中から消え、再申請が必要になります。この操作は取り消せません。</p>
+                  <textarea
+                    value={withdrawReason}
+                    onChange={e => setWithdrawReason(e.target.value)}
+                    placeholder="取り下げ理由（任意）"
+                    rows={2}
+                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none"
+                    style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                  />
+                  <ValidationBanner message={withdrawError} />
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={handleWithdraw}
+                      disabled={withdrawing}
+                      className="text-sm px-4 py-2 rounded-lg font-bold text-white transition-all disabled:opacity-60"
+                      style={{ background: '#DC2626' }}>
+                      {withdrawing ? '処理中...' : '取り下げる'}
+                    </button>
+                    <button
+                      onClick={() => { setShowWithdrawForm(false); setWithdrawReason(''); setWithdrawError(null) }}
+                      disabled={withdrawing}
+                      className="text-sm px-4 py-2 rounded-lg border font-medium transition-all"
+                      style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
+                      キャンセル
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           ) : isAlreadyProcessed ? (
             <p className="text-sm text-center" style={{ color: '#9CA3AF' }}>この申請は処理済みです（ステータス：{pledge.status}）</p>
           ) : (

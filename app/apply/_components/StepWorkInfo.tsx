@@ -16,6 +16,7 @@ interface StepWorkInfoProps {
   csvSearched: boolean; setCsvSearched: (v: boolean) => void
   csvResults: any[]; setCsvResults: (v: any[]) => void
   csvNoResults: boolean; setCsvNoResults: (v: boolean) => void
+  csvFallbackMatch: boolean
   resetStep2Step3ForModeChange: () => void
 
   csvSystem: string; setCsvSystem: (v: string) => void
@@ -65,6 +66,7 @@ interface StepWorkInfoProps {
 export default function StepWorkInfo({
   csvRequestSent, setCsvRequestSent,
   csvMode, setCsvMode, csvSearched, setCsvSearched, csvResults, setCsvResults, csvNoResults, setCsvNoResults,
+  csvFallbackMatch,
   resetStep2Step3ForModeChange,
   csvSystem, setCsvSystem, csvDispatchStart, setCsvDispatchStart, csvLoading, handleCsvSearch,
   csvSelectedId, handleCsvResultSelect,
@@ -190,6 +192,15 @@ export default function StepWorkInfo({
                   {/* ヒットあり */}
                   {csvSearched && csvResults.length > 0 && !csvNoResults && (
                     <div className="flex flex-col gap-2">
+                      {csvFallbackMatch && (
+                        <div className="rounded-lg border px-3 py-2"
+                          style={{ background: '#FFFBEB', borderColor: '#FDE68A' }}>
+                          <p className="text-xs" style={{ color: '#92400E' }}>
+                            この方はSBクルーコードがまだスタッフマスタに反映されていないため、氏名・生年月日で照合した候補です。
+                            内容をよくご確認の上、選択してください。
+                          </p>
+                        </div>
+                      )}
                       <p className="text-xs" style={{ color: '#5A6A8A' }}>{csvResults.length}件見つかりました。該当する就業先を選択してください。</p>
                       <div className="rounded-lg border overflow-hidden bg-white" style={{ borderColor: '#D0DAF0' }}>
                         {csvResults.map((r, idx) => (

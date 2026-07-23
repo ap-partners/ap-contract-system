@@ -390,8 +390,12 @@ export async function POST(req: NextRequest) {
 
   // ===== StaffExpress（スタッフマスタ・部門マスタ）は契約CSVと仕組みが異なるため別処理 =====
   // ・保存先が csv_raw_data ではなく department_master / staff（履歴は master_imports）。
-  // ・上書き方針も「保護対象なし・全件上書き」で、依頼の自動マッチ（requests連携）も対象外。
+  // ・上書き方針も「保護対象なし・全件上書き」で、requests連携は「スタッフ登録依頼」の自動マッチのみ対象。
   // ・部門マスタは staff.dept_no の参照元のため、両ファイルとも指定された場合は必ず部門→スタッフの順で処理する。
+  // ・2026-07-23追加：winworksのみ社員番号でなくstaff.crew_code経由でCSVと紐づくため、スタッフ登録済み・
+  //   winworksのCSVデータも既に存在するのにcrew_code未反映だった、という理由で「CSVインポート依頼」が
+  //   宙ぶらりんのまま残るケースが判明。runAutoMatch自体はマッチ判定のたびにcrew_codeを引き直す設計に
+  //   なっているため、ここでも呼び出すことで、crew_code反映後に既存の未解消winworks依頼を解消できる。
   if (system === 'StaffExpress') {
     const fileDept = formData.get('fileDept') as File | null
     const fileStaff = formData.get('fileStaff') as File | null
@@ -408,15 +412,19 @@ export async function POST(req: NextRequest) {
         deptResult = await processDepartmentMasterFile(buf, auth.userId)
       }
       let staffRegisterAutoMatch: { matchedCount: number; notifiedCount: number; notifyErrors: string[] } | null = null
+      let winworksCrewCodeAutoMatch: { matchedCount: number; notifiedCount: number; notifyErrors: string[] } | null = null
       if (fileStaff) {
         const buf = Buffer.from(await fileStaff.arrayBuffer())
         fileNames.push(fileStaff.name)
         staffResult = await processStaffMasterFile(buf, auth.userId)
         staffRegisterAutoMatch = await runStaffRegisterAutoMatch(auth.userId)
+        // crew_codeが今回新たに反映されたことで解消できるようになったwinworksのCSVインポート依頼がないか再判定する
+        winworksCrewCodeAutoMatch = await runAutoMatch('winworks', auth.userId)
       }
       return NextResponse.json({
         success: true,
         fileNames,
+        winworksCrewCodeAutoMatch,
         staffExpressResult: {
           department: deptResult,
           staff: staffResult,

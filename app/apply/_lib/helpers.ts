@@ -639,3 +639,22 @@ export const joinDeptAndPerson = (dept: string | null | undefined, person: strin
   const parts = [dept, person].map(v => (v || '').toString().trim()).filter(Boolean)
   return parts.length > 0 ? parts.join(' ') : null
 }
+
+// winworksでcrew_code未登録スタッフのCSVフォールバック照合専用（2026-07-23追加）：
+// 氏名の表記ゆれのうち、①姓名間のスペース（全角/半角/なし）の違い、②よく混同される代表的な
+// 旧字体・新字体の違い、の2点だけを吸収して比較用に正規化する。外国籍スタッフ等、漢字・カナ・
+// アルファベットの文字種そのものが異なるケースは正規化しようがないため対象外（確定仕様）。
+// 網羅的な異体字テーブルではなく、日本の氏名でよく実務上問題になる代表的なペアのみを収録している。
+const KANJI_VARIANT_MAP: Record<string, string> = {
+  '髙': '高', '﨑': '崎', '邊': '辺', '邉': '辺', '齋': '斎', '齊': '斉',
+  '澤': '沢', '關': '関', '濵': '浜', '濱': '浜', '國': '国', '廣': '広',
+  '瀧': '滝', '櫻': '桜', '德': '徳', '眞': '真', '惠': '恵', '峯': '峰',
+  '槇': '槙', '龍': '竜', '應': '応', '榮': '栄', '圓': '円', '靑': '青',
+  '舘': '館', '曾': '曽', '萬': '万', '攝': '摂', '藝': '芸', '亙': '亘',
+}
+
+export const normalizeJapaneseName = (value: string | null | undefined): string => {
+  if (!value) return ''
+  const noSpace = String(value).replace(/[\s　]+/g, '')
+  return noSpace.split('').map(ch => KANJI_VARIANT_MAP[ch] || ch).join('')
+}

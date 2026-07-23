@@ -18,7 +18,7 @@ import {
   type DiffPart, computeCharDiff,
   extractResponsibilityFromWinworks, buildWelfareTextFromEstaffing, buildWelfareTextFromHRstation,
   numToYesNo, extractCsvFieldsRaw, extractCsvFields, normalizeDateSlash, newlineToSpace,
-  formatTelHyphen, joinDeptAndPerson,
+  formatTelHyphen, joinDeptAndPerson, normalizeJapaneseName,
 } from './_lib/helpers'
 import {
   DiffText, Req, AutoBadge, Tooltip, FormRow, EmptyHintBubble, FormRowAuto,
@@ -88,6 +88,9 @@ function ApplyPageInner() {
   const [csvSearched, setCsvSearched] = useState(false)
   const [csvResults, setCsvResults] = useState<any[]>([])
   const [csvNoResults, setCsvNoResults] = useState(false)
+  // winworksでcrew_code未登録のため、氏名・生年月日によるフォールバック照合で見つかった候補かどうか
+  // （2026-07-23追加。この場合は完全一致ではないため、選択前に内容確認を促す注記を表示する）
+  const [csvFallbackMatch, setCsvFallbackMatch] = useState(false)
   const [csvLoading, setCsvLoading] = useState(false)
   const [csvSelectedId, setCsvSelectedId] = useState<number | null>(null)
   const [csvRequestSent, setCsvRequestSent] = useState(false)
@@ -1423,6 +1426,34 @@ function ApplyPageInner() {
     }
   }
 
+  // winworksでcrew_code未登録スタッフ専用のフォールバック検索（2026-07-23追加）：
+  // CSVデータ自体は既に取り込まれているのに、スタッフマスタ側のSBクルーコード反映が
+  // 間に合っていないだけ、というケースで営業が手入力を強いられないようにするための救済策。
+  // 氏名（スペース・代表的な旧字体のみ正規化）＋生年月日＋派遣開始日の3点が一致する行のみを候補とする。
+  // 外国籍スタッフ等、文字種自体が異なり正規化しようがないケースは対象外（該当なしのまま）。
+  const searchWinworksByNameFallback = async (): Promise<any[]> => {
+    const staffName = selectedStaff?.name
+    const staffBirthday = selectedStaff?.birthday
+    if (!staffName || !staffBirthday) return []
+
+    const { data, error } = await supabase
+      .from('csv_raw_data')
+      .select('*')
+      .eq('system_type', 'winworks')
+      .lte('dispatch_start', csvDispatchStart)
+      .gte('dispatch_end', csvDispatchStart)
+    if (error || !data) return []
+
+    const targetName = normalizeJapaneseName(staffName)
+    const matched = data.filter((r: any) => {
+      const rawName = r.raw_data?.['氏名']
+      const rawBirthday = r.raw_data?.['生年月日']
+      if (!rawName || !rawBirthday) return false
+      return normalizeJapaneseName(rawName) === targetName && normalizeDateSlash(rawBirthday) === staffBirthday
+    })
+    return matched
+  }
+
   // STEP2：CSV検索（システムごとの検索キー対応・確定仕様）
   // - e-staffing：staff_code そのまま
   // - HRstation：staff_code（先頭の「F3810」を除いた数字部分）。CSV側の値にF3810が付くため、
@@ -1435,6 +1466,7 @@ function ApplyPageInner() {
     setCsvSearched(false)
     setCsvNoResults(false)
     setCsvResults([])
+    setCsvFallbackMatch(false)
     setCsvSelectedId(null) // 再検索時に前回選択が残らないようにリセット（指摘13対応）
 
     let staffCodeForSearch = selectedStaff?.employee_number || ''
@@ -1445,6 +1477,25 @@ function ApplyPageInner() {
     }
 
     if (!staffCodeForSearch) {
+      // winworksでcrew_code未登録の場合のみ、氏名＋生年月日でのフォールバック検索を試みる
+      if (csvSystem === 'winworks') {
+        const fallbackRows = await searchWinworksByNameFallback()
+        if (fallbackRows.length > 0) {
+          setCsvResults(fallbackRows.map((r: any) => ({
+            id: r.id,
+            name: r.work_location,
+            address: r.work_address,
+            tel: formatTelHyphen(r.work_tel),
+            start: r.dispatch_start,
+            end: r.dispatch_end,
+            raw: r.raw_data,
+          })))
+          setCsvFallbackMatch(true)
+          setCsvSearched(true)
+          setCsvLoading(false)
+          return
+        }
+      }
       setCsvNoResults(true)
       setCsvSearched(true)
       setCsvLoading(false)
@@ -1794,6 +1845,7 @@ function ApplyPageInner() {
               csvSearched={csvSearched} setCsvSearched={setCsvSearched}
               csvResults={csvResults} setCsvResults={setCsvResults}
               csvNoResults={csvNoResults} setCsvNoResults={setCsvNoResults}
+              csvFallbackMatch={csvFallbackMatch}
               resetStep2Step3ForModeChange={resetStep2Step3ForModeChange}
               csvSystem={csvSystem} setCsvSystem={setCsvSystem}
               csvDispatchStart={csvDispatchStart} setCsvDispatchStart={setCsvDispatchStart}

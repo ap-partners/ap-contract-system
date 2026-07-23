@@ -1761,6 +1761,11 @@ export default function AdminDashboard() {
                       スタッフ登録依頼の自動マッチが{csvUploadResult.staffRegisterAutoMatch.matchedCount}件成立し、依頼元へ通知メールを送信しました。
                     </p>
                   )}
+                  {typeof csvUploadResult.winworksCrewCodeAutoMatch?.matchedCount === 'number' && csvUploadResult.winworksCrewCodeAutoMatch.matchedCount > 0 && (
+                    <p className="mt-4 text-sm font-medium leading-6 text-[#4CAF50]">
+                      SBクルーコード反映により、winworksのCSVインポート依頼の自動マッチが{csvUploadResult.winworksCrewCodeAutoMatch.matchedCount}件成立し、依頼元へ通知メールを送信しました。
+                    </p>
+                  )}
                 </div>
               )}
 

@@ -438,7 +438,10 @@ export default function AdminDashboard() {
   } = useRenewalCandidates()
 
   // 契約状況モニタリング（フェーズ1・2026-07-23実装。管理部専用）
-  const { rows: monitoringRows, loading: monitoringLoading, fetchMonitoring } = useContractMonitoring()
+  const {
+    rows: monitoringRows, loading: monitoringLoading, fetchMonitoring,
+    requestFollowUp: requestMonitoringFollowUp, updateActionStatus: updateMonitoringActionStatus,
+  } = useContractMonitoring()
 
   // ===== CSVインポートタブ（2026-07-15実装。2026-07-17：StaffExpress（スタッフ/部門マスタ）追加） =====
   const [csvImportSystem, setCsvImportSystem] = useState<'e-staffing' | 'HRstation' | 'winworks' | 'Staffia' | 'StaffExpress'>('e-staffing')
@@ -564,6 +567,17 @@ export default function AdminDashboard() {
     }
     checkUser()
   }, [])
+
+  // 契約状況モニタリング フェーズ2（2026-07-23）：「対応依頼」メールの依頼者名表示用に、
+  // ログイン中の管理部ユーザーの氏名をstaffテーブルから解決しておく。
+  const [adminStaffName, setAdminStaffName] = useState<string | null>(null)
+  useEffect(() => {
+    if (!user?.email) return
+    (async () => {
+      const { data } = await supabase.from('staff').select('name').eq('email', user.email).limit(1).maybeSingle()
+      setAdminStaffName(data?.name || null)
+    })()
+  }, [user])
 
   // 更新期限管理：管理部は全部門横断のためdeptNo=null（絞り込みなし）
   useEffect(() => {
@@ -1818,6 +1832,9 @@ export default function AdminDashboard() {
             rows={monitoringRows}
             loading={monitoringLoading}
             onRefresh={fetchMonitoring}
+            currentUserName={adminStaffName}
+            requestFollowUp={requestMonitoringFollowUp}
+            updateActionStatus={updateMonitoringActionStatus}
           />
         )}
         {activeTab === 'renewal' && user && (

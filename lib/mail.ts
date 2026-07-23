@@ -600,3 +600,117 @@ export async function sendStaffRegisterMatchedMail(
     html,
   })
 }
+
+
+// ===== 契約状況モニタリング フェーズ2：担当営業への確認依頼メール（2026-07-23追加） =====
+// 管理部ダッシュボード「更新期限管理」タブ内の「契約状況モニタリング」セクションから、
+// 個別の対応依頼ボタンで即時送信する（sendRenewalDigestMailのような日次バッチではなく、
+// 管理部が能動的にクリックした瞬間に飛ぶ点が異なる）。宛先解決（担当営業→フォールバックで
+// 管理部）・RENEWAL_NOTIFY_OVERRIDE_EMAILでのテスト用差し替えは
+// app/api/cron/renewal-notify/route.ts と同じ考え方を流用する。社内向け業務メールのため
+// 氏名を本文に含めてよい（sendRenewalDigestMailと同じ整理）。
+export type ContractMonitoringFollowupItem = {
+  docLabel: string
+  detail: string
+}
+
+export async function sendContractMonitoringFollowupMail(
+  toEmails: string[],
+  ccEmails: string[],
+  staffName: string | null,
+  employeeNumber: string,
+  deptName: string,
+  issues: ContractMonitoringFollowupItem[],
+  requestedByName: string | null,
+  overrideNotice?: string,
+  isUnassignedFallback?: boolean
+): Promise<void> {
+  if (toEmails.length === 0) return
+
+  const fallbackPrefix = isUnassignedFallback ? '【担当者未設定】' : ''
+  const subject = `${fallbackPrefix}【契約状況モニタリング・要確認】${staffName || '対象スタッフ'}様の契約状況をご確認ください`
+
+  const lines: string[] = [
+    'お疲れ様です。',
+    'APパートナーズ 契約書管理システムです。',
+    '',
+    `管理部（契約状況モニタリング）より、下記スタッフの契約状況について確認・対応のご依頼です。`,
+    '',
+    `対象スタッフ：${staffName || '(氏名不明)'}（社員番号 ${employeeNumber}／${deptName}）`,
+    '',
+  ]
+  for (const issue of issues) {
+    lines.push(`・${issue.detail}`)
+  }
+  lines.push(
+    '',
+    '契約実績のご確認、または新規申請・更新申請の対応をお願いいたします。',
+    `担当営業の方はこちら：${APP_URL}/dashboard/sales`,
+    '',
+    requestedByName ? `依頼者：管理部 ${requestedByName}` : '依頼者：管理部',
+    '',
+    '※本メールは自動送信です。このアドレスへの返信には対応しておりません。ご不明点は管理部までご連絡ください。',
+  )
+  if (isUnassignedFallback) {
+    lines.push(
+      '',
+      '※この部門は担当営業アカウントが特定できなかったため、本来の宛先の代わりに管理部宛に送信しています。'
+      + '対象スタッフの部門設定・担当営業アカウントの登録をご確認ください。'
+    )
+  }
+  if (overrideNotice) {
+    lines.push('', overrideNotice)
+  }
+
+  const issuesHtml = issues.map(issue =>
+    `<tr><td style="padding:6px 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">・${issue.detail}</td></tr>`
+  ).join('')
+
+  const fallbackNoticeHtml = isUnassignedFallback
+    ? `<tr><td style="padding:16px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">※この部門は担当営業アカウントが特定できなかったため、本来の宛先の代わりに管理部宛に送信しています。対象スタッフの部門設定・担当営業アカウントの登録をご確認ください。</td></tr>`
+    : ''
+  const overrideNoticeHtml = overrideNotice
+    ? `<tr><td style="padding:16px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;white-space:pre-line;">${overrideNotice}</td></tr>`
+    : ''
+
+  const html = `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F7FC;padding:24px 0;">
+  <tr><td align="center">
+    <table role="presentation" width="520" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:8px;max-width:520px;width:100%;">
+      <tr><td style="padding:32px 32px 4px 32px;font-family:sans-serif;font-size:14px;color:#1A2340;">
+        お疲れ様です。<br>APパートナーズ 契約書管理システムです。
+      </td></tr>
+      <tr><td style="padding:16px 32px 8px 32px;font-family:sans-serif;font-size:14px;font-weight:bold;color:#1A2340;">
+        管理部（契約状況モニタリング）より、下記スタッフの契約状況について確認・対応のご依頼です。
+      </td></tr>
+      <tr><td style="padding:0 32px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
+      <tr><td style="padding:16px 32px 4px 32px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#1B3A8C;">
+        ${staffName || '(氏名不明)'}（社員番号 ${employeeNumber}／${deptName}）
+      </td></tr>
+      ${issuesHtml}
+      <tr><td style="padding:16px 32px 0 32px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0 0 16px;"></td></tr>
+      <tr><td style="padding:0 32px 20px 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">
+        契約実績のご確認、または新規申請・更新申請の対応をお願いいたします。
+      </td></tr>
+      <tr><td style="padding:0 32px 4px 32px;"><a href="${APP_URL}/dashboard/sales" style="display:inline-block;background:#1B3A8C;color:#fff;text-decoration:none;font-family:sans-serif;font-size:13px;font-weight:bold;padding:10px 20px;border-radius:6px;">担当営業ダッシュボードを開く</a></td></tr>
+      <tr><td style="padding:20px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
+        ${requestedByName ? `依頼者：管理部 ${requestedByName}` : '依頼者：管理部'}
+      </td></tr>
+      <tr><td style="padding:12px 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
+        ※本メールは自動送信です。このアドレスへの返信には対応しておりません。ご不明点は管理部までご連絡ください。
+      </td></tr>
+      ${fallbackNoticeHtml}
+      ${overrideNoticeHtml}
+    </table>
+  </td></tr>
+</table>`.trim()
+
+  await transporter.sendMail({
+    from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
+    to: toEmails.join(','),
+    cc: ccEmails.length > 0 ? ccEmails.join(',') : undefined,
+    subject,
+    text: lines.join('\n'),
+    html,
+  })
+}

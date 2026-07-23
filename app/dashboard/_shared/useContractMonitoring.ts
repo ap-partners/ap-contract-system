@@ -20,10 +20,16 @@
 //     現場スタッフの期限間近は既存の更新期限管理リスト（同じタブ内）が既にカバーしているため
 //     ここでは重複させない（社内・有期契約は既存のget_latest_genba_contracts_for_renewal()が
 //     work_place='現場'限定のためスコープ外だった＝ここが唯一の空白地帯）。
+//
+// フェーズ2（2026-07-23追加）：対応状況（未着手／依頼済み／対応中／解消）の管理と、
+// 「対応依頼」ボタンからの担当営業への即時メール送信。対応状況は新規テーブル
+// contract_monitoring_actions（employee_number単位・管理部ロールのみ読み書き可）で
+// 別途永続化する。メール送信は/api/contract-monitoring/notifyを経由する
+// （宛先解決・RENEWAL_NOTIFY_OVERRIDE_EMAILの考え方はapp/api/cron/renewal-notify/route.tsを流用）。
 'use client'
 
 import { useState, useCallback } from 'react'
-import { supabase } from '@/lib/supabase'
+import { supabase, getAuthHeader } from '@/lib/supabase'
 
 const STALE_DAYS = 30
 const NEAR_EXPIRY_DAYS = 45
@@ -35,6 +41,8 @@ export type MonitoringIssue = {
   detail: string
 }
 
+export type ActionStatus = '未着手' | '依頼済み' | '対応中' | '解消'
+
 export type MonitoringRow = {
   employeeNumber: string
   staffName: string | null
@@ -45,6 +53,11 @@ export type MonitoringRow = {
   anyContractEver: boolean
   issues: MonitoringIssue[]
   topSeverity: 1 | 2 | 3 | 4
+  // 2026-07-23追加（フェーズ2）：contract_monitoring_actionsから結合する対応状況。
+  // 行が無い（一度も操作していない）場合は'未着手'扱い。
+  actionStatus: ActionStatus
+  requestedAt: string | null
+  requestedByName: string | null
 }
 
 type RawRow = {
@@ -129,8 +142,20 @@ export function useContractMonitoring() {
         deptNameByNo = new Map((deptRows || []).map((d: any) => [d.dept_no, d.dept_name]))
       }
 
+      // 2026-07-23追加（フェーズ2）：対応状況を結合する。行が無いスタッフは'未着手'扱い。
+      const empNos = raw.map(r => r.employee_number)
+      let actionByEmpNo = new Map<string, { status: ActionStatus; requested_at: string | null; requested_by_name: string | null }>()
+      if (empNos.length > 0) {
+        const { data: actionRows } = await supabase
+          .from('contract_monitoring_actions')
+          .select('employee_number, status, requested_at, requested_by_name')
+          .in('employee_number', empNos)
+        actionByEmpNo = new Map((actionRows || []).map((a: any) => [a.employee_number, a]))
+      }
+
       const result: MonitoringRow[] = []
       for (const r of raw) {
+        const action = actionByEmpNo.get(r.employee_number)
         const base = {
           employeeNumber: r.employee_number,
           staffName: r.staff_name,
@@ -139,6 +164,9 @@ export function useContractMonitoring() {
           contractType: r.contract_type,
           inferredWorkPlace: r.inferred_work_place,
           anyContractEver: r.any_contract_ever,
+          actionStatus: (action?.status || '未着手') as ActionStatus,
+          requestedAt: action?.requested_at || null,
+          requestedByName: action?.requested_by_name || null,
         }
 
         if (!r.any_contract_ever) {
@@ -190,5 +218,53 @@ export function useContractMonitoring() {
     }
   }, [])
 
-  return { rows, loading, fetchMonitoring }
+  // フェーズ2：対応状況を手動で切り替える（未着手／依頼済み／対応中／解消）。
+  // RLSでcontract_monitoring_actionsへの書き込みは管理部ロールのみ許可されている。
+  const updateActionStatus = useCallback(async (employeeNumber: string, status: ActionStatus) => {
+    const now = new Date().toISOString()
+    const { error } = await supabase
+      .from('contract_monitoring_actions')
+      .upsert({ employee_number: employeeNumber, status, updated_at: now }, { onConflict: 'employee_number' })
+    if (error) {
+      console.error('契約状況モニタリング 対応状況の更新エラー:', error)
+      return false
+    }
+    setRows(prev => prev.map(r => r.employeeNumber === employeeNumber ? { ...r, actionStatus: status } : r))
+    return true
+  }, [])
+
+  // フェーズ2：「対応依頼」ボタン本体。サーバー側API（/api/contract-monitoring/notify）を呼び、
+  // 担当営業への即時メール送信＋対応状況の「依頼済み」への更新をまとめて行う。
+  const requestFollowUp = useCallback(async (
+    row: Pick<MonitoringRow, 'employeeNumber' | 'staffName' | 'deptNo' | 'issues'>,
+    requestedByName: string | null
+  ): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const authHeader = await getAuthHeader()
+      const res = await fetch('/api/contract-monitoring/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader },
+        body: JSON.stringify({
+          employeeNumber: row.employeeNumber,
+          staffName: row.staffName,
+          deptNo: row.deptNo,
+          issues: row.issues.map(i => ({ docLabel: i.docLabel, detail: i.detail })),
+          requestedByName,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        return { ok: false, error: json?.error || '確認依頼の送信に失敗しました。' }
+      }
+      const now = new Date().toISOString()
+      setRows(prev => prev.map(r => r.employeeNumber === row.employeeNumber
+        ? { ...r, actionStatus: '依頼済み', requestedAt: now, requestedByName }
+        : r))
+      return { ok: true }
+    } catch (e: any) {
+      return { ok: false, error: e?.message || '確認依頼の送信に失敗しました。' }
+    }
+  }, [])
+
+  return { rows, loading, fetchMonitoring, updateActionStatus, requestFollowUp }
 }

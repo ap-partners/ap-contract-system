@@ -5,12 +5,19 @@
 // sendSignRequestMail関数内のコメント・docs/SYSTEM_DESIGN.md 10章2026-07-16参照）。
 import nodemailer from 'nodemailer'
 
+// 2026-07-23：デフォルトのquoted-printableエンコーディングだと、本文中の "=" が
+// 行折り返し位置と衝突した場合にHTML内のリンクURLが破損する不具合が判明
+// （マイページ認証コードメールのリンクに "?emp=105611" を追加した際に発覚。
+// プレーンテキスト版は無事だったがHTML版のボタンリンクの "=" が消失していた）。
+// textEncodingをbase64に固定し、この種の破損を全メール送信で根本的に防ぐ。
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_APP_PASSWORD,
   },
+}, {
+  textEncoding: 'base64',
 })
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://ap-contract-system.vercel.app'

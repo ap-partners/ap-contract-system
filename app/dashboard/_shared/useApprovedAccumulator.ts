@@ -12,6 +12,8 @@ export const APPROVED_PAGE_SIZE = 50
 export const APPROVED_SEARCH_LIMIT = 200
 export const APPROVED_STATUSES = ['SSC承認済み', '署名待ち', '署名済み', '完了']
 export const CONTRACT_COLUMNS = 'id, pattern, contract_type, document_type, work_place, status, created_by, created_by_name, created_at, rejection_reason, signed_at, warning_confirmations, warning_level, input_data'
+// アルバイト誓約書（pledges）用（2026-07-24追加：署名待ち／署名済みタブの45日窓分割対応）
+export const PLEDGE_COLUMNS = 'id, document_type, status, work_place_type, client_name, created_by_name, created_at, signed_at, warning_level, auto_check_results, input_data'
 
 const windowStartIso = () => {
   const d = new Date()
@@ -21,9 +23,12 @@ const windowStartIso = () => {
 
 // applyBaseFilter: ダッシュボードごとに異なる対象範囲（社内以外／社内のみ／自部門のみ等）を
 // 呼び出し側から注入する（例: q => q.neq('work_place', '社内')）。
+// table/columns: 2026-07-24より汎用化。省略時は従来通りcontractsを対象にする（既存呼び出し元は無変更で動作）。
 export function useApprovedAccumulator<T = any>(
   applyBaseFilter: (query: any) => any,
-  statuses: string[] = APPROVED_STATUSES
+  statuses: string[] = APPROVED_STATUSES,
+  table: string = 'contracts',
+  columns: string = CONTRACT_COLUMNS
 ) {
   const [approvedContracts, setApprovedContracts] = useState<T[]>([])
   const [approvedTotalCount, setApprovedTotalCount] = useState(0)
@@ -36,7 +41,7 @@ export function useApprovedAccumulator<T = any>(
 
   const fetchApprovedRecent = async () => {
     const { data, count, error } = await applyBaseFilter(
-      supabase.from('contracts').select(CONTRACT_COLUMNS, { count: 'exact' })
+      supabase.from(table).select(columns, { count: 'exact' })
     )
       .in('status', statuses)
       .gte('created_at', windowStartIso())
@@ -56,7 +61,7 @@ export function useApprovedAccumulator<T = any>(
     if (approvedLoadingMore || approvedSearchMode) return
     setApprovedLoadingMore(true)
     const { data, error } = await applyBaseFilter(
-      supabase.from('contracts').select(CONTRACT_COLUMNS)
+      supabase.from(table).select(columns)
     )
       .in('status', statuses)
       .gte('created_at', windowStartIso())
@@ -78,7 +83,7 @@ export function useApprovedAccumulator<T = any>(
     if (!q) { fetchApprovedRecent(); return }
     setApprovedSearching(true)
     const { data, error } = await applyBaseFilter(
-      supabase.from('contracts').select(CONTRACT_COLUMNS)
+      supabase.from(table).select(columns)
     )
       .in('status', statuses)
       .ilike('search_text', `%${q}%`)

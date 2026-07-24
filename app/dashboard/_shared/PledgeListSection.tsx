@@ -9,11 +9,17 @@
 //     警告なし案件のみ選択可・二重承認ガード付き条件付きUPDATE・確認/処理中/完了オーバーレイ・
 //     絞り込み変更時の選択クリア（総合レビュー指摘11と同じ考え方））
 //   ④自動チェック警告バッジ（warning_level red/yellow）の表示
+// 2026-07-24追加：「承認済み・署名状況」タブを「署名待ち」「署名済み」の2タブに分割し、
+// 誓約書件数の今後の増加を見据えて契約一覧と同じ直近45日窓＋さらに読み込む＋全期間で検索の
+// 仕組み（useApprovedAccumulator）を適用（伊藤さん指示）。承認待ち・差し戻し中の2タブは
+// 従来通り件数が小さい前提で日付窓なしの単純取得のまま。取り下げ（取消）ステータスの表示先は
+// 契約一覧側も含めて未着手のため、本対応でも据え置き（docs/SYSTEM_DESIGN.md参照）。
 // 詳細画面は/dashboard/ssc/pledges/[id]（SSC・管理部共通）。担当営業は読み取り専用の
 // /dashboard/sales/pledges/[id]を使う。
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, getAuthHeader } from '@/lib/supabase'
+import { useApprovedAccumulator, APPROVED_WINDOW_DAYS, PLEDGE_COLUMNS } from './useApprovedAccumulator'
 
 type PledgeRow = {
   id: string
@@ -44,7 +50,7 @@ const formatDateTime = (iso: string | null) => {
   return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-type FilterKey = '承認待ち' | '差し戻し中' | 'それ以外'
+type FilterKey = '承認待ち' | '差し戻し中' | '署名待ち' | '署名済み'
 type SortKey = 'newest' | 'oldest'
 
 type Props = {
@@ -58,11 +64,18 @@ type Props = {
 
 export default function PledgeListSection({ deptNoFilter, detailBasePath = '/dashboard/ssc/pledges', canApprove = false }: Props) {
   const router = useRouter()
-  const [rows, setRows] = useState<PledgeRow[]>([])
+  // 承認待ち・差し戻し中：日付窓なしの単純取得（従来通り。件数が小さい前提）
+  const [flowRows, setFlowRows] = useState<PledgeRow[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<FilterKey>('承認待ち')
   const [searchText, setSearchText] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('newest')
+
+  const baseFilter = (q: any) => (deptNoFilter !== undefined ? q.eq('created_by_dept_no', deptNoFilter) : q)
+
+  // 署名待ち（SSC承認済み・署名待ち）／署名済み：直近45日窓＋さらに読み込む＋全期間で検索（2026-07-24追加）
+  const pendingSignAcc = useApprovedAccumulator<PledgeRow>(baseFilter, ['SSC承認済み', '署名待ち'], 'pledges', PLEDGE_COLUMNS)
+  const signedAcc = useApprovedAccumulator<PledgeRow>(baseFilter, ['署名済み'], 'pledges', PLEDGE_COLUMNS)
 
   // 一括承認（2026-07-24追加）
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -72,20 +85,25 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
   const [bulkSkipped, setBulkSkipped] = useState(0)
   const [bulkNotifyFailed, setBulkNotifyFailed] = useState(0)
 
-  const load = async () => {
+  const loadFlowRows = async () => {
     setLoading(true)
     let query = supabase
       .from('pledges')
-      .select('id, document_type, status, work_place_type, client_name, created_by_name, created_at, signed_at, warning_level, auto_check_results, input_data')
+      .select(PLEDGE_COLUMNS)
+      .in('status', ['申請中', '差し戻し中'])
       .order('created_at', { ascending: false })
-      .limit(200)
     if (deptNoFilter !== undefined) query = query.eq('created_by_dept_no', deptNoFilter)
     const { data } = await query
-    setRows((data || []) as PledgeRow[])
+    setFlowRows((data || []) as PledgeRow[])
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [deptNoFilter])
+  useEffect(() => {
+    loadFlowRows()
+    pendingSignAcc.fetchApprovedRecent()
+    signedAcc.fetchApprovedRecent()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deptNoFilter])
 
   // 絞り込み・検索・並び替えを変えたら選択状態を必ずクリアする（総合レビュー指摘11と同じ考え方）
   useEffect(() => {
@@ -103,25 +121,31 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
       .some(v => String(v).toLowerCase().includes(q))
   }
 
-  const filtered = rows
-    .filter(r => {
-      if (filter === '承認待ち') return r.status === '申請中'
-      if (filter === '差し戻し中') return r.status === '差し戻し中'
-      return !['申請中', '差し戻し中'].includes(r.status)
-    })
+  const baseRowsForTab: PledgeRow[] =
+    filter === '承認待ち' ? flowRows.filter(r => r.status === '申請中')
+    : filter === '差し戻し中' ? flowRows.filter(r => r.status === '差し戻し中')
+    : filter === '署名待ち' ? pendingSignAcc.approvedContracts
+    : signedAcc.approvedContracts
+
+  const filtered = baseRowsForTab
     .filter(matchesSearch)
     .sort((a, b) => sortKey === 'newest'
       ? b.created_at.localeCompare(a.created_at)
       : a.created_at.localeCompare(b.created_at))
 
-  const pendingCount = rows.filter(r => r.status === '申請中').length
-  const rejectedCount = rows.filter(r => r.status === '差し戻し中').length
+  const pendingCount = flowRows.filter(r => r.status === '申請中').length
+  const rejectedCount = flowRows.filter(r => r.status === '差し戻し中').length
+  const pendingSignCount = pendingSignAcc.approvedTotalCount
+  const signedCount = signedAcc.approvedTotalCount
 
   const hasAutoWarning = (r: PledgeRow) => (r.warning_level === 'red' || r.warning_level === 'yellow')
   // 一括承認の対象＝表示中の承認待ちのうち警告のないもの（契約一覧と同じルール）
   const bulkTargets = canApprove && filter === '承認待ち'
     ? filtered.filter(r => r.status === '申請中' && !hasAutoWarning(r))
     : []
+
+  // 現在表示中タブの45日窓アキュムレータ（署名待ち／署名済みのみ該当）
+  const activeAcc = filter === '署名待ち' ? pendingSignAcc : filter === '署名済み' ? signedAcc : null
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -176,7 +200,8 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
       notifyFailedCount = notifyResults.filter(ok => !ok).length
     }
 
-    await load()
+    setFlowRows(prev => prev.filter(r => !approvedIds.includes(r.id)))
+    await pendingSignAcc.fetchApprovedRecent()
     setBulkApproving(false)
     setShowBulkConfirm(false)
     setBulkSkipped(skipped)
@@ -202,7 +227,8 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
         {([
           { key: '承認待ち' as const, label: '承認待ち', count: pendingCount },
           { key: '差し戻し中' as const, label: '差し戻し中', count: rejectedCount },
-          { key: 'それ以外' as const, label: '承認済み・署名状況', count: rows.length - pendingCount - rejectedCount },
+          { key: '署名待ち' as const, label: '署名待ち', count: pendingSignCount },
+          { key: '署名済み' as const, label: '署名済み', count: signedCount },
         ]).map(t => (
           <button
             key={t.key}
@@ -233,6 +259,38 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
           </select>
         </div>
       </div>
+
+      {/* ===== 45日窓の案内・全期間で検索（署名待ち／署名済みタブのみ。2026-07-24追加） ===== */}
+      {activeAcc && (
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          {!activeAcc.approvedSearchMode ? (
+            <>
+              <p className="text-xs font-medium" style={{ color: '#5A6A8A' }}>表示は直近{APPROVED_WINDOW_DAYS}日分です。それより前は検索してください。</p>
+              <button
+                onClick={() => activeAcc.runApprovedSearch(searchText)}
+                disabled={!searchText.trim() || activeAcc.approvedSearching}
+                className="rounded-[14px] border px-4 py-2 text-xs font-semibold disabled:opacity-50"
+                style={{ borderColor: '#D0DAF0', color: '#1B3A8C', background: 'white' }}
+              >
+                {activeAcc.approvedSearching ? '検索中…' : '全期間で検索'}
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-xs font-medium" style={{ color: '#5A6A8A' }}>
+                全期間検索の結果です{activeAcc.approvedSearchNotice ? '（' + activeAcc.approvedSearchNotice + '）' : ''}
+              </p>
+              <button
+                onClick={activeAcc.fetchApprovedRecent}
+                className="rounded-[14px] border px-4 py-2 text-xs font-semibold"
+                style={{ borderColor: '#D0DAF0', color: '#1B3A8C', background: 'white' }}
+              >
+                直近{APPROVED_WINDOW_DAYS}日の表示に戻す
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* ===== 一括承認バー（SSC・管理部の承認待ちタブのみ） ===== */}
       {canApprove && filter === '承認待ち' && bulkTargets.length > 0 && (
@@ -385,6 +443,20 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
               </article>
             )
           })}
+        </div>
+      )}
+
+      {/* ===== さらに読み込む（署名待ち／署名済みタブ・全期間検索モードでない時のみ。2026-07-24追加） ===== */}
+      {activeAcc && activeAcc.approvedHasMore && !activeAcc.approvedSearchMode && (
+        <div className="mt-5 flex justify-center">
+          <button
+            onClick={activeAcc.loadMoreApproved}
+            disabled={activeAcc.approvedLoadingMore}
+            className="rounded-2xl border px-6 py-3 text-sm font-semibold disabled:opacity-50"
+            style={{ borderColor: '#D0DAF0', color: '#1B3A8C', background: 'white' }}
+          >
+            {activeAcc.approvedLoadingMore ? '読み込み中…' : 'さらに読み込む'}
+          </button>
         </div>
       )}
 

@@ -22,12 +22,14 @@ export async function POST(req: NextRequest) {
   const code = String(body?.code || '').trim()
   if (!email || !code) return NextResponse.json({ error: 'メールアドレスと認証コードを入力してください。' }, { status: 400 })
 
-  const { data: listResult, error: listErr } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 })
-  if (listErr) return NextResponse.json({ error: '確認に失敗しました。時間をおいて再度お試しください。' }, { status: 500 })
-  const authUser = listResult.users.find(u => u.email?.toLowerCase() === email.toLowerCase())
-  if (!authUser) return NextResponse.json({ error: 'メールアドレスまたは認証コードが正しくありません。' }, { status: 400 })
+  // 2026-07-24：以前はlistUsers()で全件取得して絞り込んでいたが、実機確認中に500エラーが
+  // 発生（連続呼び出しによる負荷・レート制限が疑われる）。ピンポイントにidだけを引く
+  // SQL関数（RPC）に置き換えて解消。
+  const { data: userId, error: rpcErr } = await supabaseAdmin.rpc('get_auth_user_id_by_email', { p_email: email })
+  if (rpcErr) return NextResponse.json({ error: '確認に失敗しました。時間をおいて再度お試しください。' }, { status: 500 })
+  if (!userId) return NextResponse.json({ error: 'メールアドレスまたは認証コードが正しくありません。' }, { status: 400 })
 
-  const { data: roleRow } = await supabaseAdmin.from('staff_roles').select('*').eq('id', authUser.id).maybeSingle()
+  const { data: roleRow } = await supabaseAdmin.from('staff_roles').select('*').eq('id', userId).maybeSingle()
   if (!roleRow) return NextResponse.json({ error: 'メールアドレスまたは認証コードが正しくありません。' }, { status: 400 })
 
   if (roleRow.is_active === false) {
@@ -45,7 +47,7 @@ export async function POST(req: NextRequest) {
 
   if (roleRow.setup_code !== code) {
     const remaining = ACCOUNT_SETUP_MAX_ATTEMPTS - (roleRow.setup_code_attempts + 1)
-    await supabaseAdmin.from('staff_roles').update({ setup_code_attempts: roleRow.setup_code_attempts + 1 }).eq('id', authUser.id)
+    await supabaseAdmin.from('staff_roles').update({ setup_code_attempts: roleRow.setup_code_attempts + 1 }).eq('id', userId)
     return NextResponse.json({ error: `認証コードが正しくありません。あと${Math.max(remaining, 0)}回間違えると失効します。` }, { status: 400 })
   }
 

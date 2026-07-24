@@ -27,12 +27,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: PASSWORD_REQUIREMENT_MESSAGE }, { status: 400 })
   }
 
-  const { data: listResult, error: listErr } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 })
-  if (listErr) return NextResponse.json({ error: '処理に失敗しました。時間をおいて再度お試しください。' }, { status: 500 })
-  const authUser = listResult.users.find(u => u.email?.toLowerCase() === email.toLowerCase())
-  if (!authUser) return NextResponse.json({ error: 'メールアドレスまたは認証コードが正しくありません。' }, { status: 400 })
+  // 2026-07-24：以前はlistUsers()で全件取得して絞り込んでいたが、実機確認中に500エラーが
+  // 発生（連続呼び出しによる負荷・レート制限が疑われる）。ピンポイントにidだけを引く
+  // SQL関数（RPC）に置き換えて解消。
+  const { data: userId, error: rpcErr } = await supabaseAdmin.rpc('get_auth_user_id_by_email', { p_email: email })
+  if (rpcErr) return NextResponse.json({ error: '処理に失敗しました。時間をおいて再度お試しください。' }, { status: 500 })
+  if (!userId) return NextResponse.json({ error: 'メールアドレスまたは認証コードが正しくありません。' }, { status: 400 })
 
-  const { data: roleRow } = await supabaseAdmin.from('staff_roles').select('*').eq('id', authUser.id).maybeSingle()
+  const { data: roleRow } = await supabaseAdmin.from('staff_roles').select('*').eq('id', userId).maybeSingle()
   if (!roleRow) return NextResponse.json({ error: 'メールアドレスまたは認証コードが正しくありません。' }, { status: 400 })
 
   if (roleRow.is_active === false) {
@@ -49,11 +51,11 @@ export async function POST(req: NextRequest) {
   }
   if (roleRow.setup_code !== code) {
     const remaining = ACCOUNT_SETUP_MAX_ATTEMPTS - (roleRow.setup_code_attempts + 1)
-    await supabaseAdmin.from('staff_roles').update({ setup_code_attempts: roleRow.setup_code_attempts + 1 }).eq('id', authUser.id)
+    await supabaseAdmin.from('staff_roles').update({ setup_code_attempts: roleRow.setup_code_attempts + 1 }).eq('id', userId)
     return NextResponse.json({ error: `認証コードが正しくありません。あと${Math.max(remaining, 0)}回間違えると失効します。` }, { status: 400 })
   }
 
-  const { error: pwErr } = await supabaseAdmin.auth.admin.updateUserById(authUser.id, { password: newPassword })
+  const { error: pwErr } = await supabaseAdmin.auth.admin.updateUserById(userId, { password: newPassword })
   if (pwErr) return NextResponse.json({ error: 'パスワードの更新に失敗しました：' + pwErr.message }, { status: 500 })
 
   await supabaseAdmin.from('staff_roles').update({
@@ -62,7 +64,7 @@ export async function POST(req: NextRequest) {
     setup_code_expires_at: null,
     setup_code_issued_at: null,
     setup_code_attempts: 0,
-  }).eq('id', authUser.id)
+  }).eq('id', userId)
 
   return NextResponse.json({ ok: true })
 }

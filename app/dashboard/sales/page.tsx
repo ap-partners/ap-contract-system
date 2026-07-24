@@ -20,6 +20,7 @@ import { useContractListToolbar, buildDateSortOptions } from '../_shared/useCont
 import { useApprovedAccumulator, APPROVED_WINDOW_DAYS } from '../_shared/useApprovedAccumulator'
 import RenewalManagementTab from '../_shared/RenewalManagementTab'
 import PledgeListSection from '../_shared/PledgeListSection'
+import LoggedInUserChip from '../_shared/LoggedInUserChip'
 import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
 import { useDebouncedSearch } from '../_shared/useDebouncedSearch'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
@@ -64,6 +65,11 @@ const cardBase = 'rounded-[18px] border border-[#E8EDF5] bg-white shadow-[0_10px
 const primaryButton = 'inline-flex h-[52px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-[#2F5FD0] px-6 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(47,95,208,.22)] transition hover:-translate-y-0.5 hover:bg-[#244CB3] hover:shadow-[0_15px_34px_rgba(47,95,208,.26)]'
 const secondaryButton = 'inline-flex h-[52px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-2xl border border-[#E8EDF5] bg-white px-6 text-sm font-semibold text-[#1F2937] transition hover:-translate-y-0.5 hover:border-[#2F5FD0] hover:text-[#2F5FD0]'
 const accentButton = 'inline-flex h-[52px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-[#F59E42] px-6 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(245,158,66,.2)] transition hover:-translate-y-0.5 hover:bg-[#E88525] hover:shadow-[0_15px_34px_rgba(245,158,66,.28)]'
+// 2026-07-24追加：ヘッダー専用ボタンスタイル。SSCダッシュボードのヘッダー（h-12・px-4）に
+// 3ダッシュボードとも統一するための専用定数（本文中の他のprimaryButton等はh-[52px]のまま変更しない）。
+const headerPrimaryButton = 'flex h-12 shrink-0 items-center gap-2 whitespace-nowrap rounded-2xl bg-[#2F5FD0] px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(47,95,208,.22)] transition hover:-translate-y-0.5 hover:bg-[#244CB3] hover:shadow-[0_15px_34px_rgba(47,95,208,.26)]'
+const headerAccentButton = 'flex h-12 shrink-0 items-center gap-2 whitespace-nowrap rounded-2xl bg-[#F59E42] px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(245,158,66,.2)] transition hover:-translate-y-0.5 hover:bg-[#E88525] hover:shadow-[0_15px_34px_rgba(245,158,66,.28)]'
+const headerSecondaryButton = 'flex h-12 items-center gap-2 rounded-2xl border border-[#E8EDF5] bg-white px-4 text-sm font-semibold text-[#1F2937] shadow-[0_10px_30px_rgba(15,23,42,.04)] transition hover:-translate-y-0.5 hover:border-[#2F5FD0] hover:text-[#2F5FD0] hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]'
 
 const formatDate = (d: Date) => `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
 
@@ -606,24 +612,32 @@ export default function SalesDashboard() {
       <header className="border-b border-[#E8EDF5] bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-[1600px] items-center justify-between px-6 py-5 lg:px-8">
           <div className="flex items-center gap-5">
-            <Image src="/logo.png" alt="APパートナーズ" width={64} height={38} className="h-auto w-[64px]" />
-            <div className="h-8 w-px bg-[#E8EDF5]" />
-            <div>
+            <div className="flex items-center gap-3">
+              <Image src="/logo.png" alt="APパートナーズ" width={64} height={38} className="h-auto w-[64px]" />
+              <div>
+                <p className="text-sm font-semibold text-[#1F2937]">APパートナーズ</p>
+                <p className="text-xs font-medium text-[#6B7280]">担当営業ダッシュボード</p>
+              </div>
+            </div>
+            <div className="hidden h-8 w-px bg-[#E8EDF5] md:block" />
+            <div className="hidden md:block">
               <h1 className="text-2xl font-semibold tracking-normal text-[#1F2937]">契約書管理システム</h1>
-              <p className="mt-1 text-sm font-medium text-[#6B7280]">担当営業ダッシュボード</p>
+              <p className="mt-1 text-sm font-medium text-[#6B7280]">自分の申請状況を確認し、必要な対応を進められます</p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <button onClick={() => router.push('/apply')} className={primaryButton}>
-              <Icon name="plus" className="h-5 w-5" />
+            <button onClick={() => router.push('/apply')} className={headerPrimaryButton}>
+              <Icon name="plus" className="h-4 w-4" />
               雇用契約書 新規発行
             </button>
-            <button onClick={() => router.push('/pledge/apply')} className={accentButton}>
+            <button onClick={() => router.push('/pledge/apply')} className={headerAccentButton}>
               <Icon name="plus" className="h-4 w-4" />
               アルバイト誓約書 新規発行
             </button>
-            <button onClick={handleLogout} className={secondaryButton}>
+            <div className="h-8 w-px bg-[#E8EDF5]" />
+            <LoggedInUserChip userId={user?.id} />
+            <button onClick={handleLogout} className={headerSecondaryButton}>
               <Icon name="logout" className="h-4 w-4" />
               ログアウト
             </button>

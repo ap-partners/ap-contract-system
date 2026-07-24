@@ -25,6 +25,7 @@ import RenewalManagementTab from '../_shared/RenewalManagementTab'
 import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import PledgeListSection from '../_shared/PledgeListSection'
+import LoggedInUserChip from '../_shared/LoggedInUserChip'
 
 type Contract = ContractForDisplay
 
@@ -402,6 +403,8 @@ export default function SSCDashboard() {
               <Icon name="plus" className="h-4 w-4" />
               アルバイト誓約書 新規発行
             </button>
+            <div className="h-8 w-px bg-[#E8EDF5]" />
+            <LoggedInUserChip userId={user?.id} />
             <button
               onClick={handleLogout}
               className="flex h-12 items-center gap-2 rounded-2xl border border-[#E8EDF5] bg-white px-4 text-sm font-semibold text-[#1F2937] shadow-[0_10px_30px_rgba(15,23,42,.04)] transition hover:-translate-y-0.5 hover:border-[#2F5FD0] hover:text-[#2F5FD0] hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]"

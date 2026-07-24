@@ -9,6 +9,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
+import { supabase, retrySupabaseCall } from '@/lib/supabase'
 
 type Mode = 'verifyCode' | 'setPassword' | 'done'
 
@@ -48,22 +49,53 @@ export default function AccountSetupPage() {
     }
   }
 
+  // 2026-07-24改修：以前は管理者権限で直接パスワードを書き換えていたが、Supabase側の
+  // JWT署名鍵移行に起因する断続的な不具合を避けるため、「本人確認コード→本人自身の
+  // セッションでパスワード設定」という、マイページ署名フローと同じ方式に変更した。
   const handleSetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
     if (newPassword !== newPasswordConfirm) {
       setError('パスワードが一致しません。もう一度ご確認ください。')
       return
     }
+    const hasUpper = /[A-Z]/.test(newPassword)
+    const hasLower = /[a-z]/.test(newPassword)
+    const hasDigit = /[0-9]/.test(newPassword)
+    if (newPassword.length < 8 || !hasUpper || !hasLower || !hasDigit) {
+      setError('パスワードは8文字以上で、半角英大文字・小文字・数字をすべて含めてください。')
+      return
+    }
     setLoading(true)
     setError('')
     try {
+      // ① サーバー側（管理者権限）で本人確認コードを照合し、本人セッション発行用の
+      //    トークンを受け取る。
       const res = await fetch('/api/account-setup/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), code: authCode.trim(), newPassword }),
+        body: JSON.stringify({ email: email.trim(), code: authCode.trim() }),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'パスワードの設定に失敗しました。'); return }
+
+      // ② そのトークンで本人自身のセッションを確立する。
+      const { error: otpErr } = await retrySupabaseCall(() =>
+        supabase.auth.verifyOtp({ token_hash: data.tokenHash, type: 'recovery' })
+      )
+      if (otpErr) { setError('本人確認に失敗しました。時間をおいて再度お試しください。'); return }
+
+      // ③ 本人自身の権限でパスワードを設定する（管理者権限の呼び出しを経由しない）。
+      const { error: updateErr } = await retrySupabaseCall(() => supabase.auth.updateUser({ password: newPassword }))
+      if (updateErr) { setError('パスワードの設定に失敗しました。時間をおいて再度お試しください。'); return }
+
+      // ④ 認証コードを消込む（DB更新のみ。失敗してもパスワード自体は設定済みのため致命的ではない）。
+      await fetch('/api/account-setup/finalize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), code: authCode.trim() }),
+      }).catch(() => {})
+
+      await supabase.auth.signOut()
       setMode('done')
     } catch {
       setError('通信エラーが発生しました。電波状況をご確認のうえ、もう一度お試しください。')

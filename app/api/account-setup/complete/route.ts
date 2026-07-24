@@ -22,15 +22,21 @@ const supabaseAdmin = createClient(
 
 // Supabase側の断続的な不具合（同一トークンでも成功/失敗が入れ替わる)に対する保険として、
 // 管理者権限のAPI呼び出しのみ短い間隔で数回リトライする。
-async function withRetry<T>(fn: () => Promise<{ data: T; error: any }>, attempts = 3, delayMs = 700) {
-  let lastError: any = null
+// supabase-jsの戻り値（成功時と失敗時でdataの形が違うユニオン型）をそのまま保つため、
+// 「dataとerrorを分解して作り直す」のではなく、戻り値オブジェクト全体を型引数にする
+// （lib/supabase.ts の retrySupabaseCall と同じ考え方）。
+async function withRetry<TResult extends { error: any }>(
+  fn: () => Promise<TResult>,
+  attempts = 3,
+  delayMs = 700
+): Promise<TResult> {
+  let lastResult: TResult
   for (let i = 0; i < attempts; i++) {
-    const { data, error } = await fn()
-    if (!error) return { data, error: null as any }
-    lastError = error
+    lastResult = await fn()
+    if (!lastResult.error) return lastResult
     if (i < attempts - 1) await new Promise(r => setTimeout(r, delayMs))
   }
-  return { data: null as any, error: lastError }
+  return lastResult!
 }
 
 export async function POST(req: NextRequest) {

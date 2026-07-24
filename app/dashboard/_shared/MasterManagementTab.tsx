@@ -12,6 +12,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { getAuthHeader } from '@/lib/supabase'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
+import { clampDateYear } from '@/app/apply/_lib/helpers'
 
 type Department = { id: string; dept_no: number; dept_name: string; created_at: string }
 type MinimumWage = { id: string; dept_no: number; hourly_wage: number; effective_from: string; created_at: string; updated_at: string }
@@ -326,7 +327,7 @@ function MinimumWageSection({ data, reload }: { data: MasterData; reload: () => 
                       <div className="flex flex-wrap items-center gap-2">
                         <input type="number" value={editWage} onChange={e => setEditWage(e.target.value)} className={`${inputCls} w-24`} />
                         <span>円</span>
-                        <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} className={`${inputCls} w-36`} />
+                        <input type="date" value={editDate} onChange={e => setEditDate(clampDateYear(e.target.value))} className={`${inputCls} w-36`} />
                         <button onClick={() => handleUpdate(latest.id)} disabled={editSubmitting} className={primaryBtn}>{editSubmitting ? '保存中…' : '保存'}</button>
                         <button onClick={() => setEditingId(null)} className={secondaryBtn}>キャンセル</button>
                         {editError && <div className="mt-2 w-full"><ErrorBanner message={editError} /></div>}
@@ -356,7 +357,7 @@ function MinimumWageSection({ data, reload }: { data: MasterData; reload: () => 
                     <input type="number" value={draft.wage} onChange={e => setDraft(dept.dept_no, { wage: e.target.value })} className={`${inputCls} w-24`} placeholder="例：1100" />
                   </td>
                   <td className="px-3 py-3">
-                    <input type="date" value={draft.date} onChange={e => setDraft(dept.dept_no, { date: e.target.value })} className={`${inputCls} w-36`} />
+                    <input type="date" value={draft.date} onChange={e => setDraft(dept.dept_no, { date: clampDateYear(e.target.value) })} className={`${inputCls} w-36`} />
                   </td>
                   <td className="px-3 py-3">
                     <button

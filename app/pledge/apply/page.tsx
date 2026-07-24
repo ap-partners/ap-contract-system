@@ -34,13 +34,27 @@ import Image from 'next/image'
 import { excludeRetiredStaffOr } from '@/lib/staffFilters'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
-import { SALARY_RULES, toHalfWidthDigits, parseAmount } from '@/app/apply/_lib/helpers'
+import { SALARY_RULES, toHalfWidthDigits, parseAmount, normalizeTel, validateTel, clampDateYear } from '@/app/apply/_lib/helpers'
+import { runPledgeAutoChecks } from '@/lib/autoChecks'
 import { WAGE_PAYMENT_TEXT } from '@/lib/pdf/documentText'
 
 const DOCUMENT_TYPES = ['AP・CL研修用', 'CP・SPOT用'] as const
 // 2026-07-23：6STEP再編（就業先情報と就業日程を分離）
 const STEP_LABELS = ['スタッフ・帳票種別', '就業先情報', '就業日程', '業務内容', '給与', '最終確認']
 const MAX_SINGLE_ENTRIES = 10
+
+// クライアント先住所の郵便番号バリデーション（2026-07-24追加）。電話番号はhelpers.tsの
+// normalizeTel/validateTel（雇用契約書/applyと同じルール）をそのまま流用する。
+const normalizePostalCode = (v: string) => v
+  .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+  .replace(/ー|－|―/g, '-')
+  .replace(/[^0-9-]/g, '')
+
+const validatePostalCode = (v: string) => {
+  if (!v) return null
+  if (!/^\d{3}-\d{4}$/.test(v)) return '例）123-4567 の形式で入力してください'
+  return null
+}
 
 // アルバイト誓約書専用の交通費区分（2026-07-22伊藤さん指摘：「定期代＋ガソリン代」はこのファイルのみ除外。
 // 雇用契約書(/apply)側の共通TRANSPORT_TYPESは変更せず、影響範囲をこのファイルに限定するためローカルに複製）
@@ -376,7 +390,12 @@ export default function PledgeApplyPage() {
 
   // STEP2：就業先情報のみ（2026-07-23：雇用期間・就業日程はSTEP3へ分離）
   const step2Valid = workPlaceType === 'client'
-    ? !!(clientName.trim() && clientPostalCode.trim() && clientAddress.trim() && clientTel.trim())
+    ? !!(
+        clientName.trim() &&
+        clientPostalCode.trim() && !validatePostalCode(clientPostalCode) &&
+        clientAddress.trim() &&
+        clientTel.trim() && !validateTel(clientTel)
+      )
     : workPlaceType === 'internal' ? !!officeId : false
 
   // 2026-07-22指摘⑦：就業時間（開始・終了）と休憩時間から所定労働時間を自動計算する
@@ -489,6 +508,31 @@ export default function PledgeApplyPage() {
 
       const scheduleRows = buildScheduleRows()
 
+      // ===== 自動チェック（金額異常値・最低賃金。2026-07-24追加） =====
+      // 伊藤さん指定によりクライアント先・自社拠点ともに共通で実施する。
+      // 最低賃金マスタは対象スタッフの所属部門の行のみ参照（雇用契約書/applyと同じ考え方）。
+      const { data: wageRows } = await supabase
+        .from('minimum_wage_master')
+        .select('dept_no, hourly_wage, effective_from')
+        .eq('dept_no', selectedStaff.dept_no ?? -1)
+      // 就業日程の最終日（期間指定の終了日と単日の最終日のうち最も遅い日）を最低賃金の適用基準日にする
+      const allDates = [
+        ...((periodPattern === 'range' || periodPattern === 'mix') && rangeEnd ? [rangeEnd] : []),
+        ...singleEntries.map(e => e.date),
+      ].filter(Boolean).sort()
+      const periodEnd = allDates.length > 0 ? allDates[allDates.length - 1] : null
+      const autoCheck = runPledgeAutoChecks({
+        salaryType,
+        basicSalary: parseAmount(basicSalary),
+        rolePay: parseAmount(rolePay),
+        skillPay: parseAmount(skillPay),
+        salesPay: parseAmount(salesPay),
+        deptNo: selectedStaff.dept_no ?? null,
+        periodEnd,
+        dailyStandardHours: 7, // 誓約書の給与計算基準（1日7時間）に合わせる
+        minimumWageRowsForDept: (wageRows || []) as any,
+      })
+
       const inputData = {
         staff: {
           employee_number: selectedStaff.employee_number,
@@ -530,6 +574,8 @@ export default function PledgeApplyPage() {
         created_by_dept_no: submitterStaffRow?.dept_no ?? null,
         created_by_name: submitterStaffRow?.name ?? user.email ?? null,
         search_text: [selectedStaff.employee_number, selectedStaff.name, selectedStaff.department].filter(Boolean).join(' '),
+        auto_check_results: autoCheck.results,
+        warning_level: autoCheck.overallLevel,
       }])
 
       if (error) {
@@ -729,9 +775,17 @@ export default function PledgeApplyPage() {
                 {workPlaceType === 'client' && (
                   <div className="flex flex-col gap-2 max-w-xl">
                     <LabeledInput label="就業先名" value={clientName} onChange={setClientName} placeholder="例）〇〇株式会社 新宿店" />
-                    <LabeledInput label="郵便番号" value={clientPostalCode} onChange={setClientPostalCode} placeholder="例）123-4567" />
+                    <ValidatedInput
+                      label="郵便番号" value={clientPostalCode}
+                      onChange={v => setClientPostalCode(normalizePostalCode(v))}
+                      validate={validatePostalCode} placeholder="例）123-4567" inputMode="numeric"
+                    />
                     <LabeledInput label="住所" value={clientAddress} onChange={setClientAddress} placeholder="例）東京都新宿区〇〇1-2-3" />
-                    <LabeledInput label="電話番号" value={clientTel} onChange={setClientTel} placeholder="例）03-1234-5678" />
+                    <ValidatedInput
+                      label="電話番号" value={clientTel}
+                      onChange={v => setClientTel(normalizeTel(v))}
+                      validate={validateTel} placeholder="例）03-1234-5678" inputMode="numeric"
+                    />
                   </div>
                 )}
 
@@ -873,10 +927,10 @@ export default function PledgeApplyPage() {
                   <div>
                     <label className="text-xs font-medium block mb-1.5" style={{ color: '#5A6A8A' }}>期間</label>
                     <div className="flex items-center gap-2">
-                      <input type="date" value={rangeStart} onChange={e => setRangeStart(e.target.value)}
+                      <input type="date" value={rangeStart} onChange={e => setRangeStart(clampDateYear(e.target.value))}
                         className="flex-1 border rounded-lg px-3 py-2.5 text-sm focus:outline-none" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                       <PledgeIcon name="arrowRight" className="w-4 h-4 shrink-0" style={{ color: '#8A93A8' }} />
-                      <input type="date" value={rangeEnd} onChange={e => setRangeEnd(e.target.value)}
+                      <input type="date" value={rangeEnd} onChange={e => setRangeEnd(clampDateYear(e.target.value))}
                         className="flex-1 border rounded-lg px-3 py-2.5 text-sm focus:outline-none" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                     </div>
                     {rangeStart && rangeEnd && rangeStart > rangeEnd && <p className="text-xs mt-1.5" style={{ color: '#DC2626' }}>開始日は終了日より前にしてください</p>}
@@ -885,10 +939,10 @@ export default function PledgeApplyPage() {
                     <label className="text-xs font-medium block mb-1.5" style={{ color: '#5A6A8A' }}>就業時間（毎日共通）</label>
                     <div className="flex items-center gap-2">
                       <input type="time" value={periodShift.start} onChange={e => updatePeriodShift({ start: e.target.value })}
-                        className="flex-1 border rounded-lg px-3 py-2.5 text-sm focus:outline-none bg-white" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                        className="flex-1 border rounded-lg px-3 py-2.5 text-sm focus:outline-none bg-white time-input-no-icon-tab" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                       <PledgeIcon name="arrowRight" className="w-4 h-4 shrink-0" style={{ color: '#8A93A8' }} />
                       <input type="time" value={periodShift.end} onChange={e => updatePeriodShift({ end: e.target.value })}
-                        className="flex-1 border rounded-lg px-3 py-2.5 text-sm focus:outline-none bg-white" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                        className="flex-1 border rounded-lg px-3 py-2.5 text-sm focus:outline-none bg-white time-input-no-icon-tab" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                     </div>
                   </div>
                   <div>
@@ -945,20 +999,20 @@ export default function PledgeApplyPage() {
                     <div className="flex flex-wrap items-end gap-3">
                       <div className="flex flex-col gap-1 min-w-[150px]">
                         <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>日付</label>
-                        <input type="date" value={singleDateInput} onChange={e => setSingleDateInput(e.target.value)}
+                        <input type="date" value={singleDateInput} onChange={e => setSingleDateInput(clampDateYear(e.target.value))}
                           className="border rounded-lg px-2.5 py-2 text-sm focus:outline-none bg-white w-full" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                       </div>
                       <div className="flex items-end gap-2">
                         <div className="flex flex-col gap-1 min-w-[100px]">
                           <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>始業時間</label>
                           <input type="time" value={singleStartInput} onChange={e => setSingleStartInput(e.target.value)}
-                            className="border rounded-lg px-2.5 py-2 text-sm focus:outline-none bg-white w-full" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                            className="border rounded-lg px-2.5 py-2 text-sm focus:outline-none bg-white w-full time-input-no-icon-tab" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                         </div>
                         <PledgeIcon name="arrowRight" className="w-4 h-4 shrink-0 mb-2.5" style={{ color: '#8A93A8' }} />
                         <div className="flex flex-col gap-1 min-w-[100px]">
                           <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>終業時間</label>
                           <input type="time" value={singleEndInput} onChange={e => setSingleEndInput(e.target.value)}
-                            className="border rounded-lg px-2.5 py-2 text-sm focus:outline-none bg-white w-full" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                            className="border rounded-lg px-2.5 py-2 text-sm focus:outline-none bg-white w-full time-input-no-icon-tab" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                         </div>
                       </div>
                       <div className="flex flex-col gap-1 min-w-[90px]">
@@ -1298,6 +1352,26 @@ function LabeledInput({ label, value, onChange, placeholder }: { label: string; 
       <input type="text" value={value} onChange={e => onChange(e.target.value)}
         className="border rounded-lg px-3 py-2 text-sm focus:outline-none placeholder:text-gray-400"
         style={{ borderColor: '#D0DAF0', color: '#1A2340' }} placeholder={placeholder} />
+    </div>
+  )
+}
+
+// 郵便番号・電話番号など、blur時に形式チェックしエラー表示するinput（2026-07-24追加）
+function ValidatedInput({ label, value, onChange, validate, placeholder, inputMode }: {
+  label: string; value: string; onChange: (v: string) => void
+  validate: (v: string) => string | null; placeholder?: string; inputMode?: 'numeric' | 'text'
+}) {
+  const [touched, setTouched] = useState(false)
+  const error = touched ? validate(value) : null
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs font-medium" style={{ color: '#1A2340' }}>{label}</label>
+      <input type="text" inputMode={inputMode} value={value}
+        onChange={e => onChange(e.target.value)}
+        onBlur={() => setTouched(true)}
+        className="border rounded-lg px-3 py-2 text-sm focus:outline-none placeholder:text-gray-400"
+        style={{ borderColor: error ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} placeholder={placeholder} />
+      {error && <p className="text-xs" style={{ color: '#DC2626' }}>{error}</p>}
     </div>
   )
 }

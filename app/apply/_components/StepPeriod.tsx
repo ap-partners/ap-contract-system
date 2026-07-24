@@ -5,7 +5,7 @@
 // ロジック・表示は変更なし。状態は親（ApplyPageInner）に残したまま、値とsetter・派生値をpropsで受け取る。
 
 import { useState, type ReactNode } from 'react'
-import { inp, inpDate, TOOLTIPS, isDateBefore, calcTrialMonths } from '../_lib/helpers'
+import { inp, inpDate, TOOLTIPS, isDateBefore, calcTrialMonths, clampDateYear } from '../_lib/helpers'
 import { FormRow, SectionHeader, EmptyHintBubble, RadioGroup, CriticalWarning } from './FormParts'
 
 type TrialCalc = ReturnType<typeof calcTrialMonths>
@@ -80,13 +80,13 @@ export default function StepPeriod({
               <div className="flex items-center gap-2">
                 <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>自</span>
                 <input type="date" className={inpDate} style={{ borderColor: (showEmptyHint && !dispatchStart) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
-                  value={dispatchStart} onChange={e => setDispatchStart(e.target.value)} />
+                  value={dispatchStart} onChange={e => setDispatchStart(clampDateYear(e.target.value))} />
               </div>
               <span className="text-sm" style={{ color: '#5A6A8A' }}>〜</span>
               <div className="flex items-center gap-2">
                 <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>至</span>
                 <input type="date" className={inpDate} style={{ borderColor: (showEmptyHint && !dispatchEnd) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
-                  value={dispatchEnd} onChange={e => setDispatchEnd(e.target.value)} />
+                  value={dispatchEnd} onChange={e => setDispatchEnd(clampDateYear(e.target.value))} />
               </div>
             </div>
             {showEmptyHint && (!dispatchStart || !dispatchEnd) && (
@@ -100,7 +100,7 @@ export default function StepPeriod({
                 <input type="date" className={`${inp} max-w-xs`}
                   style={{ borderColor: isDateBefore(conflictDate, dispatchEnd) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
                   value={conflictDate}
-                  onChange={e => { setConflictDate(e.target.value) }} />
+                  onChange={e => { setConflictDate(clampDateYear(e.target.value)) }} />
                 {isDateBefore(conflictDate, dispatchEnd) && (
                   <p className="text-xs mt-1" style={{ color: '#DC2626' }}>抵触日は派遣期間の終了日以降の日付にしてください</p>
                 )}
@@ -113,7 +113,7 @@ export default function StepPeriod({
               <div>
                 <input type="date" className={`${inp} max-w-xs`}
                   style={{ borderColor: isDateBefore(conflictDateOrg, dispatchEnd) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
-                  value={conflictDateOrg} onChange={e => { setConflictDateOrg(e.target.value) }} />
+                  value={conflictDateOrg} onChange={e => { setConflictDateOrg(clampDateYear(e.target.value)) }} />
                 {isDateBefore(conflictDateOrg, dispatchEnd) && (
                   <p className="text-xs mt-1" style={{ color: '#DC2626' }}>抵触日は派遣期間の終了日以降の日付にしてください</p>
                 )}
@@ -143,7 +143,7 @@ export default function StepPeriod({
                   <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>契約条件適用開始日</span>
                   <input type="date" className={inpDate}
                     style={{ borderColor: (showEmptyHint && !contractStartDate) ? '#DC2626' : (isDateBefore(contractStartDate, dispatchStart) ? '#DC2626' : '#D0DAF0'), color: '#1A2340' }}
-                    value={contractStartDate} onChange={e => setContractStartDate(e.target.value)} />
+                    value={contractStartDate} onChange={e => setContractStartDate(clampDateYear(e.target.value))} />
                   {pattern === 'C' && (
                     <button type="button"
                       onClick={e => { e.preventDefault(); if (dispatchStart) setContractStartDate(dispatchStart) }}
@@ -171,14 +171,14 @@ export default function StepPeriod({
                     <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>自</span>
                     <input type="date" className={inpDate}
                       style={{ borderColor: (showEmptyHint && !employStart) ? '#DC2626' : (employStartError ? '#DC2626' : '#D0DAF0'), color: '#1A2340' }}
-                      value={employStart} onChange={e => setEmployStart(e.target.value)} />
+                      value={employStart} onChange={e => setEmployStart(clampDateYear(e.target.value))} />
                   </div>
                   <span className="text-sm" style={{ color: '#5A6A8A' }}>〜</span>
                   <div className="flex items-center gap-2">
                     <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>至</span>
                     <input type="date" className={inpDate}
                       style={{ borderColor: (showEmptyHint && !employEnd) ? '#DC2626' : (employEndError ? '#DC2626' : '#D0DAF0'), color: '#1A2340' }}
-                      value={employEnd} onChange={e => setEmployEnd(e.target.value)} />
+                      value={employEnd} onChange={e => setEmployEnd(clampDateYear(e.target.value))} />
                   </div>
                   {pattern === 'C' && (
                     <button type="button"
@@ -219,14 +219,14 @@ export default function StepPeriod({
                       <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>自</span>
                       <input type="date" className={inpDate}
                         style={{ borderColor: (showEmptyHint && !trialStart) ? '#DC2626' : (trialStartError ? '#DC2626' : '#D0DAF0'), color: '#1A2340' }}
-                        value={trialStart} onChange={e => setTrialStart(e.target.value)} />
+                        value={trialStart} onChange={e => setTrialStart(clampDateYear(e.target.value))} />
                     </div>
                     <span className="text-sm" style={{ color: '#5A6A8A' }}>〜</span>
                     <div className="flex items-center gap-2">
                       <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>至</span>
                       <input type="date" className={inpDate}
                         style={{ borderColor: (showEmptyHint && !trialEnd) ? '#DC2626' : (trialEndError ? '#DC2626' : '#D0DAF0'), color: '#1A2340' }}
-                        value={trialEnd} onChange={e => setTrialEnd(e.target.value)} />
+                        value={trialEnd} onChange={e => setTrialEnd(clampDateYear(e.target.value))} />
                     </div>
                   </div>
                   {showEmptyHint && (!trialStart || !trialEnd) && (

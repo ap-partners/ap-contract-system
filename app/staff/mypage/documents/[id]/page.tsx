@@ -21,6 +21,7 @@ export default function StaffDocumentPage() {
   const [stage, setStage] = useState<Stage>('loading')
   const [error, setError] = useState('')
   const [documentLabel, setDocumentLabel] = useState('')
+  const [signedAt, setSignedAt] = useState<string | null>(null)
   const [signAction, setSignAction] = useState<SignAction>('confirmation')
   const [pdfToken, setPdfToken] = useState('')
   const [kind, setKind] = useState<DocKind>('contract')
@@ -48,6 +49,7 @@ export default function StaffDocumentPage() {
         }
         setDocumentLabel(data.documentLabel)
         setSignAction(data.signAction)
+        setSignedAt(data.signedAt || null)
         setPdfToken(data.pdfToken || '')
         setKind(data.kind === 'pledge' ? 'pledge' : 'contract')
         setStage(data.status === '署名待ち' ? 'action' : 'view')
@@ -101,148 +103,211 @@ export default function StaffDocumentPage() {
       ? sealName.trim().length > 0 && sealConfirmed && !submitting
       : confirmChecked && !submitting
 
+  // 署名済み画面用の日付表示（マイページ一覧の表記と統一）
+  const signedAtLabel = (() => {
+    if (!signedAt) return null
+    const d = new Date(signedAt)
+    if (Number.isNaN(d.getTime())) return null
+    const dateLabel = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+    return signAction === 'signature' ? `${dateLabel}に署名済み` : `${dateLabel}に確認済み`
+  })()
+
+  const pdfHref = `${kind === 'pledge' ? `/api/pledges/${id}/pdf` : `/api/contracts/${id}/pdf`}?t=${encodeURIComponent(pdfToken)}`
+
+  // 紺ヘッダー内の「戻る」ボタン（2026-07-24リデザインで追加。伊藤さん指摘：戻る方法が無かった）
+  const BackButton = () => (
+    <button
+      onClick={() => router.push('/staff/mypage')}
+      disabled={submitting}
+      className="flex items-center gap-1 text-xs mb-4 disabled:opacity-50"
+      style={{ color: '#C7D3EF', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <polyline points="15 18 9 12 15 6" />
+      </svg>
+      戻る
+    </button>
+  )
+
   return (
     <div className="min-h-screen flex justify-center px-4 py-10" style={{ background: '#F5F7FC' }}>
       <div className="w-full max-w-md">
-        <div className="rounded-3xl p-6" style={{ background: '#FFFFFF', boxShadow: '0 2px 16px rgba(26,35,64,0.08)' }}>
+        {/* 2026-07-24全面リデザイン（伊藤さんレビュー・モックv8＋署名済み画面v2で承認済み）：
+            ①マイページトップと同じ紺ヘッダー構成に統一（戻るボタン・書類名・案内文言）
+            ②「書類の内容を確認する」ボタンをオレンジの塗り＋上余白拡大で目立たせる
+            ③フルネーム入力欄を大きく目立たせる・チェックボックスは送信ボタン直上に配置
+            ④署名済み画面（view）にも同じヘッダー構成＋署名日時表示を追加し、
+              ボタン間の余白を広く取る（スマホでの誤タップ防止） */}
+        <div className="rounded-3xl overflow-hidden" style={{ background: '#FFFFFF', boxShadow: '0 2px 16px rgba(26,35,64,0.08)' }}>
           {stage === 'loading' && (
-            <p className="text-sm text-center py-6" style={{ color: '#5A6A8A' }}>読み込み中です...</p>
+            <p className="text-sm text-center py-10" style={{ color: '#5A6A8A' }}>読み込み中です...</p>
           )}
 
           {stage === 'view' && (
-            <div className="text-center py-4">
-              {error ? (
-                <p className="text-sm leading-relaxed mb-6" style={{ color: '#DC2626' }}>{error}</p>
-              ) : (
-                <>
-                  <p className="text-sm font-bold mb-1" style={{ color: '#1A2340' }}>{documentLabel}</p>
-                  <p className="text-xs mb-6" style={{ color: '#5A6A8A' }}>この書類の確認・署名は既に完了しています。</p>
+            <>
+              <div className="px-6 pt-5 pb-6" style={{ background: '#1B3A8C' }}>
+                <BackButton />
+                {error ? (
+                  <p className="text-sm font-bold text-white">書類を表示できません</p>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2.5 mb-2.5">
+                      <div className="w-8 h-8 rounded-[9px] flex items-center justify-center shrink-0" style={{ background: 'rgba(255,255,255,0.15)' }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      </div>
+                      <p className="text-base font-bold text-white">{documentLabel}</p>
+                    </div>
+                    <p className="text-xs" style={{ color: '#C7D3EF' }}>
+                      {signedAtLabel || 'この書類の確認・署名は既に完了しています。'}
+                    </p>
+                  </>
+                )}
+              </div>
+              <div className="px-6 pt-8 pb-9">
+                {error ? (
+                  <p className="text-sm leading-relaxed mb-8 text-center" style={{ color: '#DC2626' }}>{error}</p>
+                ) : (
                   <a
-                    href={`${kind === 'pledge' ? `/api/pledges/${id}/pdf` : `/api/contracts/${id}/pdf`}?t=${encodeURIComponent(pdfToken)}`}
+                    href={pdfHref}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block w-full text-center py-3 rounded-xl text-sm font-semibold mb-4"
-                    style={{ background: '#EEF2FC', color: '#1B3A8C', border: '1px solid #D0DAF0' }}
+                    className="block w-full text-center py-4 rounded-xl text-sm font-semibold text-white"
+                    style={{ background: '#F59E42', marginBottom: 64 }}
                   >
                     書類の内容を見る（PDFが開きます）
                   </a>
-                </>
-              )}
-              <button
-                onClick={() => router.push('/staff/mypage')}
-                className="w-full py-3 rounded-xl text-sm font-semibold text-white"
-                style={{ background: '#1B3A8C' }}
-              >
-                マイページに戻る
-              </button>
-            </div>
+                )}
+                <button
+                  onClick={() => router.push('/staff/mypage')}
+                  className="w-full py-4 rounded-xl text-sm font-semibold"
+                  style={{ background: '#EEF2FA', color: '#1B3A8C' }}
+                >
+                  マイページに戻る
+                </button>
+              </div>
+            </>
           )}
 
           {stage === 'action' && (
             <>
-              <h2 className="text-lg font-bold mb-1" style={{ color: '#1A2340' }}>{documentLabel}</h2>
-              <p className="text-xs mb-6" style={{ color: '#5A6A8A' }}>内容をご確認のうえ、下記にご対応ください。</p>
+              <div className="px-6 pt-5 pb-6" style={{ background: '#1B3A8C' }}>
+                <BackButton />
+                <h2 className="text-lg font-bold text-white mb-2">{documentLabel}</h2>
+                <p className="text-xs leading-relaxed" style={{ color: '#C7D3EF' }}>
+                  {signAction === 'signature'
+                    ? '内容をご確認いただき、署名をお願いします。'
+                    : '内容をご確認いただき、確認完了の操作をお願いします。'}
+                </p>
+              </div>
 
-              <a
-                href={`${kind === 'pledge' ? `/api/pledges/${id}/pdf` : `/api/contracts/${id}/pdf`}?t=${encodeURIComponent(pdfToken)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-disabled={submitting}
-                onClick={e => { if (submitting) e.preventDefault() }}
-                className="block w-full text-center py-3 rounded-xl text-sm font-semibold mb-6"
-                style={{
-                  background: '#EEF2FC', color: '#1B3A8C', border: '1px solid #D0DAF0',
-                  opacity: submitting ? 0.5 : 1, pointerEvents: submitting ? 'none' : 'auto',
-                }}
-              >
-                書類の内容を確認する（PDFが開きます）
-              </a>
+              <div className="px-6 pb-7" style={{ paddingTop: 40 }}>
+                <a
+                  href={pdfHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-disabled={submitting}
+                  onClick={e => { if (submitting) e.preventDefault() }}
+                  className="block w-full text-center py-4 rounded-xl text-sm font-semibold text-white mb-8"
+                  style={{
+                    background: '#F59E42',
+                    opacity: submitting ? 0.5 : 1, pointerEvents: submitting ? 'none' : 'auto',
+                  }}
+                >
+                  書類の内容を確認する（PDFが開きます）
+                </a>
 
-              {signAction === 'signature' ? (
-                <div className="mb-6">
-                  <label className="block text-sm font-medium mb-1.5" style={{ color: '#1A2340' }}>
-                    フルネームをご記入ください
-                  </label>
-                  <input
-                    type="text"
-                    value={sealName}
-                    onChange={e => setSealName(e.target.value)}
-                    disabled={submitting}
-                    className="w-full px-4 py-3 rounded-xl text-sm border focus:outline-none focus:ring-2 transition-all mb-4"
-                    style={{ borderColor: '#D0DAF0', background: submitting ? '#F5F7FC' : '#FFFFFF', color: '#1A2340' }}
-                    placeholder="例：山田　太郎"
-                  />
+                {signAction === 'signature' ? (
+                  <div className="mb-6">
+                    <label className="block text-sm font-bold mb-2" style={{ color: '#1A2340' }}>
+                      フルネームをご記入ください
+                    </label>
+                    <input
+                      type="text"
+                      value={sealName}
+                      onChange={e => setSealName(e.target.value)}
+                      disabled={submitting}
+                      className="w-full px-4 py-4 rounded-xl text-base border-2 focus:outline-none transition-all mb-1.5"
+                      style={{ borderColor: sealName.trim() ? '#1B3A8C' : '#D0DAF0', background: submitting ? '#F5F7FC' : '#FFFFFF', color: '#1A2340' }}
+                      placeholder="例：山田　太郎"
+                    />
+                    <p className="text-xs mb-5" style={{ color: '#8A94AA' }}>
+                      ご入力いただいたお名前から印影（丸印）を自動で作成します。
+                    </p>
 
-                  <p className="text-sm font-medium mb-2 text-center" style={{ color: '#1A2340' }}>
-                    押印イメージ（プレビュー）
-                  </p>
-                  <div className="flex justify-center mb-3">
-                    <canvas ref={previewCanvasRef} width={280} height={280} style={{ width: 140, height: 140 }} />
-                    {/* PDFへ埋め込む高解像度版。/sign/[id]と同じ2026-07-22の修正（280→560）をこちらにも適用 */}
-                    <canvas ref={exportCanvasRef} width={560} height={560} style={{ display: 'none' }} />
+                    <p className="text-sm font-medium mb-2 text-center" style={{ color: '#1A2340' }}>
+                      押印イメージ（プレビュー）
+                    </p>
+                    <div className="flex justify-center mb-5">
+                      <canvas ref={previewCanvasRef} width={280} height={280} style={{ width: 140, height: 140 }} />
+                      {/* PDFへ埋め込む高解像度版。/sign/[id]と同じ2026-07-22の修正（280→560）をこちらにも適用 */}
+                      <canvas ref={exportCanvasRef} width={560} height={560} style={{ display: 'none' }} />
+                    </div>
+
+                    {/* チェックボックスは送信ボタンの直上に配置（モックv8で承認済み） */}
+                    <label className="flex items-start gap-2.5 cursor-pointer rounded-xl p-3.5" style={{ background: '#F5F7FC' }}>
+                      <input
+                        type="checkbox"
+                        checked={sealConfirmed}
+                        onChange={e => setSealConfirmed(e.target.checked)}
+                        disabled={sealName.trim().length === 0 || submitting}
+                        className="mt-0.5 h-4 w-4"
+                      />
+                      <span className="text-sm leading-relaxed" style={{ color: '#1A2340' }}>
+                        この印影の内容で相違ありません
+                      </span>
+                    </label>
                   </div>
-
-                  <label className="flex items-start gap-2 cursor-pointer">
+                ) : (
+                  <label className="flex items-start gap-2.5 mb-6 cursor-pointer rounded-xl p-3.5" style={{ background: '#F5F7FC' }}>
                     <input
                       type="checkbox"
-                      checked={sealConfirmed}
-                      onChange={e => setSealConfirmed(e.target.checked)}
-                      disabled={sealName.trim().length === 0 || submitting}
-                      className="mt-1"
+                      checked={confirmChecked}
+                      onChange={e => setConfirmChecked(e.target.checked)}
+                      disabled={submitting}
+                      className="mt-0.5 h-4 w-4"
                     />
                     <span className="text-sm leading-relaxed" style={{ color: '#1A2340' }}>
-                      この印影の内容で相違ありません
+                      内容を確認しました
                     </span>
                   </label>
-                </div>
-              ) : (
-                <label className="flex items-start gap-2 mb-6 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={confirmChecked}
-                    onChange={e => setConfirmChecked(e.target.checked)}
-                    disabled={submitting}
-                    className="mt-1"
-                  />
-                  <span className="text-sm leading-relaxed" style={{ color: '#1A2340' }}>
-                    内容を確認しました
-                  </span>
-                </label>
-              )}
-
-              {error && (
-                <div className="rounded-lg px-4 py-3 text-sm leading-relaxed mb-4 whitespace-pre-line" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
-                  {error}
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={!canSubmit}
-                className="w-full py-3 rounded-xl text-sm font-semibold text-white transition-all flex items-center justify-center gap-2"
-                style={{ background: canSubmit ? '#1B3A8C' : '#A8C0E8' }}
-              >
-                {submitting && (
-                  <span className="inline-block w-4 h-4 rounded-full animate-spin" style={{ border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#FFFFFF' }} />
                 )}
-                {submitting ? '送信中です…' : signAction === 'signature' ? '署名する' : '確認する'}
-              </button>
 
-              {submitting && (
-                <p className="text-xs text-center mt-3 leading-relaxed" style={{ color: '#5A6A8A' }}>
-                  {signAction === 'signature' ? '署名登録中です。' : '登録処理中です。'}
-                  <br />
-                  数秒ほどお時間をいただく場合があります。
-                  <br />
-                  画面を閉じたり、戻ったりせずそのままお待ちください。
-                </p>
-              )}
+                {error && (
+                  <div className="rounded-lg px-4 py-3 text-sm leading-relaxed mb-4 whitespace-pre-line" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+                    {error}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={!canSubmit}
+                  className="w-full py-4 rounded-xl text-sm font-semibold text-white transition-all flex items-center justify-center gap-2"
+                  style={{ background: canSubmit ? '#1B3A8C' : '#A8C0E8' }}
+                >
+                  {submitting && (
+                    <span className="inline-block w-4 h-4 rounded-full animate-spin" style={{ border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#FFFFFF' }} />
+                  )}
+                  {submitting ? '送信中です…' : signAction === 'signature' ? '署名する' : '確認する'}
+                </button>
+
+                {submitting && (
+                  <p className="text-xs text-center mt-3 leading-relaxed" style={{ color: '#5A6A8A' }}>
+                    {signAction === 'signature' ? '署名登録中です。' : '登録処理中です。'}
+                    <br />
+                    数秒ほどお時間をいただく場合があります。
+                    <br />
+                    画面を閉じたり、戻ったりせずそのままお待ちください。
+                  </p>
+                )}
+              </div>
             </>
           )}
 
           {stage === 'done' && (
-            <div className="text-center py-4">
+            <div className="text-center px-6 py-10">
               <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl" style={{ background: '#E9F7EF', color: '#1E8449' }}>
                 ✓
               </div>

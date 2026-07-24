@@ -213,6 +213,72 @@ function checkWorkRules(input: AutoCheckInput): AutoCheckResult[] {
   return results
 }
 
+// ===== アルバイト誓約書（pledges）用の自動チェック（2026-07-24追加） =====
+// 伊藤さん指定：「金額異常値・最低賃金を行うこととし、クライアント先・自社拠点ともに共通」。
+// 雇用契約書と異なり就業規則整合チェックは対象外（誓約書には保険・試用期間等の項目自体が無いため）。
+// 金額の正常範囲は雇用契約書（checkAmountAnomaly）と同じ基準を使う。
+export interface PledgeAutoCheckInput {
+  salaryType: string // '時給' | '日給'（誓約書に月給は無い）
+  basicSalary: number
+  rolePay: number
+  skillPay: number
+  salesPay: number
+  deptNo: number | null // 対象スタッフの所属部門（最低賃金マスタの参照キー）
+  periodEnd: string | null // 就業日程の最終日（YYYY-MM-DD）。最低賃金の適用行の選定に使う
+  dailyStandardHours: number // 日給→時給換算に使う1日の基準時間（誓約書の給与計算基準＝7時間）
+  minimumWageRowsForDept: MinimumWageRow[]
+}
+
+export function runPledgeAutoChecks(input: PledgeAutoCheckInput): { results: AutoCheckResult[]; overallLevel: WarningLevel } {
+  const results: AutoCheckResult[] = []
+
+  // ① 金額異常値（雇用契約書と同じ正常範囲）
+  if (input.salaryType === '時給') {
+    if (input.basicSalary < 1500 || input.basicSalary > 5000) {
+      results.push({ type: 'amount_anomaly_hourly', level: 'red', message: `時給として入力された金額（${input.basicSalary.toLocaleString()}円）が、通常の範囲（1,500円〜5,000円）から外れています。入力ミスがないかご確認ください。` })
+    }
+  } else if (input.salaryType === '日給') {
+    if (input.basicSalary < 8000 || input.basicSalary > 50000) {
+      results.push({ type: 'amount_anomaly_daily', level: 'red', message: `日給として入力された金額（${input.basicSalary.toLocaleString()}円）が、通常の範囲（8,000円〜50,000円）から外れています。入力ミスがないかご確認ください。` })
+    }
+  }
+
+  // ② 最低賃金（クライアント先・自社拠点とも共通で実施）
+  //    手当（役職・職能・営業）は雇用契約書と同じ考え方で時給換算に算入する。
+  //    対象部門にマスタ登録が無い場合は判定不能のためスキップ（誓約書は申請ブロックまではしない）。
+  if (input.minimumWageRowsForDept.length > 0) {
+    let hourlyEquivalent: number | null = null
+    if (input.salaryType === '時給') {
+      hourlyEquivalent = input.basicSalary // 時給制は雇用契約書と同様、基本給（時給）のみで判定
+    } else if (input.salaryType === '日給') {
+      if (input.dailyStandardHours > 0) {
+        hourlyEquivalent = (input.basicSalary + input.rolePay + input.skillPay + input.salesPay) / input.dailyStandardHours
+      }
+    }
+    if (hourlyEquivalent !== null && input.periodEnd) {
+      const applicableRows = input.minimumWageRowsForDept.filter(r => r.effective_from <= input.periodEnd!)
+      const targetRow = applicableRows.length > 0
+        ? applicableRows.reduce((latest, r) => r.effective_from > latest.effective_from ? r : latest)
+        : input.minimumWageRowsForDept.reduce((earliest, r) => r.effective_from < earliest.effective_from ? r : earliest)
+      if (hourlyEquivalent < targetRow.hourly_wage) {
+        results.push({
+          type: 'minimum_wage_violation',
+          level: 'red',
+          message: `${targetRow.effective_from}時点の最低賃金（時給${targetRow.hourly_wage.toLocaleString()}円）に対して、入力内容の時給換算額（約${Math.floor(hourlyEquivalent).toLocaleString()}円）が下回っています。`,
+        })
+      }
+    }
+  }
+
+  const overallLevel: WarningLevel = results.some(r => r.level === 'red')
+    ? 'red'
+    : results.some(r => r.level === 'yellow')
+      ? 'yellow'
+      : 'none'
+
+  return { results, overallLevel }
+}
+
 export function runAutoChecks(input: AutoCheckInput): { results: AutoCheckResult[]; overallLevel: WarningLevel } {
   const results: AutoCheckResult[] = []
 

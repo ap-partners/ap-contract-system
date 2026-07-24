@@ -32,7 +32,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
 
   const { data: contract } = await supabaseAdmin
     .from('contracts')
-    .select('id, staff_id, status, document_type, contract_type, sign_action_type')
+    .select('id, staff_id, status, document_type, contract_type, sign_action_type, signed_at')
     .eq('id', id)
     .maybeSingle()
 
@@ -54,13 +54,14 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
       documentLabel: getDocumentLabel(contract.document_type, contract.contract_type),
       signAction,
       status: contract.status,
+      signedAt: contract.signed_at || null, // 2026-07-24追加：署名済み画面での署名日時表示用
       pdfToken: createPdfAccessToken(id),
     })
   }
 
   const { data: pledge } = await supabaseAdmin
     .from('pledges')
-    .select('id, staff_id, status, sign_action_type')
+    .select('id, staff_id, status, sign_action_type, signed_at')
     .eq('id', id)
     .maybeSingle()
 
@@ -79,6 +80,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
     documentLabel: PLEDGE_DOCUMENT_LABEL,
     signAction: 'signature',
     status: pledge.status,
+    signedAt: pledge.signed_at || null, // 2026-07-24追加：署名済み画面での署名日時表示用
     pdfToken: createPdfAccessToken(id),
   })
 }

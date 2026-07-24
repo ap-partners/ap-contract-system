@@ -5,7 +5,7 @@
 // ロジック・表示は変更なし。状態は親（ApplyPageInner）に残したまま、値とsetter・派生値をpropsで受け取る。
 
 import { useState } from 'react'
-import { getDocumentTypes } from '../_lib/helpers'
+import { getDocumentTypes, clampDateYear } from '../_lib/helpers'
 import { FormRow, SearchInput } from './FormParts'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 
@@ -179,7 +179,7 @@ export default function StepBasic({
                         </label>
                         <input
                           type="date" value={reqHireDate}
-                          onChange={e => setReqHireDate(e.target.value)}
+                          onChange={e => setReqHireDate(clampDateYear(e.target.value))}
                           className="border rounded-lg px-3 py-2 text-sm focus:outline-none w-40 placeholder:text-gray-400"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                       </div>
@@ -220,7 +220,7 @@ export default function StepBasic({
                               </label>
                               <input
                                 type="date" value={reqDispatchStart}
-                                onChange={e => setReqDispatchStart(e.target.value)}
+                                onChange={e => setReqDispatchStart(clampDateYear(e.target.value))}
                                 className="border rounded-lg px-3 py-2 text-sm focus:outline-none w-40 placeholder:text-gray-400"
                                 style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                             </div>

@@ -28,8 +28,6 @@ const validateSignatureImageDataUrl = (dataUrl: string): string | null => {
   return null
 }
 
-const normalizeNameForCompare = (name: string): string => name.replace(/[\s　]/g, '').toLowerCase()
-
 // Driveの年月フォルダ名。雇用契約書と同じ考え方だが、pledgesにはemployStart/dispatchStart相当の
 // 単一フィールドが無い（scheduleRows内の最初の行の日付を使う）ため、無ければ申請作成日を使う。
 const resolveYearMonth = (pledge: any): string => {
@@ -95,12 +93,6 @@ export async function POST(
   }
   if (!sealName) {
     return NextResponse.json({ error: 'フルネームを入力してください。' }, { status: 400 })
-  }
-  if (normalizeNameForCompare(sealName) !== normalizeNameForCompare(staff.name || '')) {
-    return NextResponse.json(
-      { error: '入力されたお名前がご本人の氏名と一致しません。お手数ですが、正しいフルネームをご入力ください。' },
-      { status: 400 }
-    )
   }
 
   let buffer: Buffer

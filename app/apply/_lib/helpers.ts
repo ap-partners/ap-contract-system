@@ -159,6 +159,16 @@ export const deptInputStyle = {
   lineHeight: '1.6',
 }
 
+// type="date" inputの年入力を4桁に制限する（2026-07-24追加。伊藤さん指摘：
+// キーボード入力で5桁以上の年が入力できてしまう不具合対応。ISO形式（YYYY-MM-DD）の
+// 先頭の数字列が4桁を超える場合、先頭4桁のみを残す）
+export const clampDateYear = (v: string) => {
+  const m = /^(\d+)(-.*)?$/.exec(v)
+  if (!m) return v
+  const year = m[1].length > 4 ? m[1].slice(0, 4) : m[1]
+  return year + (m[2] || '')
+}
+
 export const normalizeTel = (v: string) => v
   .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
   .replace(/ー|－|―/g, '-')

@@ -28,6 +28,7 @@ import MasterManagementTab from '../_shared/MasterManagementTab'
 import AccountManagementTab from '../_shared/AccountManagementTab'
 import { useDebouncedSearch, escapeForPostgrestFilter } from '../_shared/useDebouncedSearch'
 import { STAFF_EXPRESS_COLUMNS } from '@/lib/staffExpressColumns'
+import { clampDateYear } from '@/app/apply/_lib/helpers'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 import PledgeListSection from '../_shared/PledgeListSection'
@@ -1395,10 +1396,10 @@ export default function AdminDashboard() {
                   </select>
                 )}
                 <span className="text-sm font-semibold text-[#6B7280]">依頼日</span>
-                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                <input type="date" value={dateFrom} onChange={e => setDateFrom(clampDateYear(e.target.value))}
                   className="h-12 rounded-2xl border border-[#E8EDF5] bg-white px-4 text-sm font-medium text-[#1F2937] outline-none transition focus:border-[#2F5FD0]" />
                 <span className="text-sm font-semibold text-[#6B7280]">〜</span>
-                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                <input type="date" value={dateTo} onChange={e => setDateTo(clampDateYear(e.target.value))}
                   className="h-12 rounded-2xl border border-[#E8EDF5] bg-white px-4 text-sm font-medium text-[#1F2937] outline-none transition focus:border-[#2F5FD0]" />
               </div>
 
@@ -1879,7 +1880,7 @@ export default function AdminDashboard() {
         {activeTab === 'accounts' && isAccountAdmin && <AccountManagementTab />}
         {activeTab === 'pledges' && (
           <div className="mt-5 rounded-[18px] border border-[#E8EDF5] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)]">
-            <PledgeListSection />
+            <PledgeListSection canApprove />
           </div>
         )}
       </main>

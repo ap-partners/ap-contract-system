@@ -31,6 +31,9 @@ type PledgeDetail = {
   approved_at: string | null
   created_by_name: string | null
   created_at: string
+  // 2026-07-24追加：金額異常値・最低賃金の自動チェック結果（契約書と同じ列構成）
+  auto_check_results: { type: string; level: 'yellow' | 'red'; message: string }[] | null
+  warning_level: 'none' | 'yellow' | 'red' | null
   input_data: {
     staff?: { name?: string; employee_number?: string; department?: string }
     workDescription?: string
@@ -311,6 +314,26 @@ export default function SSCPledgeDetail() {
           </div>
         </div>
 
+        {/* ===== 自動チェック結果（2026-07-24追加。契約書詳細画面と同じ考え方で表示） ===== */}
+        {(pledge.auto_check_results?.length || 0) > 0 && (
+          <div className="rounded-xl p-4 mb-6 border-2" style={{
+            background: pledge.warning_level === 'red' ? '#FEF2F2' : '#FFFBEB',
+            borderColor: pledge.warning_level === 'red' ? '#F87171' : '#FBBF24',
+          }}>
+            <p className="text-sm font-bold mb-2" style={{ color: pledge.warning_level === 'red' ? '#B91C1C' : '#92400E' }}>
+              {pledge.warning_level === 'red' ? '🚨 自動チェックで重要な警告があります' : '⚠️ 自動チェックで確認事項があります'}
+            </p>
+            <ul className="flex flex-col gap-2">
+              {pledge.auto_check_results!.map((r, i) => (
+                <li key={i} className="text-sm leading-relaxed flex gap-2" style={{ color: '#1A2340' }}>
+                  <span className="shrink-0">{r.level === 'red' ? '🔴' : '🟡'}</span>
+                  <span>{r.message}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {pledge.status === '差し戻し中' && pledge.rejection_reason && (
           <div className="rounded-xl p-4 mb-6 border-2" style={{ background: '#FEF2F2', borderColor: '#F87171' }}>
             <p className="text-sm font-bold mb-1" style={{ color: '#B91C1C' }}>↩ 差し戻し理由（{formatDateTime(pledge.rejected_at)}）</p>
@@ -322,13 +345,13 @@ export default function SSCPledgeDetail() {
           {actionDone === 'approved' ? (
             <div className="rounded-xl p-5 border-2" style={{ background: '#ECFDF5', borderColor: '#34D399' }}>
               <p className="text-base font-bold mb-1" style={{ color: '#065F46' }}>✅ 承認しました</p>
-              <p className="text-sm" style={{ color: '#065F46' }}>スタッフへ署名依頼が自動送信されます。</p>
+              <p className="text-sm" style={{ color: '#065F46' }}>スタッフへ署名依頼を自動送信しました。</p>
               <button onClick={() => router.push(backPath)} className="mt-3 text-sm px-4 py-2 rounded-lg text-white" style={{ background: '#1B3A8C' }}>一覧に戻る</button>
             </div>
           ) : actionDone === 'rejected' ? (
             <div className="rounded-xl p-5 border-2" style={{ background: '#FEF2F2', borderColor: '#F87171' }}>
               <p className="text-base font-bold mb-1" style={{ color: '#B91C1C' }}>↩ 差し戻しました</p>
-              <p className="text-sm" style={{ color: '#B91C1C' }}>申請者へ差し戻し理由が表示されます。</p>
+              <p className="text-sm" style={{ color: '#B91C1C' }}>申請者へ差し戻し理由を表示しました。</p>
               <button onClick={() => router.push(backPath)} className="mt-3 text-sm px-4 py-2 rounded-lg text-white" style={{ background: '#1B3A8C' }}>一覧に戻る</button>
             </div>
           ) : isOwnSubmission && isWithdrawable ? (

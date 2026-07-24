@@ -13,6 +13,7 @@ import {
   addDays,
   ContactFields,
 } from './useRenewalCandidates'
+import { clampDateYear } from '@/app/apply/_lib/helpers'
 
 // 2026-07-16追加（チャットB・④差異確認の表示範囲拡大）：指揮命令者・派遣先責任者・
 // 苦情処理申出先の3グループ×4項目の表示ラベル
@@ -582,7 +583,7 @@ export default function RenewalManagementTab({
                               <input
                                 type="date"
                                 value={draft.start || (c.dispatch_end_date ? addDays(c.dispatch_end_date, 1) : '')}
-                                onChange={e => setManualDraft(prev => ({ ...prev, [c.id]: { start: e.target.value, end: prev[c.id]?.end || draft.end } }))}
+                                onChange={e => setManualDraft(prev => ({ ...prev, [c.id]: { start: clampDateYear(e.target.value), end: prev[c.id]?.end || draft.end } }))}
                                 className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5"
                               />
                             </div>
@@ -591,7 +592,7 @@ export default function RenewalManagementTab({
                               <input
                                 type="date"
                                 value={draft.end}
-                                onChange={e => setManualDraft(prev => ({ ...prev, [c.id]: { start: prev[c.id]?.start || draft.start, end: e.target.value } }))}
+                                onChange={e => setManualDraft(prev => ({ ...prev, [c.id]: { start: prev[c.id]?.start || draft.start, end: clampDateYear(e.target.value) } }))}
                                 className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5"
                               />
                             </div>

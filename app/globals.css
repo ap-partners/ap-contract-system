@@ -38,3 +38,12 @@ body {
   from { opacity: 0; transform: scale(0.97) translateY(4px); }
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
+
+/* 2026-07-24追加：時刻入力の時計アイコン（ピッカー起動ボタン）をTabキーの移動対象から外す。
+   Chromium系ではtype="time"のピッカーアイコンがキーボードフォーカスを受けるため、
+   TABで「始業時間→終業時間」と連続入力する際にアイコンで1回止まってしまう
+   （伊藤さん指摘・2026-07-24）。アイコン自体を非表示にすることでTab順から除外する。
+   時刻は数字のキーボード入力で従来どおり入力可能（ピッカーは使わない運用のため影響なし）。 */
+.time-input-no-icon-tab::-webkit-calendar-picker-indicator {
+  display: none;
+}

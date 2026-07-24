@@ -43,9 +43,6 @@ const validateSignatureImageDataUrl = (dataUrl: string): string | null => {
   return null
 }
 
-// 全角・半角スペース、通常スペースをすべて除去して比較する（氏名の区切り方の揺れを許容するため）
-const normalizeNameForCompare = (name: string): string => name.replace(/[\s　]/g, '').toLowerCase()
-
 // 総合レビュー指摘40対応（2026-07-22）：署名・確認完了の監査ログ。
 // パターンBの「内容を確認しました」を含め、押下時点のIPアドレス・User-Agentを記録する
 // （将来トラブル時の証跡目的。伊藤さんと相談のうえ、UI側の強制スクロール等は見送り、
@@ -185,12 +182,6 @@ export async function POST(
     }
     if (!sealName) {
       return NextResponse.json({ error: 'フルネームを入力してください。' }, { status: 400 })
-    }
-    if (normalizeNameForCompare(sealName) !== normalizeNameForCompare(staff.name || '')) {
-      return NextResponse.json(
-        { error: '入力されたお名前がご本人の氏名と一致しません。お手数ですが、正しいフルネームをご入力ください。' },
-        { status: 400 }
-      )
     }
   }
 

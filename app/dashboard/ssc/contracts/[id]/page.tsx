@@ -963,8 +963,8 @@ export default function SSCContractDetail() {
                 {(f.closingPattern === 'face' || f.closingPattern === 'print')
                   ? '担当営業のダッシュボードに「説明対応が必要」として表示されます。'
                   : contract.document_type === '就業条件明示書'
-                  ? 'スタッフへ確認依頼が自動送信されます。'
-                  : 'スタッフへ署名依頼が自動送信されます。'}
+                  ? 'スタッフへ確認依頼を自動送信しました。'
+                  : 'スタッフへ署名依頼を自動送信しました。'}
               </p>
               <button onClick={() => router.push(backPath)}
                 className="mt-3 text-sm px-4 py-2 rounded-lg text-white" style={{ background: '#1B3A8C' }}>
@@ -974,7 +974,7 @@ export default function SSCContractDetail() {
           ) : actionDone === 'rejected' ? (
             <div className="rounded-xl p-5 border-2" style={{ background: '#FEF2F2', borderColor: '#F87171' }}>
               <p className="text-base font-bold mb-1" style={{ color: '#B91C1C' }}>↩ 差し戻しました</p>
-              <p className="text-sm" style={{ color: '#B91C1C' }}>担当営業へ差し戻し理由が通知されます。</p>
+              <p className="text-sm" style={{ color: '#B91C1C' }}>担当営業へ差し戻し理由を通知しました。</p>
               <button onClick={() => router.push(backPath)}
                 className="mt-3 text-sm px-4 py-2 rounded-lg text-white" style={{ background: '#1B3A8C' }}>
                 一覧に戻る

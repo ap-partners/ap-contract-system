@@ -6,7 +6,7 @@
 // 大きな非同期ハンドラ（handleCsvSearch・handleCsvResultSelect）をpropsで受け取る。
 
 import { useState } from 'react'
-import { inp, toHalfWidthDigits, padTwoDigits, TOOLTIPS } from '../_lib/helpers'
+import { inp, toHalfWidthDigits, padTwoDigits, TOOLTIPS, clampDateYear } from '../_lib/helpers'
 import { Req, FormRow, SectionHeader, EmptyHintBubble, TelInput, RadioGroup } from './FormParts'
 
 interface StepWorkInfoProps {
@@ -174,7 +174,7 @@ export default function StepWorkInfo({
                           background: csvDispatchStart ? 'white' : '#FFFBEB',
                           color: '#1A2340', width: '150px',
                         }}
-                        value={csvDispatchStart} onChange={e => setCsvDispatchStart(e.target.value)} />
+                        value={csvDispatchStart} onChange={e => setCsvDispatchStart(clampDateYear(e.target.value))} />
                     </div>
                     <button
                       disabled={!csvDispatchStart || csvLoading}
@@ -344,13 +344,13 @@ export default function StepWorkInfo({
             isEmpty={showEmptyHint && (!startTime || !endTime)} emptyHint="入力してください">
             <div className="flex items-center gap-2 flex-nowrap">
               <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>始業</span>
-              <input type="time" className="bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 shrink-0"
+              <input type="time" className="bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 shrink-0 time-input-no-icon-tab"
                 style={{ borderColor: (showEmptyHint && !startTime) ? '#DC2626' : '#D0DAF0', color: '#1A2340', width: '130px' }}
                 value={startTime}
                 onChange={e => { setStartTime(e.target.value) }} />
               <span className="text-sm shrink-0" style={{ color: '#5A6A8A' }}>〜</span>
               <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>終業</span>
-              <input type="time" className="bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 shrink-0"
+              <input type="time" className="bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 shrink-0 time-input-no-icon-tab"
                 style={{ borderColor: (showEmptyHint && !endTime) ? '#DC2626' : '#D0DAF0', color: '#1A2340', width: '130px' }}
                 value={endTime}
                 onChange={e => { setEndTime(e.target.value) }} />

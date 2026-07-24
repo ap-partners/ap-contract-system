@@ -212,6 +212,18 @@ export default function PledgeApplyPage() {
   const [selectedStaff, setSelectedStaff] = useState<any>(null)
   const [documentType, setDocumentType] = useState<typeof DOCUMENT_TYPES[number] | ''>('')
 
+  // スタッフマスタ登録依頼（2026-07-24追加：/apply STEP1と同じ考え方で、検索してもヒットしない
+  // スタッフをその場で管理部へ登録依頼できるようにする。誓約書はCSV連携がないため、/apply側の
+  // 「CSVインポートも同時に依頼する」ブロックは含めない、単純な氏名・部門名・入社日のみの依頼）
+  const [reqSubmitted, setReqSubmitted] = useState(false)
+  const [showRequestForm, setShowRequestForm] = useState(false)
+  const [reqEmployeeNumber, setReqEmployeeNumber] = useState('')
+  const [reqName, setReqName] = useState('')
+  const [reqDept, setReqDept] = useState('')
+  // 2026-07-24伊藤さん指摘：誓約書（アルバイト）の登録依頼に入社日は不要のため、この画面のみ項目自体を削除
+  const [reqSubmitting, setReqSubmitting] = useState(false)
+  const [reqError, setReqError] = useState('')
+
   // ===== STEP2：就業先情報 =====
   const [workPlaceType, setWorkPlaceType] = useState<'client' | 'internal' | ''>('')
   const [clientName, setClientName] = useState('')
@@ -370,6 +382,57 @@ export default function PledgeApplyPage() {
     setSearchResults(flattened)
     setSearched(true)
   }, [user, myDeptNo])
+
+  // スタッフマスタ登録依頼（2026-07-24追加）：app/apply/page.tsxのvalidateRequestForm/
+  // handleSubmitRequestと同じ考え方。誓約書はCSVインポート依頼の概念が無いため、その分岐は含めない。
+  const validateRequestForm = () => {
+    if (!reqEmployeeNumber) return '社員番号を入力してください'
+    if (!/^\d{6}$/.test(reqEmployeeNumber)) return '社員番号は半角数字6桁で入力してください'
+    if (!reqName) return 'スタッフ氏名を入力してください'
+    if (!reqDept) return '部門名を入力してください'
+    return null
+  }
+
+  const handleSubmitRequest = async () => {
+    const err = validateRequestForm()
+    if (err) { setReqError(err); return }
+    if (reqSubmitting) return
+    setReqSubmitting(true)
+    setReqError('')
+    try {
+      const { data: submitterStaffRow } = await supabase
+        .from('staff')
+        .select('name, department_master(dept_name)')
+        .eq('email', user.email)
+        .limit(1)
+        .maybeSingle()
+
+      const { error } = await supabase.from('requests').insert([{
+        request_type: 'staff_register',
+        staff_name: reqName,
+        staff_code: reqEmployeeNumber,
+        staff_dept: reqDept,
+        // 誓約書は入社日入力が不要（2026-07-24伊藤さん指摘）のためstaff_hire_dateは送らない
+        // 誓約書はCSV連携が無いため常にnot_required固定
+        csv_import_status: 'not_required',
+        requested_by: user.id,
+        requested_by_name: (submitterStaffRow as any)?.name || user.email || null,
+        requested_by_dept: (submitterStaffRow as any)?.department_master?.dept_name || null,
+      }])
+
+      if (error) {
+        console.error('依頼送信エラー:', error)
+        setReqError('依頼の送信に失敗しました。お手数ですが、もう一度お試しください。改善しない場合はシステム担当者にご連絡ください。')
+        setReqSubmitting(false)
+        return
+      }
+      setReqSubmitted(true)
+      setReqSubmitting(false)
+    } catch (e: any) {
+      setReqError('依頼の送信中に問題が発生しました。お手数ですが、もう一度お試しください。')
+      setReqSubmitting(false)
+    }
+  }
 
   const handleLogout = async () => {
     if (!(await confirmDialog('ログアウトしますか？'))) return
@@ -673,7 +736,7 @@ export default function PledgeApplyPage() {
                   </div>
                 ) : (
                   <div className="max-w-xl">
-                    <SearchInput onSearch={handleSearch} />
+                    {!reqSubmitted && <SearchInput onSearch={handleSearch} />}
                     {searched && searchBlockedReason === 'loading' && (
                       <p className="text-xs mt-2" style={{ color: '#5A6A8A' }}>所属部門の情報を読み込んでいます。少し待ってからもう一度検索してください。</p>
                     )}
@@ -681,7 +744,97 @@ export default function PledgeApplyPage() {
                       <p className="text-xs mt-2 text-red-400">ご自身の所属部門情報が確認できないため検索できません。管理部にご連絡ください。</p>
                     )}
                     {searched && !searchBlockedReason && searchResults.length === 0 && (
-                      <p className="text-xs mt-2 text-red-400">該当するスタッフが見つかりませんでした。スタッフマスタに登録済みの方のみ申請できます。</p>
+                      <div className="mt-2">
+                        {!reqSubmitted && <p className="text-xs text-red-400 mb-2">該当するスタッフが見つかりませんでした</p>}
+                        {!showRequestForm && !reqSubmitted && (
+                          <button
+                            onClick={e => { e.preventDefault(); setShowRequestForm(true) }}
+                            className="text-xs px-3 py-2 rounded-lg border font-medium"
+                            style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: '#EEF2FA' }}>
+                            管理部へスタッフマスタ登録を依頼する
+                          </button>
+                        )}
+                        {reqSubmitted && (
+                          <div className="rounded-lg p-4 border mt-2" style={{ background: '#ECFDF5', borderColor: '#A7F3D0' }}>
+                            <p className="text-sm font-medium mb-1" style={{ color: '#0D9488' }}>✓ 依頼を送信しました</p>
+                            <p className="text-xs leading-relaxed" style={{ color: '#1A2340' }}>
+                              管理部へスタッフマスタ登録依頼を送信しました。<br />
+                              登録が完了するとメール通知が届きますので、その後に再度申請してください。
+                            </p>
+                          </div>
+                        )}
+                        {showRequestForm && !reqSubmitted && (
+                          <div className="mt-3 rounded-lg border overflow-hidden" style={{ borderColor: '#D0DAF0' }}>
+                            <div className="px-4 py-3 border-b" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
+                              <p className="text-sm font-medium" style={{ color: '#1B3A8C' }}>管理部へスタッフマスタ登録を依頼</p>
+                              <p className="text-xs mt-0.5" style={{ color: '#5A6A8A' }}>以下の情報を入力して送信してください</p>
+                            </div>
+                            <div className="bg-white p-4 flex flex-col gap-3">
+                              {/* 社員番号 */}
+                              <div className="flex flex-col gap-1">
+                                <label className="text-xs font-medium flex items-center gap-1" style={{ color: '#1A2340' }}>
+                                  社員番号
+                                  <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>必須</span>
+                                </label>
+                                <input
+                                  type="text" inputMode="numeric" maxLength={6}
+                                  value={reqEmployeeNumber}
+                                  onChange={e => setReqEmployeeNumber(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                                  className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-xs placeholder:text-gray-400"
+                                  style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                                  placeholder="例）100001（半角数字6桁）" />
+                                {reqEmployeeNumber && !/^\d{6}$/.test(reqEmployeeNumber) && (
+                                  <p className="text-xs" style={{ color: '#DC2626' }}>半角数字6桁で入力してください</p>
+                                )}
+                              </div>
+                              {/* スタッフ氏名 */}
+                              <div className="flex flex-col gap-1">
+                                <label className="text-xs font-medium flex items-center gap-1" style={{ color: '#1A2340' }}>
+                                  スタッフ氏名
+                                  <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>必須</span>
+                                </label>
+                                <input
+                                  type="text" value={reqName}
+                                  onChange={e => setReqName(e.target.value)}
+                                  className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-xs placeholder:text-gray-400"
+                                  style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                                  placeholder="例）山田 太郎" />
+                              </div>
+                              {/* 部門名 */}
+                              <div className="flex flex-col gap-1">
+                                <label className="text-xs font-medium flex items-center gap-1" style={{ color: '#1A2340' }}>
+                                  部門名
+                                  <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>必須</span>
+                                </label>
+                                <input
+                                  type="text" value={reqDept}
+                                  onChange={e => setReqDept(e.target.value)}
+                                  className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-xs placeholder:text-gray-400"
+                                  style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+                                  placeholder="例）関西支社" />
+                              </div>
+                              {/* ボタン */}
+                              <div className="flex gap-2 pt-1">
+                                <button
+                                  onClick={e => { e.preventDefault(); handleSubmitRequest() }}
+                                  disabled={reqSubmitting}
+                                  className="text-white px-4 py-2 rounded-lg text-xs font-medium"
+                                  style={{ background: '#1B3A8C', opacity: reqSubmitting ? 0.6 : 1, cursor: reqSubmitting ? 'not-allowed' : 'pointer' }}>
+                                  {reqSubmitting ? '送信中…' : '依頼を送信する'}
+                                </button>
+                                <button
+                                  onClick={e => { e.preventDefault(); setShowRequestForm(false) }}
+                                  disabled={reqSubmitting}
+                                  className="px-4 py-2 rounded-lg text-xs border"
+                                  style={{ color: '#5A6A8A', borderColor: '#D0DAF0', background: 'white' }}>
+                                  キャンセル
+                                </button>
+                              </div>
+                              {reqError && <p className="text-xs" style={{ color: '#DC2626' }}>{reqError}</p>}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )}
                     {searchResults.length > 0 && (
                       <div className="border rounded-lg mt-1.5 overflow-hidden bg-white shadow-sm" style={{ borderColor: '#D0DAF0' }}>

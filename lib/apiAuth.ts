@@ -20,10 +20,14 @@ export type StaffAuthContext = {
   role: string | null
   deptNo: number | null
   isInternalApprover: boolean
+  isAccountAdmin: boolean
 }
 
 // リクエストのAuthorizationヘッダーからSupabaseセッションを検証し、staff_rolesの
 // ロール・部門情報とあわせて返す。認証できない場合はnull。
+// 2026-07-24追加：is_active=falseの行（凍結済みアカウント）はnullを返し、既に発行済みの
+// ログイントークンが残っていても即座に全APIで拒否されるようにする（RLS側のcurrent_role_name等
+// と同じ考え方の二重ガード）。
 export async function getAuthenticatedStaff(req: NextRequest): Promise<StaffAuthContext | null> {
   const authHeader = req.headers.get('authorization') || ''
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice('Bearer '.length).trim() : ''
@@ -34,14 +38,17 @@ export async function getAuthenticatedStaff(req: NextRequest): Promise<StaffAuth
 
   const { data: roleRow } = await supabaseAdmin
     .from('staff_roles')
-    .select('role, dept_no, is_internal_approver')
+    .select('role, dept_no, is_internal_approver, is_account_admin, is_active')
     .eq('id', userData.user.id)
     .maybeSingle()
+
+  if (roleRow && roleRow.is_active === false) return null
 
   return {
     userId: userData.user.id,
     role: roleRow?.role || null,
     deptNo: roleRow?.dept_no ?? null,
     isInternalApprover: !!roleRow?.is_internal_approver,
+    isAccountAdmin: !!roleRow?.is_account_admin,
   }
 }

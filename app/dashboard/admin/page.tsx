@@ -25,6 +25,7 @@ import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
 import ContractMonitoringSection from '../_shared/ContractMonitoringSection'
 import { useContractMonitoring } from '../_shared/useContractMonitoring'
 import MasterManagementTab from '../_shared/MasterManagementTab'
+import AccountManagementTab from '../_shared/AccountManagementTab'
 import { useDebouncedSearch, escapeForPostgrestFilter } from '../_shared/useDebouncedSearch'
 import { STAFF_EXPRESS_COLUMNS } from '@/lib/staffExpressColumns'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
@@ -52,7 +53,7 @@ type RequestRow = {
   displayDept?: string | null
 }
 
-type TabType = 'overview' | 'requests' | 'contracts' | 'internal' | 'csvImport' | 'renewal' | 'master' | 'pledges'
+type TabType = 'overview' | 'requests' | 'contracts' | 'internal' | 'csvImport' | 'renewal' | 'master' | 'pledges' | 'accounts'
 type Contract = ContractForDisplay
 type ContractSubTab = '承認待ち' | '差し戻し中' | '承認済み'
 type IconName = 'file' | 'list' | 'shield' | 'upload' | 'alert' | 'clock' | 'search' | 'refresh' | 'check' | 'arrow' | 'logout' | 'map' | 'user' | 'building' | 'plus' | 'grid'
@@ -969,6 +970,7 @@ export default function AdminDashboard() {
   )
 
   const isInternalApprover = user.user_metadata?.is_internal_approver === true
+  const isAccountAdmin = user.user_metadata?.is_account_admin === true
 
   const tabs: { key: TabType; label: string; icon: IconName; count?: number }[] = [
     { key: 'overview', label: 'サマリー', icon: 'grid' },
@@ -979,6 +981,7 @@ export default function AdminDashboard() {
     { key: 'renewal', label: '更新期限管理', icon: 'clock', count: renewalCandidates.length },
     { key: 'pledges', label: 'アルバイト誓約書', icon: 'file', count: pledgesPendingCount },
     { key: 'master', label: 'マスタ管理', icon: 'building' },
+    ...(isAccountAdmin ? [{ key: 'accounts' as TabType, label: 'アカウント管理', icon: 'user' as IconName }] : []),
   ]
 
   // サマリータブ用：ドメイン横断で「今どこに未対応があるか」を一目で見せるカード（2026-07-14新設）。
@@ -1873,6 +1876,7 @@ export default function AdminDashboard() {
           />
         )}
         {activeTab === 'master' && <MasterManagementTab />}
+        {activeTab === 'accounts' && isAccountAdmin && <AccountManagementTab />}
         {activeTab === 'pledges' && (
           <div className="mt-5 rounded-[18px] border border-[#E8EDF5] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)]">
             <PledgeListSection />

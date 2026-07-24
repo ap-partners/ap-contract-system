@@ -251,6 +251,99 @@ export async function sendStaffLoginCodeMail(
   })
 }
 
+// ===== アカウント管理：担当営業／SSC／管理部アカウントの初回設定・パスワード再設定案内 =====
+// 2026-07-24新設。管理部ダッシュボード「アカウント管理」機能から新規アカウントを作成した際、
+// および既存アカウントのパスワード再発行が必要になった際に送る。sendStaffLoginCodeMailと
+// 対象読者（マイページの従業員 vs 社内ログインアカウント）が異なるため別関数として新設。
+export async function sendAccountSetupMail(
+  toEmail: string,
+  name: string | null,
+  role: string,
+  authCode: string,
+  purpose: 'initial' | 'reset'
+): Promise<void> {
+  const url = `${APP_URL}/account-setup?email=${encodeURIComponent(toEmail)}`
+  const greetingHtml = name ? `<tr><td style="padding:32px 32px 0 32px;font-family:sans-serif;font-size:14px;color:#1A2340;font-weight:bold;">${name}　様</td></tr>` : ''
+
+  const subject = purpose === 'initial'
+    ? '【APパートナーズ】契約書管理システムのアカウントが発行されました'
+    : '【APパートナーズ】パスワード再設定のご案内'
+
+  const introLine = purpose === 'initial'
+    ? `契約書管理システムのアカウント（${role}）が発行されました。下記の手順でパスワードを設定してください。`
+    : 'パスワード再設定のお手続きです。'
+
+  const text = [
+    name ? `${name}　様` : '',
+    'お疲れ様です。',
+    'APパートナーズ 契約書管理システムです。',
+    '',
+    introLine,
+    '',
+    '①下記URLを開いてください',
+    url,
+    '',
+    `②「認証コード」に下記の6桁を入力してください`,
+    `　認証コード（6桁）：${authCode}`,
+    '',
+    '③続けて、次回から使うパスワードを設定してください',
+    '',
+    '※認証コードは本人確認のためのものです。他の方に伝えないようご注意ください。',
+    '※認証コードの有効期限は2日間です。期限が切れた場合は、管理部にご連絡のうえ再発行を依頼してください。',
+    '',
+    'このメールに心当たりがない場合は、お手数ですが破棄してください。',
+  ].filter(Boolean).join('\n')
+
+  const html = `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F7FC;padding:24px 0;">
+  <tr><td align="center">
+    <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:8px;max-width:480px;width:100%;">
+      ${greetingHtml}
+      <tr><td style="padding:${name ? '8px' : '32px'} 32px 8px 32px;font-family:sans-serif;font-size:14px;color:#1A2340;">
+        お疲れ様です。<br>APパートナーズ 契約書管理システムです。
+      </td></tr>
+      <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
+        ${introLine}
+      </td></tr>
+      <tr><td align="center" style="padding:24px 32px 20px 32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0">
+          <tr><td align="center" bgcolor="#1B3A8C" style="border-radius:6px;">
+            <a href="${url}" target="_blank" style="display:inline-block;padding:14px 32px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">
+              パスワードを設定する
+            </a>
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:0 32px 20px 32px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.7;">
+        下記の認証コードを入力してください。
+      </td></tr>
+      <tr><td align="center" style="padding:0 32px 0 32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+          <tr><td align="center" bgcolor="#FFFFFF" style="border-radius:6px;padding:14px 0;font-family:sans-serif;font-size:26px;font-weight:bold;letter-spacing:4px;color:#1B3A8C;">
+            ${authCode}
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:20px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#5A6A8A;line-height:1.7;">
+        ※認証コードは本人確認のためのものです。他の方に伝えないようご注意ください。<br>
+        ※認証コードの有効期限は2日間です。期限が切れた場合は、管理部にご連絡のうえ再発行を依頼してください。
+      </td></tr>
+      <tr><td style="padding:20px 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
+        このメールに心当たりがない場合は、お手数ですが破棄してください。
+      </td></tr>
+    </table>
+  </td></tr>
+</table>`.trim()
+
+  await transporter.sendMail({
+    from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject,
+    text,
+    html,
+  })
+}
+
 // ===== マイページ：書類到着（パスワード設定済みの従業員向け） =====
 // is_initial_login=falseの従業員には認証コードを送らず、ログイン案内のみを送る。
 export async function sendStaffDocumentReadyMail(

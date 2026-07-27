@@ -1087,7 +1087,7 @@ export default function AdminDashboard() {
     const autoWarningTone: 'red' | 'blue' = contract.warning_level === 'red' ? 'red' : 'blue'
 
     return (
-      <article className={`${cardBase} grid grid-cols-[36px_minmax(180px,1.3fr)_minmax(180px,1.2fr)_minmax(150px,.9fr)_minmax(140px,.85fr)_minmax(130px,.75fr)_136px] items-center gap-4 p-5`}>
+      <article className={`${cardBase} grid min-w-max grid-cols-[36px_minmax(180px,1.3fr)_minmax(180px,1.2fr)_minmax(150px,.9fr)_minmax(140px,.85fr)_minmax(130px,.75fr)_136px] items-center gap-4 p-5`}>
         <div className="flex items-center">
           {canBulkSelect && (
             <input
@@ -1293,7 +1293,7 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen overflow-x-auto overflow-y-hidden bg-[#F8FAFD] text-[#1F2937]">
       <header className="relative z-30 border-b border-[#E8EDF5] bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-[1600px] items-center justify-between px-6 py-5 lg:px-8">
+        <div className="mx-auto flex min-w-max max-w-[1600px] items-center justify-between px-6 py-5 lg:px-8">
           <div className="flex items-center gap-5">
             <div className="flex items-center gap-3">
               <Image src="/logo.png" alt="APパートナーズ" width={64} height={38} className="h-auto w-[64px]" />

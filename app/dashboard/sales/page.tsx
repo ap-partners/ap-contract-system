@@ -516,7 +516,7 @@ export default function SalesDashboard() {
     const isExplain = isExplainNeeded(contract)
 
     return (
-      <article className={`${cardBase} grid grid-cols-[minmax(180px,1.25fr)_minmax(180px,1.15fr)_minmax(150px,.95fr)_minmax(140px,.85fr)_minmax(130px,.75fr)_136px] items-center gap-4 p-5`}>
+      <article className={`${cardBase} grid min-w-max grid-cols-[minmax(180px,1.25fr)_minmax(180px,1.15fr)_minmax(150px,.95fr)_minmax(140px,.85fr)_minmax(130px,.75fr)_136px] items-center gap-4 p-5`}>
         <div className="min-w-0">
           <div className="mb-2 flex flex-wrap items-center gap-2">
             {deadline.type && !isWaitingSign && (
@@ -650,7 +650,7 @@ export default function SalesDashboard() {
   return (
     <div className="min-h-screen overflow-x-auto overflow-y-hidden bg-[#F8FAFD] text-[#1F2937]">
       <header className="relative z-30 border-b border-[#E8EDF5] bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-[1600px] items-center justify-between px-6 py-5 lg:px-8">
+        <div className="mx-auto flex min-w-max max-w-[1600px] items-center justify-between px-6 py-5 lg:px-8">
           <div className="flex items-center gap-5">
             <div className="flex items-center gap-3">
               <Image src="/logo.png" alt="APパートナーズ" width={64} height={38} className="h-auto w-[64px]" />

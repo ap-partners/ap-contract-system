@@ -609,7 +609,7 @@ export default function SalesDashboard() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFD] text-[#1F2937]">
-      <header className="border-b border-[#E8EDF5] bg-white/90 backdrop-blur">
+      <header className="relative z-30 border-b border-[#E8EDF5] bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-[1600px] items-center justify-between px-6 py-5 lg:px-8">
           <div className="flex items-center gap-5">
             <div className="flex items-center gap-3">

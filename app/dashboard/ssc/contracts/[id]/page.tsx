@@ -413,7 +413,6 @@ export default function SSCContractDetail() {
     }
     if (!updatedRows || updatedRows.length === 0) {
       setActionError('この申請は、あなたが確認している間に他の人が先に処理していました。最新の状態に更新しました。')
-      setShowApproveConfirm(false)
       await refetchContract()
       setActionLoading(false)
       return
@@ -428,7 +427,6 @@ export default function SSCContractDetail() {
     }
     setActionDone('approved')
     setActionLoading(false)
-    setShowApproveConfirm(false)
   }
 
   // 強制承認処理（2026-07-02追加：warning_level='red'の場合のみ。理由入力必須）

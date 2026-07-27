@@ -31,7 +31,11 @@ import NewDocumentMenu from '../_shared/NewDocumentMenu'
 
 type Contract = ContractForDisplay
 
-type TabType = '承認待ち' | '差し戻し中' | '承認済み' | '取り下げ' | '更新期限管理' | 'アルバイト誓約書'
+// 総合レビュー指摘[14]対応（2026-07-29）：「取り下げ」の階層が管理部ダッシュボード
+// （「契約一覧」タブの中のサブタブ）とSSCだけ食い違っていた（SSCは最上位タブ独立）ため、
+// 管理部と同じ二階層（最上位タブ＋契約サブタブ）に統一する。
+type TopTab = '契約一覧' | '更新期限管理' | 'アルバイト誓約書'
+type ContractSubTab = '承認待ち' | '差し戻し中' | '承認済み' | '取り下げ'
 
 type IconName =
   | 'home'
@@ -174,7 +178,8 @@ export default function SSCDashboard() {
     fetchApprovedRecent, loadMoreApproved, runApprovedSearch,
   } = useApprovedAccumulator<Contract>(q => q.neq('work_place', '社内'))
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<TabType>('承認待ち')
+  const [topTab, setTopTab] = useState<TopTab>('契約一覧')
+  const [activeTab, setActiveTab] = useState<ContractSubTab>('承認待ち')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showBulkApproveConfirm, setShowBulkApproveConfirm] = useState(false)
   const [bulkApproving, setBulkApproving] = useState(false)
@@ -235,7 +240,7 @@ export default function SSCDashboard() {
         return false
       })
 
-  const statusOptionsByTab: Record<TabType, { value: string; label: string }[]> = {
+  const statusOptionsByTab: Record<ContractSubTab, { value: string; label: string }[]> = {
     '承認待ち': [],
     '差し戻し中': [],
     '承認済み': [
@@ -244,8 +249,6 @@ export default function SSCDashboard() {
       { value: '署名済み', label: '署名済み' },
     ],
     '取り下げ': [],
-    '更新期限管理': [],
-    'アルバイト誓約書': [],
   }
 
   const { result: visibleContracts, toolbar: listToolbar, statusFilter: listStatusFilter, searchText, sortKey: listSortKey } = useContractListToolbar(filtered, {
@@ -374,13 +377,17 @@ export default function SSCDashboard() {
     setBulkApproveNotifyFailed(0)
   }
 
-  const tabs: { key: TabType; label: string; count: number }[] = [
+  const topTabs: { key: TopTab; label: string; count?: number }[] = [
+    { key: '契約一覧', label: '契約一覧' },
+    { key: '更新期限管理', label: '更新期限管理', count: renewalCandidates.length },
+    { key: 'アルバイト誓約書', label: 'アルバイト誓約書', count: pledgesPendingCount },
+  ]
+
+  const contractSubTabs: { key: ContractSubTab; label: string; count: number }[] = [
     { key: '承認待ち', label: '承認待ち', count: pendingCount },
     { key: '差し戻し中', label: '差し戻し', count: rejectedCount },
     { key: '承認済み', label: '承認済み・署名状況', count: approvedCount },
     { key: '取り下げ', label: '取り下げ', count: withdrawnCount },
-    { key: '更新期限管理', label: '更新期限管理', count: renewalCandidates.length },
-    { key: 'アルバイト誓約書', label: 'アルバイト誓約書', count: pledgesPendingCount },
   ]
 
   const summaryCards = [
@@ -446,7 +453,7 @@ export default function SSCDashboard() {
                   期限超過や個別確認が必要な案件を優先して確認してください。
                 </p>
                 <button
-                  onClick={() => { setActiveTab('承認待ち'); setSelectedIds(new Set()); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
+                  onClick={() => { setTopTab('契約一覧'); setActiveTab('承認待ち'); setSelectedIds(new Set()); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
                   className="mt-6 inline-flex h-[52px] items-center gap-3 rounded-2xl bg-[#2F5FD0] px-6 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(47,95,208,.22)] transition hover:-translate-y-0.5 hover:bg-[#244CB3] hover:shadow-[0_15px_34px_rgba(47,95,208,.26)]"
                 >
                   すべての承認待ちを確認する
@@ -475,16 +482,16 @@ export default function SSCDashboard() {
 
         <nav className="mt-6 border-b border-[#E8EDF5]">
           <div className="flex flex-nowrap gap-8">
-            {tabs.map(tab => {
-              const isActive = activeTab === tab.key
+            {topTabs.map(tab => {
+              const isActive = topTab === tab.key
               return (
                 <button
                   key={tab.key}
-                  onClick={() => { setActiveTab(tab.key); setSelectedIds(new Set()); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
+                  onClick={() => { setTopTab(tab.key); setSelectedIds(new Set()); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
                   className={`group relative whitespace-nowrap px-1 pb-4 text-sm font-semibold transition ${isActive ? 'text-[#2F5FD0]' : 'text-[#1F2937] hover:text-[#2F5FD0]'}`}
                 >
                   {tab.label}
-                  <span className="ml-2 text-[#6B7280]">({tab.count})</span>
+                  {tab.count !== undefined && <span className="ml-2 text-[#6B7280]">({tab.count})</span>}
                   <span className={`absolute bottom-[-1px] left-0 h-0.5 rounded-full bg-[#2F5FD0] transition-all duration-300 ${isActive ? 'w-full' : 'w-0 group-hover:w-full'}`} />
                 </button>
               )
@@ -492,7 +499,28 @@ export default function SSCDashboard() {
           </div>
         </nav>
 
-        {!loading && filtered.length > 0 && (
+        {topTab === '契約一覧' && (
+          <nav className="mt-4 border-b border-[#E8EDF5]">
+            <div className="flex flex-nowrap gap-8">
+              {contractSubTabs.map(tab => {
+                const isActive = activeTab === tab.key
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => { setActiveTab(tab.key); setSelectedIds(new Set()); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
+                    className={`group relative whitespace-nowrap px-1 pb-4 text-sm font-semibold transition ${isActive ? 'text-[#2F5FD0]' : 'text-[#1F2937] hover:text-[#2F5FD0]'}`}
+                  >
+                    {tab.label}
+                    <span className="ml-2 text-[#6B7280]">({tab.count})</span>
+                    <span className={`absolute bottom-[-1px] left-0 h-0.5 rounded-full bg-[#2F5FD0] transition-all duration-300 ${isActive ? 'w-full' : 'w-0 group-hover:w-full'}`} />
+                  </button>
+                )
+              })}
+            </div>
+          </nav>
+        )}
+
+        {topTab === '契約一覧' && !loading && filtered.length > 0 && (
           <section className="mt-5 rounded-[18px] border border-[#E8EDF5] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)]">
             <div className="mb-4 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
@@ -527,7 +555,7 @@ export default function SSCDashboard() {
           </section>
         )}
 
-        {activeTab === '承認待ち' && bulkTargets.length > 0 && (
+        {topTab === '契約一覧' && activeTab === '承認待ち' && bulkTargets.length > 0 && (
           <section className="mt-5">
             <div className="flex flex-col gap-4 rounded-[18px] border border-[#E8EDF5] bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,.05)] sm:flex-row sm:items-center sm:justify-between">
               <label className="flex cursor-pointer items-center gap-3 text-sm font-semibold text-[#1F2937]">
@@ -578,7 +606,7 @@ export default function SSCDashboard() {
           </section>
         )}
 
-        {activeTab !== '更新期限管理' && activeTab !== 'アルバイト誓約書' && (
+        {topTab === '契約一覧' && (
         <div className="mt-7 flex items-center justify-between gap-4">
           <p className="text-sm font-medium text-[#6B7280]">
             <span className="font-semibold text-[#1F2937]">{visibleContracts.length}</span>件の申請が見つかりました
@@ -586,7 +614,7 @@ export default function SSCDashboard() {
         </div>
         )}
 
-        {activeTab !== '更新期限管理' && activeTab !== 'アルバイト誓約書' && (loading ? (
+        {topTab === '契約一覧' && (loading ? (
           <div className="py-16 text-center">
             <p className="text-sm font-medium text-[#6B7280]">読み込み中</p>
           </div>
@@ -749,7 +777,7 @@ export default function SSCDashboard() {
           </div>
         ))}
 
-        {activeTab === '更新期限管理' && user && (
+        {topTab === '更新期限管理' && user && (
           <div className="mt-5">
             <RenewalManagementTab
               candidates={renewalCandidates}
@@ -770,13 +798,13 @@ export default function SSCDashboard() {
           </div>
         )}
 
-        {activeTab === 'アルバイト誓約書' && (
+        {topTab === 'アルバイト誓約書' && (
           <div className="mt-5 rounded-[18px] border border-[#E8EDF5] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)]">
             <PledgeListSection canApprove />
           </div>
         )}
 
-        {activeTab === '承認済み' && approvedHasMore && !approvedSearchMode && (
+        {topTab === '契約一覧' && activeTab === '承認済み' && approvedHasMore && !approvedSearchMode && (
           <div className="mt-5 flex justify-center">
             <button onClick={loadMoreApproved} disabled={approvedLoadingMore}
               className="rounded-2xl border border-[#D0DAF0] bg-white px-6 py-3 text-sm font-semibold text-[#2F5FD0] disabled:opacity-50">

@@ -516,7 +516,7 @@ export default function SalesDashboard() {
     const isExplain = isExplainNeeded(contract)
 
     return (
-      <article className={`${cardBase} grid min-w-max grid-cols-[minmax(180px,1.25fr)_minmax(180px,1.15fr)_minmax(150px,.95fr)_minmax(140px,.85fr)_minmax(130px,.75fr)_136px] items-center gap-4 p-5`}>
+      <article className={`${cardBase} grid grid-cols-[280px_240px_240px_190px_190px_170px] items-center gap-4 p-5`}>
         <div className="min-w-0">
           <div className="mb-2 flex flex-wrap items-center gap-2">
             {deadline.type && !isWaitingSign && (
@@ -537,7 +537,7 @@ export default function SalesDashboard() {
           <p className="mb-2 text-xs font-semibold text-[#6B7280]">就業先</p>
           <div className="flex items-start gap-2">
             <Icon name="map" className="mt-0.5 h-4 w-4 shrink-0 text-[#2F5FD0]" />
-            <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{f.workLocationName || '-'}</p>
+            <p className="min-w-0 truncate text-sm font-medium leading-6 text-[#1F2937]" title={f.workLocationName || '-'}>{f.workLocationName || '-'}</p>
           </div>
         </div>
 
@@ -648,7 +648,7 @@ export default function SalesDashboard() {
   }
 
   return (
-    <div className="min-h-screen overflow-x-auto overflow-y-hidden bg-[#F8FAFD] text-[#1F2937]">
+    <div className="h-screen overflow-auto bg-[#F8FAFD] text-[#1F2937]">
       <header className="relative z-30 border-b border-[#E8EDF5] bg-white/90 backdrop-blur">
         <div className="mx-auto flex min-w-max max-w-[1600px] items-center justify-between px-6 py-5 lg:px-8">
           <div className="flex items-center gap-5">

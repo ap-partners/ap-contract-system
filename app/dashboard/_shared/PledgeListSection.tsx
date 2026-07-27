@@ -398,7 +398,7 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
             return (
               <article
                 key={r.id}
-                className="grid min-w-max grid-cols-[36px_minmax(180px,1.3fr)_minmax(160px,1.1fr)_minmax(150px,.9fr)_minmax(140px,.85fr)_120px] items-center gap-4 rounded-[18px] border border-[#E8EDF5] bg-white p-5 transition hover:-translate-y-0.5 hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]"
+                className="grid grid-cols-[36px_260px_240px_240px_190px_140px] items-center gap-4 rounded-[18px] border border-[#E8EDF5] bg-white p-5 transition hover:-translate-y-0.5 hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]"
               >
                 <div className="flex items-center">
                   {canBulkSelect && (
@@ -433,7 +433,10 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
 
                 <div className="min-w-0">
                   <p className="mb-2 text-xs font-semibold text-[#6B7280]">就業先</p>
-                  <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">
+                  <p
+                    className="min-w-0 truncate text-sm font-medium leading-6 text-[#1F2937]"
+                    title={r.work_place_type === 'client' ? (r.client_name || 'クライアント先') : '自社拠点'}
+                  >
                     {r.work_place_type === 'client' ? (r.client_name || 'クライアント先') : '自社拠点'}
                   </p>
                 </div>

@@ -97,7 +97,7 @@ export const FormRow = ({ label, required, tooltip, badge, children, isEmpty, em
   // isEmpty（未入力強調）が立っている時だけ、赤系の配色に切り替える
   const highlight = !!isEmpty
   return (
-    <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
+    <div className="grid grid-cols-1 md:grid-cols-[260px_1fr]">
       <div className="border-r border-b px-4 py-4 flex flex-col items-start justify-center gap-1.5"
         style={{ background: highlight ? '#FEF2F2' : '#EEF2FA', borderColor: highlight ? '#FECACA' : '#D0DAF0' }}>
         <div className="flex items-center flex-wrap gap-1">
@@ -162,7 +162,7 @@ export const EmptyHintBubble = ({ text, direction }: { text: string; direction: 
 export const FormRowAuto = ({ label, modified, source, children, isEmpty, emptyHint, wide }: { label: string; modified?: boolean; source?: 'master' | 'csv'; children: React.ReactNode; isEmpty?: boolean; emptyHint?: string; wide?: boolean }) => {
   const highlight = !!isEmpty
   return (
-    <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
+    <div className="grid grid-cols-1 md:grid-cols-[260px_1fr]">
       <div className="border-r border-b px-4 py-4 flex flex-col items-start justify-center gap-1.5"
         style={{ background: highlight ? '#FEF2F2' : '#EEF2FA', borderColor: highlight ? '#FECACA' : '#D0DAF0' }}>
         <span className="text-sm font-medium leading-snug" style={{ color: '#1A2340' }}>{label}</span>
@@ -244,7 +244,7 @@ export const FinalRow = ({ label, value, badge, multiline, preview, highlight, o
   // oldValueが渡されていて、かつ現在値と異なる場合だけ、差分表示（CSV反映項目を手で修正したケース）
   const showDiff = oldValue !== undefined && oldValue !== '' && oldValue !== value
   return (
-    <div className="grid border-b" style={{ gridTemplateColumns: '260px 1fr', borderColor: '#D0DAF0' }}>
+    <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] border-b" style={{ borderColor: '#D0DAF0' }}>
       <div className="border-r px-4 py-3.5 flex flex-col items-start gap-1.5" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
         <span className="text-sm font-medium leading-snug" style={{ color: '#1A2340' }}>{label}</span>
         {badge}
@@ -298,7 +298,7 @@ export const TelInput = ({ value, onChange, note }: { value: string; onChange: (
   const error = touched ? validateTel(value) : null
   return (
     <div className="max-w-xs">
-      <input type="tel" inputMode="numeric" className={inp}
+      <input type="tel" inputMode="numeric" className={inp} maxLength={20}
         style={{ borderColor: error ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
         value={value}
         onChange={e => onChange(normalizeTel(e.target.value))}

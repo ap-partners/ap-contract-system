@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getAuthenticatedStaff } from '@/lib/apiAuth'
 import { getDriveFileMetadata, downloadJsonBackup } from '@/lib/googleDrive'
+import { friendlyDbError } from '@/lib/friendlyError'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -86,7 +87,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     .eq('id', id)
 
   if (updateError) {
-    return NextResponse.json({ error: '復元の保存に失敗しました：' + updateError.message }, { status: 500 })
+    return NextResponse.json({ error: friendlyDbError(updateError, '復元の保存') }, { status: 500 })
   }
 
   return NextResponse.json({ success: true, restoredAt: now })

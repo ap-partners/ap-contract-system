@@ -53,15 +53,21 @@ function ActionStatusSegmented({
   onChange: (v: ActionStatus) => void
   disabled?: boolean
 }) {
+  // 総合レビュー指摘10対応（2026-07-27）：選択中/未選択の区別がつきにくく、現在の状態表示なのか
+  // クリックして変更するボタンなのか分かりにくいとの指摘。STEP2セグメントコントロールで
+  // 既に採用済みの「非選択側は白背景+ボーダー」の考え方をここにも適用し、クリック可能な
+  // ボタンであることが見た目からも伝わるようにする。
   return (
-    <div className="inline-flex rounded-full p-0.5" style={{ background: '#E8EDF5' }}>
+    <div className="inline-flex rounded-full p-0.5 gap-0.5" style={{ background: '#E8EDF5' }}>
       {ACTION_STATUS_OPTIONS.map(opt => (
         <button
           key={opt}
+          type="button"
           onClick={() => !disabled && onChange(opt)}
           disabled={disabled}
-          className="text-xs font-semibold rounded-full px-2.5 py-1 whitespace-nowrap transition disabled:cursor-not-allowed disabled:opacity-50"
-          style={value === opt ? { background: '#2F5FD0', color: '#fff' } : { color: '#6B7280' }}
+          title="クリックして対応状況を変更"
+          className={`text-xs font-semibold rounded-full px-2.5 py-1 whitespace-nowrap transition disabled:cursor-not-allowed disabled:opacity-50 ${value === opt ? '' : 'bg-white border hover:bg-[#F5F7FC]'}`}
+          style={value === opt ? { background: '#2F5FD0', color: '#fff' } : { color: '#6B7280', borderColor: '#D0DAF0' }}
         >
           {opt}
         </button>

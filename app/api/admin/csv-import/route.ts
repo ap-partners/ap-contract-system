@@ -24,6 +24,7 @@ import {
   resolveCsvSearchStaffCode,
 } from '@/lib/csvImportShared'
 import { readExcelBuffer, buildStaffRecord } from '@/lib/staffMasterImportShared'
+import { friendlyDbReason } from '@/lib/friendlyError'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -82,7 +83,7 @@ async function processSingleFile(
       .select('id, unique_key')
       .eq('system_type', dbSystemType)
       .in('unique_key', chunk)
-    if (error) { counts.errorCount += chunk.length; counts.errorDetails.push(`既存データ確認エラー（${chunk.length}件分）：${error.message}`); continue }
+    if (error) { counts.errorCount += chunk.length; counts.errorDetails.push(`既存データ確認エラー（${chunk.length}件分）：${friendlyDbReason(error)}`); continue }
     for (const r of existingRows || []) existingByKey.set(r.unique_key, r.id)
   }
 
@@ -123,7 +124,7 @@ async function processSingleFile(
       counts.errorCount += chunk.length
       counts.newCount -= chunk.filter(c => !c.is_overwrite_pending).length
       counts.updatedCount -= chunk.filter(c => c.is_overwrite_pending).length
-      counts.errorDetails.push(`保存エラー（${chunk.length}件分）：${error.message}`)
+      counts.errorDetails.push(`保存エラー（${chunk.length}件分）：${friendlyDbReason(error)}`)
     }
   }
 
@@ -158,10 +159,10 @@ async function processDepartmentMasterFile(buffer: Buffer, uploadedBy: string): 
     const { data: existing } = await supabaseAdmin.from('department_master').select('id').eq('dept_no', deptNo).maybeSingle()
     if (existing) {
       const { error } = await supabaseAdmin.from('department_master').update({ dept_name: deptName }).eq('id', existing.id)
-      if (error) { counts.errorCount++; counts.errorDetails.push(`部門NO ${deptNo}（${deptName}）の更新に失敗：${error.message}`) } else counts.updatedCount++
+      if (error) { counts.errorCount++; counts.errorDetails.push(`部門NO ${deptNo}（${deptName}）の更新に失敗：${friendlyDbReason(error)}`) } else counts.updatedCount++
     } else {
       const { error } = await supabaseAdmin.from('department_master').insert({ dept_no: deptNo, dept_name: deptName })
-      if (error) { counts.errorCount++; counts.errorDetails.push(`部門NO ${deptNo}（${deptName}）の新規登録に失敗：${error.message}`) } else counts.newCount++
+      if (error) { counts.errorCount++; counts.errorDetails.push(`部門NO ${deptNo}（${deptName}）の新規登録に失敗：${friendlyDbReason(error)}`) } else counts.newCount++
     }
   }
 
@@ -210,7 +211,7 @@ async function processStaffMasterFile(buffer: Buffer, uploadedBy: string): Promi
       .in('employee_number', chunk)
     if (error) {
       counts.errorCount += chunk.length
-      counts.errorDetails.push(`既存データ確認エラー（${chunk.length}件分）：${error.message}`)
+      counts.errorDetails.push(`既存データ確認エラー（${chunk.length}件分）：${friendlyDbReason(error)}`)
       continue
     }
     for (const r of existingRows || []) existingMap.set(r.employee_number, { id: r.id, crew_code: r.crew_code })
@@ -235,7 +236,7 @@ async function processStaffMasterFile(buffer: Buffer, uploadedBy: string): Promi
       .upsert(chunk, { onConflict: 'employee_number' })
     if (error) {
       counts.errorCount += chunk.length
-      counts.errorDetails.push(`保存エラー（${chunk.length}件分）：${error.message}`)
+      counts.errorDetails.push(`保存エラー（${chunk.length}件分）：${friendlyDbReason(error)}`)
     } else {
       for (const isExisting of flags) { if (isExisting) counts.updatedCount++; else counts.newCount++ }
     }

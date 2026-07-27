@@ -11,6 +11,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { SIGN_AUTH_MAX_ATTEMPTS } from '@/lib/signAuthCode'
 import { createPdfAccessToken } from '@/lib/pdfAccessToken'
+import { incrementAttemptCounter } from '@/lib/attemptCounter'
+import { timingSafeEqualStrings } from '@/lib/timingSafeEqual'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -74,10 +76,10 @@ export async function POST(
     .eq('id', contract.staff_id)
     .maybeSingle()
 
-  if (!staff || staff.employee_number !== employeeNumber || contract.sign_auth_code !== authCode) {
-    // 失敗した試行回数を1つ加算する（5回で失効）
-    const nextAttempts = (contract.sign_auth_attempts || 0) + 1
-    await supabaseAdmin.from('contracts').update({ sign_auth_attempts: nextAttempts }).eq('id', id)
+  if (!staff || staff.employee_number !== employeeNumber || !timingSafeEqualStrings(contract.sign_auth_code, authCode)) {
+    // 失敗した試行回数を1つ加算する（5回で失効。総合レビュー指摘15対応：並列リクエストでの
+    // 競合状態を避けるため、DB側のアトミックなインクリメントに一本化）
+    const nextAttempts = await incrementAttemptCounter(supabaseAdmin, { table: 'contracts', column: 'sign_auth_attempts' }, id)
     const remaining = SIGN_AUTH_MAX_ATTEMPTS - nextAttempts
     if (remaining <= 0) {
       return NextResponse.json(

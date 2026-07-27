@@ -6,7 +6,7 @@
 // 関数をpropsで受け取る。router.push()だけは next/navigation の useRouter() を直接呼び出す
 // （next/navigationのuseRouter自体は親と同じシングルトンのため挙動は変わらない）。
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { CLOSING_PATTERNS, parseAmount } from '../_lib/helpers'
 import { FinalSection, FinalRow, FinalGroupHeader, CriticalWarning, AutoBadge } from './FormParts'
@@ -139,6 +139,14 @@ export default function StepFinalCheck({
   // 忘れによるalert()をインライン警告バナーに置き換えるためのローカルstate。
   const [checkboxError, setCheckboxError] = useState<string | null>(null)
 
+  // 総合レビュー指摘6対応（2026-07-27）：申請確認モーダルをEscキーで閉じられるようにする
+  useEffect(() => {
+    if (!showConfirmModal) return
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowConfirmModal(false) }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [showConfirmModal, setShowConfirmModal])
+
   return (
     <>
       {/* 差し戻しバナー（カード外・上部・独立表示） */}
@@ -256,7 +264,7 @@ export default function StepFinalCheck({
           trialPeriod === '有' ? `有　${trialStart || '―'} 〜 ${trialEnd || '―'}` : trialPeriod === '無' ? '無' : '―'
         } />
         {trialPeriod === '有' && trialCalc?.over6 && (
-          <div className="grid border-b" style={{ gridTemplateColumns: '260px 1fr', borderColor: '#D0DAF0' }}>
+          <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] border-b" style={{ borderColor: '#D0DAF0' }}>
             <div className="border-r" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }} />
             <div className="px-5 py-3.5">
               <CriticalWarning
@@ -268,7 +276,7 @@ export default function StepFinalCheck({
           </div>
         )}
         {trialPeriod === '無' && contractType === '正社員' && isProbableNewHire && (
-          <div className="grid border-b" style={{ gridTemplateColumns: '260px 1fr', borderColor: '#D0DAF0' }}>
+          <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] border-b" style={{ borderColor: '#D0DAF0' }}>
             <div className="border-r" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }} />
             <div className="px-5 py-3.5">
               <CriticalWarning
@@ -309,7 +317,7 @@ export default function StepFinalCheck({
           <FinalRow label="定額残業手当" value={parseAmount(overtimePay) > 0 ? `${parseAmount(overtimePay).toLocaleString()}円（${parseAmount(overtimeHours)}時間分）` : '―'} />
           <FinalRow label="住宅手当" value={parseAmount(housingPay) > 0 ? `${parseAmount(housingPay).toLocaleString()}円` : '―'} />
           {salaryTotal > 1000000 && (
-            <div className="grid border-b" style={{ gridTemplateColumns: '260px 1fr', borderColor: '#D0DAF0' }}>
+            <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] border-b" style={{ borderColor: '#D0DAF0' }}>
               <div className="border-r" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }} />
               <div className="px-5 py-3.5">
                 <CriticalWarning

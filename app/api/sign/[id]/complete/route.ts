@@ -20,6 +20,8 @@ import { renderContractPdfBuffer } from '@/lib/pdf/renderContractPdf'
 import { uploadSignedPdf, deleteDriveFile, uploadJsonBackup } from '@/lib/googleDrive'
 import { SIGN_AUTH_MAX_ATTEMPTS } from '@/lib/signAuthCode'
 import { getStaffIdFromRequest } from '@/lib/staffAuth'
+import { incrementAttemptCounter } from '@/lib/attemptCounter'
+import { timingSafeEqualStrings } from '@/lib/timingSafeEqual'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -145,10 +147,10 @@ export async function POST(
       .eq('id', contract.staff_id)
       .maybeSingle()
 
-    if (!staffRow || staffRow.employee_number !== employeeNumber || contract.sign_auth_code !== authCode) {
-      // 失敗した試行回数を1つ加算する（verifyと同じ5回で失効の扱いに統一）
-      const nextAttempts = (contract.sign_auth_attempts || 0) + 1
-      await supabaseAdmin.from('contracts').update({ sign_auth_attempts: nextAttempts }).eq('id', id)
+    if (!staffRow || staffRow.employee_number !== employeeNumber || !timingSafeEqualStrings(contract.sign_auth_code, authCode)) {
+      // 失敗した試行回数を1つ加算する（verifyと同じ5回で失効の扱いに統一。総合レビュー指摘15
+      // 対応：DB側のアトミックなインクリメントに一本化し競合状態を回避）
+      const nextAttempts = await incrementAttemptCounter(supabaseAdmin, { table: 'contracts', column: 'sign_auth_attempts' }, id)
       if (nextAttempts >= SIGN_AUTH_MAX_ATTEMPTS) {
         return NextResponse.json(
           { error: '認証コードの入力回数が上限を超えました。\nお手数ですが、下の「認証コードを再発行する」ボタンから新しいコードを取得してください。', reason: 'locked' },

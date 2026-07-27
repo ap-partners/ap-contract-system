@@ -152,7 +152,7 @@ export default function StepBasic({
                           <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>必須</span>
                         </label>
                         <input
-                          type="text" value={reqName}
+                          type="text" maxLength={50} value={reqName}
                           onChange={e => setReqName(e.target.value)}
                           className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-xs placeholder:text-gray-400"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
@@ -165,7 +165,7 @@ export default function StepBasic({
                           <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>必須</span>
                         </label>
                         <input
-                          type="text" value={reqDept}
+                          type="text" maxLength={50} value={reqDept}
                           onChange={e => setReqDept(e.target.value)}
                           className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-xs placeholder:text-gray-400"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
@@ -232,7 +232,7 @@ export default function StepBasic({
                                 <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>必須</span>
                               </label>
                               <input
-                                type="text" value={reqWorkLocation}
+                                type="text" maxLength={100} value={reqWorkLocation}
                                 onChange={e => setReqWorkLocation(e.target.value)}
                                 className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-sm placeholder:text-gray-400"
                                 style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
@@ -415,7 +415,16 @@ export default function StepBasic({
           <div className="border-t px-5 py-4 flex justify-end" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
             <button onClick={e => {
               e.preventDefault()
-              if (!selectedStaff || !documentType || !contractType) { setStepError('すべての項目を選択してください'); return }
+              // 総合レビュー指摘2対応（2026-07-27）：未入力の項目名を具体的に示す
+              if (!selectedStaff || !documentType || !contractType) {
+                const missing = [
+                  !selectedStaff && '対象スタッフ',
+                  !contractType && '雇用区分',
+                  !documentType && '帳票種別',
+                ].filter(Boolean)
+                setStepError(`${missing.join('・')}を選択してください`)
+                return
+              }
               if (deptWageMasterMissing) { setStepError('この部門は最低賃金マスタが未登録のため、申請できません。管理部にお問い合わせください。'); return }
               setStepError(null)
               handleNext()

@@ -559,6 +559,9 @@ export default function PledgeApplyPage() {
   }
 
   const handleSubmit = async () => {
+    // 総合レビュー指摘20対応（2026-07-27）：/apply側のhandleSubmitContractと同様、
+    // disabled属性のみに頼らずボタン連打を確実に防ぐ明示ガードを追加
+    if (isSubmitting) return
     setSubmitError('')
     setIsSubmitting(true)
     try {
@@ -889,7 +892,7 @@ export default function PledgeApplyPage() {
                 </div>
               )}
               <div className="border-t px-5 py-4 flex justify-end" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
-                <button onClick={e => { e.preventDefault(); if (!step1Valid) { setStepError('対象スタッフと帳票種別を選択してください'); return }; setStepError(null); setCurrentStep(2) }}
+                <button onClick={e => { e.preventDefault(); if (!step1Valid) { setStepError([!selectedStaff && '対象スタッフ', !documentType && '帳票種別'].filter(Boolean).join('・') + 'を選択してください'); return }; setStepError(null); setCurrentStep(2) }}
                   className="text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-all" style={{ background: '#1B3A8C' }}>次へ進む →</button>
               </div>
             </>
@@ -931,9 +934,9 @@ export default function PledgeApplyPage() {
                     <ValidatedInput
                       label="郵便番号" value={clientPostalCode}
                       onChange={v => setClientPostalCode(normalizePostalCode(v))}
-                      validate={validatePostalCode} placeholder="例）123-4567" inputMode="numeric"
+                      validate={validatePostalCode} placeholder="例）123-4567" inputMode="numeric" maxLength={8}
                     />
-                    <LabeledInput label="住所" value={clientAddress} onChange={setClientAddress} placeholder="例）東京都新宿区〇〇1-2-3" />
+                    <LabeledInput label="住所" value={clientAddress} onChange={setClientAddress} placeholder="例）東京都新宿区〇〇1-2-3" maxLength={200} />
                     <ValidatedInput
                       label="電話番号" value={clientTel}
                       onChange={v => setClientTel(normalizeTel(v))}
@@ -1101,7 +1104,7 @@ export default function PledgeApplyPage() {
                   <div>
                     <label className="text-xs font-medium block mb-1.5" style={{ color: '#5A6A8A' }}>休憩時間</label>
                     <div className="flex items-center gap-1.5">
-                      <input type="text" value={periodShift.breakMinutes} onChange={e => updatePeriodShift({ breakMinutes: toHalfWidthDigits(e.target.value) })}
+                      <input type="text" maxLength={4} value={periodShift.breakMinutes} onChange={e => updatePeriodShift({ breakMinutes: toHalfWidthDigits(e.target.value) })}
                         placeholder="例）60" className="w-24 border rounded-lg px-3 py-2.5 text-sm text-right focus:outline-none bg-white placeholder:text-gray-400" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                       <span className="text-xs" style={{ color: '#5A6A8A' }}>分</span>
                     </div>
@@ -1171,7 +1174,7 @@ export default function PledgeApplyPage() {
                       <div className="flex flex-col gap-1 min-w-[90px]">
                         <label className="text-xs font-medium" style={{ color: '#5A6A8A' }}>休憩時間</label>
                         <div className="flex items-center gap-1">
-                          <input type="text" value={singleBreakInput} onChange={e => setSingleBreakInput(toHalfWidthDigits(e.target.value))}
+                          <input type="text" maxLength={4} value={singleBreakInput} onChange={e => setSingleBreakInput(toHalfWidthDigits(e.target.value))}
                             placeholder="例）60" className="border rounded-lg px-2 py-2 text-sm text-right focus:outline-none bg-white w-16 placeholder:text-gray-400" style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                           <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>分</span>
                         </div>
@@ -1426,6 +1429,14 @@ export default function PledgeApplyPage() {
 function PledgeModal({
   open, onClose, title, subtitle, children, maxWidthClass = 'max-w-lg',
 }: { open: boolean; onClose: () => void; title: string; subtitle?: string; children: React.ReactNode; maxWidthClass?: string }) {
+  // 総合レビュー指摘6対応（2026-07-27）：Escキーで閉じられるようにする
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [open, onClose])
+
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.45)' }}
@@ -1454,7 +1465,7 @@ function PledgeModal({
 
 function FormRow({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
-    <div className="grid" style={{ gridTemplateColumns: '200px 1fr' }}>
+    <div className="grid grid-cols-1 md:grid-cols-[200px_1fr]">
       <div className="border-r border-b px-4 py-4 flex flex-col items-start justify-center gap-1.5" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
         <div className="flex items-center flex-wrap gap-1">
           <span className="text-sm font-medium leading-snug" style={{ color: '#1A2340' }}>{label}</span>
@@ -1498,11 +1509,14 @@ function SearchInput({ onSearch }: { onSearch: (query: string) => void }) {
   )
 }
 
-function LabeledInput({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+// 総合レビュー指摘19対応（2026-07-27）：PDFに印字される一行入力欄に文字数上限が無く、
+// 極端な長文が入るとPDFレイアウトが崩れうるとの指摘。textarea（既定2000文字）と同じ考え方で
+// 一行inputにも上限を設ける（呼び出し元で指定が無ければ100文字を既定値とする）。
+function LabeledInput({ label, value, onChange, placeholder, maxLength = 100 }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; maxLength?: number }) {
   return (
     <div className="flex flex-col gap-1">
       <label className="text-xs font-medium" style={{ color: '#1A2340' }}>{label}</label>
-      <input type="text" value={value} onChange={e => onChange(e.target.value)}
+      <input type="text" value={value} onChange={e => onChange(e.target.value)} maxLength={maxLength}
         className="border rounded-lg px-3 py-2 text-sm focus:outline-none placeholder:text-gray-400"
         style={{ borderColor: '#D0DAF0', color: '#1A2340' }} placeholder={placeholder} />
     </div>
@@ -1510,16 +1524,16 @@ function LabeledInput({ label, value, onChange, placeholder }: { label: string; 
 }
 
 // 郵便番号・電話番号など、blur時に形式チェックしエラー表示するinput（2026-07-24追加）
-function ValidatedInput({ label, value, onChange, validate, placeholder, inputMode }: {
+function ValidatedInput({ label, value, onChange, validate, placeholder, inputMode, maxLength = 20 }: {
   label: string; value: string; onChange: (v: string) => void
-  validate: (v: string) => string | null; placeholder?: string; inputMode?: 'numeric' | 'text'
+  validate: (v: string) => string | null; placeholder?: string; inputMode?: 'numeric' | 'text'; maxLength?: number
 }) {
   const [touched, setTouched] = useState(false)
   const error = touched ? validate(value) : null
   return (
     <div className="flex flex-col gap-1">
       <label className="text-xs font-medium" style={{ color: '#1A2340' }}>{label}</label>
-      <input type="text" inputMode={inputMode} value={value}
+      <input type="text" inputMode={inputMode} value={value} maxLength={maxLength}
         onChange={e => onChange(e.target.value)}
         onBlur={() => setTouched(true)}
         className="border rounded-lg px-3 py-2 text-sm focus:outline-none placeholder:text-gray-400"
@@ -1563,7 +1577,7 @@ function SalaryField({ label, value, onChange, example, error, borderRight, bord
     <div className={`p-3 flex flex-col gap-1.5 ${borderRight ? 'border-r' : ''} ${borderBottom ? 'border-b' : ''}`} style={{ borderColor: '#D0DAF0' }}>
       <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>{label}</span>
       <div className="flex items-center gap-1.5">
-        <input type="text" value={value} onChange={e => onChange(toHalfWidthDigits(e.target.value))}
+        <input type="text" maxLength={10} value={value} onChange={e => onChange(toHalfWidthDigits(e.target.value))}
           className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
           style={{ borderColor: error ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} />
         <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
@@ -1577,7 +1591,7 @@ function SalaryField({ label, value, onChange, example, error, borderRight, bord
 // STEP5（最終確認）用の1行表示コンポーネント。/apply STEP8のFinalRowと同じく、値表示エリアは白背景固定。
 function PledgeFinalRow({ label, value, multiline, suffix }: { label: string; value: string; multiline?: boolean; suffix?: string }) {
   return (
-    <div className="grid border-b last:border-0" style={{ gridTemplateColumns: '220px 1fr', borderColor: '#D0DAF0' }}>
+    <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] border-b last:border-0" style={{ borderColor: '#D0DAF0' }}>
       <div className="border-r px-4 py-3.5 flex items-start" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
         <span className="text-sm font-medium" style={{ color: '#1A2340' }}>{label}</span>
       </div>

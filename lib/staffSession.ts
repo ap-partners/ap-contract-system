@@ -12,15 +12,13 @@
 // 戻されてしまっていた。Edge・Node.js両方のランタイムで動作するWeb Crypto API
 // （globalThis.crypto.subtle）に書き換えることで解消した。
 
+import { getRequiredServiceRoleKey } from './requiredEnv'
+
 const SESSION_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000 // 30日間
 export const STAFF_SESSION_COOKIE = 'staff_session'
 
-function getSecret(): string {
-  return process.env.SUPABASE_SERVICE_ROLE_KEY || 'fallback-secret-should-not-happen'
-}
-
 async function importKey(): Promise<CryptoKey> {
-  const keyData = new TextEncoder().encode(getSecret())
+  const keyData = new TextEncoder().encode(getRequiredServiceRoleKey())
   return crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify'])
 }
 

@@ -1150,7 +1150,7 @@ export default function AdminDashboard() {
         <div className="min-w-0">
           <p className="mb-2 text-xs font-semibold text-[#6B7280]">申請日時</p>
           <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{formatDateTime(contract.created_at)}</p>
-          <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {contract.created_by_name || `ID:${contract.created_by.slice(0, 8)}`}</p>
+          <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {contract.created_by_name || '(氏名未設定)'}</p>
         </div>
 
         <div className="flex items-center justify-end gap-2">
@@ -1654,12 +1654,16 @@ export default function AdminDashboard() {
           <div className="space-y-6">
             <section className={`${cardBase} p-6 md:p-8`}>
               <p className="text-lg font-semibold text-[#1F2937]">CSVインポート</p>
+              {/* 総合レビュー指摘4対応（2026-07-27）：句点区切りのみの1段落に業務ルールが詰め込まれ
+                  読み飛ばされやすいとの指摘のため、要点を箇条書きに分解する */}
               <p className="mt-2 text-sm font-medium leading-6 text-[#6B7280]">
                 4システム（e-staffing・HRstation・winworks・Staffia）のCSVファイルを取り込みます。
-                Staffiaのみ「契約詳細（KEF00103）」「スタッフ個人・派遣期間（KEF00104）」の2ファイルが必要です。
-                同じ内容のCSVは上書きOKですが、申請中もしくはそれ以降のステータスの契約から参照されている行は保護され、上書きされません。
-                StaffExpress（スタッフマスタ・部門マスタ）のみExcelファイル（.xlsx）で、こちらは保護の対象外（アップロードした内容で常に全件上書き）です。
               </p>
+              <ul className="mt-2 space-y-1.5 text-sm font-medium leading-6 text-[#6B7280] list-disc pl-5">
+                <li>Staffiaのみ「契約詳細（KEF00103）」「スタッフ個人・派遣期間（KEF00104）」の2ファイルが必要です。</li>
+                <li>同じ内容のCSVは上書きOKですが、申請中もしくはそれ以降のステータスの契約から参照されている行は保護され、上書きされません。</li>
+                <li>StaffExpress（スタッフマスタ・部門マスタ）のみExcelファイル（.xlsx）で、こちらは保護の対象外（アップロードした内容で常に全件上書き）です。</li>
+              </ul>
 
               <div className="mt-6">
                 <ImportStepper

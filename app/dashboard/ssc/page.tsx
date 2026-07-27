@@ -439,7 +439,8 @@ export default function SSCDashboard() {
               <div>
                 <p className="text-sm font-semibold text-[#1F2937]">本日の承認状況</p>
                 <h2 className="mt-2 text-4xl font-semibold tracking-normal text-[#2F5FD0] md:text-5xl">
-                  承認待ち {pendingCount}件
+                  <span className="whitespace-nowrap">承認待ち</span>{' '}
+                  <span className="whitespace-nowrap">{pendingCount}件</span>
                 </h2>
                 <p className="mt-4 text-sm font-medium leading-6 text-[#1F2937]">
                   期限超過や個別確認が必要な案件を優先して確認してください。
@@ -707,7 +708,7 @@ export default function SSCDashboard() {
                   <div className="min-w-0">
                     <p className="mb-2 text-xs font-semibold text-[#6B7280]">申請日時</p>
                     <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{formatDateTime(contract.created_at)}</p>
-                    <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {contract.created_by_name || `ID:${contract.created_by.slice(0, 8)}`}</p>
+                    <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {contract.created_by_name || '(氏名未設定)'}</p>
                   </div>
 
                   <div className="flex items-center justify-end gap-2">

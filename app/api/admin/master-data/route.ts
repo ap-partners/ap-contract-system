@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getAuthenticatedStaff } from '@/lib/apiAuth'
 import { getOfficeName } from '@/lib/pdf/documentText'
+import { friendlyDbError } from '@/lib/friendlyError'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -109,7 +110,7 @@ export async function POST(req: NextRequest) {
         const { data: existing } = await supabaseAdmin.from('department_master').select('id').eq('dept_no', deptNo).maybeSingle()
         if (existing) return NextResponse.json({ error: `部門番号${deptNo}は既に使用されています。` }, { status: 400 })
         const { error } = await supabaseAdmin.from('department_master').insert({ dept_no: deptNo, dept_name: deptName })
-        if (error) return NextResponse.json({ error: '登録に失敗しました：' + error.message }, { status: 500 })
+        if (error) return NextResponse.json({ error: friendlyDbError(error, '登録') }, { status: 500 })
         return NextResponse.json({ ok: true })
       }
 
@@ -121,7 +122,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: '部門・時給額・適用開始日を正しく入力してください。' }, { status: 400 })
         }
         const { error } = await supabaseAdmin.from('minimum_wage_master').insert({ dept_no: deptNo, hourly_wage: hourlyWage, effective_from: effectiveFrom })
-        if (error) return NextResponse.json({ error: '登録に失敗しました：' + error.message }, { status: 500 })
+        if (error) return NextResponse.json({ error: friendlyDbError(error, '登録') }, { status: 500 })
         return NextResponse.json({ ok: true })
       }
 
@@ -147,7 +148,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: '過去の履歴レコードは編集できません。最新のレコードのみ修正可能です。' }, { status: 400 })
         }
         const { error } = await supabaseAdmin.from('minimum_wage_master').update({ hourly_wage: hourlyWage, effective_from: effectiveFrom }).eq('id', id)
-        if (error) return NextResponse.json({ error: '更新に失敗しました：' + error.message }, { status: 500 })
+        if (error) return NextResponse.json({ error: friendlyDbError(error, '更新') }, { status: 500 })
         return NextResponse.json({ ok: true })
       }
 
@@ -160,7 +161,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: '就業場所・雇用区分・パターン名・所定労働時間（月間）を正しく入力してください。' }, { status: 400 })
         }
         const { error } = await supabaseAdmin.from('standard_working_hours_master').insert({ work_place: workPlace, contract_type: contractType, pattern_name: patternName, monthly_hours: monthlyHours })
-        if (error) return NextResponse.json({ error: '登録に失敗しました：' + error.message }, { status: 500 })
+        if (error) return NextResponse.json({ error: friendlyDbError(error, '登録') }, { status: 500 })
         return NextResponse.json({ ok: true })
       }
 
@@ -172,7 +173,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: 'パターン名・所定労働時間（月間）を正しく入力してください。' }, { status: 400 })
         }
         const { error } = await supabaseAdmin.from('standard_working_hours_master').update({ pattern_name: patternName, monthly_hours: monthlyHours }).eq('id', id)
-        if (error) return NextResponse.json({ error: '更新に失敗しました：' + error.message }, { status: 500 })
+        if (error) return NextResponse.json({ error: friendlyDbError(error, '更新') }, { status: 500 })
         return NextResponse.json({ ok: true })
       }
 
@@ -193,7 +194,7 @@ export async function POST(req: NextRequest) {
           { office_name: officeName, fiscal_year_label: fiscalYearLabel, amount_per_day: amountPerDay, updated_at: new Date().toISOString() },
           { onConflict: 'office_name' }
         )
-        if (error) return NextResponse.json({ error: '更新に失敗しました：' + error.message }, { status: 500 })
+        if (error) return NextResponse.json({ error: friendlyDbError(error, '更新') }, { status: 500 })
         return NextResponse.json({ ok: true })
       }
 
@@ -215,7 +216,7 @@ export async function POST(req: NextRequest) {
           { office_name: officeName, postal_code: postalCode, address, tel, updated_at: new Date().toISOString() },
           { onConflict: 'office_name' }
         )
-        if (error) return NextResponse.json({ error: '更新に失敗しました：' + error.message }, { status: 500 })
+        if (error) return NextResponse.json({ error: friendlyDbError(error, '更新') }, { status: 500 })
         return NextResponse.json({ ok: true })
       }
 
@@ -227,7 +228,7 @@ export async function POST(req: NextRequest) {
         const { data: maxRow } = await supabaseAdmin.from('work_description_templates').select('sort_order').order('sort_order', { ascending: false }).limit(1).maybeSingle()
         const nextSortOrder = (maxRow?.sort_order ?? 0) + 1
         const { error } = await supabaseAdmin.from('work_description_templates').insert({ template_text: templateText, sort_order: nextSortOrder })
-        if (error) return NextResponse.json({ error: '登録に失敗しました：' + error.message }, { status: 500 })
+        if (error) return NextResponse.json({ error: friendlyDbError(error, '登録') }, { status: 500 })
         return NextResponse.json({ ok: true })
       }
 
@@ -238,7 +239,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: 'テンプレート文言を入力してください。' }, { status: 400 })
         }
         const { error } = await supabaseAdmin.from('work_description_templates').update({ template_text: templateText, updated_at: new Date().toISOString() }).eq('id', id)
-        if (error) return NextResponse.json({ error: '更新に失敗しました：' + error.message }, { status: 500 })
+        if (error) return NextResponse.json({ error: friendlyDbError(error, '更新') }, { status: 500 })
         return NextResponse.json({ ok: true })
       }
 
@@ -246,7 +247,7 @@ export async function POST(req: NextRequest) {
         const id = String(payload?.id || '')
         if (!id) return NextResponse.json({ error: '対象を特定できませんでした。' }, { status: 400 })
         const { error } = await supabaseAdmin.from('work_description_templates').delete().eq('id', id)
-        if (error) return NextResponse.json({ error: '削除に失敗しました：' + error.message }, { status: 500 })
+        if (error) return NextResponse.json({ error: friendlyDbError(error, '削除') }, { status: 500 })
         return NextResponse.json({ ok: true })
       }
 

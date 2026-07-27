@@ -16,6 +16,7 @@ import { getAuthHeader } from '@/lib/supabase'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
+import SkeletonBlock from '@/app/_shared/ui/SkeletonBlock'
 
 type Role = '担当営業' | 'SSC' | '管理部'
 
@@ -173,8 +174,8 @@ export default function AccountManagementTab() {
       </section>
 
       {loading ? (
-        <section className={`${card} p-8 text-center`}>
-          <p className="text-sm font-medium text-[#6B7280]">読み込み中…</p>
+        <section className={`${card} p-8`}>
+          <SkeletonBlock />
         </section>
       ) : loadError ? (
         <section className={`${card} p-8`}>

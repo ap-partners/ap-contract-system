@@ -5,6 +5,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ACCOUNT_SETUP_MAX_ATTEMPTS } from '@/lib/accountSetupCode'
+import { incrementAttemptCounter } from '@/lib/attemptCounter'
+import { timingSafeEqualStrings } from '@/lib/timingSafeEqual'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -45,9 +47,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '認証コードの有効期限が切れています。管理部に再発行を依頼してください。' }, { status: 400 })
   }
 
-  if (roleRow.setup_code !== code) {
-    const remaining = ACCOUNT_SETUP_MAX_ATTEMPTS - (roleRow.setup_code_attempts + 1)
-    await supabaseAdmin.from('staff_roles').update({ setup_code_attempts: roleRow.setup_code_attempts + 1 }).eq('id', userId)
+  if (!timingSafeEqualStrings(roleRow.setup_code, code)) {
+    // 総合レビュー指摘15対応：DB側のアトミックなインクリメントに一本化し競合状態を回避
+    const nextAttempts = await incrementAttemptCounter(supabaseAdmin, { table: 'staff_roles', column: 'setup_code_attempts' }, userId)
+    const remaining = ACCOUNT_SETUP_MAX_ATTEMPTS - nextAttempts
     return NextResponse.json({ error: `認証コードが正しくありません。あと${Math.max(remaining, 0)}回間違えると失効します。` }, { status: 400 })
   }
 

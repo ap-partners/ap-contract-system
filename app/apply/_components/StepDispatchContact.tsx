@@ -53,17 +53,17 @@ export default function StepDispatchContact({
       <FormRow label="部署名" required badge={<CsvBadge name="cmdDept" />} wide
         isEmpty={showEmptyHint && !cmd_dept} emptyHint="入力してください">
         <input className={inp} style={deptInputStyle} value={cmd_dept} onChange={e => { setCmdDept(e.target.value) }}
-          placeholder="例）東日本ｴﾘｱ営業本部 関東営業統括部 第3営業部" />
+          placeholder="例）東日本ｴﾘｱ営業本部 関東営業統括部 第3営業部" maxLength={50} />
       </FormRow>
       <FormRow label="役職" required badge={<CsvBadge name="cmdRole" />}
         isEmpty={showEmptyHint && !cmd_role} emptyHint="入力してください">
         <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-          value={cmd_role} onChange={e => { setCmdRole(e.target.value) }} placeholder="例）課長" />
+          value={cmd_role} onChange={e => { setCmdRole(e.target.value) }} placeholder="例）課長" maxLength={50} />
       </FormRow>
       <FormRow label="氏名" required badge={<CsvBadge name="cmdName" />}
         isEmpty={showEmptyHint && !cmd_name} emptyHint="入力してください">
         <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-          value={cmd_name} onChange={e => { setCmdName(e.target.value) }} placeholder="例）山田 太郎" />
+          value={cmd_name} onChange={e => { setCmdName(e.target.value) }} placeholder="例）山田 太郎" maxLength={50} />
       </FormRow>
       <FormRow label="電話番号" required badge={<CsvBadge name="cmdTel" />}
         isEmpty={showEmptyHint && !cmd_tel} emptyHint="入力してください">
@@ -73,17 +73,17 @@ export default function StepDispatchContact({
       <SectionHeader label="派遣先責任者" />
       <FormRow label="部署名" required badge={<CsvBadge name="respDept" />} wide
         isEmpty={showEmptyHint && !resp_dept} emptyHint="入力してください">
-        <input className={inp} style={deptInputStyle} value={resp_dept} onChange={e => { setRespDept(e.target.value) }} placeholder="例）人事部" />
+        <input className={inp} style={deptInputStyle} value={resp_dept} onChange={e => { setRespDept(e.target.value) }} placeholder="例）人事部" maxLength={50} />
       </FormRow>
       <FormRow label="役職" required badge={<CsvBadge name="respRole" />}
         isEmpty={showEmptyHint && !resp_role} emptyHint="入力してください">
         <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-          value={resp_role} onChange={e => { setRespRole(e.target.value) }} placeholder="例）部長" />
+          value={resp_role} onChange={e => { setRespRole(e.target.value) }} placeholder="例）部長" maxLength={50} />
       </FormRow>
       <FormRow label="氏名" required badge={<CsvBadge name="respName" />}
         isEmpty={showEmptyHint && !resp_name} emptyHint="入力してください">
         <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-          value={resp_name} onChange={e => { setRespName(e.target.value) }} placeholder="例）鈴木 花子" />
+          value={resp_name} onChange={e => { setRespName(e.target.value) }} placeholder="例）鈴木 花子" maxLength={50} />
       </FormRow>
       <FormRow label="電話番号" required badge={<CsvBadge name="respTel" />}
         isEmpty={showEmptyHint && !resp_tel} emptyHint="入力してください">
@@ -93,17 +93,17 @@ export default function StepDispatchContact({
       <SectionHeader label="苦情処理申出先（派遣先）" />
       <FormRow label="部署名" required badge={<CsvBadge name="compDept" />} wide
         isEmpty={showEmptyHint && !comp_dept} emptyHint="入力してください">
-        <input className={inp} style={deptInputStyle} value={comp_dept} onChange={e => { setCompDept(e.target.value) }} placeholder="例）総務部" />
+        <input className={inp} style={deptInputStyle} value={comp_dept} onChange={e => { setCompDept(e.target.value) }} placeholder="例）総務部" maxLength={50} />
       </FormRow>
       <FormRow label="役職" required badge={<CsvBadge name="compRole" />}
         isEmpty={showEmptyHint && !comp_role} emptyHint="入力してください">
         <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-          value={comp_role} onChange={e => { setCompRole(e.target.value) }} placeholder="例）担当者" />
+          value={comp_role} onChange={e => { setCompRole(e.target.value) }} placeholder="例）担当者" maxLength={50} />
       </FormRow>
       <FormRow label="氏名" required badge={<CsvBadge name="compName" />}
         isEmpty={showEmptyHint && !comp_name} emptyHint="入力してください">
         <input className={`${inp} max-w-xs`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
-          value={comp_name} onChange={e => { setCompName(e.target.value) }} placeholder="例）田中 次郎" />
+          value={comp_name} onChange={e => { setCompName(e.target.value) }} placeholder="例）田中 次郎" maxLength={50} />
       </FormRow>
       <FormRow label="電話番号" required badge={<CsvBadge name="compTel" />}
         isEmpty={showEmptyHint && !comp_tel} emptyHint="入力してください">

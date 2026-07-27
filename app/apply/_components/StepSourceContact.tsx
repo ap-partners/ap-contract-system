@@ -53,15 +53,15 @@ export default function StepSourceContact({
       <SectionHeader label="派遣元責任者" />
       <FormRowAuto label="部署名" modified={masterSnapshot.mgr_dept !== undefined && mgr_dept !== masterSnapshot.mgr_dept} source={mgrCmpSource} wide
         isEmpty={!mgr_dept} emptyHint="入力してください">
-        <input className={inp} style={{ borderColor: !mgr_dept ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={mgr_dept} onChange={e => setMgrDept(e.target.value)} />
+        <input className={inp} style={{ borderColor: !mgr_dept ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={mgr_dept} onChange={e => setMgrDept(e.target.value)} maxLength={50} />
       </FormRowAuto>
       <FormRowAuto label="役職" modified={masterSnapshot.mgr_role !== undefined && mgr_role !== masterSnapshot.mgr_role} source={mgrCmpSource}
         isEmpty={!mgr_role} emptyHint="入力してください">
-        <input className={`${inp} max-w-xs`} style={{ borderColor: !mgr_role ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={mgr_role} onChange={e => setMgrRole(e.target.value)} />
+        <input className={`${inp} max-w-xs`} style={{ borderColor: !mgr_role ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={mgr_role} onChange={e => setMgrRole(e.target.value)} maxLength={50} />
       </FormRowAuto>
       <FormRowAuto label="氏名" modified={masterSnapshot.mgr_name !== undefined && mgr_name !== masterSnapshot.mgr_name} source={mgrCmpSource}
         isEmpty={!mgr_name} emptyHint="入力してください">
-        <input className={`${inp} max-w-xs`} style={{ borderColor: !mgr_name ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={mgr_name} onChange={e => setMgrName(e.target.value)} />
+        <input className={`${inp} max-w-xs`} style={{ borderColor: !mgr_name ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={mgr_name} onChange={e => setMgrName(e.target.value)} maxLength={50} />
       </FormRowAuto>
       <FormRowAuto label="電話番号" modified={masterSnapshot.mgr_tel !== undefined && mgr_tel !== masterSnapshot.mgr_tel} source={mgrCmpSource}
         isEmpty={!mgr_tel} emptyHint="入力してください">
@@ -70,15 +70,15 @@ export default function StepSourceContact({
       <SectionHeader label="苦情処理申出先（派遣元）" />
       <FormRowAuto label="部署名" modified={masterSnapshot.cmp_dept !== undefined && cmp_dept !== masterSnapshot.cmp_dept} source={mgrCmpSource} wide
         isEmpty={!cmp_dept} emptyHint="入力してください">
-        <input className={inp} style={{ borderColor: !cmp_dept ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={cmp_dept} onChange={e => setCmpDept(e.target.value)} />
+        <input className={inp} style={{ borderColor: !cmp_dept ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={cmp_dept} onChange={e => setCmpDept(e.target.value)} maxLength={50} />
       </FormRowAuto>
       <FormRowAuto label="役職" modified={masterSnapshot.cmp_role !== undefined && cmp_role !== masterSnapshot.cmp_role} source={mgrCmpSource}
         isEmpty={!cmp_role} emptyHint="入力してください">
-        <input className={`${inp} max-w-xs`} style={{ borderColor: !cmp_role ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={cmp_role} onChange={e => setCmpRole(e.target.value)} />
+        <input className={`${inp} max-w-xs`} style={{ borderColor: !cmp_role ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={cmp_role} onChange={e => setCmpRole(e.target.value)} maxLength={50} />
       </FormRowAuto>
       <FormRowAuto label="氏名" modified={masterSnapshot.cmp_name !== undefined && cmp_name !== masterSnapshot.cmp_name} source={mgrCmpSource}
         isEmpty={!cmp_name} emptyHint="入力してください">
-        <input className={`${inp} max-w-xs`} style={{ borderColor: !cmp_name ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={cmp_name} onChange={e => setCmpName(e.target.value)} />
+        <input className={`${inp} max-w-xs`} style={{ borderColor: !cmp_name ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} value={cmp_name} onChange={e => setCmpName(e.target.value)} maxLength={50} />
       </FormRowAuto>
       <FormRowAuto label="電話番号" modified={masterSnapshot.cmp_tel !== undefined && cmp_tel !== masterSnapshot.cmp_tel} source={mgrCmpSource}
         isEmpty={!cmp_tel} emptyHint="入力してください">

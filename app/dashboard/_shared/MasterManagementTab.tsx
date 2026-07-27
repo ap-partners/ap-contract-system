@@ -13,6 +13,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { getAuthHeader } from '@/lib/supabase'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import { clampDateYear } from '@/app/apply/_lib/helpers'
+import SkeletonBlock from '@/app/_shared/ui/SkeletonBlock'
 
 type Department = { id: string; dept_no: number; dept_name: string; created_at: string }
 type MinimumWage = { id: string; dept_no: number; hourly_wage: number; effective_from: string; created_at: string; updated_at: string }
@@ -86,8 +87,8 @@ export default function MasterManagementTab() {
       </section>
 
       {loading ? (
-        <section className={`${card} p-8 text-center`}>
-          <p className="text-sm font-medium text-[#6B7280]">読み込み中…</p>
+        <section className={`${card} p-8`}>
+          <SkeletonBlock />
         </section>
       ) : loadError ? (
         <section className={`${card} p-8`}>

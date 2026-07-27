@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { supabase, getAuthHeader } from '@/lib/supabase'
+import PdfPreviewButton from '@/app/_shared/ui/PdfPreviewButton'
 import { useSessionCollisionGuard } from '@/lib/useSessionCollisionGuard'
 import { useRouter, useParams } from 'next/navigation'
 import Image from 'next/image'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
+import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 
 // ===== 型定義 =====
 
@@ -158,7 +160,7 @@ const FinalRow = ({ label, value, badge, multiline, preview, oldValue, suffix }:
 }) => {
   const showDiff = oldValue !== undefined && oldValue !== '' && oldValue !== value
   return (
-    <div className="grid border-b" style={{ gridTemplateColumns: '260px 1fr', borderColor: '#D0DAF0' }}>
+    <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] border-b" style={{ borderColor: '#D0DAF0' }}>
       <div className="border-r px-4 py-3.5 flex flex-col items-start gap-1.5" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
         <span className="text-sm font-medium leading-snug" style={{ color: '#1A2340' }}>{label}</span>
         {badge}
@@ -285,7 +287,10 @@ export default function SSCContractDetail() {
   const [actionError, setActionError] = useState('')
   const [showRejectForm, setShowRejectForm] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
-  const [showApproveConfirm, setShowApproveConfirm] = useState(false)
+  // 総合レビュー指摘13対応（2026-07-27）：承認確認（入力欄を伴わない単純なはい/いいえの
+  // 確認）は共通ConfirmDialogに統合。差し戻し・強制承認は理由入力（textarea・チェックボックス）を
+  // 伴うため、共通ConfirmDialogでは表現できず、引き続き専用の展開式フォームのままとする。
+  const confirmDialog = useConfirm()
   const [actionDone, setActionDone] = useState<'approved' | 'rejected' | null>(null)
 
   // 強制承認のUI状態（2026-07-02追加：7-5章の骨格実装。warning_level='red'の時のみ使用）
@@ -683,13 +688,13 @@ export default function SSCContractDetail() {
             <p className="text-sm font-bold text-white">申請概要</p>
           </div>
           <div className="divide-y" style={{ borderColor: '#D0DAF0' }}>
-            <div className="grid" style={{ gridTemplateColumns: '160px 1fr' }}>
+            <div className="grid grid-cols-1 md:grid-cols-[160px_1fr]">
               <div className="px-4 py-3 text-xs font-medium" style={{ background: '#EEF2FA', color: '#5A6A8A' }}>対象スタッフ</div>
               <div className="px-4 py-3 text-sm font-bold" style={{ color: '#1A2340' }}>
                 {staffSnap.name || '―'}　<span className="font-normal text-xs" style={{ color: '#5A6A8A' }}>（社員番号：{staffSnap.employee_number || '―'}）</span>
               </div>
             </div>
-            <div className="grid" style={{ gridTemplateColumns: '160px 1fr' }}>
+            <div className="grid grid-cols-1 md:grid-cols-[160px_1fr]">
               <div className="px-4 py-3 text-xs font-medium" style={{ background: '#EEF2FA', color: '#5A6A8A' }}>書類種別</div>
               <div className="px-4 py-3 text-sm flex items-center gap-3" style={{ color: '#1A2340' }}>
                 {contract.document_type}
@@ -697,41 +702,30 @@ export default function SSCContractDetail() {
                     実装済みのため、全document_typeで表示するよう対応を拡大。
                     未対応の書類種別があれば/api/contracts/[id]/pdf側が501エラーを返す） */}
                 {(contract.document_type === '雇用契約書' || contract.document_type === '就業条件明示書' || contract.document_type === '雇用契約書 兼\n就業条件明示書') && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      // 総合レビュー指摘1対応（2026-07-15）：PDF取得APIがログイン確認を
-                      // 必須にしたため、単なる<a href>ではなく認証ヘッダー付きfetchで取得する。
-                      const res = await fetch(`/api/contracts/${contract.id}/pdf`, { headers: await getAuthHeader() })
-                      if (!res.ok) { showError('PDFの取得に失敗しました。'); return }
-                      const blobUrl = URL.createObjectURL(await res.blob())
-                      window.open(blobUrl, '_blank')
-                    }}
-                    className="text-xs font-medium px-3 py-1 rounded-full border"
-                    style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: '#EEF2FA' }}
-                  >
-                    📄 帳票PDFプレビュー
-                  </button>
+                  <PdfPreviewButton url={`/api/contracts/${contract.id}/pdf`} />
                 )}
               </div>
             </div>
-            <div className="grid" style={{ gridTemplateColumns: '160px 1fr' }}>
+            <div className="grid grid-cols-1 md:grid-cols-[160px_1fr]">
               <div className="px-4 py-3 text-xs font-medium" style={{ background: '#EEF2FA', color: '#5A6A8A' }}>パターン / 雇用区分</div>
               <div className="px-4 py-3 text-sm" style={{ color: '#1A2340' }}>パターン{pattern} / {contractType}</div>
             </div>
-            <div className="grid" style={{ gridTemplateColumns: '160px 1fr' }}>
+            <div className="grid grid-cols-1 md:grid-cols-[160px_1fr]">
               <div className="px-4 py-3 text-xs font-medium" style={{ background: '#EEF2FA', color: '#5A6A8A' }}>申請日時</div>
               <div className="px-4 py-3 text-sm" style={{ color: '#1A2340' }}>{formatDateTime(contract.created_at)}</div>
             </div>
-            <div className="grid" style={{ gridTemplateColumns: '160px 1fr' }}>
+            <div className="grid grid-cols-1 md:grid-cols-[160px_1fr]">
               <div className="px-4 py-3 text-xs font-medium" style={{ background: '#EEF2FA', color: '#5A6A8A' }}>申請者</div>
               <div className="px-4 py-3 text-sm" style={{ color: '#5A6A8A' }}>
                 {/* 総合レビュー指摘E対応（2026-07-16）：認証統合後、申請時点の氏名スナップショット
-                    （created_by_name）を表示するよう切り替え済み。取得できない古いデータのみID表示にフォールバック */}
-                {contract.created_by_name || `申請者ID：${contract.created_by.slice(0, 8)}…`}
+                    （created_by_name）を表示するよう切り替え済み。
+                    総合レビュー指摘9対応（2026-07-27）：氏名未設定アカウントの申請では
+                    created_by_nameがnullのまま保存され、内部IDの断片がそのまま画面に出てしまう
+                    ケースがあったため、フォールバック文言を「(氏名未設定)」に統一 */}
+                {contract.created_by_name || '(氏名未設定)'}
               </div>
             </div>
-            <div className="grid" style={{ gridTemplateColumns: '160px 1fr' }}>
+            <div className="grid grid-cols-1 md:grid-cols-[160px_1fr]">
               <div className="px-4 py-3 text-xs font-medium" style={{ background: '#EEF2FA', color: '#5A6A8A' }}>入力方法</div>
               <div className="px-4 py-3 text-sm" style={{ color: '#1A2340' }}>
                 {csvMode === 'csv' ? `CSVデータから自動入力（${csvSystem}）` : '手動入力'}
@@ -876,7 +870,7 @@ export default function SSCContractDetail() {
           } />
           {/* 試用期間6ヶ月超の警告（申請時に確認済みの場合のみ表示） */}
           {f.trialPeriod === '有' && trialCalc?.over6 && (
-            <div className="grid border-b" style={{ gridTemplateColumns: '260px 1fr', borderColor: '#D0DAF0' }}>
+            <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] border-b" style={{ borderColor: '#D0DAF0' }}>
               <div className="border-r" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }} />
               <div className="px-5 py-3.5">
                 <div className="rounded-lg p-3 border" style={{ background: '#FEF2F2', borderColor: '#FECACA' }}>
@@ -934,7 +928,7 @@ export default function SSCContractDetail() {
             <FinalRow label="合計支給額" value={`${salaryTotal.toLocaleString()}円`} />
             {/* 給与100万円超の警告（申請時点で確認済みの場合のみ） */}
             {salaryTotal > 1000000 && (
-              <div className="grid border-b" style={{ gridTemplateColumns: '260px 1fr', borderColor: '#D0DAF0' }}>
+              <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] border-b" style={{ borderColor: '#D0DAF0' }}>
                 <div className="border-r" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }} />
                 <div className="px-5 py-3.5">
                   <div className="rounded-lg p-3 border" style={{ background: '#FEF2F2', borderColor: '#FECACA' }}>
@@ -1119,37 +1113,8 @@ export default function SSCContractDetail() {
                   </div>
                 )}
 
-                {/* 承認確認モーダル（warning_level が none / yellow の通常承認のみ） */}
-                {showApproveConfirm && (
-                  <div className="rounded-xl p-4 mb-4 border-2" style={{ background: '#ECFDF5', borderColor: '#34D399' }}>
-                    <p className="text-sm font-bold mb-2" style={{ color: '#065F46' }}>✅ 本当に承認してよいですか？</p>
-                    <p className="text-sm mb-3 leading-relaxed" style={{ color: '#1A2340' }}>
-                      承認すると、申請内容の変更はできません。内容に誤りがないか今一度ご確認ください。<br />
-                      {(f.closingPattern === 'face' || f.closingPattern === 'print')
-                        ? '承認後、担当営業のダッシュボードに「説明対応が必要」として表示されます。'
-                        : contract.document_type === '就業条件明示書'
-                        ? '承認後、スタッフへ確認依頼が自動送信されます。'
-                        : '承認後、スタッフへ署名依頼が自動送信されます。'}
-                    </p>
-                    <div className="flex gap-3">
-                      <button
-                        onClick={handleApprove}
-                        disabled={actionLoading}
-                        className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white transition-all disabled:opacity-50"
-                        style={{ background: '#1B3A8C' }}>
-                        {actionLoading ? '処理中...' : '承認する'}
-                      </button>
-                      <button
-                        onClick={() => { setShowApproveConfirm(false); setActionError('') }}
-                        className="px-4 py-2.5 rounded-lg text-sm border" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
-                        キャンセル
-                      </button>
-                    </div>
-                  </div>
-                )}
-
                 {/* メインボタン（フォーム展開前のみ表示） */}
-                {!showRejectForm && !showApproveConfirm && !showForceApproveForm && (
+                {!showRejectForm && !showForceApproveForm && (
                   <>
                     {/* 総合レビュー指摘G対応（2026-07-16）：警告ありの案件では通常の「承認する」が
                         出ず「強制承認」しか無い理由が伝わらず戸惑うとの指摘に対応し、説明文を追加。
@@ -1178,8 +1143,23 @@ export default function SSCContractDetail() {
                       </button>
                     ) : (
                       <button
-                        onClick={() => { setShowApproveConfirm(true); setActionError('') }}
-                        className="flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all"
+                        onClick={async () => {
+                          setActionError('')
+                          const ok = await confirmDialog({
+                            title: '本当に承認してよいですか？',
+                            message: `承認すると、申請内容の変更はできません。内容に誤りがないか今一度ご確認ください。\n${
+                              (f.closingPattern === 'face' || f.closingPattern === 'print')
+                                ? '承認後、担当営業のダッシュボードに「説明対応が必要」として表示されます。'
+                                : contract.document_type === '就業条件明示書'
+                                ? '承認後、スタッフへ確認依頼が自動送信されます。'
+                                : '承認後、スタッフへ署名依頼が自動送信されます。'
+                            }`,
+                            confirmLabel: '承認する',
+                          })
+                          if (ok) handleApprove()
+                        }}
+                        disabled={actionLoading}
+                        className="flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-50"
                         style={{ background: '#1B3A8C' }}>
                         ✅ 承認する
                       </button>

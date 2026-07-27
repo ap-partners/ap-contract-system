@@ -16,7 +16,7 @@
 // ProviderでラップされていないページからuseConfirm()を呼んだ場合は、開発中の呼び出し忘れに気づけるよう
 // window.confirm()にフォールバックする。
 
-import { createContext, useCallback, useContext, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 
 type ConfirmOptions = {
   title?: string
@@ -44,8 +44,15 @@ export function useConfirm(): ConfirmFn {
 
 type PendingState = { options: ConfirmOptions; resolve: (v: boolean) => void } | null
 
+// 総合レビュー指摘6対応（2026-07-27）：Escキーでの閉じる操作とTabキーのフォーカストラップに
+// 対応する共通の面倒見。フォーカス可能要素はモーダル内のbutton/a/input等に限定し、
+// Tabキーがモーダル外（背後の画面）へ抜けないようにする。
+const FOCUSABLE_SELECTOR = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
 export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const [pending, setPending] = useState<PendingState>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const cancelBtnRef = useRef<HTMLButtonElement>(null)
 
   const confirmFn = useCallback<ConfirmFn>((options: ConfirmOptions | string) => {
     const normalized: ConfirmOptions = typeof options === 'string' ? { message: options } : options
@@ -59,6 +66,35 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
     setPending(null)
   }
 
+  useEffect(() => {
+    if (!pending) return
+    cancelBtnRef.current?.focus()
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        handle(false)
+        return
+      }
+      if (e.key === 'Tab') {
+        const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+        if (!focusable || focusable.length === 0) return
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending])
+
   return (
     <ConfirmContext.Provider value={confirmFn}>
       {children}
@@ -69,6 +105,9 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
           onClick={() => handle(false)}
         >
           <div
+            ref={dialogRef}
+            role="alertdialog"
+            aria-modal="true"
             className="w-full max-w-sm rounded-xl bg-white shadow-xl p-6"
             style={{ animation: 'confirm-card-in 0.15s ease-out' }}
             onClick={e => e.stopPropagation()}
@@ -78,7 +117,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
             )}
             <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: '#374151' }}>{pending.options.message}</p>
             <div className="flex justify-end gap-2 mt-6">
-              <button onClick={() => handle(false)}
+              <button ref={cancelBtnRef} onClick={() => handle(false)}
                 className="text-sm px-4 py-2 rounded-lg border font-medium transition-colors"
                 style={{ color: '#5A6A8A', borderColor: '#D0DAF0', background: 'white' }}>
                 {pending.options.cancelLabel || 'キャンセル'}

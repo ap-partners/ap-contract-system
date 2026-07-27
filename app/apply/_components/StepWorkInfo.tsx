@@ -109,7 +109,7 @@ export default function StepWorkInfo({
         <>
           {/* 契約情報の入力方法 */}
           <div style={{ height: '12px', background: '#F5F7FC' }} />
-          <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
+          <div className="grid grid-cols-1 md:grid-cols-[260px_1fr]">
             <div className="border-r border-b px-4 py-4 flex flex-wrap items-start gap-1"
               style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
               <span className="text-sm font-medium" style={{ color: '#1A2340' }}>入力方法</span>
@@ -118,7 +118,7 @@ export default function StepWorkInfo({
             <div className="border-b px-5 py-4 flex flex-col gap-3"
               style={{ background: '#FFFFFF', borderColor: '#D0DAF0' }}>
               {/* 選択カード */}
-              <div className="grid grid-cols-2 gap-3" style={{ maxWidth: '520px' }}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ maxWidth: '520px' }}>
                 {[
                   { mode: 'csv' as const, icon: '/icons/step2-csv.png', label: 'CSVデータから自動入力', desc: '派遣管理システムのデータから自動で反映します' },
                   { mode: 'manual' as const, icon: '/icons/step2-manual.png', label: '手動で入力する', desc: '派遣管理システムを使わず直接入力します' },
@@ -229,7 +229,7 @@ export default function StepWorkInfo({
                             <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>必須</span>
                           </label>
                           <input
-                            type="text" value={csvRequestWorkLocation}
+                            type="text" maxLength={100} value={csvRequestWorkLocation}
                             onChange={e => setCsvRequestWorkLocation(e.target.value)}
                             className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-sm placeholder:text-gray-400"
                             style={{ borderColor: '#D0DAF0', color: '#1A2340', background: 'white' }}
@@ -258,7 +258,7 @@ export default function StepWorkInfo({
                           <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>必須</span>
                         </label>
                         <input
-                          type="text" value={csvRequestWorkLocation}
+                          type="text" maxLength={100} value={csvRequestWorkLocation}
                           onChange={e => setCsvRequestWorkLocation(e.target.value)}
                           className="border rounded-lg px-3 py-2 text-sm focus:outline-none max-w-sm placeholder:text-gray-400"
                           style={{ borderColor: '#D0DAF0', color: '#1A2340', background: 'white' }}
@@ -300,19 +300,19 @@ export default function StepWorkInfo({
           <SectionHeader label="就業先情報" />
           <FormRow label="就業場所名" required badge={<CsvBadge name="locationName" />} wide
             isEmpty={showEmptyHint && !workLocationName} emptyHint="入力してください">
-            <input className={`${inp} max-w-lg`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+            <input className={`${inp} max-w-lg`} maxLength={100} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
               value={workLocationName}
               onChange={e => { setWorkLocationName(e.target.value) }}
               placeholder="例）ソフトバンク（SB） 量販 コジマ×ビックカメラ福生店" />
           </FormRow>
           <FormRow label="就業場所住所" required badge={<CsvBadge name="locationAddress" />} wide
             isEmpty={showEmptyHint && !workLocationAddress} emptyHint="入力してください">
-            <input className={`${inp} max-w-lg`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+            <input className={`${inp} max-w-lg`} maxLength={200} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
               value={workLocationAddress}
               onChange={e => { setWorkLocationAddress(e.target.value) }}
               placeholder="例）東京都福生市本町36番地1" />
           </FormRow>
-          <div className="grid" style={{ gridTemplateColumns: '260px 1fr' }}>
+          <div className="grid grid-cols-1 md:grid-cols-[260px_1fr]">
             <div className="border-r border-b px-4 py-4 flex flex-col items-start justify-center gap-1.5"
               style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
               <div className="flex items-center flex-wrap gap-1">
@@ -370,7 +370,7 @@ export default function StepWorkInfo({
             isEmpty={showEmptyHint && !breakTime} emptyHint="入力してください">
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-2">
-                <input type="text" className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20 placeholder:text-gray-400"
+                <input type="text" maxLength={4} className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20 placeholder:text-gray-400"
                   style={{ borderColor: (showEmptyHint && !breakTime) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
                   value={breakTime}
                   onChange={e => { setBreakTime(toHalfWidthDigits(e.target.value)) }} />
@@ -385,13 +385,13 @@ export default function StepWorkInfo({
             isEmpty={showEmptyHint && !workingHoursH} emptyHint="入力してください">
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2">
-                <input type="text" className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20 placeholder:text-gray-400"
+                <input type="text" maxLength={4} className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20 placeholder:text-gray-400"
                   style={{ borderColor: (showEmptyHint && !workingHoursH) ? '#DC2626' : '#D0DAF0', color: '#1A2340' }}
                   value={workingHoursH}
                   onChange={e => { setWorkingHoursH(toHalfWidthDigits(e.target.value)) }}
                   onBlur={() => setWorkingHoursH(prev => padTwoDigits(prev))} />
                 <span className="text-sm" style={{ color: '#5A6A8A' }}>時間</span>
-                <input type="text" className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20 placeholder:text-gray-400"
+                <input type="text" maxLength={4} className="border rounded-lg px-3 py-2 text-sm text-right focus:outline-none w-20 placeholder:text-gray-400"
                   style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
                   value={workingHoursM}
                   onChange={e => { setWorkingHoursM(toHalfWidthDigits(e.target.value)) }}
@@ -435,7 +435,7 @@ export default function StepWorkInfo({
             </div>
             {workDays === 'other' && (
               <div className="flex items-center gap-2 mt-1">
-                <input type="text" className={`${inp}`}
+                <input type="text" maxLength={50} className={`${inp}`}
                   style={{ borderColor: (showEmptyHint && !workDaysOther) ? '#DC2626' : '#D0DAF0', color: '#1A2340', maxWidth: '280px' }}
                   value={workDaysOther} onChange={e => setWorkDaysOther(e.target.value)}
                   placeholder="例）18日、カレンダー暦通り" />

@@ -7,6 +7,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { SIGN_AUTH_MAX_ATTEMPTS } from '@/lib/signAuthCode'
 import { createStaffResetToken } from '@/lib/staffResetToken'
+import { incrementAttemptCounter } from '@/lib/attemptCounter'
+import { timingSafeEqualStrings } from '@/lib/timingSafeEqual'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -46,9 +48,9 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  if (staff.login_auth_code !== authCode) {
-    const nextAttempts = (staff.login_auth_attempts || 0) + 1
-    await supabaseAdmin.from('staff').update({ login_auth_attempts: nextAttempts }).eq('id', staff.id)
+  if (!timingSafeEqualStrings(staff.login_auth_code, authCode)) {
+    // 総合レビュー指摘15対応：DB側のアトミックなインクリメントに一本化し競合状態を回避
+    const nextAttempts = await incrementAttemptCounter(supabaseAdmin, { table: 'staff', column: 'login_auth_attempts' }, staff.id)
     const remaining = SIGN_AUTH_MAX_ATTEMPTS - nextAttempts
     if (remaining <= 0) {
       return NextResponse.json(

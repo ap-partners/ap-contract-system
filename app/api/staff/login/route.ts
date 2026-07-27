@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyPassword } from '@/lib/staffPassword'
 import { setStaffSessionCookie } from '@/lib/staffAuth'
+import { incrementAttemptCounter } from '@/lib/attemptCounter'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -52,10 +53,8 @@ export async function POST(req: NextRequest) {
   }
 
   if (!verifyPassword(password, staff.password_hash)) {
-    await supabaseAdmin
-      .from('staff')
-      .update({ login_password_attempts: (staff.login_password_attempts || 0) + 1 })
-      .eq('id', staff.id)
+    // 総合レビュー指摘15対応：DB側のアトミックなインクリメントに一本化し競合状態を回避
+    await incrementAttemptCounter(supabaseAdmin, { table: 'staff', column: 'login_password_attempts' }, staff.id)
     return NextResponse.json({ error: genericError }, { status: 401 })
   }
 

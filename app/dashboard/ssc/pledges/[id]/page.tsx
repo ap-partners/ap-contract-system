@@ -11,6 +11,7 @@ import { supabase, getAuthHeader } from '@/lib/supabase'
 import { useSessionCollisionGuard } from '@/lib/useSessionCollisionGuard'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
+import PdfPreviewButton from '@/app/_shared/ui/PdfPreviewButton'
 
 type ScheduleRow = { label: string; start: string; end: string; breakMinutes: string; contractHours: string }
 
@@ -58,7 +59,7 @@ const formatYen = (v: string | undefined) => {
 const TRANSPORT_LABEL: Record<string, string> = { default: '実費または定期代', included: '交通費込', gas: 'ガソリン代' }
 
 const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
-  <div className="grid" style={{ gridTemplateColumns: '160px 1fr' }}>
+  <div className="grid grid-cols-1 md:grid-cols-[160px_1fr]">
     <div className="px-4 py-3 text-xs font-medium" style={{ background: '#EEF2FA', color: '#5A6A8A' }}>{label}</div>
     <div className="px-4 py-3 text-sm" style={{ color: '#1A2340' }}>{value}</div>
   </div>
@@ -212,13 +213,6 @@ export default function SSCPledgeDetail() {
     setShowRejectForm(false)
   }
 
-  const openPdfPreview = async () => {
-    const res = await fetch(`/api/pledges/${id}/pdf`, { headers: await getAuthHeader() })
-    if (!res.ok) { showError('PDFの取得に失敗しました。'); return }
-    const blobUrl = URL.createObjectURL(await res.blob())
-    window.open(blobUrl, '_blank')
-  }
-
   const backPath = user?.user_metadata?.role === '管理部' ? '/dashboard/admin' : '/dashboard/ssc'
 
   if (loading) {
@@ -256,9 +250,7 @@ export default function SSCPledgeDetail() {
             <Row label="帳票種別" value={
               <div className="flex items-center gap-3">
                 {pledge.document_type}
-                <button type="button" onClick={openPdfPreview} className="text-xs font-medium px-3 py-1 rounded-full border" style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: '#EEF2FA' }}>
-                  📄 帳票PDFプレビュー
-                </button>
+                <PdfPreviewButton url={`/api/pledges/${id}/pdf`} />
               </div>
             } />
             <Row label="就業先" value={

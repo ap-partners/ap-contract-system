@@ -76,7 +76,11 @@ export async function POST(
   const wasExpired = !prevExpiresAt || prevExpiresAt.getTime() <= now.getTime()
   const wasLocked = prevAttempts >= SIGN_AUTH_MAX_ATTEMPTS
 
-  if (!wasExpired && !wasLocked && prevExpiresAt) {
+  // 総合レビュー指摘16対応（2026-07-27）：従来は`!wasLocked`も条件に含まれていたため、
+  // 5回失敗してロック中の状態ではこのクールダウン判定自体が丸ごとスキップされ、
+  // 「失効→即再発行→試行回数リセット→再度失効」を無制限に繰り返せる穴になっていた。
+  // ロック中かどうかに関わらず、直近の発行からの経過時間は必ずチェックする。
+  if (!wasExpired && prevExpiresAt) {
     const issuedAt = new Date(prevExpiresAt.getTime() - SIGN_AUTH_CODE_EXPIRY_DAYS * 24 * 60 * 60 * 1000)
     const minutesSinceIssued = (now.getTime() - issuedAt.getTime()) / (60 * 1000)
     if (minutesSinceIssued < SIGN_AUTH_REISSUE_COOLDOWN_MINUTES) {

@@ -694,7 +694,8 @@ export default function SalesDashboard() {
               <div>
                 <p className="text-sm font-semibold text-[#1F2937]">本日の状況</p>
                 <h2 className="mt-2 text-4xl font-semibold tracking-normal text-[#2F5FD0] md:text-5xl">
-                  {currentLabel} {activeFilter === 'other' ? visibleMyRequests.length : activeFilter === 'completed' ? approvedTotalCount : activeFilter === 'renewal' ? renewalCandidates.length : activeFilter === 'pledges' ? pledgesPendingCount : baseCurrentList.length}件
+                  <span className="whitespace-nowrap">{currentLabel}</span>{' '}
+                  <span className="whitespace-nowrap">{activeFilter === 'other' ? visibleMyRequests.length : activeFilter === 'completed' ? approvedTotalCount : activeFilter === 'renewal' ? renewalCandidates.length : activeFilter === 'pledges' ? pledgesPendingCount : baseCurrentList.length}件</span>
                 </h2>
                 <p className="mt-4 text-sm font-medium leading-6 text-[#1F2937]">
                   対応が必要な案件を確認し、次のアクションへ進めてください。

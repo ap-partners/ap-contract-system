@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getAuthenticatedStaff } from '@/lib/apiAuth'
 import { sendAccountSetupMail } from '@/lib/mail'
+import { friendlyDbError } from '@/lib/friendlyError'
 import {
   generateAccountSetupCode,
   computeAccountSetupCodeExpiry,
@@ -52,8 +53,8 @@ export async function GET(req: NextRequest) {
     supabaseAdmin.auth.admin.listUsers({ perPage: 1000 }),
   ])
 
-  if (roleErr) return NextResponse.json({ error: 'アカウント一覧の取得に失敗しました：' + roleErr.message }, { status: 500 })
-  if (listResult.error) return NextResponse.json({ error: 'アカウント一覧の取得に失敗しました：' + listResult.error.message }, { status: 500 })
+  if (roleErr) return NextResponse.json({ error: friendlyDbError(roleErr, 'アカウント一覧の取得') }, { status: 500 })
+  if (listResult.error) return NextResponse.json({ error: friendlyDbError(listResult.error, 'アカウント一覧の取得') }, { status: 500 })
 
   const deptNameByNo = new Map((departments || []).map(d => [d.dept_no, d.dept_name]))
   const userById = new Map(listResult.data.users.map(u => [u.id, u]))
@@ -145,7 +146,7 @@ export async function POST(req: NextRequest) {
         if (roleInsertErr) {
           // ロール登録に失敗した場合、宙に浮いたAuthアカウントを残さないよう削除しておく
           await supabaseAdmin.auth.admin.deleteUser(created.user.id)
-          return NextResponse.json({ error: 'アカウント情報の登録に失敗しました：' + roleInsertErr.message }, { status: 500 })
+          return NextResponse.json({ error: friendlyDbError(roleInsertErr, 'アカウント情報の登録') }, { status: 500 })
         }
 
         await sendAccountSetupMail(email, name, role, code, 'initial')
@@ -195,7 +196,7 @@ export async function POST(req: NextRequest) {
           is_account_admin: isAccountAdmin,
           updated_at: new Date().toISOString(),
         }).eq('id', id)
-        if (updateErr) return NextResponse.json({ error: '更新に失敗しました：' + updateErr.message }, { status: 500 })
+        if (updateErr) return NextResponse.json({ error: friendlyDbError(updateErr, '更新') }, { status: 500 })
 
         // 画面の入り口チェック用（user_metadata）も必ず同時に更新し、DB側の権限とのズレを防ぐ
         await supabaseAdmin.auth.admin.updateUserById(id, {
@@ -230,7 +231,7 @@ export async function POST(req: NextRequest) {
           frozen_at: new Date().toISOString(),
           frozen_by: auth.userId,
         }).eq('id', id)
-        if (error) return NextResponse.json({ error: '凍結の保存に失敗しました：' + error.message }, { status: 500 })
+        if (error) return NextResponse.json({ error: friendlyDbError(error, '凍結の保存') }, { status: 500 })
 
         await supabaseAdmin.auth.admin.updateUserById(id, { ban_duration: FREEZE_BAN_DURATION })
         return NextResponse.json({ ok: true })
@@ -245,7 +246,7 @@ export async function POST(req: NextRequest) {
           frozen_at: null,
           frozen_by: null,
         }).eq('id', id)
-        if (error) return NextResponse.json({ error: '凍結解除の保存に失敗しました：' + error.message }, { status: 500 })
+        if (error) return NextResponse.json({ error: friendlyDbError(error, '凍結解除の保存') }, { status: 500 })
 
         await supabaseAdmin.auth.admin.updateUserById(id, { ban_duration: 'none' })
         return NextResponse.json({ ok: true })
@@ -278,7 +279,7 @@ export async function POST(req: NextRequest) {
           setup_code_issued_at: new Date().toISOString(),
           setup_code_attempts: 0,
         }).eq('id', id)
-        if (error) return NextResponse.json({ error: '認証コードの発行に失敗しました：' + error.message }, { status: 500 })
+        if (error) return NextResponse.json({ error: friendlyDbError(error, '認証コードの発行') }, { status: 500 })
 
         await sendAccountSetupMail(email, target.name, target.role, code, target.needs_password_setup ? 'initial' : 'reset')
         return NextResponse.json({ ok: true })

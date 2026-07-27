@@ -5,17 +5,14 @@
 // 本人確認（社員番号＋6桁認証コード）に成功した直後だけ、この短命トークンを発行する。
 // PDF取得APIはこのトークンか、社内ダッシュボードの認証ヘッダーのどちらかが無いと403にする。
 import crypto from 'crypto'
+import { getRequiredServiceRoleKey } from './requiredEnv'
 
 const EXPIRY_MS = 30 * 60 * 1000 // 30分（プレビューを開いて確認する分には十分な長さ）
 
-function getSecret(): string {
+function sign(payload: string): string {
   // 専用の環境変数を新設せず、サーバー側にしか存在しないservice roleキーを鍵として流用する
   // （Vercelへの環境変数追加という追加のデプロイ手順を増やさないための判断）。
-  return process.env.SUPABASE_SERVICE_ROLE_KEY || 'fallback-secret-should-not-happen'
-}
-
-function sign(payload: string): string {
-  return crypto.createHmac('sha256', getSecret()).update(payload).digest('hex')
+  return crypto.createHmac('sha256', getRequiredServiceRoleKey()).update(payload).digest('hex')
 }
 
 // 本人確認直後に発行する。契約IDと有効期限をpayloadに入れ、HMACで署名する。

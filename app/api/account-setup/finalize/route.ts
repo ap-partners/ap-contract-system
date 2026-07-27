@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ACCOUNT_SETUP_MAX_ATTEMPTS } from '@/lib/accountSetupCode'
+import { timingSafeEqualStrings } from '@/lib/timingSafeEqual'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
   if (roleRow.setup_code_attempts >= ACCOUNT_SETUP_MAX_ATTEMPTS) {
     return NextResponse.json({ error: '試行回数の上限に達しました。管理部に認証コードの再発行を依頼してください。' }, { status: 400 })
   }
-  if (roleRow.setup_code !== code) {
+  if (!timingSafeEqualStrings(roleRow.setup_code, code)) {
     return NextResponse.json({ error: '認証コードが正しくありません。' }, { status: 400 })
   }
 

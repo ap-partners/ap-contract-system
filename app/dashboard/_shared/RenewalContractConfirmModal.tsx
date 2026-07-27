@@ -29,6 +29,13 @@ export default function RenewalContractConfirmModal({ candidate, onClose }: Prop
   const [prevFields, setPrevFields] = useState<Record<string, any> | null>(null)
   const [csvFields, setCsvFields] = useState<Record<string, any> | null>(null)
 
+  // 総合レビュー指摘6対応（2026-07-27）：Escキーで閉じられるようにする
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+
   useEffect(() => {
     let cancelled = false
     const load = async () => {

@@ -20,6 +20,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, getAuthHeader } from '@/lib/supabase'
 import { useApprovedAccumulator, APPROVED_WINDOW_DAYS, PLEDGE_COLUMNS } from './useApprovedAccumulator'
+import { useToast } from '@/app/_shared/ui/ToastProvider'
+import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 
 type PledgeRow = {
   id: string
@@ -33,6 +35,8 @@ type PledgeRow = {
   warning_level: 'none' | 'yellow' | 'red' | null
   auto_check_results: { type: string; level: 'yellow' | 'red'; message: string }[] | null
   input_data: { staff?: { name?: string; employee_number?: string; department?: string } }
+  withdrawn_reason: string | null
+  withdrawn_at: string | null
 }
 
 const STATUS_BADGE: Record<string, { label: string; bg: string; color: string }> = {
@@ -64,6 +68,8 @@ type Props = {
 
 export default function PledgeListSection({ deptNoFilter, detailBasePath = '/dashboard/ssc/pledges', canApprove = false }: Props) {
   const router = useRouter()
+  const { showError, showSuccess } = useToast()
+  const confirmDialog = useConfirm()
   // 承認待ち・差し戻し中：日付窓なしの単純取得（従来通り。件数が小さい前提）
   const [flowRows, setFlowRows] = useState<PledgeRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -214,6 +220,24 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
   // 一括承認エラー表示（このコンポーネントはToastProvider配下とは限らないためインライン表示）
   const [bulkError, setBulkError] = useState('')
   const alertBulkError = (msg: string) => setBulkError('一括承認に失敗しました：' + msg)
+
+  // 取り下げ済み申請の削除（2026-07-27追加）：status='取り下げ'の行のみDELETE可能なようRLSで制限済み。
+  const [deletingWithdrawnId, setDeletingWithdrawnId] = useState<string | null>(null)
+  const handleDeleteWithdrawn = async (pledgeId: string) => {
+    const ok = await confirmDialog({
+      title: '取り下げ申請の削除',
+      message: 'この取り下げ済み申請を完全に削除します。この操作は取り消せません。削除しますか？',
+      tone: 'danger',
+      confirmLabel: '削除する',
+    })
+    if (!ok) return
+    setDeletingWithdrawnId(pledgeId)
+    const { error } = await supabase.from('pledges').delete().eq('id', pledgeId).eq('status', '取り下げ')
+    setDeletingWithdrawnId(null)
+    if (error) { showError('削除に失敗しました: ' + error.message); return }
+    setFlowRows(prev => prev.filter(r => r.id !== pledgeId))
+    showSuccess('削除しました。')
+  }
 
   const handleBulkDoneOk = () => {
     setSelectedIds(new Set())
@@ -435,14 +459,30 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
                   <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {r.created_by_name || '―'}</p>
                 </div>
 
-                <div className="flex items-center justify-start xl:justify-end">
+                <div className="flex items-center justify-start gap-2 xl:justify-end">
                   <button
                     className="inline-flex h-[44px] shrink-0 items-center justify-center whitespace-nowrap rounded-2xl bg-[#EEF4FF] px-5 text-sm font-semibold text-[#2F5FD0] transition hover:bg-[#DFEAFE]"
                     onClick={() => router.push(`${detailBasePath}/${r.id}`)}
                   >
                     詳細へ
                   </button>
+                  {filter === '取り下げ' && (
+                    <button
+                      className="inline-flex h-[44px] shrink-0 items-center justify-center whitespace-nowrap rounded-2xl border border-[#FCA5A5] bg-white px-4 text-sm font-semibold text-[#DC2626] transition hover:bg-[#FEF2F2] disabled:opacity-50"
+                      disabled={deletingWithdrawnId === r.id}
+                      onClick={() => handleDeleteWithdrawn(r.id)}
+                    >
+                      {deletingWithdrawnId === r.id ? '削除中…' : '削除'}
+                    </button>
+                  )}
                 </div>
+
+                {r.status === '取り下げ' && (
+                  <div className="rounded-2xl border border-[#E5E7EB] bg-[#F9FAFB] p-4 xl:col-span-6">
+                    <p className="text-xs font-semibold text-[#6B7280]">取り下げ理由{r.withdrawn_at ? `（${formatDateTime(r.withdrawn_at)}）` : ''}</p>
+                    <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{r.withdrawn_reason || '（理由の入力なし）'}</p>
+                  </div>
+                )}
               </article>
             )
           })}

@@ -20,6 +20,10 @@ export type ContractForDisplay = {
   created_by_name?: string | null
   created_at: string
   rejection_reason: string | null
+  // 2026-07-27追加：取り下げ理由の表示のため（差し戻し理由と対称の扱い）
+  withdrawn_reason?: string | null
+  withdrawn_by?: string | null
+  withdrawn_at?: string | null
   signed_at: string | null
   warning_confirmations?: { type: string; confirmed_at: string }[]
   warning_level?: WarningLevel

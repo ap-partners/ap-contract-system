@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode, type Dispatch, type SetStateAction } from 'react'
 import { supabase, getAuthHeader } from '@/lib/supabase'
 import { useSessionCollisionGuard } from '@/lib/useSessionCollisionGuard'
 import { useRouter } from 'next/navigation'
@@ -32,6 +32,7 @@ import { clampDateYear } from '@/app/apply/_lib/helpers'
 import LoggedInUserChip from '../_shared/LoggedInUserChip'
 import NewDocumentMenu from '../_shared/NewDocumentMenu'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
+import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 import PledgeListSection from '../_shared/PledgeListSection'
 
@@ -381,7 +382,8 @@ function hasCancelled(r: RequestRow) {
 
 export default function AdminDashboard() {
   const router = useRouter()
-  const { showError } = useToast()
+  const { showError, showSuccess } = useToast()
+  const confirmDialog = useConfirm()
   const [user, setUser] = useState<any>(null)
   // 総合レビュー（QA監査2026-07-22）指摘C1対応：別タブで別アカウントにログインされ
   // 認証情報が裏で切り替わったことを検知したら、安全のため強制ログアウトする
@@ -1033,6 +1035,25 @@ export default function AdminDashboard() {
     { label: '承認済み・署名状況', value: internalApprovedCount, color: '#4CAF50', icon: 'check' as const },
   ]
 
+  // 取り下げ済み申請の削除（2026-07-27追加）：契約一覧・社内承認どちらの一覧からも呼べるよう、
+  // 更新先のsetterを引数で受け取る共通実装。status='取り下げ'の行のみDELETE可能なようRLSで制限済み。
+  const [deletingWithdrawnId, setDeletingWithdrawnId] = useState<string | null>(null)
+  const handleDeleteWithdrawn = async (contractId: string, setter: Dispatch<SetStateAction<Contract[]>>) => {
+    const ok = await confirmDialog({
+      title: '取り下げ申請の削除',
+      message: 'この取り下げ済み申請を完全に削除します。この操作は取り消せません。削除しますか？',
+      tone: 'danger',
+      confirmLabel: '削除する',
+    })
+    if (!ok) return
+    setDeletingWithdrawnId(contractId)
+    const { error } = await supabase.from('contracts').delete().eq('id', contractId).eq('status', '取り下げ')
+    setDeletingWithdrawnId(null)
+    if (error) { showError('削除に失敗しました: ' + error.message); return }
+    setter(prev => prev.filter(c => c.id !== contractId))
+    showSuccess('削除しました。')
+  }
+
   const ContractCard = ({
     contract,
     subTab,
@@ -1040,6 +1061,7 @@ export default function AdminDashboard() {
     toggle,
     clearConfirm,
     isInternal = false,
+    onDelete,
   }: {
     contract: Contract
     subTab: ContractSubTab
@@ -1047,6 +1069,7 @@ export default function AdminDashboard() {
     toggle: (id: string) => void
     clearConfirm: () => void
     isInternal?: boolean
+    onDelete?: (id: string) => void
   }) => {
     const staff = contract.input_data?.staff || {}
     const f = contract.input_data?.fields || {}
@@ -1129,17 +1152,33 @@ export default function AdminDashboard() {
           <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {contract.created_by_name || `ID:${contract.created_by.slice(0, 8)}`}</p>
         </div>
 
-        <div className="flex items-center justify-start 2xl:justify-end">
+        <div className="flex items-center justify-start gap-2 2xl:justify-end">
           <button className={primaryButton} onClick={() => router.push(`/dashboard/ssc/contracts/${contract.id}`)}>
             {subTab === '承認待ち' ? '内容を確認する' : '詳細を見る'}
             <Icon name="arrow" className="h-4 w-4" />
           </button>
+          {subTab === '取り下げ' && onDelete && (
+            <button
+              className="inline-flex h-[52px] shrink-0 items-center justify-center whitespace-nowrap rounded-2xl border border-[#FCA5A5] bg-white px-4 text-sm font-semibold text-[#DC2626] transition hover:bg-[#FEF2F2] disabled:opacity-50"
+              disabled={deletingWithdrawnId === contract.id}
+              onClick={() => onDelete(contract.id)}
+            >
+              {deletingWithdrawnId === contract.id ? '削除中…' : '削除'}
+            </button>
+          )}
         </div>
 
         {contract.status === '差し戻し中' && contract.rejection_reason && (
           <div className="rounded-2xl border border-[#FFE2C7] bg-[#FFF8F1] p-4 2xl:col-span-7">
             <p className="text-xs font-semibold text-[#F59E42]">差し戻し理由</p>
             <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.rejection_reason}</p>
+          </div>
+        )}
+
+        {contract.status === '取り下げ' && (
+          <div className="rounded-2xl border border-[#E5E7EB] bg-[#F9FAFB] p-4 2xl:col-span-7">
+            <p className="text-xs font-semibold text-[#6B7280]">取り下げ理由{contract.withdrawn_at ? `（${formatDateTime(contract.withdrawn_at)}）` : ''}</p>
+            <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.withdrawn_reason || '（理由の入力なし）'}</p>
           </div>
         )}
       </article>
@@ -1507,6 +1546,7 @@ export default function AdminDashboard() {
                   selectedIdsSet={selectedIds}
                   toggle={toggleSelect}
                   clearConfirm={() => { setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
+                  onDelete={(id) => handleDeleteWithdrawn(id, setFlowContracts)}
                 />
               ))}
             </div>
@@ -1594,6 +1634,7 @@ export default function AdminDashboard() {
                   toggle={toggleSelectInternal}
                   clearConfirm={() => { setInternalShowBulkApproveConfirm(false); setInternalBulkApproveDone(null) }}
                   isInternal
+                  onDelete={(id) => handleDeleteWithdrawn(id, setInternalFlowContracts)}
                 />
               ))}
             </div>

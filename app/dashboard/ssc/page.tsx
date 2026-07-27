@@ -24,6 +24,7 @@ import { useApprovedAccumulator, APPROVED_WINDOW_DAYS, CONTRACT_COLUMNS } from '
 import RenewalManagementTab from '../_shared/RenewalManagementTab'
 import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
+import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import PledgeListSection from '../_shared/PledgeListSection'
 import LoggedInUserChip from '../_shared/LoggedInUserChip'
 import NewDocumentMenu from '../_shared/NewDocumentMenu'
@@ -157,7 +158,8 @@ const Icon = ({ name, className = '' }: { name: IconName; className?: string }) 
 
 export default function SSCDashboard() {
   const router = useRouter()
-  const { showError } = useToast()
+  const { showError, showSuccess } = useToast()
+  const confirmDialog = useConfirm()
   const [user, setUser] = useState<any>(null)
   // 総合レビュー（QA監査2026-07-22）指摘C1対応：別タブで別アカウントにログインされ
   // 認証情報が裏で切り替わったことを検知したら、安全のため強制ログアウトする
@@ -343,6 +345,25 @@ export default function SSCDashboard() {
     setBulkApproveSkipped(skipped)
     setBulkApproveNotifyFailed(notifyFailedCount)
     setBulkApproveDone(approvedIds.length)
+  }
+
+  // 取り下げ済み申請の削除（2026-07-27追加）：完全削除のため確認ダイアログを挟む。
+  // status='取り下げ'の行のみDELETE可能なようRLSで制限済み（それ以外は失敗する）。
+  const [deletingWithdrawnId, setDeletingWithdrawnId] = useState<string | null>(null)
+  const handleDeleteWithdrawn = async (contractId: string) => {
+    const ok = await confirmDialog({
+      title: '取り下げ申請の削除',
+      message: 'この取り下げ済み申請を完全に削除します。この操作は取り消せません。削除しますか？',
+      tone: 'danger',
+      confirmLabel: '削除する',
+    })
+    if (!ok) return
+    setDeletingWithdrawnId(contractId)
+    const { error } = await supabase.from('contracts').delete().eq('id', contractId).eq('status', '取り下げ')
+    setDeletingWithdrawnId(null)
+    if (error) { showError('削除に失敗しました: ' + error.message); return }
+    setFlowContracts(prev => prev.filter(c => c.id !== contractId))
+    showSuccess('削除しました。')
   }
 
   const handleBulkApproveDoneOk = () => {
@@ -689,7 +710,7 @@ export default function SSCDashboard() {
                     <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {contract.created_by_name || `ID:${contract.created_by.slice(0, 8)}`}</p>
                   </div>
 
-                  <div className="flex items-center justify-start 2xl:justify-end">
+                  <div className="flex items-center justify-start gap-2 2xl:justify-end">
                     <button
                       className="inline-flex h-[52px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-[#EEF4FF] px-5 text-sm font-semibold text-[#2F5FD0] transition hover:-translate-y-0.5 hover:bg-[#DFEAFE]"
                       onClick={() => router.push(`/dashboard/ssc/contracts/${contract.id}`)}
@@ -697,12 +718,28 @@ export default function SSCDashboard() {
                       {activeTab === '承認待ち' ? '詳細へ' : '詳細を見る'}
                       <Icon name="arrow" className="h-4 w-4" />
                     </button>
+                    {activeTab === '取り下げ' && (
+                      <button
+                        className="inline-flex h-[52px] shrink-0 items-center justify-center whitespace-nowrap rounded-2xl border border-[#FCA5A5] bg-white px-4 text-sm font-semibold text-[#DC2626] transition hover:bg-[#FEF2F2] disabled:opacity-50"
+                        disabled={deletingWithdrawnId === contract.id}
+                        onClick={() => handleDeleteWithdrawn(contract.id)}
+                      >
+                        {deletingWithdrawnId === contract.id ? '削除中…' : '削除'}
+                      </button>
+                    )}
                   </div>
 
                   {contract.status === '差し戻し中' && contract.rejection_reason && (
                     <div className="rounded-2xl border border-[#FFE2C7] bg-[#FFF8F1] p-4 2xl:col-span-7">
                       <p className="text-xs font-semibold text-[#F59E42]">差し戻し理由</p>
                       <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.rejection_reason}</p>
+                    </div>
+                  )}
+
+                  {contract.status === '取り下げ' && (
+                    <div className="rounded-2xl border border-[#E5E7EB] bg-[#F9FAFB] p-4 2xl:col-span-7">
+                      <p className="text-xs font-semibold text-[#6B7280]">取り下げ理由{contract.withdrawn_at ? `（${formatDateTime(contract.withdrawn_at)}）` : ''}</p>
+                      <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.withdrawn_reason || '（理由の入力なし）'}</p>
                     </div>
                   )}
                 </article>

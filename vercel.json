@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/renewal-notify",
       "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/withdrawn-cleanup",
+      "schedule": "0 17 * * *"
     }
   ]
 }

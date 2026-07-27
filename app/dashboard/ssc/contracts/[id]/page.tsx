@@ -50,6 +50,9 @@ type ContractDetail = {
   created_at: string
   csvmeta_backup_file_id: string | null
   csvmeta_restored_at: string | null
+  withdrawn_reason: string | null
+  withdrawn_by: string | null
+  withdrawn_at: string | null
 }
 
 // ===== ユーティリティ =====
@@ -659,6 +662,13 @@ export default function SSCContractDetail() {
             </p>
             {contract.status === '差し戻し中' && contract.rejection_reason && (
               <p className="text-sm mt-1 leading-relaxed" style={{ color: '#1A2340' }}>差し戻し理由：{contract.rejection_reason}</p>
+            )}
+            {/* 取り下げ理由の表示（2026-07-27追加：差し戻し理由と対称の扱い） */}
+            {contract.status === '取り下げ' && (
+              <p className="text-sm mt-1 leading-relaxed" style={{ color: '#1A2340' }}>
+                取り下げ理由：{contract.withdrawn_reason || '（理由の入力なし）'}
+                {contract.withdrawn_at && `（${formatDateTime(contract.withdrawn_at)}）`}
+              </p>
             )}
             {/* 強制承認理由の表示（2026-07-02追加：監査・振り返り用） */}
             {contract.status === 'SSC承認済み' && contract.force_approve_reason && (

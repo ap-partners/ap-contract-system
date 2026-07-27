@@ -32,6 +32,8 @@ type PledgeDetail = {
   approved_at: string | null
   created_by_name: string | null
   created_at: string
+  withdrawn_reason: string | null
+  withdrawn_at: string | null
   input_data: {
     staff?: { name?: string; employee_number?: string; department?: string }
     workDescription?: string
@@ -255,6 +257,13 @@ export default function SalesPledgeDetail() {
           <div className="rounded-xl p-4 mb-6 border-2" style={{ background: '#FEF2F2', borderColor: '#F87171' }}>
             <p className="text-sm font-bold mb-1" style={{ color: '#B91C1C' }}>↩ 差し戻し理由（{formatDateTime(pledge.rejected_at)}）</p>
             <p className="text-sm whitespace-pre-wrap" style={{ color: '#1A2340' }}>{pledge.rejection_reason}</p>
+          </div>
+        )}
+
+        {pledge.status === '取り下げ' && (
+          <div className="rounded-xl p-4 mb-6 border-2" style={{ background: '#F3F4F6', borderColor: '#D1D5DB' }}>
+            <p className="text-sm font-bold mb-1" style={{ color: '#6B7280' }}>取り下げ理由{pledge.withdrawn_at ? `（${formatDateTime(pledge.withdrawn_at)}）` : ''}</p>
+            <p className="text-sm whitespace-pre-wrap" style={{ color: '#1A2340' }}>{pledge.withdrawn_reason || '（理由の入力なし）'}</p>
           </div>
         )}
 

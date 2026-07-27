@@ -44,6 +44,8 @@ type ContractDetail = {
   approved_at: string | null
   created_by: string
   created_at: string
+  withdrawn_reason: string | null
+  withdrawn_at: string | null
 }
 
 const SIGN_DEADLINE_DAYS = 7 // 署名期日＝通知から7日（初期値。将来アラート日数マスタで変更可能にする予定）
@@ -452,6 +454,12 @@ export default function SalesContractDetail() {
           <p className="text-sm font-bold" style={{ color: banner.color }}>{banner.label}</p>
           {contract.status === '差し戻し中' && contract.rejection_reason && (
             <p className="text-sm mt-1 leading-relaxed" style={{ color: '#1A2340' }}>差し戻し理由：{contract.rejection_reason}</p>
+          )}
+          {contract.status === '取り下げ' && (
+            <p className="text-sm mt-1 leading-relaxed" style={{ color: '#1A2340' }}>
+              取り下げ理由：{contract.withdrawn_reason || '（理由の入力なし）'}
+              {contract.withdrawn_at && `（${formatDateTime(contract.withdrawn_at)}）`}
+            </p>
           )}
           {contract.status === '差し戻し中' && (
             <button

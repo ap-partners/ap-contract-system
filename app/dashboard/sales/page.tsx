@@ -25,6 +25,7 @@ import NewDocumentMenu from '../_shared/NewDocumentMenu'
 import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
 import { useDebouncedSearch } from '../_shared/useDebouncedSearch'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
+import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 
 type Contract = ContractForDisplay & {
@@ -204,6 +205,7 @@ const SignDeadlineBadge = ({ signRequestedAt }: { signRequestedAt: string | null
 export default function SalesDashboard() {
   const router = useRouter()
   const { showError, showSuccess } = useToast()
+  const confirmDialog = useConfirm()
   const [user, setUser] = useState<any>(null)
   // 総合レビュー（QA監査2026-07-22）指摘C1対応：別タブで別アカウントにログインされ
   // 認証情報が裏で切り替わったことを検知したら、安全のため強制ログアウトする
@@ -355,7 +357,7 @@ export default function SalesDashboard() {
   const loadContracts = async (deptNo: number) => {
     const { data: rows, error } = await supabase
       .from('contracts')
-      .select('id, pattern, contract_type, document_type, work_place, status, created_by, created_by_dept_no, created_at, rejection_reason, sign_requested_at, signed_at, input_data')
+      .select('id, pattern, contract_type, document_type, work_place, status, created_by, created_by_dept_no, created_at, rejection_reason, sign_requested_at, signed_at, input_data, withdrawn_reason, withdrawn_by, withdrawn_at')
       .eq('created_by_dept_no', deptNo)
       .in('status', ['申請中', 'SSC承認済み', '差し戻し中', '署名待ち', '取り下げ'])
       .order('created_at', { ascending: false })
@@ -487,6 +489,24 @@ export default function SalesDashboard() {
     </div>
   )
 
+  // 取り下げ済み申請の削除（2026-07-27追加）：status='取り下げ'の行のみDELETE可能なようRLSで制限済み。
+  const [deletingWithdrawnId, setDeletingWithdrawnId] = useState<string | null>(null)
+  const handleDeleteWithdrawn = async (contractId: string) => {
+    const ok = await confirmDialog({
+      title: '取り下げ申請の削除',
+      message: 'この取り下げ済み申請を完全に削除します。この操作は取り消せません。削除しますか？',
+      tone: 'danger',
+      confirmLabel: '削除する',
+    })
+    if (!ok) return
+    setDeletingWithdrawnId(contractId)
+    const { error } = await supabase.from('contracts').delete().eq('id', contractId).eq('status', '取り下げ')
+    setDeletingWithdrawnId(null)
+    if (error) { showError('削除に失敗しました: ' + error.message); return }
+    setFlowContracts(prev => prev.filter(c => c.id !== contractId))
+    showSuccess('削除しました。')
+  }
+
   const ContractCard = ({ contract }: { contract: Contract }) => {
     const staff = contract.input_data?.staff || {}
     const f = contract.input_data?.fields || {}
@@ -570,12 +590,28 @@ export default function SalesDashboard() {
               再申請する
             </button>
           )}
+          {contract.status === '取り下げ' && (
+            <button
+              className="inline-flex h-[52px] shrink-0 items-center justify-center whitespace-nowrap rounded-2xl border border-[#FCA5A5] bg-white px-4 text-sm font-semibold text-[#DC2626] transition hover:bg-[#FEF2F2] disabled:opacity-50"
+              disabled={deletingWithdrawnId === contract.id}
+              onClick={() => handleDeleteWithdrawn(contract.id)}
+            >
+              {deletingWithdrawnId === contract.id ? '削除中…' : '削除'}
+            </button>
+          )}
         </div>
 
         {contract.status === '差し戻し中' && contract.rejection_reason && (
           <div className="rounded-2xl border border-[#FFE2C7] bg-[#FFF8F1] p-4 2xl:col-span-6">
             <p className="text-xs font-semibold text-[#F59E42]">差し戻し理由</p>
             <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.rejection_reason}</p>
+          </div>
+        )}
+
+        {contract.status === '取り下げ' && (
+          <div className="rounded-2xl border border-[#E5E7EB] bg-[#F9FAFB] p-4 2xl:col-span-6">
+            <p className="text-xs font-semibold text-[#6B7280]">取り下げ理由{contract.withdrawn_at ? `（${formatDateTime(contract.withdrawn_at)}）` : ''}</p>
+            <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.withdrawn_reason || '（理由の入力なし）'}</p>
           </div>
         )}
 

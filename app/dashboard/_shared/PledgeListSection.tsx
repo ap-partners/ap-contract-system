@@ -398,7 +398,7 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
             return (
               <article
                 key={r.id}
-                className="grid gap-4 rounded-[18px] border border-[#E8EDF5] bg-white p-5 transition hover:-translate-y-0.5 hover:shadow-[0_15px_40px_rgba(15,23,42,.08)] xl:grid-cols-[36px_minmax(180px,1.3fr)_minmax(160px,1.1fr)_minmax(150px,.9fr)_minmax(140px,.85fr)_120px] xl:items-center"
+                className="grid grid-cols-[36px_minmax(180px,1.3fr)_minmax(160px,1.1fr)_minmax(150px,.9fr)_minmax(140px,.85fr)_120px] items-center gap-4 rounded-[18px] border border-[#E8EDF5] bg-white p-5 transition hover:-translate-y-0.5 hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]"
               >
                 <div className="flex items-center">
                   {canBulkSelect && (
@@ -459,7 +459,7 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
                   <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {r.created_by_name || '―'}</p>
                 </div>
 
-                <div className="flex items-center justify-start gap-2 xl:justify-end">
+                <div className="flex items-center justify-end gap-2">
                   <button
                     className="inline-flex h-[44px] shrink-0 items-center justify-center whitespace-nowrap rounded-2xl bg-[#EEF4FF] px-5 text-sm font-semibold text-[#2F5FD0] transition hover:bg-[#DFEAFE]"
                     onClick={() => router.push(`${detailBasePath}/${r.id}`)}
@@ -478,7 +478,7 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
                 </div>
 
                 {r.status === '取り下げ' && (
-                  <div className="rounded-2xl border border-[#E5E7EB] bg-[#F9FAFB] p-4 xl:col-span-6">
+                  <div className="rounded-2xl border border-[#E5E7EB] bg-[#F9FAFB] p-4 col-span-6">
                     <p className="text-xs font-semibold text-[#6B7280]">取り下げ理由{r.withdrawn_at ? `（${formatDateTime(r.withdrawn_at)}）` : ''}</p>
                     <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{r.withdrawn_reason || '（理由の入力なし）'}</p>
                   </div>

@@ -516,7 +516,7 @@ export default function SalesDashboard() {
     const isExplain = isExplainNeeded(contract)
 
     return (
-      <article className={`${cardBase} grid gap-4 p-5 2xl:grid-cols-[minmax(180px,1.25fr)_minmax(180px,1.15fr)_minmax(150px,.95fr)_minmax(140px,.85fr)_minmax(130px,.75fr)_136px] 2xl:items-center`}>
+      <article className={`${cardBase} grid grid-cols-[minmax(180px,1.25fr)_minmax(180px,1.15fr)_minmax(150px,.95fr)_minmax(140px,.85fr)_minmax(130px,.75fr)_136px] items-center gap-4 p-5`}>
         <div className="min-w-0">
           <div className="mb-2 flex flex-wrap items-center gap-2">
             {deadline.type && !isWaitingSign && (
@@ -571,7 +571,7 @@ export default function SalesDashboard() {
           <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{formatDateTime(contract.created_at)}</p>
         </div>
 
-        <div className="flex flex-col gap-2 2xl:items-end">
+        <div className="flex flex-col items-end gap-2">
           <button
             className={isExplain || contract.status === '差し戻し中' ? secondaryButton : primaryButton}
             onClick={() => router.push(`/dashboard/sales/contracts/${contract.id}`)}
@@ -602,21 +602,21 @@ export default function SalesDashboard() {
         </div>
 
         {contract.status === '差し戻し中' && contract.rejection_reason && (
-          <div className="rounded-2xl border border-[#FFE2C7] bg-[#FFF8F1] p-4 2xl:col-span-6">
+          <div className="rounded-2xl border border-[#FFE2C7] bg-[#FFF8F1] p-4 col-span-6">
             <p className="text-xs font-semibold text-[#F59E42]">差し戻し理由</p>
             <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.rejection_reason}</p>
           </div>
         )}
 
         {contract.status === '取り下げ' && (
-          <div className="rounded-2xl border border-[#E5E7EB] bg-[#F9FAFB] p-4 2xl:col-span-6">
+          <div className="rounded-2xl border border-[#E5E7EB] bg-[#F9FAFB] p-4 col-span-6">
             <p className="text-xs font-semibold text-[#6B7280]">取り下げ理由{contract.withdrawn_at ? `（${formatDateTime(contract.withdrawn_at)}）` : ''}</p>
             <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.withdrawn_reason || '（理由の入力なし）'}</p>
           </div>
         )}
 
         {isExplain && contract.status === 'SSC承認済み' && (
-          <div className="rounded-2xl border border-[#D7E5FF] bg-[#F5F9FF] p-4 2xl:col-span-6">
+          <div className="rounded-2xl border border-[#D7E5FF] bg-[#F5F9FF] p-4 col-span-6">
             <p className="text-sm font-medium leading-6 text-[#2F5FD0]">
               {contract.work_place === '社内'
                 ? '承認済みです。従業員への説明が完了したら「説明完了」を押してください。押すと従業員が署名待ちの状態になります。'
@@ -626,7 +626,7 @@ export default function SalesDashboard() {
         )}
 
         {isExplain && confirmingExplainId === contract.id && (
-          <div className="rounded-2xl border border-[#D7E5FF] bg-[#F5F9FF] p-4 2xl:col-span-6">
+          <div className="rounded-2xl border border-[#D7E5FF] bg-[#F5F9FF] p-4 col-span-6">
             <p className="text-sm font-semibold text-[#1F2937]">従業員への説明は完了しましたか？</p>
             <p className="mt-2 text-sm font-medium leading-6 text-[#6B7280]">押すと、従業員が署名待ちの状態に切り替わります。</p>
             <div className="mt-4 flex flex-col gap-3 sm:flex-row">
@@ -648,7 +648,7 @@ export default function SalesDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFD] text-[#1F2937]">
+    <div className="min-h-screen overflow-x-auto overflow-y-hidden bg-[#F8FAFD] text-[#1F2937]">
       <header className="relative z-30 border-b border-[#E8EDF5] bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-[1600px] items-center justify-between px-6 py-5 lg:px-8">
           <div className="flex items-center gap-5">
@@ -727,7 +727,7 @@ export default function SalesDashboard() {
         {/* 総合レビュー指摘B対応（2026-07-16）：管理部と同じ「機能タブ→ステータスのサブタブ」の
             2階層構造に変更。機能タブは「契約一覧／依頼状況／更新期限管理」の3つ */}
         <nav className="mt-6 border-b border-[#E8EDF5]">
-          <div className="flex gap-8 overflow-x-auto overflow-y-hidden">
+          <div className="flex flex-nowrap gap-8">
             {[
               { key: 'contracts' as const, label: '契約一覧', icon: 'file' as IconName, count: contractsTotalCount, isActive: isContractGroupActive, onClick: () => setActiveFilter(lastContractFilterRef.current) },
               { key: 'other' as const, label: '依頼状況', icon: 'mail' as IconName, count: visibleMyRequests.length, isActive: activeFilter === 'other', onClick: () => setActiveFilter('other') },
@@ -750,7 +750,7 @@ export default function SalesDashboard() {
 
         {/* 「契約一覧」機能タブの中だけに表示するステータスのサブタブ（進行中/要説明/差し戻し/署名待ち/完了/取り下げ） */}
         {isContractGroupActive && (
-          <div className="mt-4 flex gap-2 overflow-x-auto">
+          <div className="mt-4 flex flex-nowrap gap-2">
             {contractSubTabs.map(card => {
               const isActive = activeFilter === card.key
               return (

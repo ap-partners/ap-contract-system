@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
   if (!auth) return NextResponse.json({ error: 'ログインが必要です。' }, { status: 401 })
   if (auth.role !== '管理部') return NextResponse.json({ error: 'この操作は管理部のみ実行できます。' }, { status: 403 })
 
-  const [{ data: departments, error: deptErr }, { data: minimumWages, error: mwErr }, { data: workingHours, error: whErr }, { data: dispatchFees, error: dfErr }, { data: staffDeptRows, error: staffErr }, { data: offices, error: officeErr }, { data: workDescriptionTemplates, error: wdtErr }] = await Promise.all([
+  const [{ data: departments, error: deptErr }, { data: minimumWages, error: mwErr }, { data: workingHours, error: whErr }, { data: dispatchFees, error: dfErr }, { data: staffCountRows, error: staffErr }, { data: offices, error: officeErr }, { data: workDescriptionTemplates, error: wdtErr }] = await Promise.all([
     supabaseAdmin.from('department_master').select('id, dept_no, dept_name, created_at').order('dept_no', { ascending: true }),
     supabaseAdmin.from('minimum_wage_master').select('id, dept_no, hourly_wage, effective_from, created_at, updated_at').order('dept_no', { ascending: true }).order('effective_from', { ascending: false }),
     supabaseAdmin.from('standard_working_hours_master').select('id, work_place, contract_type, pattern_name, monthly_hours, created_at, updated_at').order('work_place', { ascending: true }).order('contract_type', { ascending: true }),
@@ -41,7 +41,13 @@ export async function GET(req: NextRequest) {
     // 部門コード一覧をそのまま機械的に取り込んだもので、上位の「まとめ部署」（例：SP営業部）は
     // スタッフが直接所属せず、実際は下位の「SP1課」等にスタッフが紐付く構造と判明。
     // staff_countが0の部門＝実質未使用の可能性が高い部門、として画面上で可視化する。
-    supabaseAdmin.from('staff').select('dept_no'),
+    //
+    // 【2026-07-27修正】従来は staff.select('dept_no') で全件取得しJS側で集計していたが、
+    // PostgRESTの既定の最大返却件数（1000件）を超過しており、staffが1795件ある現状では
+    // 一部の部門（例：中部営業所205名・関西支社171名）が丸ごと集計から漏れ「未使用の可能性」と
+    // 誤表示される不具合があった。DB側でGROUP BY集計するRPC関数（在籍＝退職者除外）に変更し、
+    // 件数上限の影響を受けない形にした。
+    supabaseAdmin.rpc('get_active_staff_count_by_dept'),
     // 2026-07-22追加：自社拠点マスタ（アルバイト誓約書STEP2「就業先情報」の自社選択時に使用）。
     // 派遣料金額マスタと同じく、営業所候補（officeNames）をあらかじめ全件表示し、
     // 郵便番号・住所・電話番号を入力する表形式で管理する。
@@ -56,9 +62,9 @@ export async function GET(req: NextRequest) {
   }
 
   const staffCountByDept: Record<number, number> = {}
-  for (const row of staffDeptRows || []) {
+  for (const row of (staffCountRows as { dept_no: number; staff_count: number }[]) || []) {
     if (row.dept_no === null || row.dept_no === undefined) continue
-    staffCountByDept[row.dept_no] = (staffCountByDept[row.dept_no] || 0) + 1
+    staffCountByDept[row.dept_no] = Number(row.staff_count)
   }
 
   // 派遣料金額マスタの「営業所名」候補：部門マスタの全dept_nameにgetOfficeName()と同じロジックを

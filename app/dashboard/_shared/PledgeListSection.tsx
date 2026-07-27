@@ -262,7 +262,7 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
             onClick={() => setFilter(t.key)}
             className="px-4 py-2 rounded-full text-xs font-bold transition-all"
             style={filter === t.key
-              ? { background: '#1B3A8C', color: '#FFFFFF' }
+              ? { background: '#2F5FD0', color: '#FFFFFF' }
               : { background: '#EEF2FA', color: '#5A6A8A' }}
           >
             {t.label}（{t.count}）

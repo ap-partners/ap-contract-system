@@ -67,7 +67,7 @@ export function useContractListToolbar<T extends { status: string }>(
             onClick={() => setStatusFilter('all')}
             className="text-xs font-medium px-3 py-1 rounded-full transition-all"
             style={statusFilter === 'all'
-              ? { background: '#1B3A8C', color: 'white', border: '1px solid #1B3A8C' }
+              ? { background: '#2F5FD0', color: 'white', border: '1px solid #2F5FD0' }
               : { background: 'white', color: '#5A6A8A', border: '1px solid #D0DAF0' }}>
             すべて
           </button>
@@ -79,7 +79,7 @@ export function useContractListToolbar<T extends { status: string }>(
                 onClick={() => setStatusFilter(opt.value)}
                 className="text-xs font-medium px-3 py-1 rounded-full transition-all"
                 style={isActive
-                  ? { background: '#1B3A8C', color: 'white', border: '1px solid #1B3A8C' }
+                  ? { background: '#2F5FD0', color: 'white', border: '1px solid #2F5FD0' }
                   : { background: 'white', color: '#5A6A8A', border: '1px solid #D0DAF0' }}>
                 {opt.label}
               </button>

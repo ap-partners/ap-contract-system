@@ -162,9 +162,9 @@ export default function SignPage() {
           </h1>
         </div>
 
-        <div className="rounded-2xl p-6" style={{ background: '#FFFFFF', boxShadow: '0 2px 12px rgba(26,35,64,0.08)' }}>
+        <div className="rounded-3xl overflow-hidden" style={{ background: '#FFFFFF', boxShadow: '0 2px 16px rgba(26,35,64,0.08)' }}>
           {stage === 'verify' && (
-            <>
+            <div className="px-6 py-6">
               <h2 className="text-xl font-bold mb-2" style={{ color: '#1A2340' }}>本人確認</h2>
               <p className="text-sm mb-6 leading-relaxed" style={{ color: '#5A6A8A' }}>
                 社員番号と、通知メールに記載の認証コードを入力してください。
@@ -236,138 +236,152 @@ export default function SignPage() {
                   {verifying ? '確認中...' : '確認する'}
                 </button>
               </form>
-            </>
+            </div>
           )}
 
+          {/* 2026-07-28：確認・署名／完了の2画面は、マイページ書類確認画面
+              （app/staff/mypage/documents/[id]/page.tsx）と同じ承認済みv8デザイン
+              （紺ヘッダー・オレンジPDFボタン等）に統一。本人確認画面はマイページに
+              存在しない専用ステップのため、伊藤さんとの確認のうえ従来の見た目のまま維持。 */}
           {stage === 'action' && (
             <>
-              <h2 className="text-xl font-bold mb-1" style={{ color: '#1A2340' }}>
-                {staffName} 様
-              </h2>
-              <p className="text-sm mb-6" style={{ color: '#5A6A8A' }}>{documentLabel}</p>
+              <div className="px-6 pt-5 pb-6" style={{ background: '#1B3A8C' }}>
+                <h2 className="text-lg font-bold text-white mb-1">{staffName} 様</h2>
+                <p className="text-sm font-semibold text-white mb-2">{documentLabel}</p>
+                <p className="text-xs leading-relaxed" style={{ color: '#C7D3EF' }}>
+                  {signAction === 'signature'
+                    ? '内容をご確認いただき、署名をお願いします。'
+                    : '内容をご確認いただき、確認完了の操作をお願いします。'}
+                </p>
+              </div>
 
-              <a
-                href={`/api/contracts/${id}/pdf?t=${encodeURIComponent(pdfToken)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-disabled={submitting}
-                onClick={e => { if (submitting) e.preventDefault() }}
-                className="block w-full text-center py-3 rounded-lg text-sm font-semibold mb-6 transition-all"
-                style={{
-                  background: '#EEF2FC', color: '#1B3A8C', border: '1px solid #D0DAF0',
-                  opacity: submitting ? 0.5 : 1, pointerEvents: submitting ? 'none' : 'auto',
-                }}
-              >
-                書類の内容を確認する（PDFが開きます）
-              </a>
+              <div className="px-6 pb-7" style={{ paddingTop: 40 }}>
+                <a
+                  href={`/api/contracts/${id}/pdf?t=${encodeURIComponent(pdfToken)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-disabled={submitting}
+                  onClick={e => { if (submitting) e.preventDefault() }}
+                  className="block w-full text-center py-4 rounded-xl text-sm font-semibold text-white mb-8"
+                  style={{
+                    background: '#F59E42',
+                    opacity: submitting ? 0.5 : 1, pointerEvents: submitting ? 'none' : 'auto',
+                  }}
+                >
+                  書類の内容を確認する（PDFが開きます）
+                </a>
 
-              {signAction === 'signature' ? (
-                <div className="mb-6">
-                  <label className="block text-sm font-medium mb-1.5" style={{ color: '#1A2340' }}>
-                    フルネームをご記入ください
-                  </label>
-                  <input
-                    type="text"
-                    value={sealName}
-                    onChange={e => setSealName(e.target.value)}
-                    disabled={submitting}
-                    className="w-full px-4 py-3 rounded-lg text-sm border focus:outline-none focus:ring-2 transition-all mb-4"
-                    style={{ borderColor: '#D0DAF0', background: submitting ? '#F5F7FC' : '#FFFFFF', color: '#1A2340' }}
-                    placeholder={staffName ? `例：${staffName}` : '例：山田　太郎'}
-                  />
-
-                  <p className="text-sm font-medium mb-2 text-center" style={{ color: '#1A2340' }}>
-                    押印イメージ（プレビュー）
-                  </p>
-                  <div className="flex justify-center mb-3">
-                    <canvas
-                      ref={previewCanvasRef}
-                      width={280}
-                      height={280}
-                      style={{ width: 140, height: 140 }}
+                {signAction === 'signature' ? (
+                  <div className="mb-6">
+                    <label className="block text-sm font-bold mb-2" style={{ color: '#1A2340' }}>
+                      フルネームをご記入ください
+                    </label>
+                    <input
+                      type="text"
+                      value={sealName}
+                      onChange={e => setSealName(e.target.value)}
+                      disabled={submitting}
+                      className="w-full px-4 py-4 rounded-xl text-base border-2 focus:outline-none transition-all mb-1.5"
+                      style={{ borderColor: sealName.trim() ? '#1B3A8C' : '#D0DAF0', background: submitting ? '#F5F7FC' : '#FFFFFF', color: '#1A2340' }}
+                      placeholder={staffName ? `例：${staffName}` : '例：山田　太郎'}
                     />
-                    {/* 実際にPDFへ埋め込む高解像度版（非表示・同じ内容を大きめに描画。
-                        drawSeal()はcanvas.widthを基準に全要素を比率で描くため、
-                        サイズを変えるだけで印刷時の粗さを改善できる。2026-07-22：
-                        プレビューと同じ280pxのままだった不一致を修正し560pxに拡大。） */}
-                    <canvas ref={exportCanvasRef} width={560} height={560} style={{ display: 'none' }} />
-                  </div>
+                    <p className="text-xs mb-5" style={{ color: '#8A94AA' }}>
+                      ご入力いただいたお名前から印影（丸印）を自動で作成します。
+                    </p>
 
-                  <label className="flex items-start gap-2 cursor-pointer">
+                    <p className="text-sm font-medium mb-2 text-center" style={{ color: '#1A2340' }}>
+                      押印イメージ（プレビュー）
+                    </p>
+                    <div className="flex justify-center mb-5">
+                      <canvas
+                        ref={previewCanvasRef}
+                        width={280}
+                        height={280}
+                        style={{ width: 140, height: 140 }}
+                      />
+                      {/* 実際にPDFへ埋め込む高解像度版（非表示・同じ内容を大きめに描画。
+                          drawSeal()はcanvas.widthを基準に全要素を比率で描くため、
+                          サイズを変えるだけで印刷時の粗さを改善できる。2026-07-22：
+                          プレビューと同じ280pxのままだった不一致を修正し560pxに拡大。） */}
+                      <canvas ref={exportCanvasRef} width={560} height={560} style={{ display: 'none' }} />
+                    </div>
+
+                    <label className="flex items-start gap-2.5 cursor-pointer rounded-xl p-3.5" style={{ background: '#F5F7FC' }}>
+                      <input
+                        type="checkbox"
+                        checked={sealConfirmed}
+                        onChange={e => setSealConfirmed(e.target.checked)}
+                        disabled={sealName.trim().length === 0 || submitting}
+                        className="mt-0.5 h-4 w-4"
+                      />
+                      <span className="text-sm leading-relaxed" style={{ color: '#1A2340' }}>
+                        この印影の内容で相違ありません
+                      </span>
+                    </label>
+                  </div>
+                ) : (
+                  <label className="flex items-start gap-2.5 mb-6 cursor-pointer rounded-xl p-3.5" style={{ background: '#F5F7FC' }}>
                     <input
                       type="checkbox"
-                      checked={sealConfirmed}
-                      onChange={e => setSealConfirmed(e.target.checked)}
-                      disabled={sealName.trim().length === 0 || submitting}
-                      className="mt-1"
+                      checked={confirmChecked}
+                      onChange={e => setConfirmChecked(e.target.checked)}
+                      disabled={submitting}
+                      className="mt-0.5 h-4 w-4"
                     />
                     <span className="text-sm leading-relaxed" style={{ color: '#1A2340' }}>
-                      この印影の内容で相違ありません
+                      内容を確認しました
                     </span>
                   </label>
-                </div>
-              ) : (
-                <label className="flex items-start gap-2 mb-6 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={confirmChecked}
-                    onChange={e => setConfirmChecked(e.target.checked)}
-                    disabled={submitting}
-                    className="mt-1"
-                  />
-                  <span className="text-sm leading-relaxed" style={{ color: '#1A2340' }}>
-                    内容を確認しました
-                  </span>
-                </label>
-              )}
-
-              {error && (
-                <div className="rounded-lg px-4 py-3 text-sm leading-relaxed mb-4 whitespace-pre-line" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
-                  {error}
-                </div>
-              )}
-
-              {/* 2026-07-10追加：署名/確認完了ボタンを押してからAPI応答までPDF再生成・
-                  Google Driveアップロードで数秒かかることがあり、「反応が無いように見えて不安」
-                  との指摘（伊藤さん）を受けた。ボタン自体はdisabled={!canSubmit}（canSubmitに
-                  !submittingが含まれる）で元々連打は防げていたが、処理中であることが視覚的に
-                  伝わりにくかったため、①スピナーアイコンを追加、②処理中のみ「画面を閉じずに
-                  お待ちください」の注意文を表示、③フルネーム欄・PDFリンク・チェックボックスも
-                  処理中は操作不可にして、誤操作の余地を無くした。 */}
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={!canSubmit}
-                className="w-full py-3 rounded-lg text-sm font-semibold text-white transition-all flex items-center justify-center gap-2"
-                style={{ background: canSubmit ? '#1B3A8C' : '#A8C0E8' }}
-              >
-                {submitting && (
-                  <span
-                    className="inline-block w-4 h-4 rounded-full animate-spin"
-                    style={{ border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#FFFFFF' }}
-                  />
                 )}
-                {submitting
-                  ? '送信中です…'
-                  : signAction === 'signature'
-                    ? '署名する'
-                    : '確認する'}
-              </button>
 
-              {submitting && (
-                <p className="text-xs text-center mt-3 leading-relaxed" style={{ color: '#5A6A8A' }}>
-                  {signAction === 'signature' ? '署名登録中です。' : '登録処理中です。'}
-                  <br />
-                  数秒ほどお時間をいただく場合があります。
-                  <br />
-                  画面を閉じたり、戻ったりせずそのままお待ちください。
-                </p>
-              )}
+                {error && (
+                  <div className="rounded-lg px-4 py-3 text-sm leading-relaxed mb-4 whitespace-pre-line" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+                    {error}
+                  </div>
+                )}
+
+                {/* 2026-07-10追加：署名/確認完了ボタンを押してからAPI応答までPDF再生成・
+                    Google Driveアップロードで数秒かかることがあり、「反応が無いように見えて不安」
+                    との指摘（伊藤さん）を受けた。ボタン自体はdisabled={!canSubmit}（canSubmitに
+                    !submittingが含まれる）で元々連打は防げていたが、処理中であることが視覚的に
+                    伝わりにくかったため、①スピナーアイコンを追加、②処理中のみ「画面を閉じずに
+                    お待ちください」の注意文を表示、③フルネーム欄・PDFリンク・チェックボックスも
+                    処理中は操作不可にして、誤操作の余地を無くした。 */}
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={!canSubmit}
+                  className="w-full py-4 rounded-xl text-sm font-semibold text-white transition-all flex items-center justify-center gap-2"
+                  style={{ background: canSubmit ? '#1B3A8C' : '#A8C0E8' }}
+                >
+                  {submitting && (
+                    <span
+                      className="inline-block w-4 h-4 rounded-full animate-spin"
+                      style={{ border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#FFFFFF' }}
+                    />
+                  )}
+                  {submitting
+                    ? '送信中です…'
+                    : signAction === 'signature'
+                      ? '署名する'
+                      : '確認する'}
+                </button>
+
+                {submitting && (
+                  <p className="text-xs text-center mt-3 leading-relaxed" style={{ color: '#5A6A8A' }}>
+                    {signAction === 'signature' ? '署名登録中です。' : '登録処理中です。'}
+                    <br />
+                    数秒ほどお時間をいただく場合があります。
+                    <br />
+                    画面を閉じたり、戻ったりせずそのままお待ちください。
+                  </p>
+                )}
+              </div>
             </>
           )}
 
           {stage === 'done' && (
-            <div className="text-center py-4">
+            <div className="text-center px-6 py-10">
               <div
                 className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl"
                 style={{ background: '#E9F7EF', color: '#1E8449' }}

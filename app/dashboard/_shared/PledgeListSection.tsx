@@ -50,7 +50,7 @@ const formatDateTime = (iso: string | null) => {
   return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-type FilterKey = '承認待ち' | '差し戻し中' | '署名待ち' | '署名済み'
+type FilterKey = '承認待ち' | '差し戻し中' | '署名待ち' | '署名済み' | '取り下げ'
 type SortKey = 'newest' | 'oldest'
 
 type Props = {
@@ -90,7 +90,7 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
     let query = supabase
       .from('pledges')
       .select(PLEDGE_COLUMNS)
-      .in('status', ['申請中', '差し戻し中'])
+      .in('status', ['申請中', '差し戻し中', '取り下げ'])
       .order('created_at', { ascending: false })
     if (deptNoFilter !== undefined) query = query.eq('created_by_dept_no', deptNoFilter)
     const { data } = await query
@@ -124,6 +124,7 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
   const baseRowsForTab: PledgeRow[] =
     filter === '承認待ち' ? flowRows.filter(r => r.status === '申請中')
     : filter === '差し戻し中' ? flowRows.filter(r => r.status === '差し戻し中')
+    : filter === '取り下げ' ? flowRows.filter(r => r.status === '取り下げ')
     : filter === '署名待ち' ? pendingSignAcc.approvedContracts
     : signedAcc.approvedContracts
 
@@ -135,6 +136,7 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
 
   const pendingCount = flowRows.filter(r => r.status === '申請中').length
   const rejectedCount = flowRows.filter(r => r.status === '差し戻し中').length
+  const withdrawnCount = flowRows.filter(r => r.status === '取り下げ').length
   const pendingSignCount = pendingSignAcc.approvedTotalCount
   const signedCount = signedAcc.approvedTotalCount
 
@@ -229,6 +231,7 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
           { key: '差し戻し中' as const, label: '差し戻し中', count: rejectedCount },
           { key: '署名待ち' as const, label: '署名待ち', count: pendingSignCount },
           { key: '署名済み' as const, label: '署名済み', count: signedCount },
+          { key: '取り下げ' as const, label: '取り下げ', count: withdrawnCount },
         ]).map(t => (
           <button
             key={t.key}

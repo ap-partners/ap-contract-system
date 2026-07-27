@@ -51,7 +51,7 @@ type MyRequest = {
   requested_at: string
 }
 
-type FilterKey = 'pending' | 'explain' | 'rejected' | 'waiting' | 'completed' | 'other' | 'renewal' | 'pledges'
+type FilterKey = 'pending' | 'explain' | 'rejected' | 'waiting' | 'completed' | 'withdrawn' | 'other' | 'renewal' | 'pledges'
 type IconName = 'file' | 'message' | 'refresh' | 'pen' | 'check' | 'mail' | 'search' | 'filter' | 'map' | 'arrow' | 'logout' | 'plus' | 'alert' | 'clock'
 
 const SIGN_DEADLINE_DAYS = 7 // 署名期日＝通知から7日（初期値。将来アラート日数マスタで変更可能にする予定）
@@ -357,7 +357,7 @@ export default function SalesDashboard() {
       .from('contracts')
       .select('id, pattern, contract_type, document_type, work_place, status, created_by, created_by_dept_no, created_at, rejection_reason, sign_requested_at, signed_at, input_data')
       .eq('created_by_dept_no', deptNo)
-      .in('status', ['申請中', 'SSC承認済み', '差し戻し中', '署名待ち'])
+      .in('status', ['申請中', 'SSC承認済み', '差し戻し中', '署名待ち', '取り下げ'])
       .order('created_at', { ascending: false })
 
     if (error) { console.error('contracts取得エラー:', error); return }
@@ -378,6 +378,7 @@ export default function SalesDashboard() {
   const pendingList = flowContracts.filter(c => ['申請中', 'SSC承認済み'].includes(c.status) && !isExplainNeeded(c))
   const rejectedList = flowContracts.filter(c => c.status === '差し戻し中')
   const waitingList = flowContracts.filter(c => c.status === '署名待ち')
+  const withdrawnList = flowContracts.filter(c => c.status === '取り下げ')
   const completedList = approvedContracts
 
   const hasVisibleTask = (r: MyRequest, includeCompleted: boolean) => {
@@ -399,6 +400,7 @@ export default function SalesDashboard() {
     { key: 'rejected', label: '差し戻し', count: rejectedList.length, color: '#E74C3C', tone: 'red', icon: 'refresh' },
     { key: 'waiting', label: '署名待ち', count: waitingList.length, color: '#F59E42', tone: 'orange', icon: 'pen' },
     { key: 'completed', label: '完了', count: approvedTotalCount, color: '#4CAF50', tone: 'green', icon: 'check' },
+    { key: 'withdrawn', label: '取り下げ', count: withdrawnList.length, color: '#6B7280', tone: 'gray', icon: 'refresh' },
     { key: 'other', label: '依頼状況', count: visibleMyRequests.length, color: '#7C3AED', tone: 'purple', icon: 'mail' },
     { key: 'renewal', label: '更新期限管理', count: renewalCandidates.length, color: '#F59E42', tone: 'orange', icon: 'clock' },
     { key: 'pledges', label: 'アルバイト誓約書', count: pledgesPendingCount, color: '#F59E42', tone: 'orange', icon: 'file' },
@@ -406,10 +408,10 @@ export default function SalesDashboard() {
 
   // 総合レビュー指摘B対応（2026-07-16）：契約のステータス別サブタブ（機能タブ「契約一覧」の中身）。
   // 「依頼状況」「更新期限管理」は別の機能タブとして扱うためここには含めない。
-  const CONTRACT_SUB_KEYS: FilterKey[] = ['pending', 'explain', 'rejected', 'waiting', 'completed']
+  const CONTRACT_SUB_KEYS: FilterKey[] = ['pending', 'explain', 'rejected', 'waiting', 'completed', 'withdrawn']
   const isContractGroupActive = CONTRACT_SUB_KEYS.includes(activeFilter)
   const contractSubTabs = filterCards.filter(c => CONTRACT_SUB_KEYS.includes(c.key))
-  const contractsTotalCount = pendingList.length + explainList.length + rejectedList.length + waitingList.length + approvedTotalCount
+  const contractsTotalCount = pendingList.length + explainList.length + rejectedList.length + waitingList.length + approvedTotalCount + withdrawnList.length
   if (isContractGroupActive) lastContractFilterRef.current = activeFilter
 
   // 総合レビュー指摘C対応（2026-07-16）：上部KPIカードと直下のタブが同じ7項目を重複表示しており、
@@ -425,6 +427,7 @@ export default function SalesDashboard() {
     rejected: rejectedList,
     waiting: waitingList,
     completed: completedList,
+    withdrawn: withdrawnList,
     other: [],
     renewal: [],
     pledges: [],
@@ -444,6 +447,7 @@ export default function SalesDashboard() {
     rejected: [],
     waiting: [],
     completed: [],
+    withdrawn: [],
     other: [],
     renewal: [],
     pledges: [],
@@ -708,7 +712,7 @@ export default function SalesDashboard() {
           </div>
         </nav>
 
-        {/* 「契約一覧」機能タブの中だけに表示するステータスのサブタブ（進行中/要説明/差し戻し/署名待ち/完了） */}
+        {/* 「契約一覧」機能タブの中だけに表示するステータスのサブタブ（進行中/要説明/差し戻し/署名待ち/完了/取り下げ） */}
         {isContractGroupActive && (
           <div className="mt-4 flex gap-2 overflow-x-auto">
             {contractSubTabs.map(card => {

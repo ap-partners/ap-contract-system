@@ -474,7 +474,7 @@ export default function SalesContractDetail() {
           {showWithdrawForm && (
             <div className="mt-4 rounded-lg p-4 border" style={{ background: 'white', borderColor: '#D1D5DB' }}>
               <p className="text-sm font-bold mb-2" style={{ color: '#1A2340' }}>この申請を取り下げますか？</p>
-              <p className="text-xs mb-3" style={{ color: '#6B7280' }}>取り下げると、この申請は一覧の承認待ち・差し戻し中から消え、再申請が必要になります。この操作は取り消せません。</p>
+              <p className="text-xs mb-3" style={{ color: '#6B7280' }}>取り下げると、この申請は一覧の承認待ち・差し戻し中から「取り下げ」タブへ移動し、再申請が必要になります。この操作は取り消せません。</p>
               <textarea
                 value={withdrawReason}
                 onChange={e => setWithdrawReason(e.target.value)}

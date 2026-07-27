@@ -30,7 +30,7 @@ import NewDocumentMenu from '../_shared/NewDocumentMenu'
 
 type Contract = ContractForDisplay
 
-type TabType = '承認待ち' | '差し戻し中' | '承認済み' | '更新期限管理' | 'アルバイト誓約書'
+type TabType = '承認待ち' | '差し戻し中' | '承認済み' | '取り下げ' | '更新期限管理' | 'アルバイト誓約書'
 
 type IconName =
   | 'home'
@@ -205,7 +205,7 @@ export default function SSCDashboard() {
         .from('contracts')
         .select(CONTRACT_COLUMNS)
         .neq('work_place', '社内')
-        .in('status', ['申請中', '差し戻し中'])
+        .in('status', ['申請中', '差し戻し中', '取り下げ'])
         .order('created_at', { ascending: false })
 
       if (error) { console.error('contracts取得エラー:', error); setLoading(false); return }
@@ -229,6 +229,7 @@ export default function SSCDashboard() {
     : flowContracts.filter(c => {
         if (activeTab === '承認待ち') return c.status === '申請中'
         if (activeTab === '差し戻し中') return c.status === '差し戻し中'
+        if (activeTab === '取り下げ') return c.status === '取り下げ'
         return false
       })
 
@@ -240,6 +241,7 @@ export default function SSCDashboard() {
       { value: '署名待ち', label: '署名待ち' },
       { value: '署名済み', label: '署名済み' },
     ],
+    '取り下げ': [],
     '更新期限管理': [],
     'アルバイト誓約書': [],
   }
@@ -269,6 +271,7 @@ export default function SSCDashboard() {
 
   const pendingCount = flowContracts.filter(c => c.status === '申請中').length
   const rejectedCount = flowContracts.filter(c => c.status === '差し戻し中').length
+  const withdrawnCount = flowContracts.filter(c => c.status === '取り下げ').length
   const approvedCount = approvedTotalCount
 
   // アルバイト誓約書タブの承認待ち件数バッジ（2026-07-23追加。一覧本体はPledgeListSectionが
@@ -354,6 +357,7 @@ export default function SSCDashboard() {
     { key: '承認待ち', label: '承認待ち', count: pendingCount },
     { key: '差し戻し中', label: '差し戻し', count: rejectedCount },
     { key: '承認済み', label: '承認済み・署名状況', count: approvedCount },
+    { key: '取り下げ', label: '取り下げ', count: withdrawnCount },
     { key: '更新期限管理', label: '更新期限管理', count: renewalCandidates.length },
     { key: 'アルバイト誓約書', label: 'アルバイト誓約書', count: pledgesPendingCount },
   ]
@@ -571,6 +575,7 @@ export default function SSCDashboard() {
               {activeTab === '承認待ち' && '承認待ちの申請はありません'}
               {activeTab === '差し戻し中' && '差し戻し中の申請はありません'}
               {activeTab === '承認済み' && '承認済みの申請はありません'}
+              {activeTab === '取り下げ' && '取り下げられた申請はありません'}
             </p>
           </div>
         ) : visibleContracts.length === 0 ? (

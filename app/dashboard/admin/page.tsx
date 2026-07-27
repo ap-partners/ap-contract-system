@@ -58,7 +58,7 @@ type RequestRow = {
 
 type TabType = 'overview' | 'requests' | 'contracts' | 'internal' | 'csvImport' | 'renewal' | 'master' | 'pledges' | 'accounts'
 type Contract = ContractForDisplay
-type ContractSubTab = '承認待ち' | '差し戻し中' | '承認済み'
+type ContractSubTab = '承認待ち' | '差し戻し中' | '承認済み' | '取り下げ'
 type IconName = 'file' | 'list' | 'shield' | 'upload' | 'alert' | 'clock' | 'search' | 'refresh' | 'check' | 'arrow' | 'logout' | 'map' | 'user' | 'building' | 'plus' | 'grid'
 
 const SYSTEM_LOGO_FILE: Record<string, string> = {
@@ -605,7 +605,7 @@ export default function AdminDashboard() {
         .from('contracts')
         .select(CONTRACT_COLUMNS)
         .neq('work_place', '社内')
-        .in('status', ['申請中', '差し戻し中'])
+        .in('status', ['申請中', '差し戻し中', '取り下げ'])
         .order('created_at', { ascending: false })
       if (error) { setContractsError('契約一覧の取得に失敗しました: ' + error.message); setContractsLoading(false); return }
       setFlowContracts((data || []) as Contract[])
@@ -683,7 +683,7 @@ export default function AdminDashboard() {
         .from('contracts')
         .select(CONTRACT_COLUMNS)
         .eq('work_place', '社内')
-        .in('status', ['申請中', '差し戻し中'])
+        .in('status', ['申請中', '差し戻し中', '取り下げ'])
         .order('created_at', { ascending: false })
       if (error) { setInternalContractsError('社内案件の取得に失敗しました: ' + error.message); setInternalContractsLoading(false); return }
       setInternalFlowContracts((data || []) as Contract[])
@@ -866,10 +866,12 @@ export default function AdminDashboard() {
     : flowContracts.filter(c => {
         if (contractsSubTab === '承認待ち') return c.status === '申請中'
         if (contractsSubTab === '差し戻し中') return c.status === '差し戻し中'
+        if (contractsSubTab === '取り下げ') return c.status === '取り下げ'
         return false
       })
   const contractsPendingCount = flowContracts.filter(c => c.status === '申請中').length
   const contractsRejectedCount = flowContracts.filter(c => c.status === '差し戻し中').length
+  const contractsWithdrawnCount = flowContracts.filter(c => c.status === '取り下げ').length
   const contractsApprovedCount = approvedTotalCount
 
   const {
@@ -916,10 +918,12 @@ export default function AdminDashboard() {
     : internalFlowContracts.filter(c => {
         if (internalContractsSubTab === '承認待ち') return c.status === '申請中'
         if (internalContractsSubTab === '差し戻し中') return c.status === '差し戻し中'
+        if (internalContractsSubTab === '取り下げ') return c.status === '取り下げ'
         return false
       })
   const internalPendingCount = internalFlowContracts.filter(c => c.status === '申請中').length
   const internalRejectedCount = internalFlowContracts.filter(c => c.status === '差し戻し中').length
+  const internalWithdrawnCount = internalFlowContracts.filter(c => c.status === '取り下げ').length
   const internalApprovedCount = internalApprovedTotalCount
 
   // アルバイト誓約書タブの承認待ち件数バッジ（2026-07-23追加）
@@ -1150,13 +1154,14 @@ export default function AdminDashboard() {
   }: {
     value: ContractSubTab
     setValue: (v: ContractSubTab) => void
-    counts: { pending: number; rejected: number; approved: number }
+    counts: { pending: number; rejected: number; approved: number; withdrawn: number }
     clear: () => void
   }) => {
     const items = [
       { key: '承認待ち' as ContractSubTab, label: '承認待ち', count: counts.pending },
       { key: '差し戻し中' as ContractSubTab, label: '差し戻し', count: counts.rejected },
       { key: '承認済み' as ContractSubTab, label: '承認済み・署名状況', count: counts.approved },
+      { key: '取り下げ' as ContractSubTab, label: '取り下げ', count: counts.withdrawn },
     ]
 
     return (
@@ -1447,7 +1452,7 @@ export default function AdminDashboard() {
         {activeTab === 'contracts' && (
           <div className="space-y-6">
             <HeroSummary title="契約一覧" description="社外案件の契約状況を確認し、承認・差し戻し・署名状況を管理できます。" items={contractSummary} />
-            <SubTabs value={contractsSubTab} setValue={setContractsSubTab} counts={{ pending: contractsPendingCount, rejected: contractsRejectedCount, approved: contractsApprovedCount }} clear={() => { setSelectedIds(new Set()); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }} />
+            <SubTabs value={contractsSubTab} setValue={setContractsSubTab} counts={{ pending: contractsPendingCount, rejected: contractsRejectedCount, approved: contractsApprovedCount, withdrawn: contractsWithdrawnCount }} clear={() => { setSelectedIds(new Set()); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }} />
             <BulkPanel
               visible={contractsSubTab === '承認待ち' && bulkTargets.length > 0}
               selectedSize={selectedIds.size}
@@ -1533,7 +1538,7 @@ export default function AdminDashboard() {
                 <HeroSummary title="社内承認" description="社内案件の承認状況と署名状況を確認できます。" items={internalSummary} compact />
               </div>
             </section>
-            <SubTabs value={internalContractsSubTab} setValue={setInternalContractsSubTab} counts={{ pending: internalPendingCount, rejected: internalRejectedCount, approved: internalApprovedCount }} clear={() => { setInternalSelectedIds(new Set()); setInternalShowBulkApproveConfirm(false); setInternalBulkApproveDone(null) }} />
+            <SubTabs value={internalContractsSubTab} setValue={setInternalContractsSubTab} counts={{ pending: internalPendingCount, rejected: internalRejectedCount, approved: internalApprovedCount, withdrawn: internalWithdrawnCount }} clear={() => { setInternalSelectedIds(new Set()); setInternalShowBulkApproveConfirm(false); setInternalBulkApproveDone(null) }} />
             <BulkPanel
               visible={internalContractsSubTab === '承認待ち' && internalBulkTargets.length > 0}
               selectedSize={internalSelectedIds.size}

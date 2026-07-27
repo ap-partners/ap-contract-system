@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/withdrawn-cleanup",
       "schedule": "0 17 * * *"
+    },
+    {
+      "path": "/api/cron/csvmeta-cleanup",
+      "schedule": "0 18 * * *"
     }
   ]
 }

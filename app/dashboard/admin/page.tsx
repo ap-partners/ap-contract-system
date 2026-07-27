@@ -425,6 +425,8 @@ export default function AdminDashboard() {
   }
 
   const [flowContracts, setFlowContracts] = useState<Contract[]>([])
+  // 取り下げ済み申請の削除（2026-07-27追加）：status='取り下げ'の行のみDELETE可能なようRLSで制限済み。
+  const [deletingWithdrawnId, setDeletingWithdrawnId] = useState<string | null>(null)
   const {
     approvedContracts, approvedTotalCount, approvedHasMore, approvedLoadingMore,
     approvedSearchMode, approvedSearching, approvedSearchNotice,
@@ -1037,7 +1039,6 @@ export default function AdminDashboard() {
 
   // 取り下げ済み申請の削除（2026-07-27追加）：契約一覧・社内承認どちらの一覧からも呼べるよう、
   // 更新先のsetterを引数で受け取る共通実装。status='取り下げ'の行のみDELETE可能なようRLSで制限済み。
-  const [deletingWithdrawnId, setDeletingWithdrawnId] = useState<string | null>(null)
   const handleDeleteWithdrawn = async (contractId: string, setter: Dispatch<SetStateAction<Contract[]>>) => {
     const ok = await confirmDialog({
       title: '取り下げ申請の削除',

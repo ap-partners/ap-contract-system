@@ -214,6 +214,8 @@ export default function SalesDashboard() {
   // 「完了」（署名済み・完了）は蓄積型のため共通フックで直近45日・ページ単位で取得する。
   // それ以外（進行中・要説明・差し戻し・署名待ち）はフロー型なので全件取得のまま。
   const [flowContracts, setFlowContracts] = useState<Contract[]>([])
+  // 取り下げ済み申請の削除（2026-07-27追加）：status='取り下げ'の行のみDELETE可能なようRLSで制限済み。
+  const [deletingWithdrawnId, setDeletingWithdrawnId] = useState<string | null>(null)
   const deptNoRef = useRef<number | null>(null)
   const {
     approvedContracts, approvedTotalCount, approvedHasMore, approvedLoadingMore,
@@ -489,8 +491,6 @@ export default function SalesDashboard() {
     </div>
   )
 
-  // 取り下げ済み申請の削除（2026-07-27追加）：status='取り下げ'の行のみDELETE可能なようRLSで制限済み。
-  const [deletingWithdrawnId, setDeletingWithdrawnId] = useState<string | null>(null)
   const handleDeleteWithdrawn = async (contractId: string) => {
     const ok = await confirmDialog({
       title: '取り下げ申請の削除',

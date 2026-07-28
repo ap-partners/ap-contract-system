@@ -186,6 +186,15 @@ export default function ChatbotWidget() {
     requestAnimationFrame(() => questionInputRef.current?.focus())
   }
 
+  // 入力欄の自動高さ調整（TOKIUM等と同じく、改行するたびに枠が広がる。上限を超えたら内部スクロール）
+  const QUESTION_INPUT_MAX_HEIGHT = 120
+  useEffect(() => {
+    const el = questionInputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, QUESTION_INPUT_MAX_HEIGHT) + 'px'
+  }, [questionText, submitted])
+
   const handleSubmitQuestion = async () => {
     const text = questionText.trim()
     if (!text || !userId) return
@@ -358,7 +367,8 @@ export default function ChatbotWidget() {
                   placeholder="解決しない場合はこちらから質問を送れます"
                   rows={1}
                   maxLength={1000}
-                  className="max-h-24 min-h-[38px] flex-1 resize-none rounded-xl border border-[#E8EDF5] bg-white px-3 py-2 text-sm text-[#1F2937] outline-none focus:border-[#F59E42]"
+                  style={{ maxHeight: QUESTION_INPUT_MAX_HEIGHT }}
+                  className="min-h-[38px] flex-1 resize-none overflow-y-auto rounded-xl border border-[#E8EDF5] bg-white px-3 py-2 text-sm leading-6 text-[#1F2937] outline-none focus:border-[#F59E42]"
                 />
                 <button
                   onClick={handleSubmitQuestion}

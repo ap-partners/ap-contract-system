@@ -62,6 +62,28 @@ type RequestRow = {
 }
 
 type TabType = 'overview' | 'requests' | 'contracts' | 'internal' | 'csvImport' | 'renewal' | 'master' | 'pledges' | 'accounts' | 'faq'
+// 2026-07-29：タブ数増加（10個）による横長化の解消として、ナビゲーションを
+// 「サマリー／承認業務／データ登録／運用管理」の4グループの2階層タブに再編。
+// 各タブが実際にどのグループに属するかを1箇所で管理する対応表（伊藤さん承認済みの案A）。
+type TabGroupKey = 'overview' | 'approval' | 'data' | 'ops'
+const TAB_GROUP: Record<TabType, TabGroupKey> = {
+  overview: 'overview',
+  requests: 'data',
+  contracts: 'approval',
+  internal: 'approval',
+  csvImport: 'data',
+  renewal: 'approval',
+  pledges: 'approval',
+  master: 'data',
+  accounts: 'ops',
+  faq: 'ops',
+}
+const TAB_GROUP_LABEL: Record<TabGroupKey, { label: string; icon: IconName }> = {
+  overview: { label: 'サマリー', icon: 'grid' },
+  approval: { label: '承認業務', icon: 'check' },
+  data: { label: 'データ登録', icon: 'upload' },
+  ops: { label: '運用管理', icon: 'user' },
+}
 // 2026-07-29：更新期限管理タブ内のサブタブ（期限間近の更新候補／契約状況モニタリング）。
 // 従来は同一タブ内に2つの一覧が縦に積み上がって表示され、下側（契約状況モニタリング）が
 // スクロールしないと見えない・見落としやすいという伊藤さんの指摘を受けて分割した。
@@ -401,6 +423,12 @@ export default function AdminDashboard() {
   const deptNameByNo = useDeptNameMap()
   const [activeTab, setActiveTab] = useState<TabType>('overview')
   const [renewalSubTab, setRenewalSubTab] = useState<RenewalSubTab>('candidates')
+  // 2026-07-29：グループタブ（承認業務／データ登録／運用管理）を再度開いたとき、
+  // 前回そのグループ内で最後に見ていたタブへ自動で戻すための記憶（伊藤さんとの合意事項）。
+  const [lastTabInGroup, setLastTabInGroup] = useState<Partial<Record<TabGroupKey, TabType>>>({})
+  useEffect(() => {
+    setLastTabInGroup(prev => ({ ...prev, [TAB_GROUP[activeTab]]: activeTab }))
+  }, [activeTab])
 
   const [requests, setRequests] = useState<RequestRow[]>([])
   const [reqLoading, setReqLoading] = useState(true)
@@ -1022,18 +1050,46 @@ export default function AdminDashboard() {
   const isInternalApprover = user.user_metadata?.is_internal_approver === true
   const isAccountAdmin = user.user_metadata?.is_account_admin === true
 
-  const tabs: { key: TabType; label: string; icon: IconName; count?: number }[] = [
-    { key: 'overview', label: 'サマリー', icon: 'grid' },
-    { key: 'requests', label: '依頼管理', icon: 'file', count: pendingTotalCountAll },
+  // 2026-07-29：タブ横長化対策として「承認業務／データ登録／運用管理」の3グループ＋独立の
+  // 「サマリー」の計4グループへ再編（伊藤さんと合意した案A）。各グループの中身は従来のタブをそのまま
+  // 移動しただけで、タブ自体の機能・遷移先（activeTab）は一切変更していない。
+  // 更新期限管理タブだけは、期限間近の更新候補／契約状況モニタリングの内訳を見せるため
+  // 単一のバッジではなく2つの件数バッジを個別に表示する（下のnav内、renewalの特別分岐を参照）。
+  const monitoringPendingCount = monitoringRows.filter(r => r.topSeverity !== 1 && r.actionStatus !== '解消').length
+  const approvalTabs: { key: TabType; label: string; icon: IconName; count?: number }[] = [
     { key: 'contracts', label: '契約一覧', icon: 'list' },
     ...(isInternalApprover ? [{ key: 'internal' as TabType, label: '社内承認', icon: 'shield' as IconName, count: internalPendingCount }] : []),
-    { key: 'csvImport', label: 'CSVインポート', icon: 'upload' },
-    { key: 'renewal', label: '更新期限管理', icon: 'clock', count: renewalCandidates.length },
     { key: 'pledges', label: 'アルバイト誓約書', icon: 'file', count: pledgesPendingCount },
+    { key: 'renewal', label: '更新期限管理', icon: 'clock' },
+  ]
+  const dataTabs: { key: TabType; label: string; icon: IconName; count?: number }[] = [
+    { key: 'requests', label: '依頼管理', icon: 'file', count: pendingTotalCountAll },
+    { key: 'csvImport', label: 'CSVインポート', icon: 'upload' },
     { key: 'master', label: 'マスタ管理', icon: 'building' },
+  ]
+  const opsTabs: { key: TabType; label: string; icon: IconName; count?: number }[] = [
     ...(isAccountAdmin ? [{ key: 'accounts' as TabType, label: 'アカウント管理', icon: 'user' as IconName }] : []),
     { key: 'faq', label: 'FAQ管理', icon: 'file', count: faqUnansweredCount },
   ]
+  const groupTabs: Record<TabGroupKey, { key: TabType; label: string; icon: IconName; count?: number }[]> = {
+    overview: [{ key: 'overview', label: 'サマリー', icon: 'grid' }],
+    approval: approvalTabs,
+    data: dataTabs,
+    ops: opsTabs,
+  }
+  // グループ単位の合計件数（「注意を引く」目的のみ。内訳は各グループを開いた先で確認する設計）
+  const groupBadge: Record<TabGroupKey, number> = {
+    overview: 0,
+    approval: internalPendingCount + pledgesPendingCount + renewalCandidates.length + monitoringPendingCount,
+    data: pendingTotalCountAll,
+    ops: faqUnansweredCount,
+  }
+  const groupOrder: TabGroupKey[] = ['overview', 'approval', 'data', 'ops']
+  const activeGroup = TAB_GROUP[activeTab]
+  const currentGroupTabs = groupTabs[activeGroup]
+  const openGroup = (g: TabGroupKey) => {
+    setActiveTab(lastTabInGroup[g] ?? groupTabs[g][0].key)
+  }
 
   // サマリータブ用：ドメイン横断で「今どこに未対応があるか」を一目で見せるカード（2026-07-14新設）。
   // 実データのある3枚（依頼・契約・社内承認）はクリックで該当タブへ切り替わる。
@@ -1350,28 +1406,66 @@ export default function AdminDashboard() {
       </header>
 
       <main className="mx-auto max-w-[1600px] px-6 py-8 lg:px-8">
-        <nav className="mb-6 border-b border-[#E8EDF5]">
-          <div className="flex flex-nowrap gap-8">
-            {tabs.map(tab => {
-              const active = activeTab === tab.key
+        {/* 2026-07-29：タブ横長化対策の2階層ナビゲーション。1階層目＝グループの大きい角丸ピル、
+            2階層目＝地色の帯の中に置いた従来の下線タブ。伊藤さんとモックアップで合意した「階層が
+            下がるほど視覚的な重みを落とす」設計（案A）。1階層目のバッジは各グループ合計の注意喚起用で、
+            内訳は2階層目を開いてから確認する設計にしている。 */}
+        <nav className="mb-6">
+          <div className="flex flex-wrap gap-2">
+            {groupOrder.map(g => {
+              const active = activeGroup === g
+              const meta = TAB_GROUP_LABEL[g]
+              const badge = groupBadge[g]
               return (
                 <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
-                  className={`group relative flex shrink-0 items-center gap-2 whitespace-nowrap px-1 pb-4 text-sm font-semibold transition ${active ? 'text-[#2F5FD0]' : 'text-[#1F2937] hover:text-[#2F5FD0]'}`}
+                  key={g}
+                  onClick={() => openGroup(g)}
+                  className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${active ? 'bg-[#2F5FD0] text-white' : 'border border-[#E8EDF5] bg-white text-[#1F2937] hover:border-[#2F5FD0] hover:text-[#2F5FD0]'}`}
                 >
-                  <Icon name={tab.icon} className="h-5 w-5" />
-                  {tab.label}
-                  {!!tab.count && (
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${active ? 'bg-[#2F5FD0] text-white' : 'bg-[#E74C3C] text-white'}`}>
-                      {tab.count}
+                  <Icon name={meta.icon} className="h-[18px] w-[18px]" />
+                  {meta.label}
+                  {!!badge && (
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${active ? 'bg-white/25 text-white' : 'bg-[#E74C3C] text-white'}`}>
+                      {badge}
                     </span>
                   )}
-                  <span className={`absolute bottom-[-1px] left-0 h-0.5 rounded-full bg-[#2F5FD0] transition-all duration-300 ${active ? 'w-full' : 'w-0 group-hover:w-full'}`} />
                 </button>
               )
             })}
           </div>
+
+          {currentGroupTabs.length > 1 && (
+            <div className="rounded-b-xl border border-t-0 border-[#E8EDF5] bg-[#F8FAFD] px-4 pt-3">
+              <div className="flex flex-nowrap gap-8">
+                {currentGroupTabs.map(tab => {
+                  const active = activeTab === tab.key
+                  return (
+                    <button
+                      key={tab.key}
+                      onClick={() => setActiveTab(tab.key)}
+                      className={`group relative flex shrink-0 items-center gap-2 whitespace-nowrap px-1 pb-3 text-sm font-semibold transition ${active ? 'text-[#2F5FD0]' : 'text-[#1F2937] hover:text-[#2F5FD0]'}`}
+                    >
+                      <Icon name={tab.icon} className="h-5 w-5" />
+                      {tab.label}
+                      {tab.key === 'renewal' ? (
+                        <span className="flex items-center gap-1">
+                          <span className="rounded-full bg-[#EAF1FF] px-2 py-0.5 text-xs font-semibold text-[#2F5FD0]">{renewalCandidates.length}</span>
+                          <span className="rounded-full bg-[#FFF3E8] px-2 py-0.5 text-xs font-semibold text-[#F59E42]">{monitoringPendingCount}</span>
+                        </span>
+                      ) : (
+                        !!tab.count && (
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${active ? 'bg-[#2F5FD0] text-white' : 'bg-[#E74C3C] text-white'}`}>
+                            {tab.count}
+                          </span>
+                        )
+                      )}
+                      <span className={`absolute bottom-[-1px] left-0 h-0.5 rounded-full bg-[#2F5FD0] transition-all duration-300 ${active ? 'w-full' : 'w-0 group-hover:w-full'}`} />
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </nav>
 
         {activeTab === 'overview' && (

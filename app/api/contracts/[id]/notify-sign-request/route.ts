@@ -18,7 +18,7 @@
 // 同じロジックでフォールバック計算する（docs/SYSTEM_DESIGN.md 10章 2026-07-09決定）。
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { sendStaffLoginCodeMail, sendStaffDocumentReadyMail } from '@/lib/mail'
+import { sendStaffLoginCodeMail, sendStaffDocumentReadyMail, sendExplainNeededMail } from '@/lib/mail'
 import { generateSignAuthCode, computeSignAuthCodeExpiry } from '@/lib/signAuthCode'
 import { getAuthenticatedStaff } from '@/lib/apiAuth'
 
@@ -73,6 +73,24 @@ export async function POST(
       : (contract.closing_pattern === 'auto' || contract.closing_pattern === null) // 指定しない（自動送信）、およびパターンB（締結パターン選択が無いため常にこちら扱い）
 
   if (!shouldTransition) {
+    // 2026-07-29追加：締結パターンが「対面」「印刷」で、かつ承認直後（trigger=auto_approve）の
+    // 呼び出しである場合、これまでは何も起きず担当営業がダッシュボードを自分で見に行かない限り
+    // 承認されたことに気づけなかった（伊藤さん指摘）。承認された旨・説明対応が必要な旨を
+    // 担当営業へメールで通知する（従業員へのメール送信・ステータス遷移は「説明完了」ボタンまで
+    // 行わない、という既存の設計はそのまま維持）。
+    // 呼び出し元（handleApprove等）はすべて「実際に申請中→SSC承認済みへ遷移できた時だけ」この
+    // APIを呼ぶ設計になっているため、ここで重複送信になる心配はない。
+    if (trigger === 'auto_approve' && (contract.closing_pattern === 'face' || contract.closing_pattern === 'print') && contract.created_by) {
+      try {
+        const { data: submitterUser } = await supabaseAdmin.auth.admin.getUserById(contract.created_by)
+        const submitterEmail = submitterUser?.user?.email
+        if (submitterEmail) {
+          await sendExplainNeededMail(submitterEmail, contract.created_by_name || null, id)
+        }
+      } catch {
+        // 通知メールの失敗は承認フロー自体をブロックしない（ログのみ・UIには表示しない）
+      }
+    }
     return NextResponse.json({ sent: false })
   }
 

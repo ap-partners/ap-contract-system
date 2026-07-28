@@ -404,6 +404,77 @@ export async function sendStaffDocumentReadyMail(
   })
 }
 
+// ===== 締結パターン「対面」「印刷」：承認後の説明対応が必要な旨を担当営業へ通知 =====
+// 2026-07-29追加。伊藤さんの指摘：SSC・管理部が締結パターン「対面でその場説明」「印刷して
+// 説明後にリンク送付」の契約を承認しても、これまで担当営業には何も通知されず、ダッシュボードの
+// 「要説明」カードを自分で見に行かない限り気づけなかった（プル型のみ・プッシュ型の通知が無い状態）。
+// このメールで、承認された瞬間に担当営業へプッシュ型の通知を追加する。
+// 7-4章のルール通り、本文には対象従業員の氏名・給与・就業先等の個人情報は一切含めない
+// （宛先である担当営業自身の氏名のみ、既存の他メールと同じ例外として記載する）。
+export async function sendExplainNeededMail(
+  toEmail: string,
+  submitterName: string | null,
+  contractId: string
+): Promise<void> {
+  const url = `${APP_URL}/dashboard/sales/contracts/${contractId}`
+  const greetingHtml = submitterName ? `<tr><td style="padding:32px 32px 0 32px;font-family:sans-serif;font-size:14px;color:#1A2340;font-weight:bold;">${submitterName}　様</td></tr>` : ''
+  const subject = '【APパートナーズ】承認された契約書の説明対応をお願いします'
+
+  const text = [
+    submitterName ? `${submitterName}　様` : '',
+    'お疲れ様です。',
+    'APパートナーズ 契約書管理システムです。',
+    '',
+    'あなたが申請した契約書がSSC（または管理部）により承認されました。',
+    'この契約書は締結パターンで「対面でその場説明」または「印刷して説明後にリンク送付」が',
+    '選ばれているため、従業員への説明が完了するまで、従業員への確認用URLは自動送信されません。',
+    '',
+    '従業員への説明が完了しましたら、下記の契約詳細画面を開き「説明完了」を押してください。',
+    '押した時点で従業員へ確認用URLが送信されます。',
+    '',
+    url,
+    '',
+    'このメールに心当たりがない場合は、お手数ですが破棄してください。',
+  ].filter(Boolean).join('\n')
+
+  const html = `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F7FC;padding:24px 0;">
+  <tr><td align="center">
+    <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:8px;max-width:480px;width:100%;">
+      ${greetingHtml}
+      <tr><td style="padding:${submitterName ? '8px' : '32px'} 32px 8px 32px;font-family:sans-serif;font-size:14px;color:#1A2340;">
+        お疲れ様です。<br>APパートナーズ 契約書管理システムです。
+      </td></tr>
+      <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
+        あなたが申請した契約書がSSC（または管理部）により承認されました。<br>
+        締結パターンが「対面」または「印刷」のため、従業員への説明が完了するまで確認用URLは自動送信されません。<br>
+        説明が完了しましたら、下記から「説明完了」を押してください。
+      </td></tr>
+      <tr><td align="center" style="padding:24px 32px 28px 32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0">
+          <tr><td align="center" bgcolor="#1B3A8C" style="border-radius:6px;">
+            <a href="${url}" target="_blank" style="display:inline-block;padding:14px 32px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">
+              契約詳細を開く
+            </a>
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:20px 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
+        このメールに心当たりがない場合は、お手数ですが破棄してください。
+      </td></tr>
+    </table>
+  </td></tr>
+</table>`.trim()
+
+  await transporter.sendMail({
+    from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject,
+    text,
+    html,
+  })
+}
+
 // ===== 更新期限管理：残日数しきい値通知（フェーズ2） =====
 // 2026-07-15追加。部門ごとに1日1通のダイジェスト形式（伊藤さん決定）。
 // 宛先はTO=担当営業（自部門）、CC=SSC・管理部（伊藤さん決定）。

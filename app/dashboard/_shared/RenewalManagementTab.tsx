@@ -82,36 +82,9 @@ function daysBadge(days: number | null) {
   )
 }
 
-// トグル系UIの共通見た目。チャットC・⑤の「未定／一括申請／個別申請」トグルで使用。
-// disabledを指定したoptionは選択できず、選択理由をtitle属性で表示する。
-function Segmented({
-  value, onChange, options, disabled,
-}: {
-  value: string
-  onChange: (v: string) => void
-  options: { value: string; label: string; disabled?: boolean; disabledReason?: string }[]
-  disabled?: boolean
-}) {
-  return (
-    <div className="inline-flex rounded-full p-0.5" style={{ background: '#E8EDF5' }}>
-      {options.map(o => {
-        const isDisabled = disabled || o.disabled
-        return (
-          <button
-            key={o.value}
-            onClick={() => !isDisabled && onChange(o.value)}
-            disabled={isDisabled}
-            title={o.disabled ? o.disabledReason : undefined}
-            className="text-xs font-semibold rounded-full px-3 py-1.5 whitespace-nowrap transition disabled:cursor-not-allowed disabled:opacity-40"
-            style={value === o.value && !isDisabled ? { background: '#2F5FD0', color: '#fff' } : { color: '#6B7280' }}
-          >
-            {o.label}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
+// 2026-07-29：従来ここにあった「対応方針」セグメントトグル用の共通部品Segmentedは、
+// チェックボックス＋ボタン・チップ方式への置き換えに伴い使用箇所が無くなったため削除した
+// （伊藤さんご指摘対応。見せ方の改修のみでtriage_modeのデータ自体は変更していない）。
 
 const STATUS_LABEL: Record<string, string> = {
   pending: '確認中',
@@ -135,10 +108,76 @@ function periodReady(c: RenewalCandidate): boolean {
   return Boolean(c.new_employ_start && c.new_employ_end && c.new_dispatch_start && c.new_dispatch_end)
 }
 
-const TRIAGE_LABEL: Record<RenewalCandidate['triage_mode'], string> = {
-  undecided: '未対応',
-  bulk: '一括申請',
-  individual: '個別申請',
+// 2026-07-29新設：伊藤さんご指摘（この画面の仕組みを伝えた本人でも分かりにくい）を受けた
+// 使い方ヘルプ。専門用語を使わず、初めてこの画面を触る人でも迷わないレベルまで具体的に書く
+// （「中学生でも分かるレベルで」という伊藤さんの要望に合わせ、①〜⑤の手順で最初から最後まで
+// 通しで説明する形にした）。初期状態は閉じておき、画面を常時圧迫しないようにする。
+function UsageHelpPanel({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <div className="rounded-[18px] border border-[#E8EDF5] bg-white shadow-[0_10px_30px_rgba(15,23,42,.05)]">
+      <button
+        onClick={onToggle}
+        className="flex w-full items-center justify-between gap-2 px-5 py-4 text-left"
+      >
+        <span className="text-sm font-semibold text-[#2F5FD0]">この一覧の使い方</span>
+        <span className="text-xs font-semibold text-[#8B98B1]">{open ? '閉じる ▲' : '開く ▼'}</span>
+      </button>
+      {open && (
+        <div className="flex flex-col gap-4 border-t border-[#E8EDF5] px-5 py-4 text-xs leading-relaxed text-[#4B5563]">
+          <p className="text-[#1F2937]">
+            この一覧には、契約の期限（雇用期間・派遣期間の終了日）が近づいてきたスタッフが自動で表示されます。<br />
+            期限が来る前に、更新の手続きを進める必要があります。<br />
+            以下の①〜⑤の順番で対応してください。
+          </p>
+
+          <div>
+            <p className="mb-1 font-semibold text-[#1F2937]">①「データ元」を確認する</p>
+            <p>
+              「データ元」には、次の契約データをどうやって用意するかが書かれています。<br />
+              「CSV自動」は、システムが自動で次の契約データを見つけてくれる人です。<br />
+              「手入力」は、次の契約データをご自身で入力する必要がある人です。<br />
+              「手入力（クライアント変更）」は、派遣先が変わったため、今回だけご自身で入力する人です。
+            </p>
+          </div>
+
+          <div>
+            <p className="mb-1 font-semibold text-[#1F2937]">②内容を確認する</p>
+            <p>
+              氏名の右側にあるボタン（「更新内容を確認」「更新内容を入力」「対応方法を確認」）を押すと、前回契約との違いや、入力欄が開きます。<br />
+              「CSV自動」の人で、まだ次の契約データがCSVに無い場合は「CSVに新しい個別契約データがまだ反映されていません」と表示されます。<br />
+              その場合は「CSVインポートを依頼」で管理部に伝えるか、既に取り込み済みであれば「CSVを再検索」を押してください。
+            </p>
+          </div>
+
+          <div>
+            <p className="mb-1 font-semibold text-[#1F2937]">③進め方を選ぶ</p>
+            <p>
+              内容を確認できたら、その人をどう申請するか選びます。<br />
+              「一括申請に含める」にチェックを入れると、あとでまとめて自動的に申請が作られます（新しい期間の日付が確定していない間はチェックできません）。<br />
+              「個別に申請する」を押すと、申請画面に移動し、1件ずつ内容を見ながら申請できます。<br />
+              まだ判断できない場合は、どちらも選ばずそのままにしておいて構いません。
+            </p>
+          </div>
+
+          <div>
+            <p className="mb-1 font-semibold text-[#1F2937]">④契約を更新しない場合</p>
+            <p>
+              その人の契約を更新しないと決まった場合は、「更新しないで確定する」を押し、理由を入力してください。<br />
+              対応が必要な一覧から外れます。
+            </p>
+          </div>
+
+          <div>
+            <p className="mb-1 font-semibold text-[#1F2937]">⑤一括申請を実行する</p>
+            <p>
+              「一括申請に含める」にチェックを入れた人が1人でもいると、画面下部に「一括申請を実行」ボタンが表示されます。<br />
+              これを押すと、チェックを入れた人全員分の申請が一度に作成されます。
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function RenewalManagementTab({
@@ -148,6 +187,7 @@ export default function RenewalManagementTab({
   currentUserId, currentUserEmail, currentUserDeptName, canFinalize = true,
 }: Props) {
   const router = useRouter()
+  const [helpOpen, setHelpOpen] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [overrideReasonId, setOverrideReasonId] = useState<string | null>(null)
   const [overrideReasonText, setOverrideReasonText] = useState('')
@@ -235,6 +275,8 @@ export default function RenewalManagementTab({
 
   return (
     <div className="flex flex-col gap-5">
+      <UsageHelpPanel open={helpOpen} onToggle={() => setHelpOpen(v => !v)} />
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {kpiBuckets.map(b => (
           <div key={b.key} className="rounded-[18px] border border-[#E8EDF5] bg-white/86 p-5 backdrop-blur">
@@ -284,10 +326,22 @@ export default function RenewalManagementTab({
             }
             // 2026-07-16：右端ボタンの文言を状態表現から行動表現に統一（意思決定ログ⑨）
             const actionLabel = c.status === 'csv_pending' ? '対応方法を確認' : !isManual ? '更新内容を確認' : '更新内容を入力'
+            // 2026-07-29追加：「チェックしても見た目が何も変わらない」という伊藤さんご指摘への対応。
+            // 一括申請／個別申請どちらかに決まった行のカード自体を薄く色付けし、決定済みであることが
+            // スクロール中でも一目で分かるようにする。残日数バッジの赤・オレンジ（緊急度）と
+            // 混同しないよう、緊急度表現には使っていない青・紫のみを使う（伊藤さんとの合意事項）。
+            const rowAccent = c.triage_mode === 'bulk'
+              ? { background: '#F5F9FF', borderColor: '#BFD3F5' }
+              : c.triage_mode === 'individual'
+              ? { background: '#FAF7FF', borderColor: '#D7CBF5' }
+              : { background: '#FFFFFF', borderColor: '#E8EDF5' }
 
             return (
               <Fragment key={c.id}>
-                <article className="rounded-[18px] border border-[#E8EDF5] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)] transition hover:-translate-y-0.5 hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]">
+                <article
+                  className="rounded-[18px] border p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)] transition hover:-translate-y-0.5 hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]"
+                  style={rowAccent}
+                >
                   <div className="grid gap-4 lg:grid-cols-[minmax(200px,1.6fr)_90px_minmax(160px,0.9fr)_130px_150px_auto] lg:items-center">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -316,7 +370,11 @@ export default function RenewalManagementTab({
 
                     <div className="min-w-0">
                       <p className="mb-1 text-xs font-semibold text-[#6B7280]">データ元</p>
-                      <span className="text-xs font-semibold rounded-full px-2.5 py-1 whitespace-nowrap"
+                      {/* 2026-07-29修正：「手入力（クライアント変更）」が長い文字列のため、
+                          whitespace-nowrap+rounded-fullのままだと隣の列（操作ボタン）に
+                          はみ出して重なって見える不具合があった。折り返し可能にし、
+                          角丸を弱めて2行になっても崩れない形に変更（伊藤さんご指摘・2026-07-29）。 */}
+                      <span className="inline-block max-w-full whitespace-normal break-words rounded-xl px-2.5 py-1 text-xs font-semibold leading-4"
                         style={isManual ? { background: '#F3ECFF', color: '#5A3EC8' } : { background: '#EAF1FF', color: '#244CB3' }}>
                         {isManual ? (c.manual_override ? '手入力（クライアント変更）' : '手入力') : 'CSV自動'}
                       </span>
@@ -351,35 +409,65 @@ export default function RenewalManagementTab({
                     </div>
                   </div>
 
-                  {/* 2026-07-17追加（チャットC・⑤）：仕分けトグル（未定/一括申請/個別申請）。
-                      「更新しない」で確定済みの行には出さない（対象外のため）。純粋なブックキーピング
-                      フラグで、切り替え自体に副作用は無い（伊藤さん確定・2026-07-16）。 */}
+                  {/* 2026-07-29改修：従来の「対応方針」ラベル＋未対応/一括申請/個別申請の3択
+                      セグメントトグルは、抽象的すぎて分かりにくいという伊藤さんご指摘を受け、
+                      具体的な部品（一括申請に含めるチェックボックス／個別に申請するボタン・
+                      進行中チップ）に置き換えた。裏側のtriage_mode（undecided/bulk/individual）
+                      とその排他性・副作用の無さは変更していない。見せ方だけの改修。
+                      「更新しない」で確定済みの行には出さない（対象外のため）。 */}
                   {c.status !== 'not_renewing' && (
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <span className="text-[11px] font-semibold text-[#8B98B1]">対応方針</span>
-                      <Segmented
-                        value={c.triage_mode}
-                        onChange={v => setTriageMode(c.id, v as RenewalCandidate['triage_mode'])}
-                        disabled={!canFinalize}
-                        options={[
-                          { value: 'undecided', label: TRIAGE_LABEL.undecided },
-                          {
-                            value: 'bulk',
-                            label: TRIAGE_LABEL.bulk,
-                            disabled: !periodReady(c),
-                            disabledReason: '新しい雇用期間・派遣期間が確定してから選べます',
-                          },
-                          { value: 'individual', label: TRIAGE_LABEL.individual },
-                        ]}
-                      />
-                      {/* 2026-07-17追加（チャットD・⑤個別申請）：「個別申請」に仕分けた行にのみ、
-                          専用の「個別に申請する」ボタンを表示する。押すと初めて/apply（原契約
-                          プリフィル・最終確認直行）に遷移する。一括申請と違い、この画面内では
-                          内容確認・編集を完結させず/apply側に任せる（意思決定ログ2026-07-16参照）。
-                          SSCは閲覧のみのため表示しない。 */}
-                      {c.triage_mode === 'individual' && canFinalize && (
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                      {c.triage_mode === 'individual' ? (
+                        // 2026-07-17追加（チャットD・⑤個別申請）の導線を維持しつつ、2026-07-29に
+                        // 「進行中」であることが一目でわかるチップ表示へ変更（伊藤さんご指摘：
+                        // 途中で離脱した案件に気づかず二重に申請してしまう事故を防ぐため）。
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full px-3 py-1 text-xs font-semibold" style={{ background: '#F3ECFF', color: '#5A3EC8' }}>
+                            個別申請 進行中
+                          </span>
+                          {canFinalize && (
+                            <>
+                              <button
+                                onClick={() => router.push(`/apply?renewal=${c.id}`)}
+                                className="text-xs font-semibold underline"
+                                style={{ color: '#5A3EC8' }}
+                              >
+                                申請画面を開く
+                              </button>
+                              <button
+                                onClick={() => setTriageMode(c.id, 'undecided')}
+                                className="text-xs font-semibold underline text-[#8B98B1]"
+                              >
+                                取り消す
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-1">
+                          <label className={`flex items-center gap-2 text-xs font-semibold ${periodReady(c) ? 'text-[#1F2937]' : 'text-[#8B98B1]'}`}>
+                            <input
+                              type="checkbox"
+                              checked={c.triage_mode === 'bulk'}
+                              disabled={!canFinalize || !periodReady(c)}
+                              onChange={e => setTriageMode(c.id, e.target.checked ? 'bulk' : 'undecided')}
+                              className="h-4 w-4 rounded"
+                            />
+                            一括申請に含める
+                          </label>
+                          {/* 2026-07-29追加：従来はdisabled理由をtitle属性（ホバー時のみ表示）に
+                              頼っていたため、なぜ選べないか気づきにくいという伊藤さんご指摘への
+                              対応。常時見えるテキストに変更。 */}
+                          {!periodReady(c) && (
+                            <p className="text-[11px]" style={{ color: '#F59E42' }}>新しい雇用期間・派遣期間が確定してから選べます</p>
+                          )}
+                        </div>
+                      )}
+                      {/* 個別申請ボタンは、一括申請にチェック済み・既に個別申請進行中の場合は
+                          表示しない（同時に両方は選べない、という従来の排他性を維持）。 */}
+                      {c.triage_mode === 'undecided' && canFinalize && (
                         <button
-                          onClick={() => router.push(`/apply?renewal=${c.id}`)}
+                          onClick={async () => { await setTriageMode(c.id, 'individual'); router.push(`/apply?renewal=${c.id}`) }}
                           className="rounded-2xl px-3 py-1.5 text-xs font-semibold text-white transition hover:-translate-y-0.5"
                           style={{ background: '#5A3EC8' }}
                         >
@@ -676,6 +764,31 @@ export default function RenewalManagementTab({
                   各対象者について、新規の契約申請（申請中ステータス）が自動で作成されます。作成後は通常の申請と同じくSSC・管理部の承認が必要です。<br />
                   内容に誤りがないか、対象者ごとに「契約内容をすべて確認」で今一度ご確認ください。
                 </p>
+
+                {/* 2026-07-29追加：件数（{bulkCount}件）だけでは「本当にこの人たちで合っているか」
+                    「新しい期限は正しいか」を実行前に確認できないという伊藤さんご指摘への対応。
+                    対象者の氏名・社員番号・新しい期間終了日を一覧化する。件数が多い場合に
+                    確認ダイアログが縦に伸びすぎないよう、高さを固定してこの中だけスクロールさせる。 */}
+                <div className="mt-4 max-h-48 overflow-y-auto rounded-2xl border border-[#E8EDF5] bg-white">
+                  <ul className="divide-y divide-[#E8EDF5]">
+                    {bulkTargets.map(t => {
+                      const sameNewDate = t.new_employ_end && t.new_dispatch_end && t.new_employ_end === t.new_dispatch_end
+                      const newPeriodLabel = sameNewDate
+                        ? `〜${t.new_employ_end}`
+                        : `雇〜${t.new_employ_end || '―'} / 派〜${t.new_dispatch_end || '―'}`
+                      return (
+                        <li key={t.id} className="flex items-center justify-between gap-3 px-4 py-2 text-xs">
+                          <span className="font-semibold text-[#1F2937]">
+                            {t.staff_name || '―'}
+                            <span className="ml-1.5 font-normal text-[#8B98B1]">{t.employee_number}</span>
+                          </span>
+                          <span className="shrink-0 font-semibold" style={{ color: '#2F5FD0' }}>新期限 {newPeriodLabel}</span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+
                 <div className="mt-5 flex flex-col gap-3 sm:flex-row">
                   <button
                     onClick={() => handleExecuteBulkApply(bulkTargets)}

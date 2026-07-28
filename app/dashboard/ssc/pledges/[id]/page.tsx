@@ -12,6 +12,7 @@ import { useSessionCollisionGuard } from '@/lib/useSessionCollisionGuard'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 import PdfPreviewButton from '@/app/_shared/ui/PdfPreviewButton'
+import { useDeptNameMap, getApplicantLabel } from '@/app/dashboard/_shared/useDeptNameMap'
 
 type ScheduleRow = { label: string; start: string; end: string; breakMinutes: string; contractHours: string }
 
@@ -27,6 +28,8 @@ type PledgeDetail = {
   client_address: string | null
   client_tel: string | null
   office_id: string | null
+  // 2026-07-28追加：申請者表示を「部門名 氏名」に変更するため（select('*')で既に取得済み）
+  created_by_dept_no: number | null
   rejection_reason: string | null
   rejected_at: string | null
   approved_at: string | null
@@ -73,6 +76,8 @@ export default function SSCPledgeDetail() {
 
   const [user, setUser] = useState<any>(null)
   useSessionCollisionGuard(user?.id)
+  // 2026-07-28追加：申請者表示「部門名 氏名」用の部門名マップ
+  const deptNameByNo = useDeptNameMap()
   const [pledge, setPledge] = useState<PledgeDetail | null>(null)
   const [officeLabel, setOfficeLabel] = useState('')
   const [loading, setLoading] = useState(true)
@@ -259,7 +264,7 @@ export default function SSCPledgeDetail() {
                 : (officeLabel || '自社拠点')
             } />
             <Row label="申請日時" value={formatDateTime(pledge.created_at)} />
-            <Row label="申請者" value={pledge.created_by_name || '―'} />
+            <Row label="申請者" value={getApplicantLabel(pledge.created_by_name, pledge.created_by_dept_no, deptNameByNo)} />
           </div>
         </div>
 

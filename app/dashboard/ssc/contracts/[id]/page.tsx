@@ -9,6 +9,7 @@ import Image from 'next/image'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
+import { useDeptNameMap, getApplicantLabel } from '@/app/dashboard/_shared/useDeptNameMap'
 
 // ===== 型定義 =====
 
@@ -49,6 +50,8 @@ type ContractDetail = {
   approved_at: string | null
   created_by: string
   created_by_name: string | null
+  // 2026-07-28追加：申請者表示を「部門名 氏名」に変更するため（select('*')で既に取得済み）
+  created_by_dept_no: number | null
   created_at: string
   csvmeta_backup_file_id: string | null
   csvmeta_restored_at: string | null
@@ -278,6 +281,8 @@ export default function SSCContractDetail() {
   // 総合レビュー（QA監査2026-07-22）指摘C1対応：別タブで別アカウントにログインされ
   // 認証情報が裏で切り替わったことを検知したら、安全のため強制ログアウトする
   useSessionCollisionGuard(user?.id)
+  // 2026-07-28追加：申請者表示「部門名 氏名」用の部門名マップ
+  const deptNameByNo = useDeptNameMap()
   const [contract, setContract] = useState<ContractDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
@@ -720,7 +725,7 @@ export default function SSCContractDetail() {
                     総合レビュー指摘9対応（2026-07-27）：氏名未設定アカウントの申請では
                     created_by_nameがnullのまま保存され、内部IDの断片がそのまま画面に出てしまう
                     ケースがあったため、フォールバック文言を「(氏名未設定)」に統一 */}
-                {contract.created_by_name || '(氏名未設定)'}
+                {getApplicantLabel(contract.created_by_name, contract.created_by_dept_no, deptNameByNo)}
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-[160px_1fr]">

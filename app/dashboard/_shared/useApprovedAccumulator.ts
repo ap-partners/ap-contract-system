@@ -14,9 +14,11 @@ export const APPROVED_STATUSES = ['SSC承認済み', '署名待ち', '署名済�
 // 2026-07-27追加：withdrawn_reason/withdrawn_by/withdrawn_atを追加（取り下げ理由を詳細画面に
 // 表示するため。従来この3列がSELECT対象に含まれておらず、詳細画面にブロックを追加しても
 // データ自体が取得できていなかった）
-export const CONTRACT_COLUMNS = 'id, pattern, contract_type, document_type, work_place, status, created_by, created_by_name, created_at, rejection_reason, signed_at, warning_confirmations, warning_level, input_data, withdrawn_reason, withdrawn_by, withdrawn_at'
+// 2026-07-28追加：created_by_dept_no（申請者表示を「部門名 氏名」にするため。
+// docs/SYSTEM_DESIGN.md 10章 2026-07-28参照）
+export const CONTRACT_COLUMNS = 'id, pattern, contract_type, document_type, work_place, status, created_by, created_by_name, created_by_dept_no, created_at, rejection_reason, signed_at, warning_confirmations, warning_level, input_data, withdrawn_reason, withdrawn_by, withdrawn_at'
 // アルバイト誓約書（pledges）用（2026-07-24追加：署名待ち／署名済みタブの45日窓分割対応）
-export const PLEDGE_COLUMNS = 'id, document_type, status, work_place_type, client_name, created_by_name, created_at, signed_at, warning_level, auto_check_results, input_data, withdrawn_reason, withdrawn_by, withdrawn_at'
+export const PLEDGE_COLUMNS = 'id, document_type, status, work_place_type, client_name, created_by_name, created_by_dept_no, created_at, signed_at, warning_level, auto_check_results, input_data, withdrawn_reason, withdrawn_by, withdrawn_at'
 
 const windowStartIso = () => {
   const d = new Date()

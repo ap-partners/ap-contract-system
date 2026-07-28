@@ -19,6 +19,7 @@ import {
   hasAutoCheckWarning,
   getEmployPeriodLabel,
 } from '../_shared/contractDisplay'
+import { useDeptNameMap, getApplicantLabel } from '../_shared/useDeptNameMap'
 import { useContractListToolbar, buildDateSortOptions } from '../_shared/useContractListToolbar'
 import { useApprovedAccumulator, APPROVED_WINDOW_DAYS, CONTRACT_COLUMNS } from '../_shared/useApprovedAccumulator'
 import RenewalManagementTab from '../_shared/RenewalManagementTab'
@@ -169,6 +170,8 @@ export default function SSCDashboard() {
   // 総合レビュー（QA監査2026-07-22）指摘C1対応：別タブで別アカウントにログインされ
   // 認証情報が裏で切り替わったことを検知したら、安全のため強制ログアウトする
   useSessionCollisionGuard(user?.id)
+  // 2026-07-28追加：申請者表示「部門名 氏名」用の部門名マップ
+  const deptNameByNo = useDeptNameMap()
   // 「承認待ち」「差し戻し中」は対応が終われば別タブへ移るフロー型のため、件数は自然に少数のまま
   // 留まる。全件取得のままで問題ない（docs/SYSTEM_DESIGN.md 10章 2026-07-14参照）。
   const [flowContracts, setFlowContracts] = useState<Contract[]>([])
@@ -754,7 +757,7 @@ export default function SSCDashboard() {
                     <div className="min-w-0">
                       <p className="mb-2 text-xs font-semibold text-[#6B7280]">申請日時</p>
                       <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{formatDateTime(contract.created_at)}</p>
-                      <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {contract.created_by_name || '(氏名未設定)'}</p>
+                      <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {getApplicantLabel(contract.created_by_name, contract.created_by_dept_no, deptNameByNo)}</p>
                     </div>
                   </div>
 

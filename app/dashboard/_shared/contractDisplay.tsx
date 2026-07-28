@@ -18,6 +18,8 @@ export type ContractForDisplay = {
   status: ContractStatus
   created_by: string
   created_by_name?: string | null
+  // 2026-07-28追加：申請者表示を「部門名 氏名」に変更するため
+  created_by_dept_no?: number | null
   created_at: string
   rejection_reason: string | null
   // 2026-07-27追加：取り下げ理由の表示のため（差し戻し理由と対称の扱い）

@@ -20,6 +20,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, getAuthHeader } from '@/lib/supabase'
 import { useApprovedAccumulator, APPROVED_WINDOW_DAYS, PLEDGE_COLUMNS } from './useApprovedAccumulator'
+import { useDeptNameMap, getApplicantLabel } from './useDeptNameMap'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import { SubTabBar } from './SubTabBar'
@@ -31,6 +32,8 @@ type PledgeRow = {
   work_place_type: string
   client_name: string | null
   created_by_name: string | null
+  // 2026-07-28追加：申請者表示を「部門名 氏名」に変更するため
+  created_by_dept_no: number | null
   created_at: string
   signed_at: string | null
   warning_level: 'none' | 'yellow' | 'red' | null
@@ -73,6 +76,8 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
   const router = useRouter()
   const { showError, showSuccess } = useToast()
   const confirmDialog = useConfirm()
+  // 2026-07-28追加：申請者表示「部門名 氏名」用の部門名マップ
+  const deptNameByNo = useDeptNameMap()
   // 承認待ち・差し戻し中：日付窓なしの単純取得（従来通り。件数が小さい前提）
   const [flowRows, setFlowRows] = useState<PledgeRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -482,7 +487,7 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
                   <div className="min-w-0">
                     <p className="mb-2 text-xs font-semibold text-[#6B7280]">申請日時</p>
                     <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{formatDateTime(r.created_at)}</p>
-                    <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {r.created_by_name || '―'}</p>
+                    <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {getApplicantLabel(r.created_by_name, r.created_by_dept_no, deptNameByNo)}</p>
                   </div>
                 </div>
 

@@ -975,8 +975,8 @@ function MyRequestCard({ r, includeCompleted, onCancel }: {
           <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{formatDateTime(r.requested_at)}</p>
           <p className="mb-1 mt-3 text-xs font-semibold text-[#6B7280]">申請者</p>
           <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">
+            {r.requested_by_dept && <span className="text-[#6B7280]">{r.requested_by_dept}　</span>}
             {r.requested_by_name || '-'}
-            {r.requested_by_dept && <span className="text-[#6B7280]">（{r.requested_by_dept}）</span>}
           </p>
         </div>
 

@@ -8,7 +8,7 @@
 // このタブはクライアントから直接Supabaseへ読み書きする（他の管理タブと違いAPIルートを
 // 経由しない設計。書き込み対象がシンプルな2テーブルのみのため）。
 import { useCallback, useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { supabase, getAuthHeader } from '@/lib/supabase'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import { FaqEntry, FaqInquiry } from '@/lib/faq'
@@ -84,12 +84,40 @@ function AnswerForm({ inquiry, onDone }: { inquiry: FaqInquiry; onDone: () => vo
       .eq('id', inquiry.id)
       .eq('status', 'unanswered')
 
-    setSaving(false)
     if (updateError) {
+      setSaving(false)
       showError('回答済みへの更新に失敗しました: ' + updateError.message)
       return
     }
-    showSuccess('回答を登録し、FAQに追加しました。')
+
+    // 2026-07-29追加：質問した本人へ、回答内容をそのまま記載したメールを送信する
+    // （伊藤さん指摘：回答してもFAQに追加されるだけでは質問者本人が気づけないため）。
+    // メール送信に失敗しても、FAQ登録自体は既に完了しているため処理は止めず、
+    // その旨だけ分かるようにトーストの文言を変える。
+    let mailNotice = ''
+    try {
+      const authHeader = await getAuthHeader()
+      const res = await fetch('/api/faq/notify-answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader },
+        body: JSON.stringify({
+          toEmail: inquiry.submitted_by_email,
+          questionText: title.trim() || inquiry.question_text,
+          answerText: answer.trim(),
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        mailNotice = '（質問者へのメール送信には失敗しました）'
+      } else if (json?.reason === 'no_email') {
+        mailNotice = '（質問者のメールアドレスが不明なため、メールは送信されていません）'
+      }
+    } catch {
+      mailNotice = '（質問者へのメール送信には失敗しました）'
+    }
+
+    setSaving(false)
+    showSuccess(`回答を登録し、FAQに追加しました。${mailNotice}`)
     onDone()
   }
 

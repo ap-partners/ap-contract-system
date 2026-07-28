@@ -637,6 +637,75 @@ export async function sendCsvImportMatchedMail(
   })
 }
 
+// ===== FAQチャットボット：質問への回答メール（2026-07-29追加） =====
+// 管理部が「FAQ管理」タブから質問に回答した際、質問した本人（submitted_by_email）へ
+// 回答内容をそのまま記載して送る。従来、回答してもfaq_entriesへ登録されるだけで質問者本人には
+// 何も通知されず、自分で再度チャットボットを開いて検索し直さない限り気づけなかった問題への対応
+// （伊藤さん指摘・2026-07-29）。社内向けの業務連絡メールのため、氏名を含めない代わりに
+// 質問文・回答文をそのまま本文に記載する（社外秘の契約内容等は含まれないため7-4章のルールには
+// 抵触しない）。
+export async function sendFaqAnswerMail(
+  toEmail: string,
+  questionText: string,
+  answerText: string
+): Promise<void> {
+  const subject = '【APパートナーズ】チャットボットへのご質問に回答がありました'
+
+  const text = [
+    'お疲れ様です。',
+    'APパートナーズ 契約書管理システムです。',
+    '',
+    'チャットボットからお送りいただいたご質問に、管理部より回答がありました。',
+    '',
+    '【ご質問】',
+    questionText,
+    '',
+    '【回答】',
+    answerText,
+    '',
+    'この内容は今後、チャットボットの「よくある質問」からも検索できるようになります。',
+    '',
+    '※本メールは自動送信です。このアドレスへの返信には対応しておりません。追加のご質問がある場合は、チャットボットから改めて質問を送ってください。',
+  ].join('\n')
+
+  const html = `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F7FC;padding:24px 0;">
+  <tr><td align="center">
+    <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:8px;max-width:480px;width:100%;">
+      <tr><td style="padding:32px 32px 8px 32px;font-family:sans-serif;font-size:14px;color:#1A2340;">
+        お疲れ様です。<br>APパートナーズ 契約書管理システムです。
+      </td></tr>
+      <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
+        チャットボットからお送りいただいたご質問に、管理部より回答がありました。
+      </td></tr>
+      <tr><td style="padding:16px 32px 0 32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#F5F7FC;border-radius:6px;">
+          <tr><td style="padding:14px 16px 4px 16px;font-family:sans-serif;font-size:12px;color:#5A6A8A;font-weight:bold;">ご質問</td></tr>
+          <tr><td style="padding:0 16px 12px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;white-space:pre-line;">${questionText}</td></tr>
+          <tr><td style="padding:0 16px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
+          <tr><td style="padding:12px 16px 4px 16px;font-family:sans-serif;font-size:12px;color:#5A6A8A;font-weight:bold;">回答</td></tr>
+          <tr><td style="padding:0 16px 14px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;white-space:pre-line;line-height:1.7;">${answerText}</td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:16px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
+        この内容は今後、チャットボットの「よくある質問」からも検索できるようになります。
+      </td></tr>
+      <tr><td style="padding:20px 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
+        ※本メールは自動送信です。このアドレスへの返信には対応しておりません。追加のご質問がある場合は、チャットボットから改めて質問を送ってください。
+      </td></tr>
+    </table>
+  </td></tr>
+</table>`.trim()
+
+  await transporter.sendMail({
+    from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject,
+    text,
+    html,
+  })
+}
+
 export async function sendStaffRegisterMatchedMail(
   toEmail: string,
   staffName: string | null,

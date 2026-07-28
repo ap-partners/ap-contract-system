@@ -22,6 +22,7 @@ import RenewalManagementTab from '../_shared/RenewalManagementTab'
 import PledgeListSection from '../_shared/PledgeListSection'
 import LoggedInUserChip from '../_shared/LoggedInUserChip'
 import NewDocumentMenu from '../_shared/NewDocumentMenu'
+import ChatbotWidget from '../_shared/ChatbotWidget'
 import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
 import { useDebouncedSearch } from '../_shared/useDebouncedSearch'
 import { SubTabBar } from '../_shared/SubTabBar'
@@ -688,6 +689,7 @@ export default function SalesDashboard() {
           <div className="flex items-center gap-3">
             <NewDocumentMenu />
             <div className="h-8 w-px bg-[#E8EDF5]" />
+            <ChatbotWidget />
             <LoggedInUserChip userId={user?.id} />
             <button onClick={handleLogout} className={headerSecondaryButton}>
               <Icon name="logout" className="h-4 w-4" />

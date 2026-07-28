@@ -29,6 +29,7 @@ import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import PledgeListSection from '../_shared/PledgeListSection'
 import LoggedInUserChip from '../_shared/LoggedInUserChip'
 import NewDocumentMenu from '../_shared/NewDocumentMenu'
+import ChatbotWidget from '../_shared/ChatbotWidget'
 import { SubTabBar } from '../_shared/SubTabBar'
 
 type Contract = ContractForDisplay
@@ -428,6 +429,7 @@ export default function SSCDashboard() {
           <div className="flex items-center gap-3">
             <NewDocumentMenu />
             <div className="h-8 w-px bg-[#E8EDF5]" />
+            <ChatbotWidget />
             <LoggedInUserChip userId={user?.id} />
             <button
               onClick={handleLogout}

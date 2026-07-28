@@ -27,6 +27,8 @@ import ContractMonitoringSection from '../_shared/ContractMonitoringSection'
 import { useContractMonitoring } from '../_shared/useContractMonitoring'
 import MasterManagementTab from '../_shared/MasterManagementTab'
 import AccountManagementTab from '../_shared/AccountManagementTab'
+import FaqManagementTab from '../_shared/FaqManagementTab'
+import ChatbotWidget from '../_shared/ChatbotWidget'
 import { useDebouncedSearch, escapeForPostgrestFilter } from '../_shared/useDebouncedSearch'
 import { STAFF_EXPRESS_COLUMNS } from '@/lib/staffExpressColumns'
 import { clampDateYear } from '@/app/apply/_lib/helpers'
@@ -59,7 +61,7 @@ type RequestRow = {
   displayDept?: string | null
 }
 
-type TabType = 'overview' | 'requests' | 'contracts' | 'internal' | 'csvImport' | 'renewal' | 'master' | 'pledges' | 'accounts'
+type TabType = 'overview' | 'requests' | 'contracts' | 'internal' | 'csvImport' | 'renewal' | 'master' | 'pledges' | 'accounts' | 'faq'
 // 2026-07-29：更新期限管理タブ内のサブタブ（期限間近の更新候補／契約状況モニタリング）。
 // 従来は同一タブ内に2つの一覧が縦に積み上がって表示され、下側（契約状況モニタリング）が
 // スクロールしないと見えない・見落としやすいという伊藤さんの指摘を受けて分割した。
@@ -962,6 +964,16 @@ export default function AdminDashboard() {
     loadPledgesPendingCount()
   }, [])
 
+  // 2026-07-28追加：チャットボット「FAQ管理」タブの未回答件数バッジ
+  const [faqUnansweredCount, setFaqUnansweredCount] = useState(0)
+  useEffect(() => {
+    const loadFaqUnansweredCount = async () => {
+      const { count } = await supabase.from('faq_inquiries').select('id', { count: 'exact', head: true }).eq('status', 'unanswered')
+      setFaqUnansweredCount(count || 0)
+    }
+    loadFaqUnansweredCount()
+  }, [])
+
   const {
     result: visibleInternalContracts, toolbar: internalToolbar,
     statusFilter: internalStatusFilter, searchText: internalSearchText, sortKey: internalSortKey,
@@ -1020,6 +1032,7 @@ export default function AdminDashboard() {
     { key: 'pledges', label: 'アルバイト誓約書', icon: 'file', count: pledgesPendingCount },
     { key: 'master', label: 'マスタ管理', icon: 'building' },
     ...(isAccountAdmin ? [{ key: 'accounts' as TabType, label: 'アカウント管理', icon: 'user' as IconName }] : []),
+    { key: 'faq', label: 'FAQ管理', icon: 'file', count: faqUnansweredCount },
   ]
 
   // サマリータブ用：ドメイン横断で「今どこに未対応があるか」を一目で見せるカード（2026-07-14新設）。
@@ -1326,6 +1339,7 @@ export default function AdminDashboard() {
           <div className="flex items-center gap-3">
             <NewDocumentMenu />
             <div className="h-8 w-px bg-[#E8EDF5]" />
+            <ChatbotWidget />
             <LoggedInUserChip userId={user?.id} />
             <button onClick={handleLogout} className={headerSecondaryButton}>
               <Icon name="logout" className="h-4 w-4" />
@@ -1978,6 +1992,7 @@ export default function AdminDashboard() {
         )}
         {activeTab === 'master' && <MasterManagementTab />}
         {activeTab === 'accounts' && isAccountAdmin && <AccountManagementTab />}
+        {activeTab === 'faq' && <FaqManagementTab />}
         {activeTab === 'pledges' && (
           <div className="mt-5 rounded-[18px] border border-[#E8EDF5] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)]">
             <PledgeListSection canApprove />

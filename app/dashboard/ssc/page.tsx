@@ -28,6 +28,7 @@ import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import PledgeListSection from '../_shared/PledgeListSection'
 import LoggedInUserChip from '../_shared/LoggedInUserChip'
 import NewDocumentMenu from '../_shared/NewDocumentMenu'
+import { SubTabBar } from '../_shared/SubTabBar'
 
 type Contract = ContractForDisplay
 
@@ -500,24 +501,13 @@ export default function SSCDashboard() {
         </nav>
 
         {topTab === '契約一覧' && (
-          <nav className="mt-4 border-b border-[#E8EDF5]">
-            <div className="flex flex-nowrap gap-8">
-              {contractSubTabs.map(tab => {
-                const isActive = activeTab === tab.key
-                return (
-                  <button
-                    key={tab.key}
-                    onClick={() => { setActiveTab(tab.key); setSelectedIds(new Set()); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
-                    className={`group relative whitespace-nowrap px-1 pb-4 text-sm font-semibold transition ${isActive ? 'text-[#2F5FD0]' : 'text-[#1F2937] hover:text-[#2F5FD0]'}`}
-                  >
-                    {tab.label}
-                    <span className="ml-2 text-[#6B7280]">({tab.count})</span>
-                    <span className={`absolute bottom-[-1px] left-0 h-0.5 rounded-full bg-[#2F5FD0] transition-all duration-300 ${isActive ? 'w-full' : 'w-0 group-hover:w-full'}`} />
-                  </button>
-                )
-              })}
-            </div>
-          </nav>
+          <div className="mt-4">
+            <SubTabBar
+              items={contractSubTabs}
+              activeKey={activeTab}
+              onChange={key => { setActiveTab(key); setSelectedIds(new Set()); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
+            />
+          </div>
         )}
 
         {topTab === '契約一覧' && !loading && filtered.length > 0 && (
@@ -657,116 +647,126 @@ export default function SSCDashboard() {
               return (
                 <article
                   key={contract.id}
-                  className="grid grid-cols-[36px_260px_240px_240px_170px_190px_140px] items-center gap-4 rounded-[18px] border border-[#E8EDF5] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)] transition hover:-translate-y-0.5 hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]"
+                  className="rounded-[18px] border border-[#E8EDF5] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)] transition hover:-translate-y-0.5 hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]"
                 >
-                  <div className="flex items-center">
-                    {canBulkSelect && (
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => { toggleSelect(contract.id); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
-                        onClick={e => e.stopPropagation()}
-                        className="h-5 w-5 rounded border-[#E8EDF5] accent-[#2F5FD0]"
-                      />
-                    )}
-                    {showWarningIcon && (
-                      <span title="警告あり" className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FFF3E8] text-[#F59E42]">
-                        <Icon name="alert" className="h-5 w-5" />
-                      </span>
-                    )}
-                  </div>
+                  {/* 1行目：氏名と操作ボタンは画面幅に関わらず必ずこの1行に収まる（総合レビュー追加指摘・
+                      2026-07-29対応：固定ピクセル幅の横並びグリッドだと画面が狭いと操作ボタンごと
+                      見切れてしまっていたため、氏名＋ボタンだけは常に見える構造に変更） */}
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div className="flex shrink-0 items-center pt-1">
+                        {canBulkSelect && (
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => { toggleSelect(contract.id); setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
+                            onClick={e => e.stopPropagation()}
+                            className="h-5 w-5 rounded border-[#E8EDF5] accent-[#2F5FD0]"
+                          />
+                        )}
+                        {showWarningIcon && (
+                          <span title="警告あり" className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FFF3E8] text-[#F59E42]">
+                            <Icon name="alert" className="h-5 w-5" />
+                          </span>
+                        )}
+                      </div>
 
-                  <div className="min-w-0">
-                    <div className="mb-2 flex flex-wrap items-center gap-2">
-                      {deadline.type && (
-                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${deadline.type === 'overdue' ? 'bg-[#FDECEC] text-[#E74C3C]' : 'bg-[#FFF3E8] text-[#F59E42]'}`}>
-                          {deadline.label}
-                        </span>
-                      )}
-                      {warning && (
-                        // 総合レビュー指摘F対応（2026-07-16）：🔴（赤＝要注意）の絵文字なのに
-                        // 背景がオレンジで危険度の直感が働かないという指摘。赤系に統一。
-                        <span className="rounded-full bg-[#FDECEC] px-3 py-1 text-xs font-semibold text-[#E74C3C]">
-                          🔴 個別確認が必要（一括承認対象外）
-                        </span>
-                      )}
-                      {autoWarning && (
-                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${autoWarningTone}`}>
-                          {contract.warning_level === 'red' ? '🔴' : '🟡'} 自動チェック要確認（一括承認対象外）
-                        </span>
-                      )}
+                      <div className="min-w-0">
+                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                          {deadline.type && (
+                            <span className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${deadline.type === 'overdue' ? 'bg-[#FDECEC] text-[#E74C3C]' : 'bg-[#FFF3E8] text-[#F59E42]'}`}>
+                              {deadline.label}
+                            </span>
+                          )}
+                          {warning && (
+                            // 総合レビュー指摘F対応（2026-07-16）：🔴（赤＝要注意）の絵文字なのに
+                            // 背景がオレンジで危険度の直感が働かないという指摘。赤系に統一。
+                            <span className="whitespace-nowrap rounded-full bg-[#FDECEC] px-3 py-1 text-xs font-semibold text-[#E74C3C]">
+                              🔴 個別確認が必要（一括承認対象外）
+                            </span>
+                          )}
+                          {autoWarning && (
+                            <span className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${autoWarningTone}`}>
+                              {contract.warning_level === 'red' ? '🔴' : '🟡'} 自動チェック要確認（一括承認対象外）
+                            </span>
+                          )}
+                        </div>
+                        <p className="break-words text-[21px] font-semibold leading-7 text-[#1F2937]">{staff.name || '-'}</p>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-medium text-[#6B7280]">
+                          <span>{staff.employee_number || '-'}</span>
+                          <span className="h-3 w-px bg-[#E8EDF5]" />
+                          <span className="break-words">{staff.department || '-'}</span>
+                        </div>
+                      </div>
                     </div>
-                    <p className="break-words text-[21px] font-semibold leading-7 text-[#1F2937]">{staff.name || '-'}</p>
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-medium text-[#6B7280]">
-                      <span>{staff.employee_number || '-'}</span>
-                      <span className="h-3 w-px bg-[#E8EDF5]" />
-                      <span className="break-words">{staff.department || '-'}</span>
-                    </div>
-                  </div>
 
-                  <div className="min-w-0">
-                    <p className="mb-2 text-xs font-semibold text-[#6B7280]">勤務先</p>
-                    <div className="flex items-start gap-2">
-                      <Icon name="map" className="mt-0.5 h-4 w-4 shrink-0 text-[#2F5FD0]" />
-                      <p className="min-w-0 truncate text-sm font-medium leading-6 text-[#1F2937]" title={f.workLocationName || '-'}>{f.workLocationName || '-'}</p>
-                    </div>
-                  </div>
-
-                  <div className="min-w-0">
-                    <p className="mb-2 text-xs font-semibold text-[#6B7280]">ステータス</p>
-                    <div className="flex flex-wrap gap-2">
-                      <ContractStatusBadge status={contract.status} />
-                      <ContractTypeBadge contractType={f.contractType || contract.contract_type} workPlace={f.workPlace || contract.work_place} />
-                      <WorkPlaceBadge workPlace={f.workPlace || contract.work_place} />
-                      <span className="rounded-full bg-[#F3F5F8] px-3 py-1 text-xs font-semibold text-[#6B7280]">
-                        {getDocumentLabel(contract.document_type, contract.pattern)}
-                      </span>
-                      {isConfirmed && <ConfirmedBadge signedAt={contract.signed_at} />}
-                    </div>
-                  </div>
-
-                  <div className="min-w-0">
-                    <p className="mb-2 text-xs font-semibold text-[#6B7280]">契約期間</p>
-                    <p className="break-words text-xs font-medium leading-5 text-[#1F2937]">{getEmployPeriodLabel(contract)}</p>
-                    {(contract.pattern === 'B' || contract.pattern === 'C') && f.dispatchStart && f.dispatchEnd && (
-                      <p className="mt-1 break-words text-xs font-medium leading-5 text-[#6B7280]">{f.dispatchStart} 〜 {f.dispatchEnd}</p>
-                    )}
-                  </div>
-
-                  <div className="min-w-0">
-                    <p className="mb-2 text-xs font-semibold text-[#6B7280]">申請日時</p>
-                    <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{formatDateTime(contract.created_at)}</p>
-                    <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {contract.created_by_name || '(氏名未設定)'}</p>
-                  </div>
-
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      className="inline-flex h-[52px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-[#EEF4FF] px-5 text-sm font-semibold text-[#2F5FD0] transition hover:-translate-y-0.5 hover:bg-[#DFEAFE]"
-                      onClick={() => router.push(`/dashboard/ssc/contracts/${contract.id}`)}
-                    >
-                      {activeTab === '承認待ち' ? '詳細へ' : '詳細を見る'}
-                      <Icon name="arrow" className="h-4 w-4" />
-                    </button>
-                    {activeTab === '取り下げ' && (
+                    <div className="flex shrink-0 items-center gap-2">
                       <button
-                        className="inline-flex h-[52px] shrink-0 items-center justify-center whitespace-nowrap rounded-2xl border border-[#FCA5A5] bg-white px-4 text-sm font-semibold text-[#DC2626] transition hover:bg-[#FEF2F2] disabled:opacity-50"
-                        disabled={deletingWithdrawnId === contract.id}
-                        onClick={() => handleDeleteWithdrawn(contract.id)}
+                        className="inline-flex h-[52px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-[#EEF4FF] px-5 text-sm font-semibold text-[#2F5FD0] transition hover:-translate-y-0.5 hover:bg-[#DFEAFE]"
+                        onClick={() => router.push(`/dashboard/ssc/contracts/${contract.id}`)}
                       >
-                        {deletingWithdrawnId === contract.id ? '削除中…' : '削除'}
+                        {activeTab === '承認待ち' ? '詳細へ' : '詳細を見る'}
+                        <Icon name="arrow" className="h-4 w-4" />
                       </button>
-                    )}
+                      {activeTab === '取り下げ' && (
+                        <button
+                          className="inline-flex h-[52px] shrink-0 items-center justify-center whitespace-nowrap rounded-2xl border border-[#FCA5A5] bg-white px-4 text-sm font-semibold text-[#DC2626] transition hover:bg-[#FEF2F2] disabled:opacity-50"
+                          disabled={deletingWithdrawnId === contract.id}
+                          onClick={() => handleDeleteWithdrawn(contract.id)}
+                        >
+                          {deletingWithdrawnId === contract.id ? '削除中…' : '削除'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 2行目以降：補足情報は画面幅に応じて自動で折り返す */}
+                  <div className="mt-4 grid grid-cols-2 gap-4 border-t border-[#E8EDF5] pt-4 sm:grid-cols-4">
+                    <div className="min-w-0">
+                      <p className="mb-2 text-xs font-semibold text-[#6B7280]">勤務先</p>
+                      <div className="flex items-start gap-2">
+                        <Icon name="map" className="mt-0.5 h-4 w-4 shrink-0 text-[#2F5FD0]" />
+                        <p className="min-w-0 truncate text-sm font-medium leading-6 text-[#1F2937]" title={f.workLocationName || '-'}>{f.workLocationName || '-'}</p>
+                      </div>
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="mb-2 text-xs font-semibold text-[#6B7280]">ステータス</p>
+                      <div className="flex flex-wrap gap-2">
+                        <ContractStatusBadge status={contract.status} />
+                        <ContractTypeBadge contractType={f.contractType || contract.contract_type} workPlace={f.workPlace || contract.work_place} />
+                        <WorkPlaceBadge workPlace={f.workPlace || contract.work_place} />
+                        <span className="whitespace-nowrap rounded-full bg-[#F3F5F8] px-3 py-1 text-xs font-semibold text-[#6B7280]">
+                          {getDocumentLabel(contract.document_type, contract.pattern)}
+                        </span>
+                        {isConfirmed && <ConfirmedBadge signedAt={contract.signed_at} />}
+                      </div>
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="mb-2 text-xs font-semibold text-[#6B7280]">契約期間</p>
+                      <p className="break-words text-xs font-medium leading-5 text-[#1F2937]">{getEmployPeriodLabel(contract)}</p>
+                      {(contract.pattern === 'B' || contract.pattern === 'C') && f.dispatchStart && f.dispatchEnd && (
+                        <p className="mt-1 break-words text-xs font-medium leading-5 text-[#6B7280]">{f.dispatchStart} 〜 {f.dispatchEnd}</p>
+                      )}
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="mb-2 text-xs font-semibold text-[#6B7280]">申請日時</p>
+                      <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{formatDateTime(contract.created_at)}</p>
+                      <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {contract.created_by_name || '(氏名未設定)'}</p>
+                    </div>
                   </div>
 
                   {contract.status === '差し戻し中' && contract.rejection_reason && (
-                    <div className="rounded-2xl border border-[#FFE2C7] bg-[#FFF8F1] p-4 col-span-7">
+                    <div className="mt-4 rounded-2xl border border-[#FFE2C7] bg-[#FFF8F1] p-4">
                       <p className="text-xs font-semibold text-[#F59E42]">差し戻し理由</p>
                       <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.rejection_reason}</p>
                     </div>
                   )}
 
                   {contract.status === '取り下げ' && (
-                    <div className="rounded-2xl border border-[#E5E7EB] bg-[#F9FAFB] p-4 col-span-7">
+                    <div className="mt-4 rounded-2xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
                       <p className="text-xs font-semibold text-[#6B7280]">取り下げ理由{contract.withdrawn_at ? `（${formatDateTime(contract.withdrawn_at)}）` : ''}</p>
                       <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.withdrawn_reason || '（理由の入力なし）'}</p>
                     </div>

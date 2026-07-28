@@ -79,7 +79,7 @@ export const ContractTypeBadge = ({ contractType, workPlace }: { contractType: s
       '無期契約': { bg: '#EEF2FA', color: '#1B3A8C' },
     }
     const c = map[contractType] || { bg: '#EEF2FA', color: '#1B3A8C' }
-    return <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: c.bg, color: c.color }}>{contractType || '―'}</span>
+    return <span className="whitespace-nowrap text-xs font-medium px-2 py-0.5 rounded" style={{ background: c.bg, color: c.color }}>{contractType || '―'}</span>
   }
   const map: Record<string, { bg: string; color: string }> = {
     '正社員':   { bg: '#ECFDF5', color: '#15803D' },
@@ -88,14 +88,14 @@ export const ContractTypeBadge = ({ contractType, workPlace }: { contractType: s
     'アルバイト': { bg: '#FFF7ED', color: '#C2410C' },
   }
   const c = map[contractType] || { bg: '#F3F4F6', color: '#6B7280' }
-  return <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: c.bg, color: c.color }}>{contractType || '―'}</span>
+  return <span className="whitespace-nowrap text-xs font-medium px-2 py-0.5 rounded" style={{ background: c.bg, color: c.color }}>{contractType || '―'}</span>
 }
 
 // 就業場所区分バッジ
 export const WorkPlaceBadge = ({ workPlace }: { workPlace: string }) => {
   const isInternal = workPlace === '社内'
   return (
-    <span className="text-xs font-medium px-2 py-0.5 rounded"
+    <span className="whitespace-nowrap text-xs font-medium px-2 py-0.5 rounded"
       style={{ background: isInternal ? '#EEF2FA' : '#ECFDF5', color: isInternal ? '#1B3A8C' : '#15803D' }}>
       {workPlace || '現場'}
     </span>

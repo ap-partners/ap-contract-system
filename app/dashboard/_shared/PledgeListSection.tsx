@@ -22,6 +22,7 @@ import { supabase, getAuthHeader } from '@/lib/supabase'
 import { useApprovedAccumulator, APPROVED_WINDOW_DAYS, PLEDGE_COLUMNS } from './useApprovedAccumulator'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
+import { SubTabBar } from './SubTabBar'
 
 type PledgeRow = {
   id: string
@@ -250,24 +251,17 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
     <div>
       {/* ===== 絞り込み・検索・並び替えツールバー（契約一覧と同等の情報量に統一） ===== */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
-        {([
-          { key: '承認待ち' as const, label: '承認待ち', count: pendingCount },
-          { key: '差し戻し中' as const, label: '差し戻し中', count: rejectedCount },
-          { key: '署名待ち' as const, label: '署名待ち', count: pendingSignCount },
-          { key: '署名済み' as const, label: '署名済み', count: signedCount },
-          { key: '取り下げ' as const, label: '取り下げ', count: withdrawnCount },
-        ]).map(t => (
-          <button
-            key={t.key}
-            onClick={() => setFilter(t.key)}
-            className="px-4 py-2 rounded-full text-xs font-bold transition-all"
-            style={filter === t.key
-              ? { background: '#2F5FD0', color: '#FFFFFF' }
-              : { background: '#EEF2FA', color: '#5A6A8A' }}
-          >
-            {t.label}（{t.count}）
-          </button>
-        ))}
+        <SubTabBar
+          items={[
+            { key: '承認待ち' as const, label: '承認待ち', count: pendingCount },
+            { key: '差し戻し中' as const, label: '差し戻し中', count: rejectedCount },
+            { key: '署名待ち' as const, label: '署名待ち', count: pendingSignCount },
+            { key: '署名済み' as const, label: '署名済み', count: signedCount },
+            { key: '取り下げ' as const, label: '取り下げ', count: withdrawnCount },
+          ]}
+          activeKey={filter}
+          onChange={setFilter}
+        />
         <div className="flex items-center gap-2 ml-auto">
           <input
             type="text"
@@ -398,90 +392,100 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
             return (
               <article
                 key={r.id}
-                className="grid grid-cols-[36px_260px_240px_240px_190px_140px] items-center gap-4 rounded-[18px] border border-[#E8EDF5] bg-white p-5 transition hover:-translate-y-0.5 hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]"
+                className="rounded-[18px] border border-[#E8EDF5] bg-white p-5 transition hover:-translate-y-0.5 hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]"
               >
-                <div className="flex items-center">
-                  {canBulkSelect && (
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleSelect(r.id)}
-                      onClick={e => e.stopPropagation()}
-                      className="h-5 w-5 rounded border-[#E8EDF5] accent-[#2F5FD0]"
-                    />
-                  )}
-                  {canApprove && filter === '承認待ち' && autoWarning && (
-                    <span title="警告あり" className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FFF3E8] text-[#F59E42] text-lg">⚠</span>
-                  )}
-                </div>
-
-                <div className="min-w-0">
-                  {autoWarning && (
-                    <div className="mb-2">
-                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ${autoWarningTone}`}>
-                        {r.warning_level === 'red' ? '🔴' : '🟡'} 自動チェック要確認（一括承認対象外）
-                      </span>
+                {/* 1行目：氏名と操作ボタンは画面幅に関わらず必ずこの1行に収まる（総合レビュー追加指摘・
+                    2026-07-29対応：固定ピクセル幅の横並びグリッドだと画面が狭いと操作ボタンごと見切れて
+                    しまっていたため、氏名＋ボタンだけは常に見える構造に変更） */}
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="flex shrink-0 items-center pt-1">
+                      {canBulkSelect && (
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelect(r.id)}
+                          onClick={e => e.stopPropagation()}
+                          className="h-5 w-5 rounded border-[#E8EDF5] accent-[#2F5FD0]"
+                        />
+                      )}
+                      {canApprove && filter === '承認待ち' && autoWarning && (
+                        <span title="警告あり" className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FFF3E8] text-[#F59E42] text-lg">⚠</span>
+                      )}
                     </div>
-                  )}
-                  <p className="break-words text-[19px] font-semibold leading-7 text-[#1F2937]">{staffSnap.name || '―'}</p>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm font-medium text-[#6B7280]">
-                    <span>{staffSnap.employee_number || '―'}</span>
-                    <span className="h-3 w-px bg-[#E8EDF5]" />
-                    <span className="break-words">{staffSnap.department || '―'}</span>
+
+                    <div className="min-w-0">
+                      {autoWarning && (
+                        <div className="mb-2">
+                          <span className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${autoWarningTone}`}>
+                            {r.warning_level === 'red' ? '🔴' : '🟡'} 自動チェック要確認（一括承認対象外）
+                          </span>
+                        </div>
+                      )}
+                      <p className="break-words text-[19px] font-semibold leading-7 text-[#1F2937]">{staffSnap.name || '―'}</p>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm font-medium text-[#6B7280]">
+                        <span>{staffSnap.employee_number || '―'}</span>
+                        <span className="h-3 w-px bg-[#E8EDF5]" />
+                        <span className="break-words">{staffSnap.department || '―'}</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
 
-                <div className="min-w-0">
-                  <p className="mb-2 text-xs font-semibold text-[#6B7280]">就業先</p>
-                  <p
-                    className="min-w-0 truncate text-sm font-medium leading-6 text-[#1F2937]"
-                    title={r.work_place_type === 'client' ? (r.client_name || 'クライアント先') : '自社拠点'}
-                  >
-                    {r.work_place_type === 'client' ? (r.client_name || 'クライアント先') : '自社拠点'}
-                  </p>
-                </div>
-
-                <div className="min-w-0">
-                  <p className="mb-2 text-xs font-semibold text-[#6B7280]">ステータス</p>
-                  <div className="flex flex-wrap gap-2">
-                    <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: badge.bg, color: badge.color }}>
-                      {badge.label}
-                    </span>
-                    <span className="rounded-full bg-[#F3F5F8] px-3 py-1 text-xs font-semibold text-[#6B7280]">{r.document_type}</span>
-                    {r.status === '署名済み' && r.signed_at && (
-                      <span className="rounded-full bg-[#ECFDF5] px-3 py-1 text-xs font-semibold text-[#047857]">
-                        {formatDateTime(r.signed_at)} 署名
-                      </span>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      className="inline-flex h-[44px] shrink-0 items-center justify-center whitespace-nowrap rounded-2xl bg-[#EEF4FF] px-5 text-sm font-semibold text-[#2F5FD0] transition hover:bg-[#DFEAFE]"
+                      onClick={() => router.push(`${detailBasePath}/${r.id}`)}
+                    >
+                      詳細へ
+                    </button>
+                    {filter === '取り下げ' && (
+                      <button
+                        className="inline-flex h-[44px] shrink-0 items-center justify-center whitespace-nowrap rounded-2xl border border-[#FCA5A5] bg-white px-4 text-sm font-semibold text-[#DC2626] transition hover:bg-[#FEF2F2] disabled:opacity-50"
+                        disabled={deletingWithdrawnId === r.id}
+                        onClick={() => handleDeleteWithdrawn(r.id)}
+                      >
+                        {deletingWithdrawnId === r.id ? '削除中…' : '削除'}
+                      </button>
                     )}
                   </div>
                 </div>
 
-                <div className="min-w-0">
-                  <p className="mb-2 text-xs font-semibold text-[#6B7280]">申請日時</p>
-                  <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{formatDateTime(r.created_at)}</p>
-                  <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {r.created_by_name || '―'}</p>
-                </div>
-
-                <div className="flex items-center justify-end gap-2">
-                  <button
-                    className="inline-flex h-[44px] shrink-0 items-center justify-center whitespace-nowrap rounded-2xl bg-[#EEF4FF] px-5 text-sm font-semibold text-[#2F5FD0] transition hover:bg-[#DFEAFE]"
-                    onClick={() => router.push(`${detailBasePath}/${r.id}`)}
-                  >
-                    詳細へ
-                  </button>
-                  {filter === '取り下げ' && (
-                    <button
-                      className="inline-flex h-[44px] shrink-0 items-center justify-center whitespace-nowrap rounded-2xl border border-[#FCA5A5] bg-white px-4 text-sm font-semibold text-[#DC2626] transition hover:bg-[#FEF2F2] disabled:opacity-50"
-                      disabled={deletingWithdrawnId === r.id}
-                      onClick={() => handleDeleteWithdrawn(r.id)}
+                {/* 2行目以降：補足情報は画面幅に応じて自動で折り返す */}
+                <div className="mt-4 grid grid-cols-2 gap-4 border-t border-[#E8EDF5] pt-4 sm:grid-cols-4">
+                  <div className="min-w-0">
+                    <p className="mb-2 text-xs font-semibold text-[#6B7280]">就業先</p>
+                    <p
+                      className="min-w-0 truncate text-sm font-medium leading-6 text-[#1F2937]"
+                      title={r.work_place_type === 'client' ? (r.client_name || 'クライアント先') : '自社拠点'}
                     >
-                      {deletingWithdrawnId === r.id ? '削除中…' : '削除'}
-                    </button>
-                  )}
+                      {r.work_place_type === 'client' ? (r.client_name || 'クライアント先') : '自社拠点'}
+                    </p>
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="mb-2 text-xs font-semibold text-[#6B7280]">ステータス</p>
+                    <div className="flex flex-wrap gap-2">
+                      <span className="whitespace-nowrap text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: badge.bg, color: badge.color }}>
+                        {badge.label}
+                      </span>
+                      <span className="whitespace-nowrap rounded-full bg-[#F3F5F8] px-3 py-1 text-xs font-semibold text-[#6B7280]">{r.document_type}</span>
+                      {r.status === '署名済み' && r.signed_at && (
+                        <span className="whitespace-nowrap rounded-full bg-[#ECFDF5] px-3 py-1 text-xs font-semibold text-[#047857]">
+                          {formatDateTime(r.signed_at)} 署名
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="mb-2 text-xs font-semibold text-[#6B7280]">申請日時</p>
+                    <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{formatDateTime(r.created_at)}</p>
+                    <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {r.created_by_name || '―'}</p>
+                  </div>
                 </div>
 
                 {r.status === '取り下げ' && (
-                  <div className="rounded-2xl border border-[#E5E7EB] bg-[#F9FAFB] p-4 col-span-6">
+                  <div className="mt-4 rounded-2xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
                     <p className="text-xs font-semibold text-[#6B7280]">取り下げ理由{r.withdrawn_at ? `（${formatDateTime(r.withdrawn_at)}）` : ''}</p>
                     <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{r.withdrawn_reason || '（理由の入力なし）'}</p>
                   </div>

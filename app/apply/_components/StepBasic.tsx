@@ -350,7 +350,7 @@ export default function StepBasic({
               {showContractTypeLockedMsg && (
                 <div className="rounded-lg px-3 py-2 text-xs flex items-center justify-between gap-3"
                   style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FCA5A5' }}>
-                  <span>先にスタッフ情報申請にて雇用区分変更の手続きを行ってください。</span>
+                  <span>雇用区分の変更はこの画面からはできません。変更が必要な場合は管理部へ直接ご連絡ください。</span>
                   <button onClick={e => { e.preventDefault(); setShowContractTypeLockedMsg(false) }}
                     className="shrink-0 underline">閉じる</button>
                 </div>

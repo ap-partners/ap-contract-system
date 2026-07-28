@@ -607,6 +607,18 @@ export default function AdminDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
+  // 2026-07-29：更新期限管理タブのサブタブ化に伴い、契約状況モニタリングのデータ取得元だった
+  // ContractMonitoringSectionのマウント時useEffectが、サブタブを開くまで発火しなくなった
+  // （従来は常時マウントされていたため問題なかった）。そのままだとサブタブピルの件数バッジが
+  // 実際に開くまで0件のまま表示されてしまうため、更新期限候補と同様ページ読み込み時に
+  // 先読みするよう変更（サブタブを開いた際にContractMonitoringSection側でもう一度呼ばれるが、
+  // 読み取りのみで実害がないため許容する）。
+  useEffect(() => {
+    if (!user) return
+    fetchMonitoring()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user])
+
   useEffect(() => {
     if (!user) return
     const loadContracts = async () => {

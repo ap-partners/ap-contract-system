@@ -235,6 +235,9 @@ export default function SSCDashboard() {
       await fetchApprovedRecent()
       await syncCandidates()
       await fetchCandidates(null)
+      // 2026-07-29：最低賃金改定対応サブタブのピル件数が、サブタブを開くまで0件のまま表示される
+      // 不具合防止のため（契約状況モニタリングと同じ理由）、ページ読み込み時に先読みする。
+      await fetchWageRevisionCandidates()
       setLoading(false)
     }
     init()

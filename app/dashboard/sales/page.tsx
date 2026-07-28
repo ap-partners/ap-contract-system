@@ -309,6 +309,9 @@ export default function SalesDashboard() {
         loadMyRequests(deptName),
         (async () => { await syncCandidates(); await fetchCandidates(deptScopeRef.current) })(),
         loadPledgesPendingCount(deptScopeRef.current),
+        // 2026-07-29：最低賃金改定対応サブタブのピル件数が、サブタブを開くまで0件のまま表示される
+        // 不具合防止のため（契約状況モニタリングと同じ理由）、ページ読み込み時に先読みする。
+        fetchWageRevisionCandidates(),
       ])
       setLoading(false)
     }

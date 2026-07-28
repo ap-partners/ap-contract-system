@@ -356,10 +356,11 @@ function ApplyPageInner() {
     parseAmount(housingPay) +
     parseAmount(overtimePay)
 
-  // 合計支給額（時給の場合は月額換算：時給×160時間＋各種手当）
+  // 合計支給額（時給の場合は月額換算：時給×168時間＋各種手当）
+  // 2026-07-29変更：月所定労働日数20日→21日に変更（伊藤さん指示）。1日8時間のまま168時間に。
   const salaryTotal = (() => {
     const basic = parseAmount(basicSalary)
-    if (salaryType === '時給') return basic * 160 + allowancesTotal
+    if (salaryType === '時給') return basic * 168 + allowancesTotal
     return basic + allowancesTotal
   })()
 
@@ -368,7 +369,7 @@ function ApplyPageInner() {
     if (salaryType !== '時給') return null
     const basic = parseAmount(basicSalary)
     if (!basic) return null
-    const lines = [`基本給：${basic.toLocaleString()}円 × 160時間 = ${(basic * 160).toLocaleString()}円`]
+    const lines = [`基本給：${basic.toLocaleString()}円 × 168時間 = ${(basic * 168).toLocaleString()}円`]
     if (parseAmount(rolePay) > 0) lines.push(`役職手当：${parseAmount(rolePay).toLocaleString()}円`)
     if (parseAmount(skillPay) > 0) lines.push(`職能給：${parseAmount(skillPay).toLocaleString()}円`)
     if (parseAmount(salesPay) > 0) lines.push(`営業手当：${parseAmount(salesPay).toLocaleString()}円`)
@@ -866,6 +867,9 @@ function ApplyPageInner() {
       const f: Record<string, any> = { ...prevFields, employStart: newEmployStart, trialPeriod: '無', trialStart: '', trialEnd: '' }
 
       // STEP1：対象スタッフ・雇用区分・就業場所区分・書類種別
+      // 2026-07-29修正：dept_noを含めていなかったため、STEP7の最低賃金差額バナー
+      // （wageAmendBanner。selectedStaff?.dept_noを参照する）が常にnull扱いになり表示されない
+      // 不具合があった。実機確認（担当営業でのwageAmend画面遷移）で発見・修正。
       setSelectedStaff(staffRow ? {
         id: staffRow.id,
         employee_number: staffRow.employee_number,
@@ -873,6 +877,7 @@ function ApplyPageInner() {
         department: (staffRow as any).department_master?.dept_name || null,
         crew_code: staffRow.crew_code,
         address: staffRow.address,
+        dept_no: staffRow.dept_no ?? null,
       } : {
         id: prevContract.staff_id,
         employee_number: (prevContract.input_data as any)?.staff?.employee_number || '',
@@ -880,6 +885,7 @@ function ApplyPageInner() {
         department: null,
         crew_code: null,
         address: null,
+        dept_no: null,
       })
       setSearched(true)
       setContractType(f.contractType || '')

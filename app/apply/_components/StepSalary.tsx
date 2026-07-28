@@ -190,14 +190,14 @@ export default function StepSalary({
               <p key={i} className="text-xs" style={{ color: '#1A2340' }}>{line}</p>
             ))}
             <p className="text-xs mt-1" style={{ color: '#5A6A8A' }}>
-              ※月所定労働日数20日・1日8時間（160時間）での計算例です。実際の支給額は勤務実績により異なります。
+              ※月所定労働日数21日・1日8時間（168時間）での計算例です。実際の支給額は勤務実績により異なります。
             </p>
           </div>
         )}
         <div className="flex items-center justify-between rounded-lg px-4 py-3 border"
           style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
           <span className="text-xs font-medium" style={{ color: '#5A6A8A' }}>
-            {salaryType === '時給' ? '月額換算例（基本給×160時間＋各種手当）' : '合計支給額（基本給＋各種手当）'}
+            {salaryType === '時給' ? '月額換算例（基本給×168時間＋各種手当）' : '合計支給額（基本給＋各種手当）'}
           </span>
           <div className="flex items-baseline gap-1">
             <span className="text-base font-bold" style={{ color: '#1B3A8C' }}>

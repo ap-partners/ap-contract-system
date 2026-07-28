@@ -662,6 +662,14 @@ export default function AdminDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
+  // 2026-07-29：最低賃金改定対応サブタブも同じ理由（サブタブピルの件数バッジが開くまで0件のまま
+  // 表示されてしまう）で、ページ読み込み時に先読みする。
+  useEffect(() => {
+    if (!user) return
+    fetchWageRevisionCandidates()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user])
+
   useEffect(() => {
     if (!user) return
     const loadContracts = async () => {
@@ -1481,7 +1489,7 @@ export default function AdminDashboard() {
         {activeTab === 'overview' && (
           <div className="space-y-6">
             <section className="overflow-hidden rounded-[18px] border border-[#E8EDF5] bg-[radial-gradient(circle_at_20%_15%,rgba(47,95,208,.14),transparent_32%),linear-gradient(135deg,#F7FBFF_0%,#EEF5FF_48%,#FFFFFF_100%)] p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)] md:p-6">
-              <p className="mb-4 text-sm font-semibold text-[#1F2937]">対応が必要な件数（ドメイン横断）</p>
+              <p className="mb-4 text-sm font-semibold text-[#1F2937]">対応が必要な件数</p>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                 {overviewCards.map(card => (
                   <button

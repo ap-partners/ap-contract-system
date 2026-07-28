@@ -330,8 +330,8 @@ export default function StepFinalCheck({
           )}
           {salaryType === '時給' && hourlyMonthlyBreakdown && (
             <FinalRow label="月額換算（概算）" value={
-              `${hourlyMonthlyBreakdown.join('\n')}\n※月所定労働日数20日・1日8時間（160時間）での計算例です。実際の支給額は勤務実績により異なります。`
-            } multiline highlight={`月額換算例（基本給×160時間＋各種手当）：${salaryTotal.toLocaleString()}円`} />
+              `${hourlyMonthlyBreakdown.join('\n')}\n※月所定労働日数21日・1日8時間（168時間）での計算例です。実際の支給額は勤務実績により異なります。`
+            } multiline highlight={`月額換算例（基本給×168時間＋各種手当）：${salaryTotal.toLocaleString()}円`} />
           )}
 
           <FinalGroupHeader label="交通費" />

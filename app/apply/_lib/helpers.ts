@@ -169,6 +169,30 @@ export const clampDateYear = (v: string) => {
   return year + (m[2] || '')
 }
 
+// 担当営業の「所属部門」に応じた、スタッフ検索・一覧絞り込みの実質的な対象部門一覧（2026-07-29追加）。
+// 在籍スタッフ0名の統括部門（広域本部・北日本営業部・西日本営業部・HRソリューション営業部）を
+// 選んだアカウントは、自部門だけでは検索対象が常に0件になってしまうため、実際にスタッフが
+// 在籍する複数の実務部門をまとめて検索・絞り込み対象にする。自部門自体も含める（当初「含めない」
+// としていたが、自分で提出した申請が自分の一覧に出なくなる問題が判明したため、伊藤さんの判断で
+// 含める方針に変更・2026-07-29）。同じマッピングをDB側のRLS関数`current_dept_scope()`にも
+// 複製している（`contracts`/`pledges`/`renewal_candidates`のRLSが別途`created_by_dept_no`/
+// `dept_no`の完全一致を要求するため。docs/SYSTEM_DESIGN.md 10章2026-07-29参照）。片方だけ
+// 変更すると必ずズレるので、今後この対象を変える場合は両方を同時に直すこと。
+// dept_noはdepartment_masterの値。
+export const DEPT_GROUP_SCOPE: Record<number, number[]> = {
+  3: [3, 6, 46],                       // HRソリューション営業部 → 自部門・CS課・営業開発課
+  7: [7, 9, 10, 12, 13, 14, 15, 48],   // 広域本部 → 自部門・北海道営業所・東北営業所・中部営業所・関西支社・中国営業所・九州営業所・沖縄営業所
+  8: [8, 9, 10],                       // 北日本営業部 → 自部門・北海道営業所・東北営業所
+  11: [11, 12, 13, 14, 15, 48],        // 西日本営業部 → 自部門・中部営業所・関西支社・中国営業所・九州営業所・沖縄営業所
+}
+
+// 指定した部門番号について、スタッフ検索・一覧絞り込みで実際に対象とすべき部門番号の配列を返す。
+// グループ範囲の対象部門でなければ、自部門のみを含む1件の配列を返す。deptNoがnullなら空配列。
+export const getDeptSearchScope = (deptNo: number | null): number[] => {
+  if (deptNo === null || deptNo === undefined) return []
+  return DEPT_GROUP_SCOPE[deptNo] || [deptNo]
+}
+
 export const normalizeTel = (v: string) => v
   .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
   .replace(/ー|－|―/g, '-')

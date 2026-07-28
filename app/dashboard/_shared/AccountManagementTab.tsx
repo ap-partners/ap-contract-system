@@ -364,6 +364,12 @@ function AccountFormModal({
               <label className="mb-1 block text-xs font-semibold text-[#6B7280]">部門</label>
               <select value={deptNo} onChange={e => setDeptNo(e.target.value)} className={inputCls}>
                 <option value="">選択してください</option>
+                {/* 2026-07-29：部門一覧を20件の選択肢に絞り込み。ただし編集中のアカウントが
+                    既にその20件に含まれない部門（例：本社）に所属している場合は、
+                    表示が消えて誤って別部門に変更されてしまわないよう、現在の部門を選択肢の先頭に補って表示する。 */}
+                {account?.deptNo != null && !departmentOptions.some(d => d.deptNo === account.deptNo) && (
+                  <option value={account.deptNo}>{account.deptLabel}（現在の設定）</option>
+                )}
                 {departmentOptions.map(d => (
                   <option key={d.deptNo} value={d.deptNo}>{d.deptName}</option>
                 ))}

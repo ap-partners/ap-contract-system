@@ -229,10 +229,14 @@ export function useRenewalCandidates() {
   // 2026-07-16追加：一覧カードに「今の」所属部署名・雇用形態を出すため、staffマスタから
   // dept_no・contract_typeも取得し、department_masterで部署名に変換して各行に付与する
   // （申請時点のスナップショットではなく現在値を出す、という伊藤さんの確定に基づく）。
-  const fetchCandidates = useCallback(async (deptNo: number | null) => {
+  // 2026-07-29変更：在籍スタッフ0名の統括部門（広域本部等）はグループ範囲の複数部門を対象に
+  // するため、deptNoは単一の数値だけでなく配列も受け付ける（docs/SYSTEM_DESIGN.md 10章
+  // 2026-07-29参照）。
+  const fetchCandidates = useCallback(async (deptNo: number | number[] | null) => {
     setLoading(true)
     let q = supabase.from('renewal_candidates').select('*').order('employ_end_date', { ascending: true })
-    if (deptNo !== null) q = q.eq('dept_no', deptNo)
+    if (Array.isArray(deptNo)) q = q.in('dept_no', deptNo)
+    else if (deptNo !== null) q = q.eq('dept_no', deptNo)
     const { data, error } = await q
     if (error) console.error('更新候補の取得エラー:', error)
     const rows = (data || []) as RenewalCandidate[]

@@ -18,7 +18,7 @@ import {
   type DiffPart, computeCharDiff,
   extractResponsibilityFromWinworks, buildWelfareTextFromEstaffing, buildWelfareTextFromHRstation,
   numToYesNo, extractCsvFieldsRaw, extractCsvFields, normalizeDateSlash, newlineToSpace,
-  formatTelHyphen, joinDeptAndPerson, normalizeJapaneseName,
+  formatTelHyphen, joinDeptAndPerson, normalizeJapaneseName, getDeptSearchScope,
 } from './_lib/helpers'
 import {
   DiffText, Req, AutoBadge, Tooltip, FormRow, EmptyHintBubble, FormRowAuto,
@@ -405,7 +405,11 @@ function ApplyPageInner() {
     checkUser()
   }, [])
 
-  // STEP1スタッフ検索の自部門制限用：担当営業自身の部門番号をstaffテーブル（email一致）から取得する。
+  // STEP1スタッフ検索の自部門制限用：担当営業自身の部門番号をstaff_rolesテーブル（本人のid一致）
+  // から取得する（2026-07-29変更：従来はstaffテーブルをemail一致で参照していたが、これはアカウント
+  // 管理機能〔2026-07-24新設・staff_rolesが正〕とは無関係の古い仕組みが残っていたもの。在籍スタッフ
+  // 0名の統括部門〔広域本部等〕のアカウントはstaffテーブルに該当行が無く機能しなかったため、正式に
+  // staff_rolesを参照する形に統一した。docs/SYSTEM_DESIGN.md 10章2026-07-29参照）。
   // SSC・管理部は制限対象外のため取得不要（nullのままにし、handleSearch側で分岐する）
   useEffect(() => {
     if (!user) return
@@ -413,10 +417,9 @@ function ApplyPageInner() {
     if (role !== '担当営業') { setMyDeptNo(null); return }
     const loadMyDeptNo = async () => {
       const { data } = await supabase
-        .from('staff')
+        .from('staff_roles')
         .select('dept_no')
-        .eq('email', user.email)
-        .limit(1)
+        .eq('id', user.id)
         .maybeSingle()
       setMyDeptNo(data?.dept_no ?? null)
     }
@@ -966,8 +969,12 @@ function ApplyPageInner() {
     let byNumberQuery = supabase.from('staff').select('*, department_master(dept_name)').ilike('employee_number', `%${query}%`).or(retiredAtOk).or(retirementScheduledOk).limit(20)
     let byNameQuery = supabase.from('staff').select('*, department_master(dept_name)').ilike('name', `%${normalized}%`).or(retiredAtOk).or(retirementScheduledOk).limit(20)
     if (restrictToOwnDept) {
-      byNumberQuery = byNumberQuery.eq('dept_no', myDeptNo)
-      byNameQuery = byNameQuery.eq('dept_no', myDeptNo)
+      // 2026-07-29変更：在籍スタッフ0名の統括部門（広域本部等）を選んだアカウントは、自部門1件
+      // だけでなく、グループ範囲（getDeptSearchScope）に含まれる複数の実務部門をまとめて検索対象
+      // にする。対象外の通常部門は従来通り自部門1件のみ（docs/SYSTEM_DESIGN.md 10章2026-07-29参照）。
+      const scopeDeptNos = getDeptSearchScope(myDeptNo ?? null)
+      byNumberQuery = byNumberQuery.in('dept_no', scopeDeptNos)
+      byNameQuery = byNameQuery.in('dept_no', scopeDeptNos)
     }
     const [byNumber, byName] = await Promise.all([byNumberQuery, byNameQuery])
     const merged = [...(byNumber.data || []), ...(byName.data || [])]
@@ -1047,11 +1054,12 @@ function ApplyPageInner() {
 
       // 申請者（担当営業）自身の部門番号を取得し、担当営業ダッシュボードの閲覧範囲フィルタに使う
       // （2026-07-02追加：この取得処理がなく、新規申請のcreated_by_dept_noが常にnullになっていたバグを修正）
+      // 2026-07-29変更：staffテーブル（email一致）からstaff_rolesテーブル（id一致）参照に統一
+      // （理由はloadMyDeptNoと同じ。docs/SYSTEM_DESIGN.md 10章2026-07-29参照）
       const { data: submitterStaffRow } = await supabase
-        .from('staff')
+        .from('staff_roles')
         .select('dept_no, name')
-        .eq('email', user.email)
-        .limit(1)
+        .eq('id', user.id)
         .maybeSingle()
 
       // CSV関連の記録（SSC確認画面での差分表示・将来の振り返り用）

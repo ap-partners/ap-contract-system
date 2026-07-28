@@ -25,6 +25,7 @@ import NewDocumentMenu from '../_shared/NewDocumentMenu'
 import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
 import { useDebouncedSearch } from '../_shared/useDebouncedSearch'
 import { SubTabBar } from '../_shared/SubTabBar'
+import { getDeptSearchScope } from '@/app/apply/_lib/helpers'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
@@ -218,11 +219,15 @@ export default function SalesDashboard() {
   // 取り下げ済み申請の削除（2026-07-27追加）：status='取り下げ'の行のみDELETE可能なようRLSで制限済み。
   const [deletingWithdrawnId, setDeletingWithdrawnId] = useState<string | null>(null)
   const deptNoRef = useRef<number | null>(null)
+  // グループ範囲（2026-07-29追加）：在籍スタッフ0名の統括部門（広域本部等）を選んだアカウントは、
+  // 自部門1件だけでなくgetDeptSearchScope()が返す複数の実務部門をまとめて絞り込み対象にする。
+  // 通常部門は従来通り自部門1件のみを含む配列になる（docs/SYSTEM_DESIGN.md 10章2026-07-29参照）。
+  const deptScopeRef = useRef<number[]>([])
   const {
     approvedContracts, approvedTotalCount, approvedHasMore, approvedLoadingMore,
     approvedSearchMode, approvedSearching, approvedSearchNotice,
     fetchApprovedRecent, loadMoreApproved, runApprovedSearch,
-  } = useApprovedAccumulator<Contract>(q => q.eq('created_by_dept_no', deptNoRef.current), ['署名済み', '完了'])
+  } = useApprovedAccumulator<Contract>(q => q.in('created_by_dept_no', deptScopeRef.current), ['署名済み', '完了'])
   const [loading, setLoading] = useState(true)
   const [activeFilter, setActiveFilter] = useState<FilterKey>('pending')
   // 総合レビュー指摘B対応（2026-07-16）：担当営業のタブが「ステータス（進行中/要説明/差し戻し/
@@ -262,31 +267,36 @@ export default function SalesDashboard() {
       if (role !== '担当営業') { router.push('/login'); return }
       setUser(data.user)
 
-      const email = data.user.email
-      const { data: staffRow, error: staffError } = await supabase
-        .from('staff')
+      // 2026-07-29変更：所属部門の判定を、staffテーブル（email一致）からstaff_rolesテーブル
+      // （本人のid一致）参照に統一。アカウント管理機能（2026-07-24新設・staff_rolesが正）とは
+      // 無関係の古い仕組みが残っていたもので、在籍スタッフ0名の統括部門（広域本部等）のアカウントは
+      // staffテーブルに該当行が無く機能しなかったため修正した（docs/SYSTEM_DESIGN.md 10章
+      // 2026-07-29参照）。
+      const { data: staffRoleRow, error: staffError } = await supabase
+        .from('staff_roles')
         .select('dept_no, department_master(dept_name)')
-        .eq('email', email)
-        .limit(1)
+        .eq('id', data.user.id)
         .maybeSingle()
 
-      if (staffError || !staffRow || staffRow.dept_no === null) {
+      if (staffError || !staffRoleRow || staffRoleRow.dept_no === null) {
         setDeptLookupError('ログインユーザーの所属部門を特定できませんでした。管理部にご確認ください。')
         setLoading(false)
         setMyRequestsLoading(false)
         return
       }
 
-      const deptName = (staffRow as any)?.department_master?.dept_name || null
-      deptNoRef.current = staffRow.dept_no
+      const deptName = (staffRoleRow as any)?.department_master?.dept_name || null
+      deptNoRef.current = staffRoleRow.dept_no
       deptNameRef.current = deptName
+      // グループ範囲（広域本部等）は自部門を含まない複数部門、通常部門は自部門1件のみの配列になる
+      deptScopeRef.current = getDeptSearchScope(staffRoleRow.dept_no)
 
       await Promise.all([
-        loadContracts(staffRow.dept_no),
+        loadContracts(deptScopeRef.current),
         fetchApprovedRecent(),
         loadMyRequests(deptName),
-        (async () => { await syncCandidates(); await fetchCandidates(staffRow.dept_no) })(),
-        loadPledgesPendingCount(staffRow.dept_no),
+        (async () => { await syncCandidates(); await fetchCandidates(deptScopeRef.current) })(),
+        loadPledgesPendingCount(deptScopeRef.current),
       ])
       setLoading(false)
     }
@@ -297,12 +307,12 @@ export default function SalesDashboard() {
   // アルバイト誓約書タブの承認待ち件数バッジ（2026-07-23追加。SSC・管理部と同じ考え方だが、
   // 担当営業は契約一覧と同様に自部門（created_by_dept_no）のみに絞り込む）
   const [pledgesPendingCount, setPledgesPendingCount] = useState(0)
-  const loadPledgesPendingCount = async (deptNo: number) => {
+  const loadPledgesPendingCount = async (deptNos: number[]) => {
     const { count } = await supabase
       .from('pledges')
       .select('id', { count: 'exact', head: true })
       .eq('status', '申請中')
-      .eq('created_by_dept_no', deptNo)
+      .in('created_by_dept_no', deptNos)
     setPledgesPendingCount(count || 0)
   }
 
@@ -357,11 +367,11 @@ export default function SalesDashboard() {
     return true
   }
 
-  const loadContracts = async (deptNo: number) => {
+  const loadContracts = async (deptNos: number[]) => {
     const { data: rows, error } = await supabase
       .from('contracts')
       .select('id, pattern, contract_type, document_type, work_place, status, created_by, created_by_dept_no, created_at, rejection_reason, sign_requested_at, signed_at, input_data, withdrawn_reason, withdrawn_by, withdrawn_at')
-      .eq('created_by_dept_no', deptNo)
+      .in('created_by_dept_no', deptNos)
       .in('status', ['申請中', 'SSC承認済み', '差し戻し中', '署名待ち', '取り下げ'])
       .order('created_at', { ascending: false })
 
@@ -824,7 +834,7 @@ export default function SalesDashboard() {
         ) : activeFilter === 'pledges' ? (
           <section className={`${cardBase} mt-5 p-6`}>
             <h2 className="mb-5 text-lg font-semibold text-[#1F2937]">アルバイト誓約書</h2>
-            <PledgeListSection deptNoFilter={deptNoRef.current ?? undefined} detailBasePath="/dashboard/sales/pledges" />
+            <PledgeListSection deptNoFilter={deptScopeRef.current.length > 0 ? deptScopeRef.current : undefined} detailBasePath="/dashboard/sales/pledges" />
           </section>
         ) : loading ? (
           <div className="py-16 text-center">

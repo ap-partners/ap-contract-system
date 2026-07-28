@@ -60,7 +60,9 @@ type SortKey = 'newest' | 'oldest'
 
 type Props = {
   // 担当営業ダッシュボードから使う場合、自部門（created_by_dept_no）のみに絞り込む。
-  deptNoFilter?: number
+  // 2026-07-29変更：在籍スタッフ0名の統括部門（広域本部等）はグループ範囲の複数部門を対象に
+  // するため、単一の数値ではなく配列で受け取る（docs/SYSTEM_DESIGN.md 10章2026-07-29参照）。
+  deptNoFilter?: number[]
   // 詳細画面の遷移先。SSC・管理部は/dashboard/ssc/pledges、担当営業は/dashboard/sales/pledges。
   detailBasePath?: string
   // SSC・管理部のみtrue：一括承認バーを表示する（2026-07-24追加）。
@@ -78,7 +80,7 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
   const [searchText, setSearchText] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('newest')
 
-  const baseFilter = (q: any) => (deptNoFilter !== undefined ? q.eq('created_by_dept_no', deptNoFilter) : q)
+  const baseFilter = (q: any) => (deptNoFilter !== undefined ? q.in('created_by_dept_no', deptNoFilter) : q)
 
   // 署名待ち（SSC承認済み・署名待ち）／署名済み：直近45日窓＋さらに読み込む＋全期間で検索（2026-07-24追加）
   const pendingSignAcc = useApprovedAccumulator<PledgeRow>(baseFilter, ['SSC承認済み', '署名待ち'], 'pledges', PLEDGE_COLUMNS)
@@ -99,7 +101,7 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
       .select(PLEDGE_COLUMNS)
       .in('status', ['申請中', '差し戻し中', '取り下げ'])
       .order('created_at', { ascending: false })
-    if (deptNoFilter !== undefined) query = query.eq('created_by_dept_no', deptNoFilter)
+    if (deptNoFilter !== undefined) query = query.in('created_by_dept_no', deptNoFilter)
     const { data } = await query
     setFlowRows((data || []) as PledgeRow[])
     setLoading(false)

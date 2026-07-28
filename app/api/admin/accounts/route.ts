@@ -80,7 +80,22 @@ export async function GET(req: NextRequest) {
     }
   })
 
-  const departmentOptions = (departments || []).map(d => ({ deptNo: d.dept_no, deptName: d.dept_name }))
+  // 2026-07-29：アカウント管理の部門選択肢を、実運用で使う20部門のみ・指定順に絞り込み。
+  // department_master自体は51部門（社内管理用の広域部門・使われない部門等を含む）を持つが、
+  // ここではログインアカウントに実際に割り当てる可能性がある部門だけを厳選して表示する。
+  // 対象外（本社等）に既に割り当て済みの既存アカウントは、編集フォーム側（AccountManagementTab.tsx）で
+  // 現在値を選択肢に補って表示するため、ここでは単純に絞り込むだけでよい。
+  // 法務部（dept_no=22, DB上の正式名称は「法務部 法務課」）のみ表示名を短縮。
+  // ※このリストの並び順・対象部門を変更する場合は、docs/SYSTEM_DESIGN.md 10章
+  //   「2026-07-29：アカウント管理の部門選択肢を絞り込み・並び替え」の決定内容も忘れずに更新すること。
+  const CURATED_DEPT_ORDER = [4, 5, 3, 6, 46, 7, 8, 9, 10, 11, 12, 13, 14, 15, 48, 16, 18, 19, 21, 22]
+  const CURATED_DEPT_LABEL_OVERRIDE: Record<number, string> = { 22: '法務部' }
+  const departmentOptions = CURATED_DEPT_ORDER
+    .filter(deptNo => deptNameByNo.has(deptNo))
+    .map(deptNo => ({
+      deptNo,
+      deptName: CURATED_DEPT_LABEL_OVERRIDE[deptNo] || (deptNameByNo.get(deptNo) as string),
+    }))
   return NextResponse.json({ accounts, departmentOptions })
 }
 

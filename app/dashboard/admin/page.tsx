@@ -59,6 +59,11 @@ type RequestRow = {
 }
 
 type TabType = 'overview' | 'requests' | 'contracts' | 'internal' | 'csvImport' | 'renewal' | 'master' | 'pledges' | 'accounts'
+// 2026-07-29：更新期限管理タブ内のサブタブ（期限間近の更新候補／契約状況モニタリング）。
+// 従来は同一タブ内に2つの一覧が縦に積み上がって表示され、下側（契約状況モニタリング）が
+// スクロールしないと見えない・見落としやすいという伊藤さんの指摘を受けて分割した。
+// 初期表示は「期限間近の更新候補」（伊藤さんが推奨案として選択・確定）。
+type RenewalSubTab = 'candidates' | 'monitoring'
 type Contract = ContractForDisplay
 type ContractSubTab = '承認待ち' | '差し戻し中' | '承認済み' | '取り下げ'
 type IconName = 'file' | 'list' | 'shield' | 'upload' | 'alert' | 'clock' | 'search' | 'refresh' | 'check' | 'arrow' | 'logout' | 'map' | 'user' | 'building' | 'plus' | 'grid'
@@ -390,6 +395,7 @@ export default function AdminDashboard() {
   // 認証情報が裏で切り替わったことを検知したら、安全のため強制ログアウトする
   useSessionCollisionGuard(user?.id)
   const [activeTab, setActiveTab] = useState<TabType>('overview')
+  const [renewalSubTab, setRenewalSubTab] = useState<RenewalSubTab>('candidates')
 
   const [requests, setRequests] = useState<RequestRow[]>([])
   const [reqLoading, setReqLoading] = useState(true)
@@ -1347,7 +1353,12 @@ export default function AdminDashboard() {
                 {overviewCards.map(card => (
                   <button
                     key={card.key}
-                    onClick={() => setActiveTab(card.key)}
+                    onClick={() => {
+                      setActiveTab(card.key)
+                      // 「更新期限 対象」カードの件数は期限間近の更新候補の件数のため、
+                      // 遷移先も必ずそのサブタブに揃える（モニタリングを見ていた状態が残っていても上書き）。
+                      if (card.key === 'renewal') setRenewalSubTab('candidates')
+                    }}
                     className="rounded-[18px] border border-[#E8EDF5] bg-white/86 p-5 text-left backdrop-blur transition hover:-translate-y-0.5 hover:border-[#2F5FD0] hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]"
                   >
                     <div className="flex items-center gap-2">
@@ -1900,34 +1911,55 @@ export default function AdminDashboard() {
           </div>
         )}
         {activeTab === 'renewal' && user && (
-          <ContractMonitoringSection
-            rows={monitoringRows}
-            loading={monitoringLoading}
-            onRefresh={fetchMonitoring}
-            currentUserName={adminStaffName}
-            requestFollowUp={requestMonitoringFollowUp}
-            updateActionStatus={updateMonitoringActionStatus}
-          />
-        )}
-        {activeTab === 'renewal' && user && (
-          <h3 className="text-sm font-bold text-[#1B2233] mb-3">期限間近の更新候補（現場）</h3>
-        )}
-        {activeTab === 'renewal' && user && (
-          <RenewalManagementTab
-            candidates={renewalCandidates}
-            loading={renewalLoading}
-            updateCandidate={updateCandidate}
-            searchCsvRenewal={searchCsvRenewal}
-            requestCsvImport={requestCsvImport}
-            switchToManualOverride={switchToManualOverride}
-            copyDispatchToEmploy={copyDispatchToEmploy}
-            confirmNotRenewing={confirmNotRenewing}
-            setTriageMode={setTriageMode}
-            executeBulkApply={executeBulkApply}
-            currentUserId={user.id}
-            currentUserEmail={user.email}
-            currentUserDeptName="管理部"
-          />
+          <div className="space-y-5">
+            {/* 2026-07-29：契約状況モニタリングと期限間近の更新候補が縦積みで見落とされやすいという
+                伊藤さんの指摘を受け、契約一覧タブと同じSubTabBarでサブタブ切替方式に変更。
+                件数は「重大」等のラベルは付けず、他のサブタブと同じプレーンな整数のみを表示する
+                （SubTabBar.tsxの表示規約に合わせる。契約状況モニタリング側は台帳なし・解消済みを
+                除いた要対応件数の合計＝ContractMonitoringSection内部のcounts[2]+[3]+[4]と同じ考え方）。 */}
+            <SubTabBar
+              items={[
+                { key: 'candidates' as RenewalSubTab, label: '期限間近の更新候補', count: renewalCandidates.length },
+                {
+                  key: 'monitoring' as RenewalSubTab,
+                  label: '契約状況モニタリング',
+                  count: monitoringRows.filter(r => r.topSeverity !== 1 && r.actionStatus !== '解消').length,
+                },
+              ]}
+              activeKey={renewalSubTab}
+              onChange={setRenewalSubTab}
+            />
+            {renewalSubTab === 'monitoring' && (
+              <ContractMonitoringSection
+                rows={monitoringRows}
+                loading={monitoringLoading}
+                onRefresh={fetchMonitoring}
+                currentUserName={adminStaffName}
+                requestFollowUp={requestMonitoringFollowUp}
+                updateActionStatus={updateMonitoringActionStatus}
+              />
+            )}
+            {renewalSubTab === 'candidates' && (
+              <>
+                <h3 className="text-sm font-bold text-[#1B2233] mb-3">期限間近の更新候補（現場）</h3>
+                <RenewalManagementTab
+                  candidates={renewalCandidates}
+                  loading={renewalLoading}
+                  updateCandidate={updateCandidate}
+                  searchCsvRenewal={searchCsvRenewal}
+                  requestCsvImport={requestCsvImport}
+                  switchToManualOverride={switchToManualOverride}
+                  copyDispatchToEmploy={copyDispatchToEmploy}
+                  confirmNotRenewing={confirmNotRenewing}
+                  setTriageMode={setTriageMode}
+                  executeBulkApply={executeBulkApply}
+                  currentUserId={user.id}
+                  currentUserEmail={user.email}
+                  currentUserDeptName="管理部"
+                />
+              </>
+            )}
+          </div>
         )}
         {activeTab === 'master' && <MasterManagementTab />}
         {activeTab === 'accounts' && isAccountAdmin && <AccountManagementTab />}

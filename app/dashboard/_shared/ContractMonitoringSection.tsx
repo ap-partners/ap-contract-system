@@ -125,7 +125,7 @@ export default function ContractMonitoringSection({
         <div>
           <h3 className="text-sm font-bold text-[#1B2233]">契約状況モニタリング</h3>
           <p className="text-xs text-[#8B98B1] mt-0.5">
-            契約未締結・期限切れ放置・長期未対応を検知します（現場の期限間近は上の一覧を参照）。
+            契約未締結・期限切れ放置・長期未対応を検知します。
           </p>
         </div>
         <div className="flex items-center gap-4 flex-wrap">

@@ -36,7 +36,7 @@
 
 **ロール**：担当営業（申請）／SSC（確認・承認）／管理部（CSV取込・マスタ・監視）／従業員（署名）
 
-**テーブル（14・2026-07-15訂正）**：`staff` `department_master` `master_imports` `csv_imports` `csv_raw_data`（以上投入済み）／`contracts`（申請本体・稼働中）／`company_master`（派遣元設定key-value・稼働中）／`requests`（依頼管理）／`renewal_candidates`（更新期限管理）／`staff_roles`（ロール管理）／`minimum_wage_master`／`standard_working_hours_master`／`dispatch_fee_master`／`csv_diff_logs`（未使用・骨格のみ）。このほか`public.users`/`clients`/`documents`/`alert_settings`/`notifications`はコード内で未参照の初期テンプレート残骸・未使用機能で、削除は保留中（詳細はSYSTEM_DESIGN.md 10章2026-07-15参照）。
+**テーブル（14・2026-07-15訂正、2026-07-29に未使用テンプレート残骸5件を削除）**：`staff` `department_master` `master_imports` `csv_imports` `csv_raw_data`（以上投入済み）／`contracts`（申請本体・稼働中）／`company_master`（派遣元設定key-value・稼働中）／`requests`（依頼管理）／`renewal_candidates`（更新期限管理）／`staff_roles`（ロール管理）／`minimum_wage_master`／`standard_working_hours_master`／`dispatch_fee_master`／`csv_diff_logs`（未使用・骨格のみ）。このほか`pledges`（アルバイト誓約書申請本体）・`office_master`（自社拠点マスタ）・`work_description_templates`・`contract_monitoring_actions`が稼働中（2026-07-22〜23新設、本サマリ行への反映漏れ）。旧`public.users`/`clients`/`documents`/`alert_settings`/`notifications`（初期テンプレート残骸・未使用）は伊藤さんの承認を得て削除済み（詳細はSYSTEM_DESIGN.md 10章2026-07-29参照）。
 → 各カラム定義は `docs/SYSTEM_DESIGN.md` 第3章（ただし`dispatch_fee_master`・`renewal_candidates`・`staff_roles`はDDL節が未整備。指摘38の残課題）。
 
 **画面（2026-07-24再訂正）**：`/apply` `/login` `/dashboard/sales` `/dashboard/ssc` `/dashboard/admin` `/dashboard/ssc/contracts/[id]` `/dashboard/sales/contracts/[id]` `/sign/[id]` `/staff/mypage` `/staff/mypage/documents/[id]` `/pledge/apply` `/dashboard/ssc/pledges/[id]` は本番稼働中。アルバイト誓約書システム（申請・SSC確認・帳票PDF・署名フロー・一括承認まで）は2026-07-23〜24に実装・実機確認済み。`/help/*`のみ未実装。以前この行は「アルバイト誓約書システムは未実装」としていたが、実装済みリスト（本ファイル下部の実装済みタスク一覧）と自己矛盾しており古い記述が残っていた（2026-07-24気づき）。

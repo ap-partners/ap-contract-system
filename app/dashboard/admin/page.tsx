@@ -31,6 +31,7 @@ import FaqManagementTab from '../_shared/FaqManagementTab'
 import ChatbotWidget from '../_shared/ChatbotWidget'
 import { useDebouncedSearch, escapeForPostgrestFilter } from '../_shared/useDebouncedSearch'
 import { STAFF_EXPRESS_COLUMNS } from '@/lib/staffExpressColumns'
+import { CSV_SYSTEM_COLUMNS } from '@/lib/csvSystemColumns'
 import { clampDateYear } from '@/app/apply/_lib/helpers'
 import LoggedInUserChip from '../_shared/LoggedInUserChip'
 import NewDocumentMenu from '../_shared/NewDocumentMenu'
@@ -510,6 +511,7 @@ export default function AdminDashboard() {
   const [csvHistory, setCsvHistory] = useState<any[]>([])
   const [csvHistoryLoading, setCsvHistoryLoading] = useState(true)
   const [staffExpressColumnsOpen, setStaffExpressColumnsOpen] = useState(false)
+  const [csvSystemColumnsOpen, setCsvSystemColumnsOpen] = useState(false)
 
   const fetchCsvHistory = useCallback(async () => {
     setCsvHistoryLoading(true)
@@ -1900,6 +1902,66 @@ export default function AdminDashboard() {
                           </tbody>
                         </table>
                       </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 2026-07-29追加：e-staffing/HRstation/winworks/Staffiaは各システム側のエクスポート画面で
+                  出力項目を選べてしまい、間違った形式のCSVをダウンロードしてしまう可能性がある、との
+                  伊藤さんご指摘を受けて追加。StaffExpressと違い列の並び順は問わない（ヘッダー名で
+                  読み取るため）ので、その旨を含めて案内する。 */}
+              {csvImportSystem !== 'StaffExpress' && (
+                <div className="mt-4 rounded-2xl border border-[#E8EDF5] bg-white">
+                  <button
+                    onClick={() => setCsvSystemColumnsOpen(o => !o)}
+                    className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold text-[#1F2937]"
+                  >
+                    <span>ダウンロードする項目の確認（{csvSystemColumnsOpen ? '閉じる' : '開く'}）</span>
+                    <span className="text-[#2F5FD0]">{csvSystemColumnsOpen ? '▲' : '▼'}</span>
+                  </button>
+                  {csvSystemColumnsOpen && (
+                    <div className="border-t border-[#E8EDF5] p-4">
+                      <p className="mb-3 text-xs font-medium leading-5 text-[#6B7280]">
+                        {csvImportSystem}側のCSVエクスポート画面では出力項目を選べる場合があります。以下の列が含まれているかを、アップロード前にご確認ください。
+                        <span className="font-semibold text-[#1F2937]">列の並び順は関係ありません</span>（列名で自動的に読み取ります）。
+                        ここに無い列が含まれていても無視されるだけなので、他の項目まで絞り込む必要はありません。
+                        <span className="font-semibold text-[#E74C3C]">「必須」の列が無い行はスキップされ、取り込まれません。</span>
+                      </p>
+                      {(csvImportSystem === 'Staffia'
+                        ? [CSV_SYSTEM_COLUMNS.Staffia103, CSV_SYSTEM_COLUMNS.Staffia104]
+                        : [CSV_SYSTEM_COLUMNS[csvImportSystem as 'e-staffing' | 'HRstation' | 'winworks']]
+                      ).map(fileInfo => (
+                        <div key={fileInfo.fileLabel} className="mb-4 last:mb-0">
+                          <p className="mb-2 text-xs font-semibold text-[#1F2937]">{fileInfo.fileLabel}</p>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="border-b border-[#E8EDF5] text-left font-semibold text-[#6B7280]">
+                                  <th className="px-2 py-1">列名</th>
+                                  <th className="px-2 py-1">用途</th>
+                                  <th className="px-2 py-1">必須</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {fileInfo.columns.map(c => (
+                                  <tr key={c.label} className="border-b border-[#F1F4F9]">
+                                    <td className="px-2 py-1 font-medium text-[#1F2937]">{c.label}</td>
+                                    <td className="px-2 py-1 text-[#6B7280]">{c.usage}</td>
+                                    <td className="px-2 py-1">
+                                      {c.required ? (
+                                        <span className="rounded-full bg-[#FDECEC] px-2 py-0.5 text-[11px] font-semibold text-[#E74C3C]">必須</span>
+                                      ) : (
+                                        <span className="text-[#8B98B1]">任意</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
-import { runAutoChecks, isMinimumWageMasterMissing, type MinimumWageRow } from '@/lib/autoChecks'
+import { runAutoChecks, isMinimumWageMasterMissing, computeWageCheckDetail, type MinimumWageRow } from '@/lib/autoChecks'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
 import {
@@ -52,6 +52,12 @@ function ApplyPageInner() {
   const renewalCandidateId = searchParams.get('renewal')
   const [renewalLoading, setRenewalLoading] = useState(!!renewalCandidateId)
   const [renewalNotFound, setRenewalNotFound] = useState(false)
+  // 2026-07-29追加（最低賃金改定対応）：/apply?wageAmend=契約ID で開いた場合の、
+  // 原契約プリフィル＋最終確認（STEP8）直行モード。renewalCandidateIdと同じ考え方だが、
+  // renewal_candidates行を経由せずcontracts.idを直接指定する点が異なる（真新しい申請として挿入）。
+  const wageAmendContractId = searchParams.get('wageAmend')
+  const [wageAmendLoading, setWageAmendLoading] = useState(!!wageAmendContractId)
+  const [wageAmendNotFound, setWageAmendNotFound] = useState(false)
   const [user, setUser] = useState<any>(null)
   // STEP1スタッフ検索の自部門制限用：担当営業自身の部門番号。
   // undefined=まだ取得していない／null=担当営業だが部門が特定できない（staffテーブルに一致行なし）
@@ -371,6 +377,40 @@ function ApplyPageInner() {
     return lines
   })()
 
+  // 2026-07-29追加：最低賃金改定対応「修正して再申請する」（/apply?wageAmend=）で開いた場合のみ、
+  // STEP7（給与）に現在の最低賃金と入力内容の差額を表示する（伊藤さん指摘：一覧ではなく、
+  // 実際に金額を入力する画面に明記してほしい）。現在フォームに入力されている値でリアルタイムに
+  // 再計算するため、金額を修正すると差額表示もその場で更新される。
+  // 計算自体（時給換算・適用マスタ行の選定）は既存のcomputeWageCheckDetail()をそのまま使うため、
+  // 新規申請時のチェックと矛盾する数字にはならないはずだが、それでも判定不能なケースが
+  // ありうるため「約」を必ず付け、正しい差額が分からない場合は管理部へ問い合わせるよう案内する。
+  const wageAmendBanner = (() => {
+    if (!wageAmendContractId) return null
+    if (!selectedStaff?.dept_no) return null
+    const wageRowsForDept = minimumWageMaster.filter(r => r.dept_no === selectedStaff.dept_no)
+    if (wageRowsForDept.length === 0) return null
+    const detail = computeWageCheckDetail({
+      salaryType,
+      basicSalary: parseAmount(basicSalary),
+      rolePay: parseAmount(rolePay),
+      skillPay: parseAmount(skillPay),
+      salesPay: parseAmount(salesPay),
+      housingPay: parseAmount(housingPay),
+      workingHoursH: parseAmount(workingHoursH),
+      workingHoursM: parseAmount(workingHoursM),
+      monthlyStandardHours: resolvedMonthlyHours,
+      employStart, employEnd, contractStartDate,
+      minimumWageRowsForDept: wageRowsForDept,
+    })
+    if (!detail) return null
+    const gap = Math.round(detail.targetRow.hourly_wage - detail.hourlyEquivalent)
+    return {
+      effectiveFrom: detail.targetRow.effective_from,
+      requiredWage: detail.targetRow.hourly_wage,
+      hourlyEquivalent: Math.floor(detail.hourlyEquivalent),
+      gap,
+    }
+  })()
 
   // STEP7：保険帳票プレビュー
   const insurancePreview = (() => {
@@ -780,6 +820,149 @@ function ApplyPageInner() {
     }
     loadForRenewal()
   }, [user, renewalCandidateId])
+
+  // 2026-07-29追加：最低賃金改定対応「最低賃金改定対応」サブタブの「修正して再申請する」ボタンから
+  // /apply?wageAmend=契約ID で開いた場合、元の契約内容をそのままプリフィルし最終確認（STEP8相当）へ
+  // 直行する。renewalCandidateIdのフローとほぼ同じ考え方だが、renewal_candidates行を経由せず
+  // contracts.idを直接指定する点、CSV最新値とのマージを行わない点（元の内容をそのまま複製するだけ）が
+  // 異なる。雇用期間の開始日だけ、現在の最低賃金マスタの適用開始日（改定日）が元の開始日より後であれば
+  // その日付に自動で繰り上げる（元の開始日のままで良い場合はそのまま）。真新しい申請として挿入され、
+  // 元の契約はそのまま残る（ステータスは変更しない）。
+  useEffect(() => {
+    if (!wageAmendContractId) { setWageAmendLoading(false); return }
+    if (!user) return
+    const loadForWageAmend = async () => {
+      const { data: prevContract, error: prevError } = await supabase
+        .from('contracts')
+        .select('*')
+        .eq('id', wageAmendContractId)
+        .maybeSingle()
+      if (prevError || !prevContract) { setWageAmendNotFound(true); setWageAmendLoading(false); return }
+
+      const prevFields: Record<string, any> = (prevContract.input_data as any)?.fields || {}
+      const csvMeta = (prevContract.input_data as any)?.csvMeta || {}
+
+      const { data: staffRow } = await supabase
+        .from('staff')
+        .select('id, employee_number, name, crew_code, address, dept_no, department_master(dept_name)')
+        .eq('id', prevContract.staff_id)
+        .maybeSingle()
+
+      // 雇用期間の開始日を、現在の最低賃金マスタの適用開始日（改定日）まで自動で繰り上げる
+      let newEmployStart = prevFields.employStart || ''
+      if (staffRow?.dept_no !== null && staffRow?.dept_no !== undefined) {
+        const { data: wageRows } = await supabase
+          .from('minimum_wage_master')
+          .select('hourly_wage, effective_from')
+          .eq('dept_no', staffRow.dept_no)
+        if (wageRows && wageRows.length > 0) {
+          const latestRow = wageRows.reduce((a, b) => (a.effective_from > b.effective_from ? a : b))
+          if (prevFields.employStart && latestRow.effective_from > prevFields.employStart) {
+            newEmployStart = latestRow.effective_from
+          }
+        }
+      }
+
+      const f: Record<string, any> = { ...prevFields, employStart: newEmployStart, trialPeriod: '無', trialStart: '', trialEnd: '' }
+
+      // STEP1：対象スタッフ・雇用区分・就業場所区分・書類種別
+      setSelectedStaff(staffRow ? {
+        id: staffRow.id,
+        employee_number: staffRow.employee_number,
+        name: staffRow.name,
+        department: (staffRow as any).department_master?.dept_name || null,
+        crew_code: staffRow.crew_code,
+        address: staffRow.address,
+      } : {
+        id: prevContract.staff_id,
+        employee_number: (prevContract.input_data as any)?.staff?.employee_number || '',
+        name: (prevContract.input_data as any)?.staff?.name || '',
+        department: null,
+        crew_code: null,
+        address: null,
+      })
+      setSearched(true)
+      setContractType(f.contractType || '')
+      setWorkPlace(f.workPlace || '現場')
+      setDocumentType(f.documentType || '')
+
+      // STEP2：就業先情報
+      setCsvMode(csvMeta.csvMode || 'manual')
+      setCsvSystem(csvMeta.csvSystem || 'e-staffing')
+      setCsvDispatchStart(csvMeta.csvDispatchStart || '')
+      setCsvSnapshot(csvMeta.csvSnapshot || {})
+      setWorkLocationName(f.workLocationName || '')
+      setWorkLocationAddress(f.workLocationAddress || '')
+      setWorkLocationTel(f.workLocationTel || '')
+      setBusinessContent(f.businessContent || '')
+      setStartTime(f.startTime || '')
+      setEndTime(f.endTime || '')
+      setIsShift(!!f.isShift)
+      setBreakTime(f.breakTime || '')
+      setWorkingHoursH(f.workingHoursH || '')
+      setWorkingHoursM(f.workingHoursM || '')
+      setWorkDays(f.workDays || '')
+      setWorkDaysOther(f.workDaysOther || '')
+      setOrganizationUnit(f.organizationUnit || '')
+      setConflictDate(f.conflictDate || '')
+      setResponsibility(f.responsibility || '')
+
+      // STEP3：派遣先担当者
+      setCmdDept(f.cmd_dept || ''); setCmdRole(f.cmd_role || ''); setCmdName(f.cmd_name || ''); setCmdTel(f.cmd_tel || '')
+      setRespDept(f.resp_dept || ''); setRespRole(f.resp_role || ''); setRespName(f.resp_name || ''); setRespTel(f.resp_tel || '')
+      setCompDept(f.comp_dept || ''); setCompRole(f.comp_role || ''); setCompName(f.comp_name || ''); setCompTel(f.comp_tel || '')
+      setWelfare(f.welfare || '')
+      setSafetyMode(f.safetyMode || 'default')
+      setSafetyText(f.safetyText || DEFAULT_SAFETY)
+      setConflictMode(f.conflictMode || 'default')
+      setConflictText(f.conflictText || DEFAULT_CONFLICT)
+
+      // STEP4：派遣元担当者
+      setMgrDept(f.mgr_dept || ''); setMgrRole(f.mgr_role || ''); setMgrName(f.mgr_name || ''); setMgrTel(f.mgr_tel || '')
+      setCmpDept(f.cmp_dept || ''); setCmpRole(f.cmp_role || ''); setCmpName(f.cmp_name || ''); setCmpTel(f.cmp_tel || '')
+      setMgrCmpSource(csvMeta.mgrCmpSource || 'master')
+      setMasterSnapshot(csvMeta.masterSnapshot || {})
+
+      // STEP5：期間・労働条件（雇用開始日のみ、上で計算した繰り上げ後の日付を使う）
+      setDispatchStart(f.dispatchStart || '')
+      setDispatchEnd(f.dispatchEnd || '')
+      setConflictDateOrg(f.conflictDateOrg || '')
+      setEmployStart(f.employStart || '')
+      setEmployEnd(f.employEnd || '')
+      setContractStartDate(f.contractStartDate || '')
+      setTrialPeriod(f.trialPeriod || '')
+      setTrialStart(f.trialStart || '')
+      setTrialEnd(f.trialEnd || '')
+      setFlexTime(f.flexTime || '')
+      setOvertime(f.overtime || '')
+
+      // STEP6：契約条件
+      setClosingPattern(f.closingPattern || 'auto')
+      setBonusType(f.bonusType || '')
+
+      // STEP7：給与・保険（賃金の見直しが必要な箇所。元の金額をそのままプリフィルし、
+      // 最終確認画面で伊藤さん・担当営業が新しい最低賃金を踏まえて金額を修正する）
+      setSalaryType(f.salaryType || '時給')
+      setBasicSalary(f.basicSalary || '')
+      setSkillPay(f.skillPay || '0')
+      setRolePay(f.rolePay || '0')
+      setSalesPay(f.salesPay || '0')
+      setHousingPay(f.housingPay || '0')
+      setOvertimePay(f.overtimePay || '0')
+      setOvertimeHours(f.overtimeHours || '0')
+      setTransportType(f.transportType || 'default')
+      setHasEmployInsurance(f.hasEmployInsurance !== false)
+      setHasSocialInsurance(f.hasSocialInsurance !== false)
+
+      // 最終確認（STEP8相当）に直行する
+      const patternFromDoc = getPattern(f.documentType || '')
+      const targetSteps = patternFromDoc === 'A' ? STEPS_A.length : patternFromDoc === 'C' ? STEPS_C.length : STEPS_A.length
+      setCurrentStep(targetSteps)
+
+      setWageAmendLoading(false)
+    }
+    loadForWageAmend()
+  }, [user, wageAmendContractId])
 
   // STEP2の「入力方法」（CSV検索／手動入力）を切り替えた時、新規作成時と同じ状態に完全にリセットする処理
   // ※CSV→手動、手動→CSVどちらの切り替えでもリセットする（確定仕様）
@@ -1244,7 +1427,7 @@ function ApplyPageInner() {
   }
 
   const stepType = getStepType(currentStep)
-  if (!user || editLoading || renewalLoading) return <div className="p-8" style={{ color: '#5A6A8A' }}>読み込み中...</div>
+  if (!user || editLoading || renewalLoading || wageAmendLoading) return <div className="p-8" style={{ color: '#5A6A8A' }}>読み込み中...</div>
   if (editNotFound) return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ background: '#F5F7FC' }}>
       <p className="text-lg font-bold" style={{ color: '#1A2340' }}>再申請する差し戻し案件が見つかりませんでした</p>
@@ -1260,6 +1443,18 @@ function ApplyPageInner() {
   if (renewalNotFound) return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ background: '#F5F7FC' }}>
       <p className="text-lg font-bold" style={{ color: '#1A2340' }}>個別申請の対象となる更新期限案件が見つかりませんでした</p>
+      <button onClick={() => {
+        const role = user?.user_metadata?.role
+        router.push(role === 'SSC' ? '/dashboard/ssc' : role === '管理部' ? '/dashboard/admin' : '/dashboard/sales')
+      }}
+        className="text-sm px-4 py-2 rounded-lg text-white" style={{ background: '#1B3A8C' }}>
+        ダッシュボードに戻る
+      </button>
+    </div>
+  )
+  if (wageAmendNotFound) return (
+    <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ background: '#F5F7FC' }}>
+      <p className="text-lg font-bold" style={{ color: '#1A2340' }}>再申請の対象となる契約が見つかりませんでした</p>
       <button onClick={() => {
         const role = user?.user_metadata?.role
         router.push(role === 'SSC' ? '/dashboard/ssc' : role === '管理部' ? '/dashboard/admin' : '/dashboard/sales')
@@ -1974,6 +2169,7 @@ function ApplyPageInner() {
           {/* ===== STEP7（A=STEP5 / C=STEP7）：給与・保険 ===== */}
           {stepType === 'salary' && (
             <StepSalary
+              wageAmendBanner={wageAmendBanner}
               salaryType={salaryType} setSalaryType={setSalaryType}
               basicSalary={basicSalary} setBasicSalary={setBasicSalary} basicSalaryError={basicSalaryError}
               rolePay={rolePay} setRolePay={setRolePay}

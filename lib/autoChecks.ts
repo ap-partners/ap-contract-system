@@ -86,15 +86,21 @@ function checkAmountAnomaly(input: AutoCheckInput): AutoCheckResult | null {
   return null
 }
 
-// ② 最低賃金チェック（現場のみ・部門×適用開始日単位）
-// 2026-07-07決定：雇用期間中に最低賃金の改定をまたぐ場合、改定後（＝雇用期間中で最も適用開始日が新しいもの）の
-// 金額1本でチェックするシンプルな設計に変更。最低賃金は下がることを想定しないため、最新の基準を満たしていれば
-// それより前の期間も自動的に満たしている、という考え方（過去の「区間ごとに別々にチェック」という設計から変更）。
-function checkMinimumWage(input: AutoCheckInput): AutoCheckResult[] {
-  const results: AutoCheckResult[] = []
-  if (input.pattern === 'B') return results // 2026-07-08：就業条件明示書は給与入力STEPが無いためスキップ
-  if (input.workPlace !== '現場') return results // 社内は対象外（2026-07-03最終決定）
-  if (input.minimumWageRowsForDept.length === 0) return results // STEP1で強制ブロック済みのはずだが念のため
+// ②の時給換算・適用マスタ行の選定ロジック本体（2026-07-29：checkMinimumWageから抽出）。
+// 更新期限管理タブ「最低賃金改定対応」サブタブ（既存契約の遡及チェック）でも同じ計算式を
+// 再利用するため、checkMinimumWageの内部計算部分だけを独立した関数として切り出した。
+// checkMinimumWage自体の外部向けの挙動・シグネチャは変更していない。
+export interface WageCheckDetail {
+  hourlyEquivalent: number
+  targetRow: MinimumWageRow
+}
+
+export function computeWageCheckDetail(input: Pick<AutoCheckInput,
+  'salaryType' | 'basicSalary' | 'rolePay' | 'skillPay' | 'salesPay' | 'housingPay' |
+  'workingHoursH' | 'workingHoursM' | 'monthlyStandardHours' |
+  'employStart' | 'employEnd' | 'contractStartDate' | 'minimumWageRowsForDept'
+>): WageCheckDetail | null {
+  if (input.minimumWageRowsForDept.length === 0) return null
 
   // 時給換算した金額を算出
   // 2026-07-07修正：月給制で基本給のみを時給換算していたため、役職手当・職能給・営業手当・
@@ -115,12 +121,12 @@ function checkMinimumWage(input: AutoCheckInput): AutoCheckResult[] {
       hourlyEquivalent = (input.basicSalary + allowanceTotal) / input.monthlyStandardHours
     }
   }
-  if (hourlyEquivalent === null) return results // 換算できない場合は判定不能のためスキップ
+  if (hourlyEquivalent === null) return null // 換算できない場合は判定不能
 
   // 無期契約・正社員は雇用期間（employStart/employEnd）を使わず、契約条件適用開始日（contractStartDate）を使う仕様のため、
   // こちらが空の場合のフォールバックとして必ず含める（2026-07-07修正：この考慮漏れで正社員の最低賃金チェックが常にスキップされていた）
   const periodEnd = input.employEnd || input.employStart || input.contractStartDate || null
-  if (!periodEnd) return results
+  if (!periodEnd) return null
 
   // 雇用期間の終了日までに適用開始済みの行の中から、最も新しい（＝適用開始日が最も遅い）行を採用する。
   // 該当する行が無い場合（雇用期間の終了日より後にしか改定が無い＝マスタ登録より前の契約等）は、
@@ -129,6 +135,22 @@ function checkMinimumWage(input: AutoCheckInput): AutoCheckResult[] {
   const targetRow = applicableRows.length > 0
     ? applicableRows.reduce((latest, r) => r.effective_from > latest.effective_from ? r : latest)
     : input.minimumWageRowsForDept.reduce((earliest, r) => r.effective_from < earliest.effective_from ? r : earliest)
+
+  return { hourlyEquivalent, targetRow }
+}
+
+// ② 最低賃金チェック（現場のみ・部門×適用開始日単位）
+// 2026-07-07決定：雇用期間中に最低賃金の改定をまたぐ場合、改定後（＝雇用期間中で最も適用開始日が新しいもの）の
+// 金額1本でチェックするシンプルな設計に変更。最低賃金は下がることを想定しないため、最新の基準を満たしていれば
+// それより前の期間も自動的に満たしている、という考え方（過去の「区間ごとに別々にチェック」という設計から変更）。
+function checkMinimumWage(input: AutoCheckInput): AutoCheckResult[] {
+  const results: AutoCheckResult[] = []
+  if (input.pattern === 'B') return results // 2026-07-08：就業条件明示書は給与入力STEPが無いためスキップ
+  if (input.workPlace !== '現場') return results // 社内は対象外（2026-07-03最終決定）
+
+  const detail = computeWageCheckDetail(input)
+  if (!detail) return results
+  const { hourlyEquivalent, targetRow } = detail
 
   if (hourlyEquivalent < targetRow.hourly_wage) {
     results.push({

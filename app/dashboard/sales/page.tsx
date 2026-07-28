@@ -19,6 +19,8 @@ import {
 import { useContractListToolbar, buildDateSortOptions } from '../_shared/useContractListToolbar'
 import { useApprovedAccumulator, APPROVED_WINDOW_DAYS } from '../_shared/useApprovedAccumulator'
 import RenewalManagementTab from '../_shared/RenewalManagementTab'
+import WageRevisionSection from '../_shared/WageRevisionSection'
+import { useWageRevisionCandidates } from '../_shared/useWageRevisionCandidates'
 import PledgeListSection from '../_shared/PledgeListSection'
 import LoggedInUserChip from '../_shared/LoggedInUserChip'
 import NewDocumentMenu from '../_shared/NewDocumentMenu'
@@ -35,6 +37,9 @@ type Contract = ContractForDisplay & {
   created_by_dept_no: number | null
   sign_requested_at: string | null
 }
+
+// 更新期限管理タブのサブタブ（2026-07-29：最低賃金改定対応の追加に伴い新設。admin/page.tsxと同じ考え方）
+type RenewalSubTab = 'candidates' | 'wageRevision'
 
 type MyRequest = {
   id: string
@@ -259,6 +264,12 @@ export default function SalesDashboard() {
     searchCsvRenewal, requestCsvImport, switchToManualOverride,
     copyDispatchToEmploy, confirmNotRenewing, setTriageMode, executeBulkApply,
   } = useRenewalCandidates()
+  // 最低賃金改定対応（2026-07-29実装。担当営業は自部門分のみ。contractsのRLSで自動的に絞り込まれる）
+  const [renewalSubTab, setRenewalSubTab] = useState<RenewalSubTab>('candidates')
+  const {
+    rows: wageRevisionRows, loading: wageRevisionLoading, error: wageRevisionError,
+    fetchCandidates: fetchWageRevisionCandidates,
+  } = useWageRevisionCandidates()
 
   useEffect(() => {
     const init = async () => {
@@ -815,7 +826,23 @@ export default function SalesDashboard() {
         {activeFilter === 'renewal' ? (
           <section className={`${cardBase} mt-5 p-6`}>
             <h2 className="mb-5 text-lg font-semibold text-[#1F2937]">更新期限管理</h2>
-            {user && (
+            <SubTabBar
+              items={[
+                { key: 'candidates' as const, label: '期限間近の更新候補', count: renewalCandidates.length },
+                { key: 'wageRevision' as const, label: '最低賃金改定対応', count: wageRevisionRows.length },
+              ]}
+              activeKey={renewalSubTab}
+              onChange={setRenewalSubTab}
+            />
+            {renewalSubTab === 'wageRevision' && (
+              <WageRevisionSection
+                rows={wageRevisionRows}
+                loading={wageRevisionLoading}
+                error={wageRevisionError}
+                onRefresh={fetchWageRevisionCandidates}
+              />
+            )}
+            {renewalSubTab === 'candidates' && user && (
               <RenewalManagementTab
                 candidates={renewalCandidates}
                 loading={renewalLoading}

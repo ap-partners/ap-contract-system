@@ -23,6 +23,8 @@ import { useDeptNameMap, getApplicantLabel } from '../_shared/useDeptNameMap'
 import { useContractListToolbar, buildDateSortOptions } from '../_shared/useContractListToolbar'
 import { useApprovedAccumulator, APPROVED_WINDOW_DAYS, CONTRACT_COLUMNS } from '../_shared/useApprovedAccumulator'
 import RenewalManagementTab from '../_shared/RenewalManagementTab'
+import WageRevisionSection from '../_shared/WageRevisionSection'
+import { useWageRevisionCandidates } from '../_shared/useWageRevisionCandidates'
 import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
@@ -39,6 +41,8 @@ type Contract = ContractForDisplay
 // 管理部と同じ二階層（最上位タブ＋契約サブタブ）に統一する。
 type TopTab = '契約一覧' | '更新期限管理' | 'アルバイト誓約書'
 type ContractSubTab = '承認待ち' | '差し戻し中' | '承認済み' | '取り下げ'
+// 更新期限管理タブのサブタブ（2026-07-29：最低賃金改定対応の追加に伴い新設）
+type RenewalSubTab = 'candidates' | 'wageRevision'
 
 type IconName =
   | 'home'
@@ -205,6 +209,12 @@ export default function SSCDashboard() {
     searchCsvRenewal, requestCsvImport, switchToManualOverride,
     copyDispatchToEmploy, confirmNotRenewing, setTriageMode, executeBulkApply,
   } = useRenewalCandidates()
+  // 最低賃金改定対応（2026-07-29実装。SSCは全部門を閲覧・自分の申請分は再申請も可能）
+  const [renewalSubTab, setRenewalSubTab] = useState<RenewalSubTab>('candidates')
+  const {
+    rows: wageRevisionRows, loading: wageRevisionLoading, error: wageRevisionError,
+    fetchCandidates: fetchWageRevisionCandidates,
+  } = useWageRevisionCandidates()
 
   useEffect(() => {
     const init = async () => {
@@ -784,22 +794,40 @@ export default function SSCDashboard() {
 
         {topTab === '更新期限管理' && user && (
           <div className="mt-5">
-            <RenewalManagementTab
-              candidates={renewalCandidates}
-              loading={renewalLoading}
-              updateCandidate={updateCandidate}
-              searchCsvRenewal={searchCsvRenewal}
-              requestCsvImport={requestCsvImport}
-              switchToManualOverride={switchToManualOverride}
-              copyDispatchToEmploy={copyDispatchToEmploy}
-              confirmNotRenewing={confirmNotRenewing}
-              setTriageMode={setTriageMode}
-              executeBulkApply={executeBulkApply}
-              currentUserId={user.id}
-              currentUserEmail={user.email}
-              currentUserDeptName="SSC"
-              canFinalize={false}
+            <SubTabBar
+              items={[
+                { key: 'candidates' as RenewalSubTab, label: '期限間近の更新候補', count: renewalCandidates.length },
+                { key: 'wageRevision' as RenewalSubTab, label: '最低賃金改定対応', count: wageRevisionRows.length },
+              ]}
+              activeKey={renewalSubTab}
+              onChange={setRenewalSubTab}
             />
+            {renewalSubTab === 'wageRevision' && (
+              <WageRevisionSection
+                rows={wageRevisionRows}
+                loading={wageRevisionLoading}
+                error={wageRevisionError}
+                onRefresh={fetchWageRevisionCandidates}
+              />
+            )}
+            {renewalSubTab === 'candidates' && (
+              <RenewalManagementTab
+                candidates={renewalCandidates}
+                loading={renewalLoading}
+                updateCandidate={updateCandidate}
+                searchCsvRenewal={searchCsvRenewal}
+                requestCsvImport={requestCsvImport}
+                switchToManualOverride={switchToManualOverride}
+                copyDispatchToEmploy={copyDispatchToEmploy}
+                confirmNotRenewing={confirmNotRenewing}
+                setTriageMode={setTriageMode}
+                executeBulkApply={executeBulkApply}
+                currentUserId={user.id}
+                currentUserEmail={user.email}
+                currentUserDeptName="SSC"
+                canFinalize={false}
+              />
+            )}
           </div>
         )}
 

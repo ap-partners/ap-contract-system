@@ -25,6 +25,8 @@ import RenewalManagementTab from '../_shared/RenewalManagementTab'
 import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
 import ContractMonitoringSection from '../_shared/ContractMonitoringSection'
 import { useContractMonitoring } from '../_shared/useContractMonitoring'
+import WageRevisionSection from '../_shared/WageRevisionSection'
+import { useWageRevisionCandidates } from '../_shared/useWageRevisionCandidates'
 import MasterManagementTab from '../_shared/MasterManagementTab'
 import AccountManagementTab from '../_shared/AccountManagementTab'
 import FaqManagementTab from '../_shared/FaqManagementTab'
@@ -89,7 +91,7 @@ const TAB_GROUP_LABEL: Record<TabGroupKey, { label: string; icon: IconName }> = 
 // 従来は同一タブ内に2つの一覧が縦に積み上がって表示され、下側（契約状況モニタリング）が
 // スクロールしないと見えない・見落としやすいという伊藤さんの指摘を受けて分割した。
 // 初期表示は「期限間近の更新候補」（伊藤さんが推奨案として選択・確定）。
-type RenewalSubTab = 'candidates' | 'monitoring'
+type RenewalSubTab = 'candidates' | 'monitoring' | 'wageRevision'
 type Contract = ContractForDisplay
 type ContractSubTab = '承認待ち' | '差し戻し中' | '承認済み' | '取り下げ'
 type IconName = 'file' | 'list' | 'shield' | 'upload' | 'alert' | 'clock' | 'search' | 'refresh' | 'check' | 'arrow' | 'logout' | 'map' | 'user' | 'building' | 'plus' | 'grid'
@@ -497,6 +499,12 @@ export default function AdminDashboard() {
     rows: monitoringRows, loading: monitoringLoading, fetchMonitoring,
     requestFollowUp: requestMonitoringFollowUp, updateActionStatus: updateMonitoringActionStatus,
   } = useContractMonitoring()
+
+  // 最低賃金改定対応（2026-07-29実装。3ダッシュボード共通）
+  const {
+    rows: wageRevisionRows, loading: wageRevisionLoading, error: wageRevisionError,
+    fetchCandidates: fetchWageRevisionCandidates,
+  } = useWageRevisionCandidates()
 
   // ===== CSVインポートタブ（2026-07-15実装。2026-07-17：StaffExpress（スタッフ/部門マスタ）追加） =====
   const [csvImportSystem, setCsvImportSystem] = useState<'e-staffing' | 'HRstation' | 'winworks' | 'Staffia' | 'StaffExpress'>('e-staffing')
@@ -2110,6 +2118,7 @@ export default function AdminDashboard() {
                   label: '契約状況モニタリング',
                   count: monitoringRows.filter(r => r.topSeverity !== 1 && r.actionStatus !== '解消').length,
                 },
+                { key: 'wageRevision' as RenewalSubTab, label: '最低賃金改定対応', count: wageRevisionRows.length },
               ]}
               activeKey={renewalSubTab}
               onChange={setRenewalSubTab}
@@ -2122,6 +2131,14 @@ export default function AdminDashboard() {
                 currentUserName={adminStaffName}
                 requestFollowUp={requestMonitoringFollowUp}
                 updateActionStatus={updateMonitoringActionStatus}
+              />
+            )}
+            {renewalSubTab === 'wageRevision' && (
+              <WageRevisionSection
+                rows={wageRevisionRows}
+                loading={wageRevisionLoading}
+                error={wageRevisionError}
+                onRefresh={fetchWageRevisionCandidates}
               />
             )}
             {renewalSubTab === 'candidates' && (

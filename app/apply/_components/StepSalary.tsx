@@ -11,6 +11,10 @@ import { FormRow, SectionHeader, CriticalWarning } from './FormParts'
 type TransportType = (typeof TRANSPORT_TYPES)[number]
 
 interface StepSalaryProps {
+  // 2026-07-29追加：最低賃金改定対応（/apply?wageAmend=）で開いている場合のみ渡される、
+  // 現在の入力内容と最低賃金マスタとの差額情報。通常の新規申請・他の再申請モードではnull。
+  wageAmendBanner?: { effectiveFrom: string; requiredWage: number; hourlyEquivalent: number; gap: number } | null
+
   salaryType: string; setSalaryType: (v: string) => void
 
   basicSalary: string; setBasicSalary: (v: string) => void
@@ -41,6 +45,7 @@ interface StepSalaryProps {
 }
 
 export default function StepSalary({
+  wageAmendBanner,
   salaryType, setSalaryType,
   basicSalary, setBasicSalary, basicSalaryError,
   rolePay, setRolePay, skillPay, setSkillPay, salesPay, setSalesPay,
@@ -58,6 +63,25 @@ export default function StepSalary({
   return (
     <>
       <SectionHeader label="賃金" />
+
+      {/* 2026-07-29追加：最低賃金改定対応の再申請画面でのみ表示。現在の入力内容と最低賃金マスタとの
+          差額をリアルタイムに表示する（金額を修正すると自動で更新される）。計算にはズレが生じる
+          可能性があるため、金額には必ず「約」を付け、不明な場合の問い合わせ先も明記する。 */}
+      {wageAmendBanner && (
+        <div className="rounded-lg p-4 border mb-4" style={{ background: '#FFF8E1', borderColor: '#E8C547' }}>
+          <p className="text-sm font-bold mb-1" style={{ color: '#8A6D1D' }}>最低賃金改定対応：金額の見直しが必要です</p>
+          <p className="text-sm leading-relaxed" style={{ color: '#1A2340' }}>
+            {wageAmendBanner.effectiveFrom}時点の最低賃金は約時給{wageAmendBanner.requiredWage.toLocaleString()}円です。
+            現在の入力内容を時給換算すると約{wageAmendBanner.hourlyEquivalent.toLocaleString()}円のため、
+            {wageAmendBanner.gap > 0
+              ? `約${wageAmendBanner.gap.toLocaleString()}円の不足が見込まれます。`
+              : '現在の入力内容であれば不足は見込まれません。'}
+          </p>
+          <p className="text-xs mt-2" style={{ color: '#8A6D1D' }}>
+            ※金額は入力内容から自動計算した目安です。正しい差額が分からない場合は管理部へお問合せください。
+          </p>
+        </div>
+      )}
 
       {/* 給与の種類 */}
       <FormRow label="給与の種類" required>

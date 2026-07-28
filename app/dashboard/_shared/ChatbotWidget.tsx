@@ -17,7 +17,7 @@
 //     質問一覧はフラットな行リスト＋chevron-right・回答はボットアバター＋吹き出し風グレー背景
 //   ④エスカレーション導線が説明文で終わっていた → 「質問を送る」入力欄をパネル下部に常時表示、
 //     エスカレーション注記がある回答には「この件で質問を送る」ボタンを追加
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import {
@@ -32,7 +32,7 @@ const ORANGE = '#F59E42'
 const ORANGE_DARK = '#C2680F'
 
 // 大カテゴリごとのアイコン（Tabler等の外部アイコンフォントは使わず、既存の手描きinline SVG方式に統一）
-const CATEGORY_ICON_PATHS: Record<string, JSX.Element> = {
+const CATEGORY_ICON_PATHS: Record<string, ReactNode> = {
   A: <><rect x="3" y="11" width="18" height="10" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></>,
   B: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></>,
   C: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M9 13h6M9 17h6" /></>,
@@ -67,13 +67,10 @@ function ChevronRight() {
   )
 }
 
-function BotAvatar() {
+function BotAvatar({ size = 32 }: { size?: number }) {
   return (
-    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ background: ORANGE }}>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M14 9V5a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h1v3l3.5-3H14" />
-        <path d="M18 9h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-1v2l-3-2H9a2 2 0 0 1-2-2v-1" />
-      </svg>
+    <div className="shrink-0 overflow-hidden rounded-full" style={{ width: size, height: size }}>
+      <Image src="/icons/chatbot-icon.png" alt="" width={size} height={size} className="h-full w-full object-cover" />
     </div>
   )
 }
@@ -233,6 +230,9 @@ export default function ChatbotWidget() {
                 <ChevronLeft />
               </button>
             )}
+            <div className="shrink-0 overflow-hidden rounded-full ring-2 ring-white/40" style={{ width: 26, height: 26 }}>
+              <Image src="/icons/chatbot-icon.png" alt="" width={26} height={26} className="h-full w-full object-cover" />
+            </div>
             <p className="flex-1 truncate text-sm font-semibold text-white">{headerTitle}</p>
             <button onClick={() => setOpen(false)} aria-label="閉じる" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/80 transition hover:bg-white/15">✕</button>
           </div>

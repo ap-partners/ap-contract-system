@@ -11,7 +11,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
-import { FaqEntry, FaqInquiry, FAQ_MAJOR_CATEGORIES } from '@/lib/faq'
+import { FaqEntry, FaqInquiry } from '@/lib/faq'
 
 const card = 'rounded-2xl border border-[#E8EDF5] bg-white'
 const inputCls = 'w-full rounded-xl border border-[#E8EDF5] bg-white px-3 py-2 text-sm text-[#1F2937] focus:border-[#2F5FD0] focus:outline-none'
@@ -24,34 +24,41 @@ const formatDateTime = (iso: string | null) => {
   return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+// 2026-07-29：伊藤さんの指摘（回答者にカテゴリ・キーワード・エスカレーション条件まで
+// その場で判断させるのは負担が大きく、誤ったカテゴリに割り振られるリスクもある）を受けて、
+// その場で入力するのは「回答」の一文だけに簡略化。カテゴリ・検索キーワード・エスカレーション文言は
+// 空欄のまま、いったん「未整理（精査待ち）」という暫定カテゴリで保存する。
+// この未整理分は、週次のスケジュールタスクでClaudeが内容を精査し、適切なカテゴリ・言い回し・
+// キーワードへまとめて整理する運用にしている（詳細はCLAUDE.md・docs/chatbot_faq_design.md参照）。
+// 精査が済むまでの間も、questionとanswerの文言そのものはそのまま検索対象になるため、
+// 検索できなくなる空白期間は発生しない。
+const UNSORTED_CATEGORY_CODE = 'UNSORTED'
+const UNSORTED_CATEGORY_LABEL = '未整理（精査待ち）'
+
 function AnswerForm({ inquiry, onDone }: { inquiry: FaqInquiry; onDone: () => void }) {
   const { showError, showSuccess } = useToast()
-  const [majorCode, setMajorCode] = useState(FAQ_MAJOR_CATEGORIES[0].code)
   const [title, setTitle] = useState(inquiry.question_text)
   const [answer, setAnswer] = useState('')
-  const [keywords, setKeywords] = useState('')
-  const [escalation, setEscalation] = useState('')
   const [saving, setSaving] = useState(false)
 
   const handleSave = async () => {
     if (!answer.trim()) { showError('回答を入力してください。'); return }
     setSaving(true)
-    const majorLabel = FAQ_MAJOR_CATEGORIES.find(c => c.code === majorCode)?.label || majorCode
-    const minorCode = `${majorCode}-${Math.random().toString(36).slice(2, 8)}`
+    const minorCode = `${UNSORTED_CATEGORY_CODE}-${Math.random().toString(36).slice(2, 8)}`
 
     const { data: authData } = await supabase.auth.getUser()
 
     const { data: newEntry, error: insertError } = await supabase
       .from('faq_entries')
       .insert([{
-        major_category: majorCode,
-        major_label: majorLabel,
+        major_category: UNSORTED_CATEGORY_CODE,
+        major_label: UNSORTED_CATEGORY_LABEL,
         minor_category: minorCode,
         question: title.trim() || inquiry.question_text,
-        keywords: keywords.trim(),
+        keywords: '',
         answer: answer.trim(),
         related_labels: '',
-        escalation_note: escalation.trim(),
+        escalation_note: '',
         sort_order: 999,
         source: 'user_submitted',
       }])
@@ -88,12 +95,10 @@ function AnswerForm({ inquiry, onDone }: { inquiry: FaqInquiry; onDone: () => vo
 
   return (
     <div className="mt-3 space-y-3 rounded-xl border border-[#E8EDF5] bg-[#F8FAFD] p-4">
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-[#6B7280]">大カテゴリ</label>
-        <select value={majorCode} onChange={e => setMajorCode(e.target.value)} className={inputCls}>
-          {FAQ_MAJOR_CATEGORIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
-        </select>
-      </div>
+      <p className="rounded-lg bg-[#EAF1FF] px-3 py-2 text-xs leading-relaxed text-[#274CB0]">
+        カテゴリ分けや検索用の言い回しは、ここで考える必要はありません。
+        回答だけ入力してください。あとでまとめて整理されます。
+      </p>
       <div>
         <label className="mb-1 block text-xs font-semibold text-[#6B7280]">想定質問（一覧・検索に表示するタイトル）</label>
         <input value={title} onChange={e => setTitle(e.target.value)} className={inputCls} />
@@ -101,14 +106,6 @@ function AnswerForm({ inquiry, onDone }: { inquiry: FaqInquiry; onDone: () => vo
       <div>
         <label className="mb-1 block text-xs font-semibold text-[#6B7280]">回答</label>
         <textarea value={answer} onChange={e => setAnswer(e.target.value)} rows={4} className={inputCls} placeholder="回答内容を入力してください" />
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-[#6B7280]">別の言い回し・キーワード（任意。スペース区切り）</label>
-        <input value={keywords} onChange={e => setKeywords(e.target.value)} className={inputCls} placeholder="例：できない 反応がない エラー" />
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-[#6B7280]">問い合わせへ誘導すべきケース（任意）</label>
-        <input value={escalation} onChange={e => setEscalation(e.target.value)} className={inputCls} />
       </div>
       <div className="flex justify-end gap-2">
         <button onClick={onDone} className={secondaryBtn}>キャンセル</button>

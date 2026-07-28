@@ -1852,10 +1852,10 @@ export default function AdminDashboard() {
                   </>
                 ) : csvImportSystem === 'StaffExpress' ? (
                   <>
-                    <FileDropzone label="部門マスタ.xlsx（先に取り込む・任意）" file={staffExpressFileDept} onChange={setStaffExpressFileDept} accept=".xlsx" />
                     <FileDropzone label="スタッフマスタ.xlsx（任意）" file={staffExpressFileStaff} onChange={setStaffExpressFileStaff} accept=".xlsx" />
+                    <FileDropzone label="部門マスタ.xlsx（任意）" file={staffExpressFileDept} onChange={setStaffExpressFileDept} accept=".xlsx" />
                     <p className="md:col-span-2 text-xs font-medium leading-5 text-[#6B7280]">
-                      少なくとも一方のファイルを選択してください。両方選択した場合は部門マスタ→スタッフマスタの順で処理します
+                      少なくとも一方のファイルを選択してください。両方選択した場合は、ファイル名やアップロード順に関わらず、常に部門マスタ→スタッフマスタの順で自動的に処理されます
                       （スタッフの所属部門は部門マスタを参照するため）。
                     </p>
                   </>
@@ -1925,17 +1925,6 @@ export default function AdminDashboard() {
               {csvUploadResult && csvImportSystem === 'StaffExpress' && (
                 <div className="mt-6 rounded-2xl border border-[#BFE7CF] bg-[#F0FBF4] p-5">
                   <p className="text-sm font-semibold text-[#1F2937]">アップロードが完了しました</p>
-                  {csvUploadResult.staffExpressResult?.department && (
-                    <div className="mt-4">
-                      <p className="text-xs font-semibold text-[#1F2937]">部門マスタ</p>
-                      <div className="mt-2 grid grid-cols-2 gap-3 md:grid-cols-4">
-                        <ResultStat label="新規" value={csvUploadResult.staffExpressResult.department.newCount ?? 0} />
-                        <ResultStat label="更新" value={csvUploadResult.staffExpressResult.department.updatedCount ?? 0} />
-                        <ResultStat label="スキップ" value={csvUploadResult.staffExpressResult.department.skippedCount ?? 0} />
-                        <ResultStat label="エラー" value={csvUploadResult.staffExpressResult.department.errorCount ?? 0} />
-                      </div>
-                    </div>
-                  )}
                   {csvUploadResult.staffExpressResult?.staff && (
                     <div className="mt-4">
                       <p className="text-xs font-semibold text-[#1F2937]">スタッフマスタ</p>
@@ -1944,6 +1933,17 @@ export default function AdminDashboard() {
                         <ResultStat label="更新" value={csvUploadResult.staffExpressResult.staff.updatedCount ?? 0} />
                         <ResultStat label="スキップ（対象外）" value={csvUploadResult.staffExpressResult.staff.skippedCount ?? 0} />
                         <ResultStat label="エラー" value={csvUploadResult.staffExpressResult.staff.errorCount ?? 0} />
+                      </div>
+                    </div>
+                  )}
+                  {csvUploadResult.staffExpressResult?.department && (
+                    <div className="mt-4">
+                      <p className="text-xs font-semibold text-[#1F2937]">部門マスタ</p>
+                      <div className="mt-2 grid grid-cols-2 gap-3 md:grid-cols-4">
+                        <ResultStat label="新規" value={csvUploadResult.staffExpressResult.department.newCount ?? 0} />
+                        <ResultStat label="更新" value={csvUploadResult.staffExpressResult.department.updatedCount ?? 0} />
+                        <ResultStat label="スキップ" value={csvUploadResult.staffExpressResult.department.skippedCount ?? 0} />
+                        <ResultStat label="エラー" value={csvUploadResult.staffExpressResult.department.errorCount ?? 0} />
                       </div>
                     </div>
                   )}

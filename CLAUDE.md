@@ -32,7 +32,7 @@
 **技術**：Next.js(App Router)/TypeScript/Tailwind/Supabase/Vercel自動デプロイ
 **本番**：https://ap-contract-system.vercel.app/apply ／ **GitHub**：github.com/ap-partners/ap-contract-system
 **Supabase**：argpiiznuzxmmqraynfo（東京） ／ **ローカル**：`C:\Users\ito\Desktop\ap-contract-system`
-**テストユーザー**：sales-test / ssc-test / admin-test @appart.co.jp（全て `Test1234!`）
+**テストユーザー**：ssc-test / admin-test @appart.co.jp（全て `Test1234!`）。担当営業役は`sales-test@appart.co.jp`が2026-07-27に`ito+demo@appart.co.jp`（社員番号999900・表示名「山田 太郎」）へ置き換え済みのため、担当営業側の確認は`ito+demo@appart.co.jp`＋`Test1234!`を使う（2026-07-29訂正：本欄が置き換え後も更新されておらず古い記載のまま残っていた）。
 
 **ロール**：担当営業（申請）／SSC（確認・承認）／管理部（CSV取込・マスタ・監視）／従業員（署名）
 

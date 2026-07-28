@@ -1207,6 +1207,16 @@ function ApplyPageInner() {
             .eq('id', renewalCandidateId)
         } catch { /* 契約自体は保存済みのため、ここの失敗で申請完了をブロックしない */ }
       }
+      // 契約状況モニタリング フェーズ3（2026-07-29）：申請保存のたびに、対象スタッフの
+      // staff.work_placeを申請内容のworkPlaceで同期する。契約状況モニタリング機能（フェーズ1）は
+      // 現状contracts.work_placeからの動的推定で代替できているため必須ではないが、将来の
+      // 高速化・簡潔化のために同期しておく（docs/SYSTEM_DESIGN.md 10章2026-07-29参照）。
+      // 失敗しても契約自体は保存済みのため、renewalCandidateIdの更新と同様に申請完了をブロックしない。
+      if (selectedStaff?.id) {
+        try {
+          await supabase.from('staff').update({ work_place: workPlace }).eq('id', selectedStaff.id)
+        } catch { /* 契約自体は保存済みのため、ここの失敗で申請完了をブロックしない */ }
+      }
       setIsSubmitted(true)
     } catch (e: any) {
       setSubmitError('申請の保存中に問題が発生しました。お手数ですが、もう一度お試しください。')

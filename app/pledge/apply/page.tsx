@@ -34,7 +34,8 @@ import Image from 'next/image'
 import { excludeRetiredStaffOr } from '@/lib/staffFilters'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
-import { SALARY_RULES, toHalfWidthDigits, parseAmount, normalizeTel, validateTel, clampDateYear } from '@/app/apply/_lib/helpers'
+import { SALARY_RULES, toHalfWidthDigits, parseAmount, normalizeTel, validateTel, clampDateYear, TOOLTIPS } from '@/app/apply/_lib/helpers'
+import { Tooltip } from '@/app/apply/_components/FormParts'
 import { runPledgeAutoChecks } from '@/lib/autoChecks'
 import { WAGE_PAYMENT_TEXT } from '@/lib/pdf/documentText'
 
@@ -1268,10 +1269,10 @@ export default function PledgeApplyPage() {
               <FormRow label="基本給・各種手当" required>
                 <div className="border rounded-lg overflow-hidden" style={{ borderColor: '#D0DAF0' }}>
                   <div className="grid grid-cols-2">
-                    <SalaryField label="基本給" value={basicSalary} onChange={setBasicSalary} error={basicSalaryError} example="250000" borderRight borderBottom />
-                    <SalaryField label="役職手当" value={rolePay} onChange={setRolePay} example="10000" borderBottom />
-                    <SalaryField label="職能給" value={skillPay} onChange={setSkillPay} example="10000" borderRight />
-                    <SalaryField label="営業手当" value={salesPay} onChange={setSalesPay} example="10000" />
+                    <SalaryField label="基本給" value={basicSalary} onChange={setBasicSalary} error={basicSalaryError} example="250000" borderRight borderBottom tooltip={TOOLTIPS['基本給']} />
+                    <SalaryField label="役職手当" value={rolePay} onChange={setRolePay} example="10000" borderBottom tooltip={TOOLTIPS['役職手当']} />
+                    <SalaryField label="職能給" value={skillPay} onChange={setSkillPay} example="10000" borderRight tooltip={TOOLTIPS['職能給']} />
+                    <SalaryField label="営業手当" value={salesPay} onChange={setSalesPay} example="10000" tooltip={TOOLTIPS['営業手当']} />
                   </div>
                 </div>
 
@@ -1579,12 +1580,12 @@ function PledgeCriticalWarning({ message, checked, onCheck }: { message: string;
 }
 
 // STEP4の給与2列グリッド内、1マスあたりの入力欄（基本給以外の各種手当で共通利用）
-function SalaryField({ label, value, onChange, example, error, borderRight, borderBottom }: {
-  label: string; value: string; onChange: (v: string) => void; example: string; error?: string | null; borderRight?: boolean; borderBottom?: boolean
+function SalaryField({ label, value, onChange, example, error, borderRight, borderBottom, tooltip }: {
+  label: string; value: string; onChange: (v: string) => void; example: string; error?: string | null; borderRight?: boolean; borderBottom?: boolean; tooltip?: string
 }) {
   return (
     <div className={`p-3 flex flex-col gap-1.5 ${borderRight ? 'border-r' : ''} ${borderBottom ? 'border-b' : ''}`} style={{ borderColor: '#D0DAF0' }}>
-      <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>{label}</span>
+      <span className="text-xs font-bold flex items-center" style={{ color: '#5A6A8A' }}>{label}{tooltip && <Tooltip text={tooltip} />}</span>
       <div className="flex items-center gap-1.5">
         <input type="text" maxLength={10} value={value} onChange={e => onChange(toHalfWidthDigits(e.target.value))}
           className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"

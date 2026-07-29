@@ -6,7 +6,7 @@
 
 import { useState, type ReactNode } from 'react'
 import { inp, inpDate, TOOLTIPS, isDateBefore, calcTrialMonths, clampDateYear } from '../_lib/helpers'
-import { FormRow, SectionHeader, EmptyHintBubble, RadioGroup, CriticalWarning } from './FormParts'
+import { FormRow, SectionHeader, EmptyHintBubble, RadioGroup, CriticalWarning, Tooltip } from './FormParts'
 
 type TrialCalc = ReturnType<typeof calcTrialMonths>
 
@@ -120,7 +120,7 @@ export default function StepPeriod({
               </div>
             )}
           </FormRow>
-          <FormRow label="組織単位" required badge={<CsvBadge name="org" />} wide
+          <FormRow label="組織単位" required tooltip={TOOLTIPS['組織単位']} badge={<CsvBadge name="org" />} wide
             isEmpty={showEmptyHint && !organizationUnit} emptyHint="入力してください">
             <input className={`${inp} max-w-lg`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
               value={organizationUnit}
@@ -134,13 +134,14 @@ export default function StepPeriod({
         <>
           <SectionHeader label="雇用期間" />
           <FormRow label="雇用期間" required hintInline
+            tooltip={(period === '有期' && pattern === 'C') ? TOOLTIPS['雇用期間（兼用）'] : undefined}
             isEmpty={showEmptyHint && ((period === '無期' || contractType === '正社員') ? !contractStartDate : (!employStart || !employEnd))}>
             {(period === '無期' || contractType === '正社員') ? (
               <div className="flex flex-col gap-2">
                 <p className="text-xs" style={{ color: '#5A6A8A' }}>※雇用期間は無期契約のため、下記の固定文言で自動表示されます。開始日付だけ入力してください。</p>
                 {fixedText('期間の定めなし（自動）')}
                 <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>契約条件適用開始日</span>
+                  <span className="text-xs shrink-0 flex items-center" style={{ color: '#5A6A8A' }}>契約条件適用開始日<Tooltip text={TOOLTIPS['契約条件適用開始日']} /></span>
                   <input type="date" className={inpDate}
                     style={{ borderColor: (showEmptyHint && !contractStartDate) ? '#DC2626' : (isDateBefore(contractStartDate, dispatchStart) ? '#DC2626' : '#D0DAF0'), color: '#1A2340' }}
                     value={contractStartDate} onChange={e => setContractStartDate(clampDateYear(e.target.value))} />
@@ -201,7 +202,7 @@ export default function StepPeriod({
               </div>
             )}
           </FormRow>
-          <FormRow label="試用期間" required hintInline
+          <FormRow label="試用期間" required hintInline tooltip={TOOLTIPS['試用期間']}
             isEmpty={showEmptyHint && (!trialPeriod || (trialPeriod === '有' && (!trialStart || !trialEnd)))}>
             <div className="flex items-center gap-3 flex-wrap">
               <RadioGroup name="trial" value={trialPeriod} onChange={v => {

@@ -293,11 +293,12 @@ function ApplyPageInner() {
     return null
   })()
 
-  // PENDING②反映：パターンC・有期は終了日が派遣終了日と同じ日付のみOK
+  // 2026-07-29仕様変更：パターンC・有期の雇用期間終了日は、従来「派遣終了日と完全一致」のみOKだったが、
+  // 「派遣終了日と同じ、またはそれより後」であればOKに緩和（伊藤さん指示）。
   const employEndError = (() => {
     if (!employEnd) return null
-    if (pattern === 'C' && period === '有期' && dispatchEnd && employEnd !== dispatchEnd)
-      return '雇用期間の終了日は派遣期間の終了日と同じ日付にしてください'
+    if (pattern === 'C' && period === '有期' && dispatchEnd && isDateBefore(employEnd, dispatchEnd))
+      return '雇用期間の終了日は派遣期間の終了日と同じか、それより後の日付にしてください'
     if (employStart && employEnd < employStart)
       return '終了日は開始日以降の日付にしてください'
     return null

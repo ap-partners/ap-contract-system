@@ -148,7 +148,7 @@ async function processSingleFile(
         workLocation: record.client_name || record.work_location,
         reason: `既存の申請（ステータス：${protectedInfo.status || '不明'}）から参照されているため、CSVの内容で上書きされませんでした`,
         blockingStatus: protectedInfo.status,
-        blockingSalesName: protectedInfo.createdByName,
+        blockingApplicantName: protectedInfo.createdByName,
       })
       continue
     }

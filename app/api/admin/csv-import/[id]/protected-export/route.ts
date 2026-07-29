@@ -41,7 +41,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     '就業場所名': d.workLocation || '',
     '保護スキップ理由': d.reason,
     '保護している契約のステータス': d.blockingStatus || '',
-    '担当営業名': d.blockingSalesName || '',
+    '申請者名': d.blockingApplicantName || '',
     'インポート実行日時': importedAt,
   }))
 

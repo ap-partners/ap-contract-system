@@ -141,7 +141,7 @@ export type ProtectedRowDetail = {
   workLocation: string | null
   reason: string
   blockingStatus: string | null
-  blockingSalesName: string | null
+  blockingApplicantName: string | null
 }
 
 export type CsvRecordForUpsert = {

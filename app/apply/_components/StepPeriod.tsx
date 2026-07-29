@@ -43,6 +43,8 @@ interface StepPeriodProps {
   trialWarningChecked: boolean; setTrialWarningChecked: (v: boolean) => void
   noTrialWarningChecked: boolean; setNoTrialWarningChecked: (v: boolean) => void
   isProbableNewHire: boolean
+  isShortEmployPeriodDispatch: boolean; employPeriodDays: number | null
+  shortEmployWarningChecked: boolean; setShortEmployWarningChecked: (v: boolean) => void
 
   flexTime: string; setFlexTime: (v: string) => void
   overtime: string; setOvertime: (v: string) => void
@@ -63,6 +65,7 @@ export default function StepPeriod({
   trialStartError, trialEndError, trialPreview, trialCalc,
   trialWarningChecked, setTrialWarningChecked, noTrialWarningChecked, setNoTrialWarningChecked,
   isProbableNewHire,
+  isShortEmployPeriodDispatch, employPeriodDays, shortEmployWarningChecked, setShortEmployWarningChecked,
   flexTime, setFlexTime, overtime, setOvertime,
   validatePeriod, handleNext, NavButtons,
 }: StepPeriodProps) {
@@ -199,6 +202,15 @@ export default function StepPeriod({
                 )}
                 {employStartError && <p className="text-xs" style={{ color: '#DC2626' }}>{employStartError}</p>}
                 {employEndError && <p className="text-xs" style={{ color: '#DC2626' }}>{employEndError}</p>}
+                {isShortEmployPeriodDispatch && (
+                  <CriticalWarning
+                    title="🔴 重大警告：日雇派遣の原則禁止に抵触するおそれ"
+                    message={`労働者派遣法第35条の4は、雇用期間が30日以内の労働者について労働者派遣を行うこと（日雇派遣）を原則禁止しています。\n入力された雇用期間は${employPeriodDays}日間であり、この基準に該当する可能性があります。\n学生・60歳以上の方・副収入を得る目的で従事する方など、法令上の例外に該当する場合を除き、この形での派遣はできません。\n対象者が例外要件に該当することを確認したうえで、本当にこのまま申請してよろしいですか？`}
+                    checked={shortEmployWarningChecked}
+                    onCheck={setShortEmployWarningChecked}
+                    checkboxLabel="対象者が法令上の例外要件に該当することを確認し、上長の了承を得ています。"
+                  />
+                )}
               </div>
             )}
           </FormRow>

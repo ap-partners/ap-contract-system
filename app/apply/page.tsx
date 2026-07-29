@@ -19,6 +19,7 @@ import {
   extractResponsibilityFromWinworks, buildWelfareTextFromEstaffing, buildWelfareTextFromHRstation,
   numToYesNo, extractCsvFieldsRaw, extractCsvFields, normalizeDateSlash, newlineToSpace,
   formatTelHyphen, joinDeptAndPerson, normalizeJapaneseName, getDeptSearchScope,
+  buildCsvModifiedFieldsDiff,
 } from './_lib/helpers'
 import {
   DiffText, Req, AutoBadge, Tooltip, FormRow, EmptyHintBubble, FormRowAuto,
@@ -173,6 +174,8 @@ function ApplyPageInner() {
   const [trialEnd, setTrialEnd] = useState('')
   const [trialWarningChecked, setTrialWarningChecked] = useState(false)
   const [noTrialWarningChecked, setNoTrialWarningChecked] = useState(false)
+  // 2026-07-30追加：雇用期間30日ルール（日雇派遣の原則禁止）の重要警告チェック
+  const [shortEmployWarningChecked, setShortEmployWarningChecked] = useState(false)
   const [flexTime, setFlexTime] = useState('')
   const [overtime, setOvertime] = useState('')
 
@@ -255,6 +258,20 @@ function ApplyPageInner() {
   // CSVデータから自動入力している時だけ、未入力必須項目を赤く強調する（手入力の時はそもそも全項目が空欄から始まるため対象外）
   const showEmptyHint = csvMode === 'csv'
 
+  // 雇用期間30日ルール（2026-07-30追加）：労働者派遣法第35条の4が定める日雇派遣の原則禁止
+  // （雇用期間が30日以内の労働者について労働者派遣を行ってはならない）に抵触する可能性がある
+  // ケースを検知する。対象は現場配置（＝労働者派遣そのもの）かつ有期雇用（アルバイト・有期契約。
+  // 正社員・無期契約は雇用期間という概念が無いため対象外）。学生・60歳以上・副収入世帯等の
+  // 法定除外要件はシステムでは判定できないため、自動ブロックはせず重要警告＋チェックボックス
+  // 同意必須という扱いにする（伊藤さん2026-07-30決定）。
+  const employPeriodDays = (employStart && employEnd) ? (diffDaysAbs(employStart, employEnd) as number) + 1 : null
+  const isShortEmployPeriodDispatch = !!(
+    (pattern === 'A' || pattern === 'C') &&
+    workPlace === '現場' &&
+    period === '有期' &&
+    employPeriodDays !== null && employPeriodDays <= 30
+  )
+
   // CSV反映項目（STEP2・STEP3・STEP5）が、反映時点から1つでも修正されているか（2026-07-02追加）
   // ※CsvBadgeコンポーネント内のcurrentValueMapと同じ比較ロジック。将来もし項目を追加する場合は両方合わせて直すこと
   const hasModifiedCsvFields = Object.keys(csvSnapshot).some(key => {
@@ -284,6 +301,26 @@ function ApplyPageInner() {
 
   // 上記のいずれかが1つでも該当すれば、STEP8で確認チェックが必要
   const hasCsvModifiedFields = hasModifiedCsvFields || hasModifiedMgrFields
+
+  // CSV由来データ修正時の管理部通知メール（2026-07-30追加・タスク⑥対応）用に、
+  // 「どの項目が」「CSVの値から」「どう変更されたか」の詳細一覧をここで組み立てて保存しておく。
+  // SSC承認時点でこのcontracts.csv_modified_fieldsを読み、app_labor@appart.co.jp宛に通知する
+  // （通知処理自体はapp/api/contracts/[id]/notify-csv-modified側で行う）。
+  const csvModifiedFieldsDiff = hasCsvModifiedFields ? buildCsvModifiedFieldsDiff(
+    csvSnapshot,
+    {
+      locationName: workLocationName, locationAddress: workLocationAddress, locationTel: workLocationTel,
+      business: businessContent, startTime: startTime, endTime: endTime, breakTime: breakTime,
+      workingHours: `${workingHoursH}-${workingHoursM}`, org: organizationUnit, conflict: conflictDate, conflictOrg: conflictDateOrg,
+      resp: responsibility, cmdDept: cmd_dept, cmdRole: cmd_role, cmdName: cmd_name, cmdTel: cmd_tel,
+      respDept: resp_dept, respRole: resp_role, respName: resp_name, respTel: resp_tel,
+      compDept: comp_dept, compRole: comp_role, compName: comp_name, compTel: comp_tel,
+      welfare: welfare, flexTime: flexTime, overtime: overtime,
+    },
+    masterSnapshot,
+    { mgr_dept, mgr_role, mgr_name, mgr_tel, cmp_dept, cmp_role, cmp_name, cmp_tel },
+    mgrCmpSource
+  ) : []
 
   // STEP5バリデーション派生値
   const employStartError = (() => {
@@ -1283,6 +1320,9 @@ function ApplyPageInner() {
       if (hasCsvModifiedFields && csvModWarningChecked) {
         warningConfirmations.push({ type: 'csv_fields_modified', confirmed_at: new Date().toISOString() })
       }
+      if (isShortEmployPeriodDispatch && shortEmployWarningChecked) {
+        warningConfirmations.push({ type: 'short_employ_period_dispatch', confirmed_at: new Date().toISOString() })
+      }
 
       // 自動チェック機能（7-5章・9-1章タスク18）：金額異常値・最低賃金・就業規則整合の3種を判定
       // 2026-07-06実装。判定ロジック本体は lib/autoChecks.ts に切り出し済み
@@ -1336,6 +1376,9 @@ function ApplyPageInner() {
         warning_confirmations: warningConfirmations,
         auto_check_results: autoCheckResults,
         warning_level: warningLevel,
+        // 2026-07-30追加（タスク⑥）：CSV反映項目が1つでも修正されていれば詳細一覧を保存。
+        // SSC承認時点でnotify-csv-modified APIがこれを読み、管理部へ通知する。
+        csv_modified_fields: csvModifiedFieldsDiff.length > 0 ? csvModifiedFieldsDiff : null,
       }
 
       // 総合レビュー（QA監査2026-07-22）指摘C2対応：新規申請（editContractIdが無い場合）の直前に、
@@ -1508,6 +1551,9 @@ function ApplyPageInner() {
         if (!employStart || !employEnd) return '雇用期間を入力してください'
         if (employStartError) return employStartError
         if (employEndError) return employEndError
+        if (isShortEmployPeriodDispatch && !shortEmployWarningChecked) {
+          return '雇用期間30日以内の警告について、上長の了承確認が必要です'
+        }
       }
       if ((period === '無期' || contractType === '正社員') && !contractStartDate) return '契約条件適用開始日を入力してください'
       if ((period === '無期' || contractType === '正社員') && isDateBefore(contractStartDate, dispatchStart)) return '契約条件適用開始日は派遣期間の開始日以降の日付にしてください'
@@ -1949,6 +1995,19 @@ function ApplyPageInner() {
     </>
   )
 
+  // 2026-07-30追加：認証チェック（supabase.auth.getUser()）が完了するまでは、ヘッダーの
+  // 「この申請をやめる」ボタンを含む画面全体を描画しない。従来はチェック完了前でもボタンが
+  // 押せてしまい、userが未確定のままhandleCancelのロール判定がundefined扱いとなって
+  // /dashboard/salesへフォールバック→SSC・管理部の場合はそこの入室ガードで/loginに弾かれる、
+  // というレースコンディションがあった（伊藤さん報告・原因特定済み）。
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#F5F7FC' }}>
+        <p className="text-sm" style={{ color: '#5A6A8A' }}>読み込み中...</p>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen" style={{ background: '#F5F7FC' }}>
       <header className="bg-white border-b" style={{ borderColor: '#D0DAF0' }}>
@@ -2153,6 +2212,8 @@ function ApplyPageInner() {
               trialWarningChecked={trialWarningChecked} setTrialWarningChecked={setTrialWarningChecked}
               noTrialWarningChecked={noTrialWarningChecked} setNoTrialWarningChecked={setNoTrialWarningChecked}
               isProbableNewHire={isProbableNewHire}
+              isShortEmployPeriodDispatch={isShortEmployPeriodDispatch} employPeriodDays={employPeriodDays}
+              shortEmployWarningChecked={shortEmployWarningChecked} setShortEmployWarningChecked={setShortEmployWarningChecked}
               flexTime={flexTime} setFlexTime={setFlexTime}
               overtime={overtime} setOvertime={setOvertime}
               validatePeriod={validatePeriod}

@@ -732,6 +732,13 @@ export default function AdminDashboard() {
         )
       )
       notifyFailedCount = notifyResults.filter(ok => !ok).length
+      // 2026-07-30追加（タスク⑥）：CSV反映項目が修正された案件があれば管理部へ通知する
+      // （対象外の契約はAPI側でno-opになる。失敗しても承認フロー・件数表示はブロックしない）
+      await Promise.all(
+        approvedIds.map(id =>
+          fetch(`/api/contracts/${id}/notify-csv-modified`, { method: 'POST', headers: notifyAuthHeader }).catch(() => {})
+        )
+      )
     }
     setFlowContracts(prev => prev.filter(c => !ids.includes(c.id)))
     await fetchApprovedRecent()
@@ -808,6 +815,13 @@ export default function AdminDashboard() {
         )
       )
       notifyFailedCount = notifyResults.filter(ok => !ok).length
+      // 2026-07-30追加（タスク⑥）：CSV反映項目が修正された案件があれば管理部へ通知する
+      // （対象外の契約はAPI側でno-opになる。失敗しても承認フロー・件数表示はブロックしない）
+      await Promise.all(
+        approvedIds.map(id =>
+          fetch(`/api/contracts/${id}/notify-csv-modified`, { method: 'POST', headers: notifyAuthHeader }).catch(() => {})
+        )
+      )
     }
     setInternalFlowContracts(prev => prev.filter(c => !ids.includes(c.id)))
     await fetchInternalApprovedRecent()

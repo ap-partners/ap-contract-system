@@ -58,6 +58,9 @@ type ContractDetail = {
   withdrawn_reason: string | null
   withdrawn_by: string | null
   withdrawn_at: string | null
+  // 2026-07-30追加（タスク⑥）：CSV反映項目修正時の管理部通知用データ
+  csv_modified_fields: { key: string; label: string; csvValue: string; newValue: string }[] | null
+  csv_modified_notified_at: string | null
 }
 
 // ===== ユーティリティ =====
@@ -225,12 +228,21 @@ const MasterBadge = ({ modified }: { modified?: boolean }) => modified ? (
 )
 
 // 警告ボックス（SSC向けは読み取り専用・チェックなし）※担当営業の自己申告警告
-const WarningBox = ({ type, confirmedAt }: { type: string; confirmedAt: string }) => {
+// 2026-07-30追加（タスク⑥）：csv_fields_modifiedの場合、修正項目の詳細一覧（csvModifiedFields）と
+// 管理部への自動通知メールの送信状況（csvModifiedNotifiedAt）もあわせて表示できるようにした。
+const WarningBox = ({
+  type, confirmedAt, csvModifiedFields, csvModifiedNotifiedAt,
+}: {
+  type: string; confirmedAt: string
+  csvModifiedFields?: { key: string; label: string; csvValue: string; newValue: string }[] | null
+  csvModifiedNotifiedAt?: string | null
+}) => {
   const messages: Record<string, string> = {
     trial_over6months: '試用期間6ヶ月超の警告が出ていました。担当営業が上長の了承を得た上で申請しています。',
     no_trial_period:   '正社員で試用期間「無し」の警告が出ていました。担当営業が上長の了承を得た上で申請しています。',
     salary_over_1000000: '合計支給額が100万円超の警告が出ていました。担当営業が上長の了承を得た上で申請しています。',
-    csv_fields_modified: 'CSV反映項目が個別契約書の情報と異なる内容に修正されています。\n担当営業が管理部への修正依頼が必要なことを確認した上で申請しています。\n管理部への修正依頼が行われているか、あわせてご確認ください。',
+    short_employ_period_dispatch: '雇用期間30日以内（日雇派遣の原則禁止＝労働者派遣法第35条の4）の重大警告が出ていました。担当営業が法令上の例外要件への該当を確認し、上長の了承を得た上で申請しています。',
+    csv_fields_modified: 'CSV反映項目が個別契約書の情報と異なる内容に修正されています。担当営業が管理部への修正依頼が必要なことを確認した上で申請しています。',
   }
   const message = messages[type] || `警告確認済み（種別：${type}）`
   return (
@@ -238,6 +250,25 @@ const WarningBox = ({ type, confirmedAt }: { type: string; confirmedAt: string }
       <p className="text-sm font-bold mb-1.5" style={{ color: '#DC2626' }}>🔴 担当営業が確認した警告</p>
       <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: '#1A2340' }}>{message}</p>
       <p className="text-xs mt-2" style={{ color: '#9CA3AF' }}>確認日時：{formatDateTime(confirmedAt)}</p>
+      {type === 'csv_fields_modified' && csvModifiedFields && csvModifiedFields.length > 0 && (
+        <div className="mt-3 rounded-md p-3" style={{ background: 'white', border: '1px solid #FCA5A5' }}>
+          <p className="text-xs font-bold mb-2" style={{ color: '#B91C1C' }}>修正項目一覧</p>
+          <div className="flex flex-col gap-2">
+            {csvModifiedFields.map((f, idx) => (
+              <div key={idx} className="text-xs" style={{ color: '#1A2340' }}>
+                <span className="font-bold">・{f.label}</span>
+                <div className="pl-3" style={{ color: '#D97706' }}>CSVの情報：{f.csvValue}</div>
+                <div className="pl-3" style={{ color: '#1B3A8C' }}>変更後の情報：{f.newValue}</div>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs mt-2" style={{ color: '#9CA3AF' }}>
+            {csvModifiedNotifiedAt
+              ? `管理部（app_labor@appart.co.jp）へ承認時に自動通知済み：${formatDateTime(csvModifiedNotifiedAt)}`
+              : '管理部への自動通知は未送信です（承認直後に自動送信されます）。'}
+          </p>
+        </div>
+      )}
     </div>
   )
 }
@@ -430,6 +461,13 @@ export default function SSCContractDetail() {
     } catch {
       // 通知の失敗は承認をブロックしない（ログのみ・UIには表示しない）
     }
+    // 2026-07-30追加（タスク⑥）：CSV反映項目が修正された状態で申請された案件の場合、
+    // 承認直後に管理部（app_labor@appart.co.jp）へ通知する。失敗しても承認フロー自体は止めない。
+    try {
+      await fetch(`/api/contracts/${contract.id}/notify-csv-modified`, { method: 'POST', headers: await getAuthHeader() })
+    } catch {
+      // 通知の失敗は承認をブロックしない（ログのみ・UIには表示しない）
+    }
     setActionDone('approved')
     setActionLoading(false)
   }
@@ -466,6 +504,12 @@ export default function SSCContractDetail() {
     }
     try {
       await fetch(`/api/contracts/${contract.id}/notify-sign-request`, { method: 'POST', headers: await getAuthHeader() })
+    } catch {
+      // 通知の失敗は承認をブロックしない
+    }
+    // 2026-07-30追加（タスク⑥）：強制承認の場合も同様にCSV修正の管理部通知を発火する
+    try {
+      await fetch(`/api/contracts/${contract.id}/notify-csv-modified`, { method: 'POST', headers: await getAuthHeader() })
     } catch {
       // 通知の失敗は承認をブロックしない
     }
@@ -749,7 +793,11 @@ export default function SSCContractDetail() {
           <div className="mb-6 flex flex-col gap-3">
             <p className="text-sm font-bold" style={{ color: '#B91C1C' }}>⚠️ 担当営業が確認した警告（上長承認済み）</p>
             {contract.warning_confirmations.map((w, idx) => (
-              <WarningBox key={idx} type={w.type} confirmedAt={w.confirmed_at} />
+              <WarningBox
+                key={idx} type={w.type} confirmedAt={w.confirmed_at}
+                csvModifiedFields={w.type === 'csv_fields_modified' ? contract.csv_modified_fields : undefined}
+                csvModifiedNotifiedAt={w.type === 'csv_fields_modified' ? contract.csv_modified_notified_at : undefined}
+              />
             ))}
           </div>
         )}

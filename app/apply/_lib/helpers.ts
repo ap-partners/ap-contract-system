@@ -252,6 +252,63 @@ export const diffDaysAbs = (dateA: string, dateB: string): number | null => {
   return Math.abs(Math.round((a - b) / (1000 * 60 * 60 * 24)))
 }
 
+// CSV反映項目・マスタ反映項目（STEP2/3/4）の内部キー→画面表示ラベルの対応表（2026-07-30追加）
+// STEP8最終確認（StepFinalCheck.tsx）のFinalRow labelおよびStepDispatchContact.tsx／
+// StepSourceContact.tsxのセクション見出し・FormRow labelと完全に一致させること。
+// CSV由来データ修正時の管理部通知メール（notify-csv-modified）が、この表を使って
+// 「どの項目が」「CSVの値から」「どう変更されたか」を人間が読める形で一覧化する。
+export const CSV_FIELD_LABELS: Record<string, string> = {
+  locationName: '就業場所名',
+  locationAddress: '就業場所住所',
+  locationTel: '就業場所電話番号',
+  business: '業務内容',
+  startTime: '始業時刻',
+  endTime: '終業時刻',
+  breakTime: '休憩時間',
+  workingHours: '所定労働時間',
+  resp: '業務に伴う責任の程度',
+  conflict: '抵触日（事業所単位）',
+  conflictOrg: '抵触日（組織単位）',
+  org: '組織単位',
+  welfare: '福利厚生施設の利用等',
+  flexTime: '変形労働時間制',
+  overtime: '所定労働時間外労働',
+  cmdDept: '指揮命令者：部署名', cmdRole: '指揮命令者：役職', cmdName: '指揮命令者：氏名', cmdTel: '指揮命令者：電話番号',
+  respDept: '派遣先責任者：部署名', respRole: '派遣先責任者：役職', respName: '派遣先責任者：氏名', respTel: '派遣先責任者：電話番号',
+  compDept: '苦情処理申出先（派遣先）：部署名', compRole: '苦情処理申出先（派遣先）：役職', compName: '苦情処理申出先（派遣先）：氏名', compTel: '苦情処理申出先（派遣先）：電話番号',
+  mgr_dept: '派遣元責任者：部署名', mgr_role: '派遣元責任者：役職', mgr_name: '派遣元責任者：氏名', mgr_tel: '派遣元責任者：電話番号',
+  cmp_dept: '苦情処理申出先（派遣元）：部署名', cmp_role: '苦情処理申出先（派遣元）：役職', cmp_name: '苦情処理申出先（派遣元）：氏名', cmp_tel: '苦情処理申出先（派遣元）：電話番号',
+}
+
+// CSV反映項目・マスタ反映項目のうち、実際に修正されたものだけを抽出し、管理部通知メール・
+// SSC/管理部詳細画面への表示に使う一覧を作る（2026-07-30追加・タスク⑥対応）。
+// currentValueMapはapp/apply/page.tsx側のCsvBadge内ロジックと同じキー構成を渡すこと。
+export type CsvModifiedField = { key: string; label: string; csvValue: string; newValue: string }
+export const buildCsvModifiedFieldsDiff = (
+  csvSnapshot: Record<string, string>,
+  currentValueMap: Record<string, string>,
+  masterSnapshot: Record<string, string>,
+  mgrCmpValues: Record<string, string>,
+  mgrCmpSource: string
+): CsvModifiedField[] => {
+  const diffs: CsvModifiedField[] = []
+  for (const key of Object.keys(csvSnapshot)) {
+    const newValue = currentValueMap[key] ?? ''
+    if (newValue !== csvSnapshot[key]) {
+      diffs.push({ key, label: CSV_FIELD_LABELS[key] || key, csvValue: csvSnapshot[key] || '(空欄)', newValue: newValue || '(空欄)' })
+    }
+  }
+  if (mgrCmpSource === 'csv') {
+    for (const key of Object.keys(masterSnapshot)) {
+      const newValue = mgrCmpValues[key] ?? ''
+      if (masterSnapshot[key] !== undefined && newValue !== masterSnapshot[key]) {
+        diffs.push({ key, label: CSV_FIELD_LABELS[key] || key, csvValue: masterSnapshot[key] || '(空欄)', newValue: newValue || '(空欄)' })
+      }
+    }
+  }
+  return diffs
+}
+
 // 数値を2桁ゼロ埋めにする（時間・分の入力統一用）。空欄はそのまま空欄にする
 export const padTwoDigits = (str: string) => {
   if (!str) return str

@@ -59,7 +59,7 @@ const formatYen = (v: string | undefined) => {
   return n ? `${n.toLocaleString()}円` : '―'
 }
 
-const TRANSPORT_LABEL: Record<string, string> = { default: '実費または定期代', included: '交通費込', gas: 'ガソリン代' }
+const TRANSPORT_LABEL: Record<string, string> = { default: '実費精算', included: '交通費込', gas: 'ガソリン代' }
 
 const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
   <div className="grid grid-cols-1 md:grid-cols-[160px_1fr]">

@@ -134,8 +134,11 @@ const PledgeWageGrid = ({ p }: { p: PledgePdfProps }) => {
 }
 
 export const PledgePdf = (p: PledgePdfProps) => {
-  const transportText = getTransportText(p.transportType)
-  const transportSecondaryNote = getTransportSecondaryNote(p.transportType)
+  // 2026-07-29デモ指摘：誓約書の交通費文言は雇用契約書と共有せず専用キー（pledge-default）を使う。
+  // 'included'・'gas'は雇用契約書と同じ文言のまま据え置き（今回変更対象外）のため共有キーを維持。
+  const transportKey = p.transportType === 'default' ? 'pledge-default' : p.transportType
+  const transportText = getTransportText(transportKey)
+  const transportSecondaryNote = getTransportSecondaryNote(transportKey)
 
   return (
     <Document>

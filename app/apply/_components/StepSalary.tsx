@@ -5,8 +5,8 @@
 // ロジック・表示は変更なし。状態は親（ApplyPageInner）に残したまま、値とsetter・派生値をpropsで受け取る。
 
 import { useState } from 'react'
-import { TRANSPORT_TYPES, toHalfWidthDigits } from '../_lib/helpers'
-import { FormRow, SectionHeader, CriticalWarning } from './FormParts'
+import { TRANSPORT_TYPES, toHalfWidthDigits, TOOLTIPS } from '../_lib/helpers'
+import { FormRow, SectionHeader, CriticalWarning, Tooltip } from './FormParts'
 
 type TransportType = (typeof TRANSPORT_TYPES)[number]
 
@@ -101,13 +101,15 @@ export default function StepSalary({
       </FormRow>
 
       {/* 基本給・各種手当 */}
+      {/* 2026-07-29デモ指摘①：全6項目にヘルプ説明（?アイコン）を追加。あわせて、伊藤さんの整理に合わせて
+          基本給・定額残業手当（全員共通）→区切り注記→職能給・役職手当・営業手当・住宅手当（限定対象）の順に並び替え */}
       <FormRow label="基本給・各種手当" required>
         {/* 2列グリッド */}
         <div className="border rounded-lg overflow-hidden" style={{ borderColor: '#D0DAF0' }}>
           <div className="grid grid-cols-2">
             {/* 基本給 */}
             <div className="p-3 border-r border-b flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
-              <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>基本給</span>
+              <span className="text-xs font-bold flex items-center" style={{ color: '#5A6A8A' }}>基本給<Tooltip text={TOOLTIPS['基本給']} /></span>
               <div className="flex items-center gap-1.5">
                 <input type="text" value={basicSalary} onChange={e => setBasicSalary(toHalfWidthDigits(e.target.value))}
                   className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
@@ -117,42 +119,9 @@ export default function StepSalary({
               <p className="text-xs" style={{ color: '#5A6A8A' }}>例）250000</p>
               {basicSalaryError && <p className="text-xs" style={{ color: '#DC2626' }}>{basicSalaryError}</p>}
             </div>
-            {/* 役職手当 */}
-            <div className="p-3 border-b flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
-              <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>役職手当</span>
-              <div className="flex items-center gap-1.5">
-                <input type="text" value={rolePay} onChange={e => setRolePay(toHalfWidthDigits(e.target.value))}
-                  className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
-                  style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
-                <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
-              </div>
-              <p className="text-xs" style={{ color: '#5A6A8A' }}>例）10000</p>
-            </div>
-            {/* 職能給 */}
-            <div className="p-3 border-r border-b flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
-              <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>職能給</span>
-              <div className="flex items-center gap-1.5">
-                <input type="text" value={skillPay} onChange={e => setSkillPay(toHalfWidthDigits(e.target.value))}
-                  className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
-                  style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
-                <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
-              </div>
-              <p className="text-xs" style={{ color: '#5A6A8A' }}>例）10000</p>
-            </div>
-            {/* 営業手当 */}
-            <div className="p-3 border-b flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
-              <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>営業手当</span>
-              <div className="flex items-center gap-1.5">
-                <input type="text" value={salesPay} onChange={e => setSalesPay(toHalfWidthDigits(e.target.value))}
-                  className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
-                  style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
-                <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
-              </div>
-              <p className="text-xs" style={{ color: '#5A6A8A' }}>例）10000</p>
-            </div>
             {/* 定額残業手当 */}
-            <div className="p-3 border-r flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
-              <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>定額残業手当</span>
+            <div className="p-3 border-b flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
+              <span className="text-xs font-bold flex items-center" style={{ color: '#5A6A8A' }}>定額残業手当<Tooltip text={TOOLTIPS['定額残業手当']} /></span>
               <div className="flex items-center gap-1.5 flex-nowrap">
                 <input type="text" value={overtimePay} onChange={e => setOvertimePay(toHalfWidthDigits(e.target.value))}
                   className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
@@ -167,9 +136,48 @@ export default function StepSalary({
               <p className="text-xs" style={{ color: '#5A6A8A' }}>例）30000 / 20時間分</p>
               {overtimeHoursError && <p className="text-xs" style={{ color: '#DC2626' }}>{overtimeHoursError}</p>}
             </div>
+          </div>
+          {/* 区切り注記 */}
+          <div className="px-3 py-2 border-b" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
+            <p className="text-xs font-medium" style={{ color: '#5A6A8A' }}>下記は限定された対象の方のみ利用する手当です。</p>
+          </div>
+          <div className="grid grid-cols-2">
+            {/* 職能給 */}
+            <div className="p-3 border-r border-b flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
+              <span className="text-xs font-bold flex items-center" style={{ color: '#5A6A8A' }}>職能給<Tooltip text={TOOLTIPS['職能給']} /></span>
+              <div className="flex items-center gap-1.5">
+                <input type="text" value={skillPay} onChange={e => setSkillPay(toHalfWidthDigits(e.target.value))}
+                  className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
+                  style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
+              </div>
+              <p className="text-xs" style={{ color: '#5A6A8A' }}>例）10000</p>
+            </div>
+            {/* 役職手当 */}
+            <div className="p-3 border-b flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
+              <span className="text-xs font-bold flex items-center" style={{ color: '#5A6A8A' }}>役職手当<Tooltip text={TOOLTIPS['役職手当']} /></span>
+              <div className="flex items-center gap-1.5">
+                <input type="text" value={rolePay} onChange={e => setRolePay(toHalfWidthDigits(e.target.value))}
+                  className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
+                  style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
+              </div>
+              <p className="text-xs" style={{ color: '#5A6A8A' }}>例）10000</p>
+            </div>
+            {/* 営業手当 */}
+            <div className="p-3 border-r flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
+              <span className="text-xs font-bold flex items-center" style={{ color: '#5A6A8A' }}>営業手当<Tooltip text={TOOLTIPS['営業手当']} /></span>
+              <div className="flex items-center gap-1.5">
+                <input type="text" value={salesPay} onChange={e => setSalesPay(toHalfWidthDigits(e.target.value))}
+                  className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
+                  style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
+                <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
+              </div>
+              <p className="text-xs" style={{ color: '#5A6A8A' }}>例）10000</p>
+            </div>
             {/* 住宅手当 */}
             <div className="p-3 flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
-              <span className="text-xs font-bold" style={{ color: '#5A6A8A' }}>住宅手当</span>
+              <span className="text-xs font-bold flex items-center" style={{ color: '#5A6A8A' }}>住宅手当<Tooltip text={TOOLTIPS['住宅手当']} /></span>
               <div className="flex items-center gap-1.5">
                 <input type="text" value={housingPay} onChange={e => setHousingPay(toHalfWidthDigits(e.target.value))}
                   className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"

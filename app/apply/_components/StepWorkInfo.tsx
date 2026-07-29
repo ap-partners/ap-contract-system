@@ -86,6 +86,8 @@ export default function StepWorkInfo({
   // 2026-07-22追加（alert/confirm置き換えPhase3・①必須項目チェック）：NavButtonsのerror propに
   // 渡すためのローカルstate。従来alert()表示していたエラーメッセージをバナー化する。
   const [stepError, setStepError] = useState<string | null>(null)
+  // 2026-07-29デモ指摘④：シフト制ボタンを一度でも操作したら「選択してください」の案内吹き出しを消す
+  const [shiftTouched, setShiftTouched] = useState(false)
   return (
     <>
       {/* CSV依頼完了画面 */}
@@ -342,27 +344,42 @@ export default function StepWorkInfo({
           <FormRow label="始業・終業時刻" required
             badge={<div className="flex flex-col gap-0.5"><CsvBadge name="startTime" /><CsvBadge name="endTime" /></div>}
             isEmpty={showEmptyHint && (!startTime || !endTime)} emptyHint="入力してください">
-            <div className="flex items-center gap-2 flex-nowrap">
-              <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>始業</span>
-              <input type="time" className="bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 shrink-0 time-input-no-icon-tab"
-                style={{ borderColor: (showEmptyHint && !startTime) ? '#DC2626' : '#D0DAF0', color: '#1A2340', width: '130px' }}
-                value={startTime}
-                onChange={e => { setStartTime(e.target.value) }} />
-              <span className="text-sm shrink-0" style={{ color: '#5A6A8A' }}>〜</span>
-              <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>終業</span>
-              <input type="time" className="bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 shrink-0 time-input-no-icon-tab"
-                style={{ borderColor: (showEmptyHint && !endTime) ? '#DC2626' : '#D0DAF0', color: '#1A2340', width: '130px' }}
-                value={endTime}
-                onChange={e => { setEndTime(e.target.value) }} />
-              <button
-                onClick={e => { e.preventDefault(); setIsShift(!isShift) }}
-                className="px-3 py-1.5 border rounded-lg text-xs transition-colors shrink-0"
-                style={{
-                  borderColor: isShift ? '#1B3A8C' : '#D0DAF0',
-                  background: isShift ? '#EEF2FA' : 'white',
-                  color: isShift ? '#1B3A8C' : '#1A2340',
-                  fontWeight: isShift ? 600 : 400,
-                }}>シフト制</button>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2 flex-nowrap">
+                <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>始業</span>
+                <input type="time" className="bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 shrink-0 time-input-no-icon-tab"
+                  style={{ borderColor: (showEmptyHint && !startTime) ? '#DC2626' : '#D0DAF0', color: '#1A2340', width: '130px' }}
+                  value={startTime}
+                  onChange={e => { setStartTime(e.target.value) }} />
+                <span className="text-sm shrink-0" style={{ color: '#5A6A8A' }}>〜</span>
+                <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>終業</span>
+                <input type="time" className="bg-white border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 shrink-0 time-input-no-icon-tab"
+                  style={{ borderColor: (showEmptyHint && !endTime) ? '#DC2626' : '#D0DAF0', color: '#1A2340', width: '130px' }}
+                  value={endTime}
+                  onChange={e => { setEndTime(e.target.value) }} />
+              </div>
+              {/* 2026-07-29デモ指摘④：シフト制ボタンを始業・終業時刻の下の独立した行に移動。
+                  非選択時も枠線をはっきり見せ、選択時はチェックマーク付きの控えめな塗りにする
+                  （目立たせつつ派手にしすぎない）。初回操作までは案内吹き出しを表示し、一度操作したら消す。 */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={e => { e.preventDefault(); setIsShift(!isShift); setShiftTouched(true) }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs transition-colors shrink-0"
+                  style={{
+                    borderColor: isShift ? '#1B3A8C' : '#8B98B1',
+                    background: isShift ? '#EEF2FA' : 'white',
+                    color: isShift ? '#1B3A8C' : '#1A2340',
+                    fontWeight: isShift ? 600 : 500,
+                  }}>
+                  {isShift && (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
+                  シフト制
+                </button>
+                {!shiftTouched && <EmptyHintBubble text="該当する場合は選択してください" direction="left" />}
+              </div>
             </div>
           </FormRow>
 

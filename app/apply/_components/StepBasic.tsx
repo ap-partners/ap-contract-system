@@ -101,9 +101,51 @@ export default function StepBasic({
                 <p className="text-xs mb-2 text-red-400">ご自身の所属部門情報が確認できないため検索できません。管理部にご連絡ください。</p>
               </div>
             )}
-            {searched && !searchBlockedReason && searchResults.length === 0 && (
+            {searched && !searchBlockedReason && searchResults.length === 0 && !reqSubmitted && (
+              <p className="text-xs text-red-400 mt-2 mb-0">該当するスタッフが見つかりませんでした</p>
+            )}
+            {searched && searchResults.length === 10 && (
+              <p className="text-xs mt-1" style={{ color: '#5A6A8A' }}>候補が多すぎます。もう少し詳しく入力して再検索してください。</p>
+            )}
+            {searchResults.length > 0 && (
+              <div className="border rounded-lg mt-1.5 overflow-hidden bg-white shadow-sm" style={{ borderColor: '#D0DAF0' }}>
+                {searchResults.map(s => (
+                  <button key={s.id}
+                    onClick={e => {
+                      e.preventDefault()
+                      setSelectedStaff(s)
+                      setSearchResults([])
+                      setShowContractTypeLockedMsg(false)
+                      // 雇用区分の自動反映：スタッフマスタの契約形態が有期契約/無期契約/正社員/アルバイトのいずれかであれば自動選択する
+                      // （null=雇用形態不明の場合のみ自動選択せず、手動選択可能のままにする）
+                      if (['アルバイト', '有期契約', '無期契約', '正社員'].includes(s.contract_type)) {
+                        setContractType(s.contract_type)
+                      } else {
+                        setContractType('')
+                      }
+                    }}
+                    className="w-full text-left px-4 py-2.5 border-b last:border-0 flex items-center gap-3 hover:bg-blue-50 transition-colors"
+                    style={{ borderColor: '#D0DAF0' }}>
+                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium shrink-0"
+                      style={{ background: '#EEF2FA', color: '#1B3A8C' }}>
+                      {s.name?.[0] || '?'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium" style={{ color: '#1A2340' }}>{s.name}</p>
+                      {s.department && <p className="text-xs" style={{ color: '#5A6A8A' }}>{s.department}</p>}
+                    </div>
+                    <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>{s.employee_number}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {/* 2026-07-29デモ指摘⑤：検索結果の有無に関わらず、検索済みなら常にスタッフマスタ登録依頼の
+                導線を表示する（STEP2のCSV検索欄の「該当する就業先が一覧にありませんか？」パターンに統一） */}
+            {searched && !searchBlockedReason && (
               <div className="mt-2">
-                {!reqSubmitted && <p className="text-xs text-red-400 mb-2">該当するスタッフが見つかりませんでした</p>}
+                {searchResults.length > 0 && !showRequestForm && !reqSubmitted && (
+                  <p className="text-xs mb-1.5" style={{ color: '#5A6A8A' }}>お探しのスタッフが見つかりませんか？</p>
+                )}
                 {!showRequestForm && !reqSubmitted && (
                   <button
                     onClick={e => { e.preventDefault(); setShowRequestForm(true) }}
@@ -262,41 +304,6 @@ export default function StepBasic({
                     </div>
                   </div>
                 )}
-              </div>
-            )}
-            {searched && searchResults.length === 10 && (
-              <p className="text-xs mt-1" style={{ color: '#5A6A8A' }}>候補が多すぎます。もう少し詳しく入力して再検索してください。</p>
-            )}
-            {searchResults.length > 0 && (
-              <div className="border rounded-lg mt-1.5 overflow-hidden bg-white shadow-sm" style={{ borderColor: '#D0DAF0' }}>
-                {searchResults.map(s => (
-                  <button key={s.id}
-                    onClick={e => {
-                      e.preventDefault()
-                      setSelectedStaff(s)
-                      setSearchResults([])
-                      setShowContractTypeLockedMsg(false)
-                      // 雇用区分の自動反映：スタッフマスタの契約形態が有期契約/無期契約/正社員/アルバイトのいずれかであれば自動選択する
-                      // （null=雇用形態不明の場合のみ自動選択せず、手動選択可能のままにする）
-                      if (['アルバイト', '有期契約', '無期契約', '正社員'].includes(s.contract_type)) {
-                        setContractType(s.contract_type)
-                      } else {
-                        setContractType('')
-                      }
-                    }}
-                    className="w-full text-left px-4 py-2.5 border-b last:border-0 flex items-center gap-3 hover:bg-blue-50 transition-colors"
-                    style={{ borderColor: '#D0DAF0' }}>
-                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium shrink-0"
-                      style={{ background: '#EEF2FA', color: '#1B3A8C' }}>
-                      {s.name?.[0] || '?'}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium" style={{ color: '#1A2340' }}>{s.name}</p>
-                      {s.department && <p className="text-xs" style={{ color: '#5A6A8A' }}>{s.department}</p>}
-                    </div>
-                    <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>{s.employee_number}</span>
-                  </button>
-                ))}
               </div>
             )}
           </div>

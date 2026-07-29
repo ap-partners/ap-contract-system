@@ -40,6 +40,7 @@ import NewDocumentMenu from '../_shared/NewDocumentMenu'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
+import ProtectedRowsDownloadButton from '@/app/_shared/ui/ProtectedRowsDownloadButton'
 import PledgeListSection from '../_shared/PledgeListSection'
 import { SubTabBar } from '../_shared/SubTabBar'
 
@@ -358,7 +359,7 @@ function ImportStepper({ step }: { step: 1 | 2 | 3 }) {
 function ImportHistoryTimeline({
   items,
 }: {
-  items: { id: string; title: string; datetime: string; pills: ReactNode; hasError: boolean; errorDetail: string | null }[]
+  items: { id: string; title: string; datetime: string; pills: ReactNode; hasError: boolean; errorDetail: string | null; extra?: ReactNode }[]
 }) {
   const [openId, setOpenId] = useState<string | null>(null)
   return (
@@ -398,6 +399,7 @@ function ImportHistoryTimeline({
                   {item.errorDetail}
                 </pre>
               )}
+              {item.extra && <div className="mt-2">{item.extra}</div>}
             </div>
           </div>
         ))}
@@ -2035,6 +2037,12 @@ export default function AdminDashboard() {
                     <ResultStat label="保護によりスキップ" value={csvUploadResult.counts?.protectedSkipped ?? 0} />
                     <ResultStat label="キー不明でスキップ" value={csvUploadResult.counts?.skippedNoKey ?? 0} />
                   </div>
+                  {/* 2026-07-29デモ指摘②：保護によりスキップされた行が1件以上あれば詳細ダウンロードボタンを表示 */}
+                  {(csvUploadResult.counts?.protectedSkipped ?? 0) > 0 && csvUploadResult.importId && (
+                    <div className="mt-3">
+                      <ProtectedRowsDownloadButton importId={csvUploadResult.importId} count={csvUploadResult.counts.protectedSkipped} />
+                    </div>
+                  )}
                   {typeof csvUploadResult.autoMatch?.matchedCount === 'number' && csvUploadResult.autoMatch.matchedCount > 0 && (
                     <p className="mt-4 text-sm font-medium leading-6 text-[#4CAF50]">
                       依頼の自動マッチが{csvUploadResult.autoMatch.matchedCount}件成立し、依頼元へ通知メールを送信しました。
@@ -2066,6 +2074,10 @@ export default function AdminDashboard() {
                         {(h.error_rows ?? 0) > 0 && <Pill tone="red">エラー {h.error_rows}</Pill>}
                       </>
                     ),
+                    // 2026-07-29デモ指摘②：保護によりスキップされた行が1件以上あれば詳細ダウンロードボタンを表示
+                    extra: (h.pending_rows ?? 0) > 0
+                      ? <ProtectedRowsDownloadButton importId={h.id} count={h.pending_rows ?? 0} />
+                      : undefined,
                   }))}
                 />
               )}

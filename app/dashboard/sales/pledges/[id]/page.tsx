@@ -55,7 +55,7 @@ const formatYen = (v: string | undefined) => {
   return n ? `${n.toLocaleString()}円` : '―'
 }
 
-const TRANSPORT_LABEL: Record<string, string> = { default: '実費または定期代', included: '交通費込', gas: 'ガソリン代' }
+const TRANSPORT_LABEL: Record<string, string> = { default: '実費精算', included: '交通費込', gas: 'ガソリン代' }
 
 const STATUS_BADGE: Record<string, { label: string; bg: string; color: string }> = {
   '申請中': { label: '承認待ち', bg: '#EEF2FA', color: '#1B3A8C' },

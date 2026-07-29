@@ -130,6 +130,20 @@ export function parseCsvBuffer(buffer: Buffer): Record<string, any>[] {
   return parsed.data as Record<string, any>[]
 }
 
+// 2026-07-29デモ指摘②：「保護によりスキップ」された行の詳細（管理画面からのExcelダウンロード用）
+export type ProtectedRowDetail = {
+  systemName: string
+  deptName: string | null
+  staffNo: string | null
+  staffName: string | null
+  dispatchStart: string | null
+  dispatchEnd: string | null
+  workLocation: string | null
+  reason: string
+  blockingStatus: string | null
+  blockingSalesName: string | null
+}
+
 export type CsvRecordForUpsert = {
   system_type: DbSystemType
   unique_key: string

@@ -61,9 +61,11 @@ const validatePostalCode = (v: string) => {
 const PLEDGE_TRANSPORT_TYPES = [
   {
     id: 'default',
-    label: '実費または定期代',
+    label: '実費精算',
     icon: '/icons/transport-pass.png',
-    preview: '実費または定期代(デフォルト)\n原則として定期代支給　①最寄駅から勤務先までの最安経路での定期代とする。②支払上限は3万円/月とする。③交通費明細書及び定期ICカードの写し（エビデンス）が必要。ICカードは各自で用意。④エビデンスの提出確認が取れない交通費は、支払い対象外とする。',
+    // 2026-07-29デモ指摘：文言変更（定期代支給・支払上限3万円/月の記載を廃止し実費精算のみに）。
+    // PDF側の実際の印字文言はlib/pdf/documentText.tsの'pledge-default'キーと同一内容にすること。
+    preview: '実費精算(デフォルト)\n交通費実費支給　①最寄駅から勤務先までの最安経路とする。②交通費明細書及び定期ICカードの写し（エビデンス）が必要。ICカードは各自で用意。③エビデンスの提出確認が取れない交通費は、支払い対象外とする。',
   },
   {
     id: 'included',
@@ -746,9 +748,33 @@ export default function PledgeApplyPage() {
                     {searched && searchBlockedReason === 'no_dept' && (
                       <p className="text-xs mt-2 text-red-400">ご自身の所属部門情報が確認できないため検索できません。管理部にご連絡ください。</p>
                     )}
-                    {searched && !searchBlockedReason && searchResults.length === 0 && (
+                    {searched && !searchBlockedReason && searchResults.length === 0 && !reqSubmitted && (
+                      <p className="text-xs text-red-400 mt-2 mb-0">該当するスタッフが見つかりませんでした</p>
+                    )}
+                    {searchResults.length > 0 && (
+                      <div className="border rounded-lg mt-1.5 overflow-hidden bg-white shadow-sm" style={{ borderColor: '#D0DAF0' }}>
+                        {searchResults.map(s => (
+                          <button key={s.id} onClick={e => { e.preventDefault(); setSelectedStaff(s); setSearchResults([]) }}
+                            className="w-full text-left px-4 py-2.5 border-b last:border-0 flex items-center gap-3 hover:bg-blue-50 transition-colors" style={{ borderColor: '#D0DAF0' }}>
+                            <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium shrink-0" style={{ background: '#EEF2FA', color: '#1B3A8C' }}>
+                              {s.name?.[0] || '?'}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium" style={{ color: '#1A2340' }}>{s.name}</p>
+                              {s.department && <p className="text-xs" style={{ color: '#5A6A8A' }}>{s.department}</p>}
+                            </div>
+                            <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>{s.employee_number}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {/* 2026-07-29デモ指摘⑤：検索結果の有無に関わらず、検索済みなら常にスタッフマスタ登録依頼の
+                        導線を表示する（/apply STEP1・STEP2のCSV検索欄と同じ考え方に統一） */}
+                    {searched && !searchBlockedReason && (
                       <div className="mt-2">
-                        {!reqSubmitted && <p className="text-xs text-red-400 mb-2">該当するスタッフが見つかりませんでした</p>}
+                        {searchResults.length > 0 && !showRequestForm && !reqSubmitted && (
+                          <p className="text-xs mb-1.5" style={{ color: '#5A6A8A' }}>お探しのスタッフが見つかりませんか？</p>
+                        )}
                         {!showRequestForm && !reqSubmitted && (
                           <button
                             onClick={e => { e.preventDefault(); setShowRequestForm(true) }}
@@ -837,23 +863,6 @@ export default function PledgeApplyPage() {
                             </div>
                           </div>
                         )}
-                      </div>
-                    )}
-                    {searchResults.length > 0 && (
-                      <div className="border rounded-lg mt-1.5 overflow-hidden bg-white shadow-sm" style={{ borderColor: '#D0DAF0' }}>
-                        {searchResults.map(s => (
-                          <button key={s.id} onClick={e => { e.preventDefault(); setSelectedStaff(s); setSearchResults([]) }}
-                            className="w-full text-left px-4 py-2.5 border-b last:border-0 flex items-center gap-3 hover:bg-blue-50 transition-colors" style={{ borderColor: '#D0DAF0' }}>
-                            <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium shrink-0" style={{ background: '#EEF2FA', color: '#1B3A8C' }}>
-                              {s.name?.[0] || '?'}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium" style={{ color: '#1A2340' }}>{s.name}</p>
-                              {s.department && <p className="text-xs" style={{ color: '#5A6A8A' }}>{s.department}</p>}
-                            </div>
-                            <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>{s.employee_number}</span>
-                          </button>
-                        ))}
                       </div>
                     )}
                   </div>

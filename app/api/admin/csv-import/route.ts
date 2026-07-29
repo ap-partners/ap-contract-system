@@ -22,6 +22,7 @@ import {
   parseCsvBuffer,
   buildRecordForUpsert,
   resolveCsvSearchStaffCode,
+  ProtectedRowDetail,
 } from '@/lib/csvImportShared'
 import { readExcelBuffer, buildStaffRecord } from '@/lib/staffMasterImportShared'
 import { friendlyDbReason } from '@/lib/friendlyError'
@@ -43,6 +44,7 @@ type FileCounts = {
   skippedNoKeyCount: number
   errorCount: number
   errorDetails: string[]
+  protectedDetails: ProtectedRowDetail[]
 }
 
 // エラー詳細メッセージが際限なく長くなるのを防ぐため、保存件数の上限とその旨の注記を統一するヘルパー
@@ -62,7 +64,7 @@ async function processSingleFile(
   importId: string
 ): Promise<FileCounts> {
   const rows = parseCsvBuffer(buffer)
-  const counts: FileCounts = { total: rows.length, newCount: 0, updatedCount: 0, pendingProtectedCount: 0, skippedNoKeyCount: 0, errorCount: 0, errorDetails: [] }
+  const counts: FileCounts = { total: rows.length, newCount: 0, updatedCount: 0, pendingProtectedCount: 0, skippedNoKeyCount: 0, errorCount: 0, errorDetails: [], protectedDetails: [] }
 
   const parsedRows: { uniqueKey: string; record: NonNullable<ReturnType<typeof buildRecordForUpsert>['record']> }[] = []
   for (const row of rows) {
@@ -88,25 +90,66 @@ async function processSingleFile(
   }
 
   // 既存データのうち、有効な契約（申請中以降のステータス）から参照されている行＝保護対象を洗い出す
+  // 2026-07-29デモ指摘②：保護理由の可視化のため、単なるSetではなく、保護している契約の
+  // ステータス・申請者名・対象スタッフ（staff_id）まで保持するMapに変更。
   const existingIds = Array.from(new Set(existingByKey.values()))
-  const protectedIds = new Set<string>()
+  const protectedByRawId = new Map<string, { status: string | null; createdByName: string | null; staffId: string | null }>()
   for (let i = 0; i < existingIds.length; i += CHUNK) {
     const chunk = existingIds.slice(i, i + CHUNK)
     const { data: refRows, error } = await supabaseAdmin
       .from('contracts')
-      .select('csv_raw_data_id')
+      .select('csv_raw_data_id, status, created_by_name, staff_id')
       .in('csv_raw_data_id', chunk)
       .neq('status', '差し戻し中')
       .neq('status', '取り下げ')
     if (error) continue // 保護判定に失敗した場合は安全側（保護しない＝上書き）に倒さず、対象から一旦除外する
-    for (const r of refRows || []) { if (r.csv_raw_data_id) protectedIds.add(r.csv_raw_data_id) }
+    for (const r of refRows || []) {
+      if (r.csv_raw_data_id && !protectedByRawId.has(r.csv_raw_data_id)) {
+        protectedByRawId.set(r.csv_raw_data_id, { status: r.status, createdByName: r.created_by_name, staffId: r.staff_id })
+      }
+    }
+  }
+
+  // 保護対象スタッフの氏名・所属部門名をまとめて解決（詳細レポート用）
+  const protectedStaffIds = Array.from(new Set(Array.from(protectedByRawId.values()).map(v => v.staffId).filter((v): v is string => !!v)))
+  const staffById = new Map<string, { employeeNumber: string; name: string; deptNo: number | null }>()
+  if (protectedStaffIds.length > 0) {
+    const { data: staffRows } = await supabaseAdmin
+      .from('staff')
+      .select('id, employee_number, name, dept_no')
+      .in('id', protectedStaffIds)
+    for (const s of staffRows || []) staffById.set(s.id, { employeeNumber: s.employee_number, name: s.name, deptNo: s.dept_no })
+  }
+  const protectedDeptNos = Array.from(new Set(Array.from(staffById.values()).map(v => v.deptNo).filter((v): v is number => v !== null)))
+  const deptNameByNo = new Map<number, string>()
+  if (protectedDeptNos.length > 0) {
+    const { data: deptRows } = await supabaseAdmin
+      .from('department_master')
+      .select('dept_no, dept_name')
+      .in('dept_no', protectedDeptNos)
+    for (const d of deptRows || []) deptNameByNo.set(d.dept_no, d.dept_name)
   }
 
   const upsertBatch: (typeof parsedRows[number]['record'] & { unique_key: string; import_id: string; is_overwrite_pending: boolean })[] = []
   for (const { uniqueKey, record } of parsedRows) {
     const existingId = existingByKey.get(uniqueKey)
-    if (existingId && protectedIds.has(existingId)) {
+    const protectedInfo = existingId ? protectedByRawId.get(existingId) : undefined
+    if (existingId && protectedInfo) {
       counts.pendingProtectedCount++
+      const staffInfo = protectedInfo.staffId ? staffById.get(protectedInfo.staffId) : undefined
+      const deptName = staffInfo?.deptNo != null ? (deptNameByNo.get(staffInfo.deptNo) || null) : null
+      counts.protectedDetails.push({
+        systemName: dbSystemType,
+        deptName,
+        staffNo: staffInfo?.employeeNumber || null,
+        staffName: staffInfo?.name || null,
+        dispatchStart: record.dispatch_start,
+        dispatchEnd: record.dispatch_end,
+        workLocation: record.client_name || record.work_location,
+        reason: `既存の申請（ステータス：${protectedInfo.status || '不明'}）から参照されているため、CSVの内容で上書きされませんでした`,
+        blockingStatus: protectedInfo.status,
+        blockingSalesName: protectedInfo.createdByName,
+      })
       continue
     }
     if (existingId) counts.updatedCount++
@@ -440,6 +483,7 @@ export async function POST(req: NextRequest) {
   const fileNames: string[] = []
   let combinedTotal = 0, combinedNew = 0, combinedUpdated = 0, combinedProtected = 0, combinedSkipped = 0, combinedError = 0
   const combinedErrorDetails: string[] = []
+  const combinedProtectedDetails: ProtectedRowDetail[] = []
 
   // csv_importsの履歴レコードを先に作成（総行数は後で更新）
   const { data: importRecord, error: importInsertError } = await supabaseAdmin
@@ -468,6 +512,7 @@ export async function POST(req: NextRequest) {
         combinedTotal += r.total; combinedNew += r.newCount; combinedUpdated += r.updatedCount
         combinedProtected += r.pendingProtectedCount; combinedSkipped += r.skippedNoKeyCount; combinedError += r.errorCount
         combinedErrorDetails.push(...r.errorDetails)
+        combinedProtectedDetails.push(...r.protectedDetails)
       }
     } else {
       const file = formData.get('file') as File | null
@@ -478,6 +523,7 @@ export async function POST(req: NextRequest) {
       combinedTotal = result.total; combinedNew = result.newCount; combinedUpdated = result.updatedCount
       combinedProtected = result.pendingProtectedCount; combinedSkipped = result.skippedNoKeyCount; combinedError = result.errorCount
       combinedErrorDetails.push(...result.errorDetails)
+      combinedProtectedDetails.push(...result.protectedDetails)
     }
   } catch (e: any) {
     return NextResponse.json({ error: 'CSVの読み込み・保存中にエラーが発生しました：' + (e?.message || '') }, { status: 500 })
@@ -494,6 +540,7 @@ export async function POST(req: NextRequest) {
       skipped_rows: combinedSkipped,
       error_rows: combinedError,
       error_detail: buildErrorDetailText(combinedErrorDetails),
+      protected_detail: combinedProtectedDetails.length > 0 ? combinedProtectedDetails : null,
     })
     .eq('id', importRecord.id)
 

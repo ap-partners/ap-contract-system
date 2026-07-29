@@ -249,6 +249,15 @@ export default function SalesContractDetail() {
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
 
+  // ===== 説明完了ボタン（2026-07-29新設） =====
+  // 締結パターン「対面」「印刷」でSSC承認済みの場合に担当営業へ送る通知メール
+  // （sendExplainNeededMail）のリンク先がこの詳細画面のため、以前は「説明完了」ボタンが
+  // ダッシュボード一覧（要説明タブ）にしか無く、この画面まで来ても操作できないという
+  // 導線の断絶があった（伊藤さんの指摘を受けて発見・修正）。app/dashboard/sales/page.tsx の
+  // 同機能をこの画面にも移植し、この画面だけで「PDF確認→説明→説明完了」が完結するようにする。
+  const [confirmingExplain, setConfirmingExplain] = useState(false)
+  const [explainLoading, setExplainLoading] = useState(false)
+
   // ===== 自己取り下げ機能（2026-07-24新設） =====
   // 「申請したけど間違えた」場合に、SSC/管理部の差し戻しを待たずに担当営業自身が
   // 申請を取り下げられるようにする。承認者側が既に何らかの判断を下した後
@@ -287,6 +296,23 @@ export default function SalesContractDetail() {
     setShowWithdrawForm(false)
     setWithdrawReason('')
     showSuccess('申請を取り下げました。')
+  }
+
+  const handleExplainDone = async () => {
+    if (!contract || explainLoading) return
+    setExplainLoading(true)
+    const res = await fetch(`/api/contracts/${contract.id}/notify-sign-request?trigger=explain`, { method: 'POST', headers: await getAuthHeader() })
+    const result = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      showError('更新に失敗しました: ' + (result.error || '不明なエラー'))
+      setExplainLoading(false)
+      return
+    }
+    const now = new Date().toISOString()
+    setContract(prev => prev ? { ...prev, status: '署名待ち', sign_requested_at: now } : prev)
+    setConfirmingExplain(false)
+    setExplainLoading(false)
+    showSuccess('説明完了を記録しました。従業員へ確認用のメールを送信しました。')
   }
 
   useEffect(() => {
@@ -400,6 +426,9 @@ export default function SalesContractDetail() {
     '取り下げ':    { bg: '#F3F4F6', border: '#D1D5DB', color: '#6B7280', label: '取り下げ' },
   }
   const banner = statusBanner[contract.status] || { bg: '#EEF2FA', border: '#D0DAF0', color: '#1B3A8C', label: `ステータス：${contract.status}` }
+
+  // 締結パターン「対面」「印刷」でSSC承認済み＝従業員への説明対応が必要な状態
+  const isExplain = contract.status === 'SSC承認済み' && (contract.closing_pattern === 'face' || contract.closing_pattern === 'print')
 
   // 署名期日の計算（署名待ちのみ）
   let signInfo: { notified: string; deadline: string; toneColor: string; toneBg: string; statusLabel: string } | null = null
@@ -599,6 +628,47 @@ export default function SalesContractDetail() {
             </div>
           </div>
         </div>
+
+        {/* 説明完了ボタン（2026-07-29追加） */}
+        {isExplain && (
+          <div className="rounded-xl p-4 mb-6 border" style={{ background: '#F5F9FF', borderColor: '#D7E5FF' }}>
+            <p className="text-sm font-bold mb-1" style={{ color: '#2F5FD0' }}>従業員への説明対応が必要です</p>
+            <p className="text-sm leading-relaxed" style={{ color: '#1A2340' }}>
+              上の「申請概要」の「帳票PDFプレビュー」を押すと、帳票が新しいタブで表示されます。画面を見せてご説明いただくか、書面で渡す場合は開いたタブでブラウザの印刷機能（Ctrl+Pなど）を使って印刷してご説明ください。
+              <br />
+              説明が完了したら、下記の「説明完了」を押してください。押した時点で従業員へ確認用のメールが送信されます。
+            </p>
+            {!confirmingExplain ? (
+              <button
+                onClick={() => setConfirmingExplain(true)}
+                className="mt-3 text-sm px-4 py-2 rounded-lg font-bold text-white transition-all"
+                style={{ background: '#2F5FD0' }}>
+                ✅ 説明完了
+              </button>
+            ) : (
+              <div className="mt-4 rounded-lg p-4 border" style={{ background: 'white', borderColor: '#D7E5FF' }}>
+                <p className="text-sm font-bold" style={{ color: '#1A2340' }}>従業員への説明は完了しましたか？</p>
+                <p className="mt-2 text-sm" style={{ color: '#6B7280' }}>押すと、従業員が署名待ちの状態に切り替わります。</p>
+                <div className="mt-4 flex gap-2">
+                  <button
+                    onClick={handleExplainDone}
+                    disabled={explainLoading}
+                    className="text-sm px-4 py-2 rounded-lg font-bold text-white transition-all disabled:opacity-60"
+                    style={{ background: '#2F5FD0' }}>
+                    {explainLoading ? '処理中...' : '説明完了'}
+                  </button>
+                  <button
+                    onClick={() => setConfirmingExplain(false)}
+                    disabled={explainLoading}
+                    className="text-sm px-4 py-2 rounded-lg border font-medium transition-all"
+                    style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>
+                    キャンセル
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 警告確認ボックス */}
         {contract.warning_confirmations && contract.warning_confirmations.length > 0 && (

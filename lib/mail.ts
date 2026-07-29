@@ -411,6 +411,13 @@ export async function sendStaffDocumentReadyMail(
 // このメールで、承認された瞬間に担当営業へプッシュ型の通知を追加する。
 // 7-4章のルール通り、本文には対象従業員の氏名・給与・就業先等の個人情報は一切含めない
 // （宛先である担当営業自身の氏名のみ、既存の他メールと同じ例外として記載する）。
+// 2026-07-29修正（伊藤さんレビュー対応）：①「承認されました。」の後に段落の空行を入れて
+// 読みやすくする、②対面・印刷パターンで実際に何をすればよいか（PDFの表示方法・印刷方法・
+// 説明完了ボタンの場所）が分からないという指摘を受け、番号付きの手順に書き換えた。
+// あわせて、契約詳細画面（app/dashboard/sales/contracts/[id]/page.tsx）に「説明完了」
+// ボタンを新設したため（従来はダッシュボード一覧の「要説明」タブにしか無く、このメールの
+// リンク先＝契約詳細画面では操作が完結しない導線の断絶があった）、手順③はこの画面内で
+// 完結する内容に修正している（docs/SYSTEM_DESIGN.md 10章2026-07-29参照）。
 export async function sendExplainNeededMail(
   toEmail: string,
   submitterName: string | null,
@@ -426,16 +433,33 @@ export async function sendExplainNeededMail(
     'APパートナーズ 契約書管理システムです。',
     '',
     'あなたが申請した契約書がSSC（または管理部）により承認されました。',
-    'この契約書は締結パターンで「対面でその場説明」または「印刷して説明後にリンク送付」が',
-    '選ばれているため、従業員への説明が完了するまで、従業員への確認用URLは自動送信されません。',
     '',
-    '従業員への説明が完了しましたら、下記の契約詳細画面を開き「説明完了」を押してください。',
-    '押した時点で従業員へ確認用URLが送信されます。',
+    'この契約書は締結パターンで「対面でその場説明」または「印刷して説明後にリンク送付」が',
+    '選ばれているため、承認だけでは従業員への確認用URLは自動送信されません。',
+    '下記の手順で、従業員への説明を行ってください。',
+    '',
+    '①下記URLから契約詳細画面を開き、「帳票PDFプレビュー」を押してください',
+    '　（帳票が新しいタブで表示されます）',
+    '②画面を見せてご説明いただくか、書面で渡す場合は開いたタブでブラウザの印刷機能（Ctrl+Pなど）で印刷してご説明ください',
+    '③説明が完了したら、同じ契約詳細画面の「説明完了」ボタンを押してください',
+    '　（押した時点で従業員へ確認用のメールが送信されます）',
     '',
     url,
     '',
     'このメールに心当たりがない場合は、お手数ですが破棄してください。',
   ].filter(Boolean).join('\n')
+
+  const stepsHtml = [
+    { n: '①', body: '下記URLから契約詳細画面を開き、「帳票PDFプレビュー」を押してください<br><span style="color:#5A6A8A;">（帳票が新しいタブで表示されます）</span>' },
+    { n: '②', body: '画面を見せてご説明いただくか、書面で渡す場合は開いたタブでブラウザの印刷機能（Ctrl+Pなど）で印刷してご説明ください' },
+    { n: '③', body: '説明が完了したら、同じ契約詳細画面の「説明完了」ボタンを押してください<br><span style="color:#5A6A8A;">（押した時点で従業員へ確認用のメールが送信されます）</span>' },
+  ].map((s, idx, arr) => `
+    <tr><td style="padding:12px 16px;${idx === arr.length - 1 ? '' : 'border-bottom:1px solid #E3E7F0;'}">
+      <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+        <td valign="top" style="padding-right:10px;font-family:sans-serif;font-size:14px;font-weight:bold;color:#1B3A8C;">${s.n}</td>
+        <td style="font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.7;">${s.body}</td>
+      </tr></table>
+    </td></tr>`).join('')
 
   const html = `
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F7FC;padding:24px 0;">
@@ -445,10 +469,16 @@ export async function sendExplainNeededMail(
       <tr><td style="padding:${submitterName ? '8px' : '32px'} 32px 8px 32px;font-family:sans-serif;font-size:14px;color:#1A2340;">
         お疲れ様です。<br>APパートナーズ 契約書管理システムです。
       </td></tr>
-      <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
-        あなたが申請した契約書がSSC（または管理部）により承認されました。<br>
-        締結パターンが「対面」または「印刷」のため、従業員への説明が完了するまで確認用URLは自動送信されません。<br>
-        説明が完了しましたら、下記から「説明完了」を押してください。
+      <tr><td style="padding:16px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
+        あなたが申請した契約書がSSC（または管理部）により承認されました。
+      </td></tr>
+      <tr><td style="padding:16px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.7;">
+        この契約書は締結パターンで「対面でその場説明」または「印刷して説明後にリンク送付」が選ばれているため、承認だけでは従業員への確認用URLは自動送信されません。下記の手順で、従業員への説明を行ってください。
+      </td></tr>
+      <tr><td style="padding:16px 32px 0 32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#F5F7FC;border-radius:8px;">
+          ${stepsHtml}
+        </table>
       </td></tr>
       <tr><td align="center" style="padding:24px 32px 28px 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0">
@@ -459,7 +489,7 @@ export async function sendExplainNeededMail(
           </td></tr>
         </table>
       </td></tr>
-      <tr><td style="padding:20px 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
+      <tr><td style="padding:0 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
         このメールに心当たりがない場合は、お手数ですが破棄してください。
       </td></tr>
     </table>

@@ -223,12 +223,22 @@ function checkWorkRules(input: AutoCheckInput): AutoCheckResult[] {
     })
   }
 
-  // 6. 雇用期間と派遣期間：雇用期間が派遣期間より短い（現状のSTEP5バリデーションで一致必須のため通常は発生しない防御的チェック）
+  // 6. 雇用期間と派遣期間：雇用期間の終了日が派遣期間の終了日と一致していない
+  // 2026-07-29仕様変更：STEP5バリデーションが「派遣終了日と完全一致」から「派遣終了日と同じかそれより後」に
+  // 緩和されたため、本来は同じはずの日付が意図せずずれてしまう入力ミスが起こりうる。前後どちらの方向のズレも
+  // 見落とすと重大な誤りになりうるため、伊藤さんの指示により両方向とも警告（黄色）で検知する。
   if (employEnd && dispatchEnd && employEnd < dispatchEnd) {
     results.push({
       type: 'employ_period_shorter_than_dispatch',
       level: 'yellow',
       message: '雇用期間の終了日が、派遣期間の終了日より前になっています。内容に矛盾がないかご確認ください。',
+    })
+  }
+  if (employEnd && dispatchEnd && employEnd > dispatchEnd) {
+    results.push({
+      type: 'employ_period_longer_than_dispatch',
+      level: 'yellow',
+      message: '雇用期間の終了日が、派遣期間の終了日より後になっています。意図した内容かご確認ください。',
     })
   }
 

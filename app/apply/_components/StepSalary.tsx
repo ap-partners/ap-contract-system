@@ -197,8 +197,8 @@ export default function StepSalary({
             {hourlyMonthlyBreakdown.map((line, i) => (
               <p key={i} className="text-xs" style={{ color: '#1A2340' }}>{line}</p>
             ))}
-            <p className="text-xs mt-1" style={{ color: '#5A6A8A' }}>
-              ※月所定労働日数21日・1日8時間（168時間）での計算例です。実際の支給額は勤務実績により異なります。
+            <p className="text-xs font-semibold mt-1" style={{ color: '#B45309' }}>
+              ⚠ ※月所定労働日数21日・1日8時間（168時間）での計算例です。実際の支給額は勤務実績により異なります。
             </p>
           </div>
         )}

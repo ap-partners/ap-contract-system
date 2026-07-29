@@ -1279,7 +1279,7 @@ export default function PledgeApplyPage() {
                 {hourlyDailyBreakdown && (
                   <div className="rounded-lg px-4 py-3 border flex flex-col gap-1" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
                     {hourlyDailyBreakdown.map((line, i) => <p key={i} className="text-xs" style={{ color: '#1A2340' }}>{line}</p>)}
-                    <p className="text-xs mt-1" style={{ color: '#5A6A8A' }}>※1日7時間勤務した場合の日額計算例です。実際の支給額は勤務実績により異なります。</p>
+                    <p className="text-xs font-semibold mt-1" style={{ color: '#B45309' }}>⚠ ※1日7時間勤務した場合の日額計算例です。実際の支給額は勤務実績により異なります。</p>
                   </div>
                 )}
                 <div className="flex items-center justify-between rounded-lg px-4 py-3 border" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>

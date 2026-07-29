@@ -4,7 +4,8 @@
 // スケーラビリティ改善タスク③（apply/page.tsx分割・Phase2）2026-07-14
 // JSXを返す小さな部品のみここに置く。純粋な計算・変換ロジックは ../_lib/helpers.ts 側にある。
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { type DiffPart, computeCharDiff, validateTel, normalizeTel, inp } from '../_lib/helpers'
 
 // 差分（DiffPart配列）を、削除部分は取り消し線、追加部分は色付けで表示するコンポーネント
@@ -68,10 +69,52 @@ export const AutoBadge = ({ modified, source = 'master' }: { modified?: boolean;
   )
 }
 
+// 2026-07-30修正：吹き出しが常に「アイコンの右側」に固定で開いていたため、2列グリッドの右列にある
+// 項目（誓約書の役職手当・営業手当、/apply STEP7の定額残業手当・役職手当・住宅手当等）で画面端に
+// はみ出して見切れる不具合があった（伊藤さん実機確認で発覚）。項目ごとに向きを手動指定する方式は
+// 今後項目が増えるたびに設定漏れが起こりうるため、アイコンの実際の画面上の位置をその場で計測し、
+// 右にはみ出しそうなら左に、画面下端に近ければ上寄りに、と自動で向きを判定する方式に変更。
+// 位置計算に使う祖先要素のoverflow-hiddenの影響を受けないよう、吹き出し自体はdocument.bodyへの
+// ポータル描画＋position:fixedにしている（見た目・文言・アイコンの配色は変更なし）。
+const TOOLTIP_WIDTH = 256 // w-64
+const TOOLTIP_MAX_HEIGHT_ESTIMATE = 100
+const TOOLTIP_MARGIN = 8
+
 export const Tooltip = ({ text }: { text: string }) => {
   const [show, setShow] = useState(false)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const iconRef = useRef<HTMLSpanElement>(null)
+
+  useEffect(() => {
+    if (!show) return
+    const updatePos = () => {
+      const el = iconRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      // 横方向：まずアイコンの右側に開く。画面右端をはみ出す場合はアイコンの左側に開く
+      let left = rect.right + TOOLTIP_MARGIN
+      if (left + TOOLTIP_WIDTH > window.innerWidth - TOOLTIP_MARGIN) {
+        left = rect.left - TOOLTIP_WIDTH - TOOLTIP_MARGIN
+      }
+      left = Math.max(TOOLTIP_MARGIN, Math.min(left, window.innerWidth - TOOLTIP_WIDTH - TOOLTIP_MARGIN))
+      // 縦方向：アイコンの上端に揃える。画面下端に近い場合はアイコンの下端を吹き出しの下端に揃える
+      let top = rect.top
+      if (top + TOOLTIP_MAX_HEIGHT_ESTIMATE > window.innerHeight - TOOLTIP_MARGIN) {
+        top = Math.max(TOOLTIP_MARGIN, rect.bottom - TOOLTIP_MAX_HEIGHT_ESTIMATE)
+      }
+      setPos({ top, left })
+    }
+    updatePos()
+    window.addEventListener('scroll', updatePos, true)
+    window.addEventListener('resize', updatePos)
+    return () => {
+      window.removeEventListener('scroll', updatePos, true)
+      window.removeEventListener('resize', updatePos)
+    }
+  }, [show])
+
   return (
-    <span className="relative inline-flex items-center ml-1 shrink-0">
+    <span ref={iconRef} className="relative inline-flex items-center ml-1 shrink-0">
       <span
         onMouseEnter={() => setShow(true)}
         onMouseLeave={() => setShow(false)}
@@ -80,11 +123,12 @@ export const Tooltip = ({ text }: { text: string }) => {
         style={{ background: '#F97316', color: 'white', fontSize: '10px', fontWeight: 600 }}>
         ?
       </span>
-      {show && (
-        <span className="absolute left-6 top-0 z-50 rounded-lg px-3 py-2 text-xs shadow-lg w-64"
-          style={{ background: '#1A2340', color: 'white', lineHeight: '1.6' }}>
+      {show && pos && typeof document !== 'undefined' && createPortal(
+        <span className="fixed z-50 rounded-lg px-3 py-2 text-xs shadow-lg w-64"
+          style={{ background: '#1A2340', color: 'white', lineHeight: '1.6', top: pos.top, left: pos.left }}>
           {text}
-        </span>
+        </span>,
+        document.body
       )}
     </span>
   )

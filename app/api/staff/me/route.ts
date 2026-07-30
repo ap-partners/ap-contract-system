@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
 
   const { data: staff, error: staffError } = await supabaseAdmin
     .from('staff')
-    .select('id, name, employee_number')
+    .select('id, name, employee_number, mypage_bookmark_reminder_dismissed')
     .eq('id', staffId)
     .maybeSingle()
 
@@ -126,6 +126,9 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     staffName: staff.name,
     employeeNumber: staff.employee_number,
+    // 2026-07-30追加：ブックマーク案内画面（/staff/mypage）を表示するかどうか。
+    // 「次回から表示しない」が未チェックの間はtrueを返し続け、毎回ログイン時に表示させる。
+    showBookmarkReminder: !staff.mypage_bookmark_reminder_dismissed,
     pendingDocuments,
     signedDocuments,
     signedDocumentsTotalCount: (signedContractCount ?? 0) + (signedPledgeCount ?? 0),

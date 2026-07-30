@@ -22,6 +22,8 @@ import {
   computeAccountSetupCodeExpiry,
   ACCOUNT_SETUP_REISSUE_COOLDOWN_MINUTES,
 } from '@/lib/accountSetupCode'
+import { hasMailingList } from '@/lib/mailingList'
+import { CURATED_DEPT_ORDER, CURATED_DEPT_LABEL_OVERRIDE } from '@/lib/curatedDepartments'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -34,6 +36,15 @@ type Role = typeof VALID_ROLES[number]
 // フリーズ用のban_duration。Supabase側の仕様上「未来永劫」は指定できないため、
 // 実運用上十分に長い期間（約100年）を「凍結中」として扱う。
 const FREEZE_BAN_DURATION = '876000h'
+
+// 2026-07-30追加：メーリングリスト未登録ガードのエラー文言用に、部署・役割の表示名を解決する。
+async function resolveMailScopeLabel(role: Role, deptNo: number | null): Promise<string> {
+  if (role !== '担当営業') return role
+  if (deptNo === null) return '選択した部門'
+  if (CURATED_DEPT_LABEL_OVERRIDE[deptNo]) return CURATED_DEPT_LABEL_OVERRIDE[deptNo]
+  const { data } = await supabaseAdmin.from('department_master').select('dept_name').eq('dept_no', deptNo).maybeSingle()
+  return data?.dept_name || '選択した部門'
+}
 
 async function requireAccountAdmin(req: NextRequest) {
   const auth = await getAuthenticatedStaff(req)
@@ -86,10 +97,8 @@ export async function GET(req: NextRequest) {
   // 対象外（本社等）に既に割り当て済みの既存アカウントは、編集フォーム側（AccountManagementTab.tsx）で
   // 現在値を選択肢に補って表示するため、ここでは単純に絞り込むだけでよい。
   // 法務部（dept_no=22, DB上の正式名称は「法務部 法務課」）のみ表示名を短縮。
-  // ※このリストの並び順・対象部門を変更する場合は、docs/SYSTEM_DESIGN.md 10章
-  //   「2026-07-29：アカウント管理の部門選択肢を絞り込み・並び替え」の決定内容も忘れずに更新すること。
-  const CURATED_DEPT_ORDER = [4, 5, 3, 6, 46, 7, 8, 9, 10, 11, 12, 13, 14, 15, 48, 16, 18, 19, 21, 22]
-  const CURATED_DEPT_LABEL_OVERRIDE: Record<number, string> = { 22: '法務部' }
+  // 2026-07-30：CURATED_DEPT_ORDER・CURATED_DEPT_LABEL_OVERRIDEはlib/curatedDepartments.tsへ
+  // 切り出し（メーリングリストマスタでも同じ部門リストを使うため）。
   const departmentOptions = CURATED_DEPT_ORDER
     .filter(deptNo => deptNameByNo.has(deptNo))
     .map(deptNo => ({
@@ -128,6 +137,18 @@ export async function POST(req: NextRequest) {
         }
         if (role === '担当営業' && (deptNo === null || !Number.isFinite(deptNo))) {
           return NextResponse.json({ error: '担当営業には部門を選択してください。' }, { status: 400 })
+        }
+
+        // 2026-07-30追加：メーリングリスト未登録の部署・役割にはアカウントを新規作成できない
+        // ようにする（伊藤さん指示）。個人宛メールに知らないうちに切り替わって届き続ける、
+        // という事故を防ぐため、先にメーリングリストマスタ管理タブで登録してもらう。
+        const mailScope = role === '担当営業' ? 'dept' : role === 'SSC' ? 'ssc' : 'admin'
+        const mailDeptNo = role === '担当営業' ? deptNo : null
+        if (!(await hasMailingList(mailScope, mailDeptNo))) {
+          const scopeLabel = await resolveMailScopeLabel(role, deptNo)
+          return NextResponse.json({
+            error: `${scopeLabel}のメーリングリストがまだ登録されていません。先に「マスタ管理」タブの「メーリングリスト」で登録してから、アカウントを作成してください。`,
+          }, { status: 400 })
         }
 
         // 仮パスワードはユーザーには一切知らせず、メールの認証コードでパスワード設定を必須にする。
@@ -185,6 +206,22 @@ export async function POST(req: NextRequest) {
 
         const { data: target } = await supabaseAdmin.from('staff_roles').select('*').eq('id', id).maybeSingle()
         if (!target) return NextResponse.json({ error: '対象のアカウントが見つかりませんでした。' }, { status: 404 })
+
+        // 2026-07-30追加：役割・部門を変更する場合のみ、変更先にメーリングリストが
+        // 登録済みかどうかを確認する（新規作成と同じガード）。名前の修正等、役割・部門を
+        // 変えない編集はこのチェックの対象外（既存アカウントの部署にまだメーリングリストが
+        // 無いだけで無関係な編集までブロックされないようにするため）。
+        const mailScopeChanged = target.role !== role || target.dept_no !== deptNo
+        if (mailScopeChanged) {
+          const mailScope = role === '担当営業' ? 'dept' : role === 'SSC' ? 'ssc' : 'admin'
+          const mailDeptNo = role === '担当営業' ? deptNo : null
+          if (!(await hasMailingList(mailScope, mailDeptNo))) {
+            const scopeLabel = await resolveMailScopeLabel(role, deptNo)
+            return NextResponse.json({
+              error: `${scopeLabel}のメーリングリストがまだ登録されていません。先に「マスタ管理」タブの「メーリングリスト」で登録してから、変更を保存してください。`,
+            }, { status: 400 })
+          }
+        }
 
         // 自己ロックアウト防止①：自分自身のアカウント管理権限を自分では外せない
         if (id === auth.userId && target.is_account_admin && !isAccountAdmin) {

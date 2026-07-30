@@ -11,7 +11,7 @@ import {
   WAGE_PAYMENT_TEXT,
   getDeductionText, getInsuranceLine, getTrialText, getRemarksText, getTransportText,
   getTransportSecondaryNote, getWorkDaysText, getFlexTimeText, getFlexTimeNote, COMPANY_HQ_ADDRESS_LINES,
-  formatHoursMinutes, formatMinutes,
+  formatHoursMinutes, formatMinutes, CONTRACT_RENEWAL_TEXT,
 } from './documentText'
 import {
   sharedStyles, LabeledRow, SplitLines, BoxedSplitRow, WageGrid,
@@ -199,6 +199,16 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
           )}
 
           <LabeledRow label="各種保険"><Text style={sharedStyles.freeText}>{getInsuranceLine(p.hasEmployInsurance, p.hasSocialInsurance)}</Text></LabeledRow>
+
+          {/* 2026-07-30追加：雇用形態が有期契約の場合のみ、契約更新の有無・基準・無期転換の
+              固定文言（documentText.tsのCONTRACT_RENEWAL_TEXT。兼用版パターンCと共通）を表示する。
+              パターンAはA4 1ページ固定のため、AutoFitFreeTextで文字サイズを自動縮小し
+              ページあふれを防ぐ（伊藤さん指示・実際のPDF確認まで完了扱いにしない）。 */}
+          {p.contractType === '有期契約' && (
+            <LabeledRow label={'契約更新の有無・\n基準・無期転換'}>
+              <AutoFitFreeText text={CONTRACT_RENEWAL_TEXT} maxLines={5} widthPt={441} sizes={[8.3, 7.6, 6.9, 6.2, 5.6]} lineHeight={1.15} />
+            </LabeledRow>
+          )}
 
           <LabeledRow label="試用期間" minHeight={62}>
             <Text style={sharedStyles.freeText}>{getTrialText(p.trialPeriod, p.trialStart, p.trialEnd)}</Text>

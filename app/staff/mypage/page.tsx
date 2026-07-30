@@ -23,6 +23,12 @@ export default function StaffMyPage() {
   const [signedTotalCount, setSignedTotalCount] = useState(0)
   const [showAllHistory, setShowAllHistory] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
+  // 2026-07-30追加：ブックマーク案内画面。「次回から表示しない」にチェックが入っていない
+  // 従業員には、ログインする度にこの画面をマイページ本体より先に表示する。
+  const [showBookmarkReminder, setShowBookmarkReminder] = useState(false)
+  const [reminderClosed, setReminderClosed] = useState(false)
+  const [dontShowAgain, setDontShowAgain] = useState(false)
+  const [dismissSaving, setDismissSaving] = useState(false)
 
   const load = async (all: boolean) => {
     try {
@@ -40,6 +46,7 @@ export default function StaffMyPage() {
       setPendingDocuments(data.pendingDocuments || [])
       setSignedDocuments(data.signedDocuments || [])
       setSignedTotalCount(data.signedDocumentsTotalCount || 0)
+      setShowBookmarkReminder(!!data.showBookmarkReminder)
     } catch {
       setError('通信エラーが発生しました。電波状況をご確認のうえ、もう一度お試しください。')
     } finally {
@@ -61,6 +68,22 @@ export default function StaffMyPage() {
     router.push('/staff/login')
   }
 
+  // 「次回から表示しない」にチェックが入っている場合だけサーバー側に保存する。
+  // チェックが無い場合は保存せずに閉じるだけなので、次のログインでも再表示される。
+  const handleCloseReminder = async () => {
+    if (dontShowAgain) {
+      setDismissSaving(true)
+      try {
+        await fetch('/api/staff/dismiss-bookmark-reminder', { method: 'POST' })
+      } catch {
+        // 通信エラーでも画面は進める（保存できなくても次回また表示されるだけで実害は無い）
+      } finally {
+        setDismissSaving(false)
+      }
+    }
+    setReminderClosed(true)
+  }
+
   const formatSignedAt = (iso: string, signAction: string): string => {
     const d = new Date(iso)
     const label = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
@@ -71,6 +94,67 @@ export default function StaffMyPage() {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: '#F5F7FC' }}>
         <p className="text-sm" style={{ color: '#5A6A8A' }}>読み込み中です...</p>
+      </div>
+    )
+  }
+
+  // 2026-07-30追加：ブックマーク案内画面。マイページ本体を表示する前にこちらを表示し、
+  // 閉じるとマイページ本体が表示される。エラー時（error有り）は案内より本来の内容確認を
+  // 優先し、この画面は出さない。
+  if (!error && showBookmarkReminder && !reminderClosed) {
+    return (
+      <div className="min-h-screen flex justify-center px-4 py-8" style={{ background: '#F5F7FC' }}>
+        <div className="w-full max-w-sm">
+          <div className="rounded-3xl overflow-hidden" style={{ background: '#FFFFFF', boxShadow: '0 2px 16px rgba(26,35,64,0.08)' }}>
+            <div className="px-6 pt-10 pb-8 text-center">
+              <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5" style={{ background: '#EAF0FB' }}>
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#1B3A8C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                </svg>
+              </div>
+              <p className="text-lg font-bold leading-snug" style={{ color: '#1A2340' }}>
+                このページをブックマークに<br />登録してください
+              </p>
+              <p className="text-xs leading-relaxed mt-3" style={{ color: '#5A6A8A' }}>
+                このマイページでは、今後届く契約書類の確認・署名や、過去に確認・署名した書類の閲覧ができます。今後もよく使うページのため、忘れずにアクセスできるようブックマーク（お気に入り）への登録をおすすめします。
+              </p>
+            </div>
+
+            <div className="px-6">
+              <div className="rounded-2xl p-4 mb-3" style={{ background: '#F5F7FC' }}>
+                <p className="text-xs font-bold mb-1" style={{ color: '#1A2340' }}>パソコンで見ている場合</p>
+                <p className="text-xs leading-relaxed" style={{ color: '#5A6A8A' }}>
+                  キーボードの「Ctrl」キー（Macは「command」キー）を押しながら「D」キーを押すと、ブックマークに登録できます。
+                </p>
+              </div>
+              <div className="rounded-2xl p-4 mb-5" style={{ background: '#F5F7FC' }}>
+                <p className="text-xs font-bold mb-1" style={{ color: '#1A2340' }}>スマートフォンで見ている場合</p>
+                <p className="text-xs leading-relaxed" style={{ color: '#5A6A8A' }}>
+                  画面の共有ボタン（□に↑のアイコン、または「…」ボタン）から「ブックマークに追加」または「ホーム画面に追加」を選ぶと登録できます。
+                </p>
+              </div>
+
+              <label className="flex items-start gap-2 mb-5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={dontShowAgain}
+                  onChange={(e) => setDontShowAgain(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span className="text-xs" style={{ color: '#5A6A8A' }}>次回から表示しない</span>
+              </label>
+
+              <button
+                onClick={handleCloseReminder}
+                disabled={dismissSaving}
+                className="w-full py-3.5 rounded-xl text-sm font-semibold text-white mb-7"
+                style={{ background: '#1B3A8C' }}
+              >
+                {dismissSaving ? '保存中...' : 'マイページを開く'}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     )
   }

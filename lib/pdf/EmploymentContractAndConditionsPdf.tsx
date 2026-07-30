@@ -349,9 +349,15 @@ export const EmploymentContractAndConditionsPdf = (p: EmploymentContractAndCondi
 
           <LabeledRow label="各種保険"><Text style={sharedStyles.freeText}>{getInsuranceLine(p.hasEmployInsurance, p.hasSocialInsurance)}</Text></LabeledRow>
 
-          <LabeledRow label={'契約更新の有無・\n基準・無期転換'}>
-            <Text style={sharedStyles.freeText}>{CONTRACT_RENEWAL_TEXT}</Text>
-          </LabeledRow>
+          {/* 2026-07-30変更：従来は有期・無期を問わず常に固定表示だったが、伊藤さんの指示で
+              雇用形態が有期契約の場合のみ表示する条件表示に変更（パターンAへの新規追加と
+              合わせて仕様統一。documentText.ts側のCONTRACT_RENEWAL_TEXTの定義コメントも
+              あわせて訂正済み）。 */}
+          {p.contractType === '有期契約' && (
+            <LabeledRow label={'契約更新の有無・\n基準・無期転換'}>
+              <Text style={sharedStyles.freeText}>{CONTRACT_RENEWAL_TEXT}</Text>
+            </LabeledRow>
+          )}
 
           <LabeledRow label="協定対象派遣労働者であるか否か">
             <Text style={sharedStyles.freeText}>{getAgreementLaborText(p.dispatchEnd)}</Text>

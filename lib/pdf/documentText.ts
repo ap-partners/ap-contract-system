@@ -246,9 +246,12 @@ export const getAgreementLaborText = (dispatchEnd: string | null | undefined): s
   return `${base}\n労使協定の有効期間の終了日　　【　${endYear}年3月31日　】`
 }
 
-// ===== 契約更新の有無・基準・無期転換（兼用版パターンCのみ・テンプレートJ58〜J62固定文言）=====
-// 2026-07-08追加。有期・無期どちらのExcelテンプレートにも同一文言で存在するため、
-// contractTypeによる出し分けは行わず常に固定表示とする（元のExcelの誤字「いずかれ」は「いずれか」に訂正）。
+// ===== 契約更新の有無・基準・無期転換（パターンA・C共通・テンプレートJ58〜J62固定文言）=====
+// 2026-07-08追加（当初は兼用版パターンCのみ・有期無期問わず常時表示）。
+// 2026-07-30変更：伊藤さんの指示により、雇用形態が有期契約の場合のみ表示する条件表示に変更
+// （パターンAにも新規追加。呼び出し側=EmploymentContractPdf.tsx・EmploymentContractAndConditionsPdf.tsx
+// で`contractType === '有期契約'`の分岐を行う。テキスト自体はここでは出し分けない）。
+// 元のExcelの誤字「いずかれ」は「いずれか」に訂正。
 // 「契約更新上限の有無」欄は現状STEP screensに対応する入力項目が無いため、Excel既定値の
 // 「無」を固定表示する（将来、更新回数上限・通算契約期間の入力項目を追加する場合はここを拡張する。
 // docs/SYSTEM_DESIGN.md 9章PENDING参照）。

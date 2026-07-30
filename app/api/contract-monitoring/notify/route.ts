@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendContractMonitoringFollowupMail, type ContractMonitoringFollowupItem } from '@/lib/mail'
 import { getAuthenticatedStaff } from '@/lib/apiAuth'
+import { resolveMailingListEmail } from '@/lib/mailingList'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -46,19 +47,19 @@ export async function POST(req: NextRequest) {
   const { data: usersList } = await supabaseAdmin.auth.admin.listUsers({ perPage: 200 })
   const emailById = new Map<string, string>((usersList?.users || []).map(u => [u.id, u.email || '']))
 
-  const mgmtEmails = Array.from(new Set(
+  const individualMgmtEmails = Array.from(new Set(
     (roleRows || [])
       .filter((r: any) => r.role === '管理部')
       .map((r: any) => emailById.get(r.id))
       .filter((e): e is string => !!e)
   ))
-  const sscEmails = Array.from(new Set(
+  const individualSscEmails = Array.from(new Set(
     (roleRows || [])
       .filter((r: any) => r.role === 'SSC')
       .map((r: any) => emailById.get(r.id))
       .filter((e): e is string => !!e)
   ))
-  const assignedToEmails = deptNo !== null
+  const individualAssignedToEmails = deptNo !== null
     ? Array.from(new Set(
         (roleRows || [])
           .filter((r: any) => r.role === '担当営業' && r.dept_no === deptNo)
@@ -66,6 +67,18 @@ export async function POST(req: NextRequest) {
           .filter((e): e is string => !!e)
       ))
     : []
+
+  // 2026-07-30追加：メーリングリストマスタに登録があれば、個人宛メールの代わりにそちらを使う。
+  // 未登録のスコープは従来通り個人宛（安全策）。
+  const [deptMailingEmail, sscMailingEmail, adminMailingEmail] = await Promise.all([
+    resolveMailingListEmail('dept', deptNo),
+    resolveMailingListEmail('ssc'),
+    resolveMailingListEmail('admin'),
+  ])
+
+  const mgmtEmails = adminMailingEmail ? [adminMailingEmail] : individualMgmtEmails
+  const sscEmails = sscMailingEmail ? [sscMailingEmail] : individualSscEmails
+  const assignedToEmails = deptMailingEmail ? [deptMailingEmail] : individualAssignedToEmails
 
   const isUnassignedFallback = assignedToEmails.length === 0
   const toEmails = isUnassignedFallback ? mgmtEmails : assignedToEmails

@@ -21,6 +21,8 @@ type WorkingHours = { id: string; work_place: string; contract_type: string; pat
 type DispatchFee = { id: string; office_name: string; fiscal_year_label: string; amount_per_day: number; updated_at: string }
 type Office = { id: string; office_name: string; postal_code: string | null; address: string | null; tel: string | null; updated_at: string }
 type WorkDescriptionTemplate = { id: string; template_text: string; sort_order: number; updated_at: string }
+type MailingList = { id: string; scope_type: 'dept' | 'ssc' | 'admin'; dept_no: number | null; email: string; updated_at: string }
+type MailingListDeptOption = { deptNo: number; deptName: string }
 
 type MasterData = {
   departments: Department[]
@@ -31,9 +33,11 @@ type MasterData = {
   staffCountByDept: Record<string, number>
   offices: Office[]
   workDescriptionTemplates: WorkDescriptionTemplate[]
+  mailingLists: MailingList[]
+  mailingListDeptOptions: MailingListDeptOption[]
 }
 
-const SUB_TABS = ['部門', '最低賃金', '所定労働時間', '派遣料金額', '自社拠点', '業務内容テンプレート'] as const
+const SUB_TABS = ['部門', '最低賃金', '所定労働時間', '派遣料金額', '自社拠点', '業務内容テンプレート', 'メーリングリスト'] as const
 type SubTab = typeof SUB_TABS[number]
 
 const card = 'rounded-2xl border border-[#E8EDF5] bg-white'
@@ -103,6 +107,7 @@ export default function MasterManagementTab() {
           {subTab === '派遣料金額' && <DispatchFeeSection data={data} reload={load} />}
           {subTab === '自社拠点' && <OfficeSection data={data} reload={load} />}
           {subTab === '業務内容テンプレート' && <WorkDescriptionTemplateSection data={data} reload={load} />}
+          {subTab === 'メーリングリスト' && <MailingListSection data={data} reload={load} />}
         </>
       ) : null}
     </div>
@@ -700,6 +705,105 @@ function OfficeSection({ data, reload }: { data: MasterData; reload: () => Promi
                       {savingOffice === office ? '保存中…' : savedOffice === office ? '保存しました✓' : '保存する'}
                     </button>
                     {errorByOffice[office] && <div className="mt-2 w-64"><ErrorBanner message={errorByOffice[office]} /></div>}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
+// ===== メーリングリストマスタ（2026-07-30新設） =====
+// 担当営業は部門ごとに1件（アカウント管理と同じ実運用20部門）、SSC・管理部はロール全体で
+// 1件のみ登録できる。未登録のスコープは各通知メールで従来通り個人宛にフォールバックする
+// 安全設計だが、アカウント管理の新規追加・役割部門変更時には、変更先のメーリングリストが
+// 未登録だと保存できないガードが別途入っている（伊藤さん指示・2026-07-30）。
+type MailingListRow = { key: string; label: string; scopeType: 'dept' | 'ssc' | 'admin'; deptNo: number | null }
+
+function MailingListSection({ data, reload }: { data: MasterData; reload: () => Promise<void> }) {
+  const rows: MailingListRow[] = [
+    ...data.mailingListDeptOptions.map(d => ({ key: `dept-${d.deptNo}`, label: d.deptName, scopeType: 'dept' as const, deptNo: d.deptNo })),
+    { key: 'ssc', label: 'SSC（全体で1件）', scopeType: 'ssc' as const, deptNo: null },
+    { key: 'admin', label: '管理部（全体で1件）', scopeType: 'admin' as const, deptNo: null },
+  ]
+
+  const findExisting = (row: MailingListRow) =>
+    data.mailingLists.find(m => m.scope_type === row.scopeType && (row.scopeType !== 'dept' || m.dept_no === row.deptNo))
+
+  const [drafts, setDrafts] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {}
+    for (const row of rows) initial[row.key] = findExisting(row)?.email || ''
+    return initial
+  })
+  const [saving, setSaving] = useState<string | null>(null)
+  const [errorByKey, setErrorByKey] = useState<Record<string, string>>({})
+  const [saved, setSaved] = useState<string | null>(null)
+
+  const handleSave = async (row: MailingListRow) => {
+    setErrorByKey(prev => ({ ...prev, [row.key]: '' }))
+    setSaving(row.key)
+    const email = (drafts[row.key] || '').trim()
+    const result = await postAction('upsert_mailing_list', { scopeType: row.scopeType, deptNo: row.deptNo, email })
+    setSaving(null)
+    if (!result.ok) { setErrorByKey(prev => ({ ...prev, [row.key]: result.error || '更新に失敗しました。' })); return }
+    setSaved(row.key)
+    setTimeout(() => setSaved(cur => (cur === row.key ? null : cur)), 2500)
+    await reload()
+  }
+
+  const registeredCount = rows.filter(row => !!findExisting(row)).length
+
+  return (
+    <section className={`${card} p-6 md:p-8`}>
+      <p className="text-sm font-semibold text-[#1F2937]">メーリングリストマスタ</p>
+      <p className="mt-1 text-xs font-medium leading-5 text-[#6B7280]">
+        担当営業の各部門・SSC・管理部あての通知メール（現在は契約状況モニタリングの確認依頼メールが対象）の宛先を、個人のメールアドレスではなく部署のメーリングリスト宛に変更できます。ここに登録していない部署・役割は今まで通り個人宛に届きます。
+        登録済み：{registeredCount} / {rows.length}件。
+      </p>
+      <p className="mt-2 text-xs font-medium leading-5 text-[#B95F0F]" style={{ background: '#FFF3E8', borderRadius: 8, padding: '8px 12px' }}>
+        アカウント管理で新規にアカウントを作成する、または既存アカウントの部署・役割を変更する際、変更先のメーリングリストがここに登録されていないと保存できません。先にここで登録してください。
+      </p>
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-[#E8EDF5] text-left text-xs font-semibold text-[#6B7280]">
+              <th className="px-3 py-2">部署・役割</th>
+              <th className="px-3 py-2">メールアドレス</th>
+              <th className="px-3 py-2">最終更新</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(row => {
+              const existing = findExisting(row)
+              const draft = drafts[row.key] ?? ''
+              return (
+                <tr key={row.key} className="border-b border-[#F1F4F9] align-top">
+                  <td className="px-3 py-3 font-medium text-[#1F2937]">{row.label}</td>
+                  <td className="px-3 py-3">
+                    <input
+                      type="email"
+                      value={draft}
+                      onChange={e => setDrafts(prev => ({ ...prev, [row.key]: e.target.value }))}
+                      className={`${inputCls} w-64`}
+                      placeholder="例：hokkaido-eigyo@appart.co.jp"
+                    />
+                  </td>
+                  <td className="px-3 py-3 text-xs font-medium text-[#6B7280]">
+                    {existing ? new Date(existing.updated_at).toLocaleDateString('ja-JP') : '未登録'}
+                  </td>
+                  <td className="px-3 py-3">
+                    <button
+                      onClick={() => handleSave(row)}
+                      disabled={saving === row.key || !draft.trim()}
+                      className={primaryBtn}
+                    >
+                      {saving === row.key ? '保存中…' : saved === row.key ? '保存しました✓' : '保存する'}
+                    </button>
+                    {errorByKey[row.key] && <div className="mt-2 w-64"><ErrorBanner message={errorByKey[row.key]} /></div>}
                   </td>
                 </tr>
               )

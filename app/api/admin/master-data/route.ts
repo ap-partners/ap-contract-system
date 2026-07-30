@@ -19,6 +19,7 @@ import { createClient } from '@supabase/supabase-js'
 import { getAuthenticatedStaff } from '@/lib/apiAuth'
 import { getOfficeName } from '@/lib/pdf/documentText'
 import { friendlyDbError } from '@/lib/friendlyError'
+import { CURATED_DEPT_ORDER, CURATED_DEPT_LABEL_OVERRIDE } from '@/lib/curatedDepartments'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest) {
   if (!auth) return NextResponse.json({ error: 'ログインが必要です。' }, { status: 401 })
   if (auth.role !== '管理部') return NextResponse.json({ error: 'この操作は管理部のみ実行できます。' }, { status: 403 })
 
-  const [{ data: departments, error: deptErr }, { data: minimumWages, error: mwErr }, { data: workingHours, error: whErr }, { data: dispatchFees, error: dfErr }, { data: staffCountRows, error: staffErr }, { data: offices, error: officeErr }, { data: workDescriptionTemplates, error: wdtErr }] = await Promise.all([
+  const [{ data: departments, error: deptErr }, { data: minimumWages, error: mwErr }, { data: workingHours, error: whErr }, { data: dispatchFees, error: dfErr }, { data: staffCountRows, error: staffErr }, { data: offices, error: officeErr }, { data: workDescriptionTemplates, error: wdtErr }, { data: mailingLists, error: mlmErr }] = await Promise.all([
     supabaseAdmin.from('department_master').select('id, dept_no, dept_name, created_at').order('dept_no', { ascending: true }),
     supabaseAdmin.from('minimum_wage_master').select('id, dept_no, hourly_wage, effective_from, created_at, updated_at').order('dept_no', { ascending: true }).order('effective_from', { ascending: false }),
     supabaseAdmin.from('standard_working_hours_master').select('id, work_place, contract_type, pattern_name, monthly_hours, created_at, updated_at').order('work_place', { ascending: true }).order('contract_type', { ascending: true }),
@@ -56,10 +57,12 @@ export async function GET(req: NextRequest) {
     // 2026-07-22追加：アルバイト誓約書STEP3「業務内容」のテンプレート選択機能用マスタ。
     // office_masterと異なり固定候補ではなく自由追加・編集・削除が可能なリスト。
     supabaseAdmin.from('work_description_templates').select('id, template_text, sort_order, updated_at').order('sort_order', { ascending: true }),
+    // 2026-07-30追加：メーリングリストマスタ（部門ごと1件・SSC1件・管理部1件）。
+    supabaseAdmin.from('mailing_list_master').select('id, scope_type, dept_no, email, updated_at'),
   ])
 
-  if (deptErr || mwErr || whErr || dfErr || staffErr || officeErr || wdtErr) {
-    return NextResponse.json({ error: 'マスタデータの取得に失敗しました：' + (deptErr?.message || mwErr?.message || whErr?.message || dfErr?.message || staffErr?.message || officeErr?.message || wdtErr?.message || '') }, { status: 500 })
+  if (deptErr || mwErr || whErr || dfErr || staffErr || officeErr || wdtErr || mlmErr) {
+    return NextResponse.json({ error: 'マスタデータの取得に失敗しました：' + (deptErr?.message || mwErr?.message || whErr?.message || dfErr?.message || staffErr?.message || officeErr?.message || wdtErr?.message || mlmErr?.message || '') }, { status: 500 })
   }
 
   const staffCountByDept: Record<number, number> = {}
@@ -82,7 +85,14 @@ export async function GET(req: NextRequest) {
     return a.localeCompare(b, 'ja')
   })
 
-  return NextResponse.json({ departments, minimumWages, workingHours, dispatchFees, officeNames, staffCountByDept, offices, workDescriptionTemplates })
+  // 2026-07-30追加：メーリングリストマスタの登録対象部門（担当営業用。アカウント管理と
+  // 同じ20部門の絞り込みリストを共通ファイルから参照）。SSC・管理部は部門を問わずロール全体で1件。
+  const deptNameByNo = new Map((departments || []).map((d: any) => [d.dept_no, d.dept_name]))
+  const mailingListDeptOptions = CURATED_DEPT_ORDER
+    .filter(deptNo => deptNameByNo.has(deptNo))
+    .map(deptNo => ({ deptNo, deptName: CURATED_DEPT_LABEL_OVERRIDE[deptNo] || (deptNameByNo.get(deptNo) as string) }))
+
+  return NextResponse.json({ departments, minimumWages, workingHours, dispatchFees, officeNames, staffCountByDept, offices, workDescriptionTemplates, mailingLists, mailingListDeptOptions })
 }
 
 // ===== POST：新規追加・修正（actionで分岐） =====
@@ -248,6 +258,47 @@ export async function POST(req: NextRequest) {
         if (!id) return NextResponse.json({ error: '対象を特定できませんでした。' }, { status: 400 })
         const { error } = await supabaseAdmin.from('work_description_templates').delete().eq('id', id)
         if (error) return NextResponse.json({ error: friendlyDbError(error, '削除') }, { status: 500 })
+        return NextResponse.json({ ok: true })
+      }
+
+      case 'upsert_mailing_list': {
+        // 2026-07-30新設。scopeType='dept'の場合はdeptNo必須、'ssc'・'admin'の場合はロール全体で1件。
+        const scopeType = String(payload?.scopeType || '')
+        const email = String(payload?.email || '').trim()
+        if (!['dept', 'ssc', 'admin'].includes(scopeType)) {
+          return NextResponse.json({ error: '不正なスコープです。' }, { status: 400 })
+        }
+        if (!email) {
+          return NextResponse.json({ error: 'メールアドレスを入力してください。' }, { status: 400 })
+        }
+        if (scopeType === 'dept') {
+          const deptNo = Number(payload?.deptNo)
+          if (!Number.isFinite(deptNo)) {
+            return NextResponse.json({ error: '部門を特定できませんでした。' }, { status: 400 })
+          }
+          // 表示対象（実運用20部門）以外への登録は誤操作防止のため弾く
+          if (!CURATED_DEPT_ORDER.includes(deptNo)) {
+            return NextResponse.json({ error: '対象外の部門です。' }, { status: 400 })
+          }
+          const { error } = await supabaseAdmin.from('mailing_list_master').upsert(
+            { scope_type: 'dept', dept_no: deptNo, email, updated_at: new Date().toISOString() },
+            { onConflict: 'dept_no' }
+          )
+          if (error) return NextResponse.json({ error: friendlyDbError(error, '更新') }, { status: 500 })
+          return NextResponse.json({ ok: true })
+        }
+        // scope_type='ssc'・'admin'はdept_noがNULLの1行のみ。onConflictにdept_noを含む
+        // 制約は使えない（部分ユニークインデックスのため）ので、既存行の有無で自前分岐する。
+        const { data: existing } = await supabaseAdmin
+          .from('mailing_list_master')
+          .select('id')
+          .eq('scope_type', scopeType)
+          .is('dept_no', null)
+          .maybeSingle()
+        const { error } = existing
+          ? await supabaseAdmin.from('mailing_list_master').update({ email, updated_at: new Date().toISOString() }).eq('id', existing.id)
+          : await supabaseAdmin.from('mailing_list_master').insert({ scope_type: scopeType, dept_no: null, email })
+        if (error) return NextResponse.json({ error: friendlyDbError(error, '更新') }, { status: 500 })
         return NextResponse.json({ ok: true })
       }
 

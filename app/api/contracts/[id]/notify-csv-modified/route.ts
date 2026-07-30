@@ -46,11 +46,19 @@ export async function POST(
     return NextResponse.json({ error: '契約データが見つかりませんでした。' }, { status: 404 })
   }
 
-  // CSV反映項目の修正が無い、またはSSC承認直後（承認済み）以外の状態では何もしない
+  // CSV反映項目の修正が無ければ何もしない
   if (!contract.csv_modified_fields || (Array.isArray(contract.csv_modified_fields) && contract.csv_modified_fields.length === 0)) {
     return NextResponse.json({ sent: false, reason: 'no_modified_fields' })
   }
-  if (contract.status !== 'SSC承認済み') {
+  // 2026-07-30実機確認で発覚した不具合の修正：呼び出し元（handleApprove等）は
+  // notify-sign-requestと本APIを連続して呼ぶ設計だが、notify-sign-request側が
+  // 「SSC承認済み→署名待ち」への遷移を即座に行うため、本APIが呼ばれる時点では
+  // 既にstatusが「署名待ち」（またはそれ以降）に進んでいることがある。
+  // 「status==='SSC承認済み'」限定にすると、この一瞬の差でnot_approved扱いとなり
+  // 通知が永久に飛ばなくなっていた（csv_modified_notified_atが常にnullのまま）。
+  // 本APIは承認系ハンドラからのみ呼ばれる前提のため、「申請中」「差し戻し中」「取り下げ」
+  // （＝まだ承認されていない、または承認前に取り下げられた状態）以外なら承認後とみなす。
+  if (contract.status === '申請中' || contract.status === '差し戻し中' || contract.status === '取り下げ') {
     return NextResponse.json({ sent: false, reason: 'not_approved' })
   }
   if (contract.csv_modified_notified_at) {

@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getAuthenticatedStaff } from '@/lib/apiAuth'
 import { sendCsvImportMatchedMail, sendStaffRegisterMatchedMail } from '@/lib/mail'
+import { resolveRequesterNotifyEmail } from '@/lib/mailingList'
 import {
   ImportSystemKey,
   DbSystemType,
@@ -333,13 +334,14 @@ async function runStaffRegisterAutoMatch(uploaderId: string) {
 
     if (req.requested_by) {
       try {
-        const { data: userData } = await supabaseAdmin.auth.admin.getUserById(req.requested_by)
-        const toEmail = userData?.user?.email
+        // 2026-07-31変更：依頼者個人のアカウントに直接送るのではなく、依頼者の所属部署の
+        // メーリングリストが登録されていればそちらへ送る（未登録なら従来通り個人宛）。
+        const toEmail = process.env.RENEWAL_NOTIFY_OVERRIDE_EMAIL || await resolveRequesterNotifyEmail(req.requested_by)
         if (toEmail) {
           await sendStaffRegisterMatchedMail(toEmail, req.staff_name, req.staff_code)
           notifiedCount++
         } else {
-          notifyErrors.push(`依頼ID ${req.id}：依頼者のメールアドレスが見つかりませんでした`)
+          notifyErrors.push(`依頼ID ${req.id}：依頼者の通知先メールアドレスが見つかりませんでした`)
         }
       } catch (e: any) {
         notifyErrors.push(`依頼ID ${req.id}：通知メール送信エラー（${e?.message || ''}）`)
@@ -402,13 +404,14 @@ async function runAutoMatch(dbSystemType: DbSystemType, uploaderId: string) {
 
     if (req.requested_by) {
       try {
-        const { data: userData } = await supabaseAdmin.auth.admin.getUserById(req.requested_by)
-        const toEmail = userData?.user?.email
+        // 2026-07-31変更：依頼者個人のアカウントに直接送るのではなく、依頼者の所属部署の
+        // メーリングリストが登録されていればそちらへ送る（未登録なら従来通り個人宛）。
+        const toEmail = process.env.RENEWAL_NOTIFY_OVERRIDE_EMAIL || await resolveRequesterNotifyEmail(req.requested_by)
         if (toEmail) {
           await sendCsvImportMatchedMail(toEmail, req.staff_name, req.client_name)
           notifiedCount++
         } else {
-          notifyErrors.push(`依頼ID ${req.id}：依頼者のメールアドレスが見つかりませんでした`)
+          notifyErrors.push(`依頼ID ${req.id}：依頼者の通知先メールアドレスが見つかりませんでした`)
         }
       } catch (e: any) {
         notifyErrors.push(`依頼ID ${req.id}：通知メール送信エラー（${e?.message || ''}）`)

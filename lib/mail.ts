@@ -1113,3 +1113,172 @@ export async function sendCsvModifiedNotifyMail(
     html,
   })
 }
+
+// ===== 依頼（スタッフマスタ登録・CSVインポート）新規送信時の管理部通知メール（2026-07-31新設） =====
+// 従来、STEP1/STEP2から依頼を送信しても`requests`テーブルへの保存のみでメール送信が無く、
+// 管理部が自主的に「依頼管理」タブを開かない限り新しい依頼に気づけなかった問題への対応。
+// 宛先は管理部（メーリングリスト優先・未登録なら個人宛にフォールバック。呼び出し元のAPIルートで解決）。
+export async function sendNewRequestMail(
+  toEmails: string[],
+  params: {
+    requestType: 'staff_register' | 'csv_import'
+    staffName: string | null
+    staffCode: string | null
+    clientName: string | null
+    requestedByName: string | null
+    requestedByDept: string | null
+    requestedAt: string
+  }
+): Promise<void> {
+  if (toEmails.length === 0) return
+
+  const { requestType, staffName, staffCode, clientName, requestedByName, requestedByDept, requestedAt } = params
+  const typeLabel = requestType === 'staff_register' ? 'スタッフマスタ登録依頼' : 'CSVインポート依頼'
+  const requestedAtLabel = new Date(requestedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
+  const subject = `【APパートナーズ】新しい依頼が届きました（${typeLabel}・${staffName || '対象スタッフ'}様）`
+
+  const lines = [
+    'お疲れ様です。',
+    'APパートナーズ 契約書管理システムです。',
+    '',
+    `${typeLabel}が新しく届きましたのでお知らせします。`,
+    '',
+    `依頼種別：${typeLabel}`,
+    `対象スタッフ：${staffName || '(氏名不明)'}${staffCode ? `（社員番号 ${staffCode}）` : ''}`,
+    `就業先：${clientName || '(未入力)'}`,
+    `申請者：${requestedByDept ? `${requestedByDept}　` : ''}${requestedByName || '(不明)'}`,
+    `依頼日時：${requestedAtLabel}`,
+    '',
+    '内容のご確認・対応をお願いいたします。',
+    `管理部ダッシュボードはこちら：${APP_URL}/dashboard/admin`,
+    '',
+    '※本メールは自動送信です。このアドレスへの返信には対応しておりません。',
+  ].join('\n')
+
+  const html = `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F7FC;padding:24px 0;">
+  <tr><td align="center">
+    <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:8px;max-width:480px;width:100%;">
+      <tr><td style="padding:32px 32px 8px 32px;font-family:sans-serif;font-size:14px;color:#1A2340;">
+        お疲れ様です。<br>APパートナーズ 契約書管理システムです。
+      </td></tr>
+      <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
+        ${typeLabel}が新しく届きましたのでお知らせします。
+      </td></tr>
+      <tr><td style="padding:16px 32px 0 32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#F5F7FC;border-radius:6px;">
+          <tr><td style="padding:14px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.8;">
+            依頼種別：${typeLabel}<br>
+            対象スタッフ：${staffName || '(氏名不明)'}${staffCode ? `（社員番号 ${staffCode}）` : ''}<br>
+            就業先：${clientName || '(未入力)'}<br>
+            申請者：${requestedByDept ? `${requestedByDept}　` : ''}${requestedByName || '(不明)'}<br>
+            依頼日時：${requestedAtLabel}
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:20px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">
+        内容のご確認・対応をお願いいたします。
+      </td></tr>
+      <tr><td align="center" style="padding:20px 32px 28px 32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0">
+          <tr><td align="center" bgcolor="#1B3A8C" style="border-radius:6px;">
+            <a href="${APP_URL}/dashboard/admin" target="_blank" style="display:inline-block;padding:14px 32px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">
+              管理部ダッシュボードを開く
+            </a>
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:0 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
+        ※本メールは自動送信です。このアドレスへの返信には対応しておりません。
+      </td></tr>
+    </table>
+  </td></tr>
+</table>`.trim()
+
+  await transporter.sendMail({
+    from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
+    to: toEmails.join(','),
+    subject,
+    text: lines,
+    html,
+  })
+}
+
+// ===== 依頼（スタッフマスタ登録・CSVインポート）取消時の依頼元向け通知メール（2026-07-31新設） =====
+// 管理部が「依頼管理」タブから依頼を取消した際、依頼元（担当営業）へ取消理由とともに通知する。
+// 従来は取消してもメールが飛ばず、依頼元は気づけなかった。
+// 宛先は依頼元の所属部署のメーリングリスト優先・未登録なら本人個人宛にフォールバック
+// （呼び出し元のAPIルートで解決）。
+export async function sendRequestCancelledMail(
+  toEmail: string,
+  params: {
+    requestType: 'staff_register' | 'csv_import'
+    staffName: string | null
+    staffCode: string | null
+    reason: string
+  }
+): Promise<void> {
+  const { requestType, staffName, staffCode, reason } = params
+  const typeLabel = requestType === 'staff_register' ? 'スタッフマスタ登録依頼' : 'CSVインポート依頼'
+  const subject = `【APパートナーズ】${typeLabel}が取消されました（${staffName || '対象スタッフ'}様）`
+
+  const lines = [
+    'お疲れ様です。',
+    'APパートナーズ 契約書管理システムです。',
+    '',
+    `以前ご依頼いただいた${typeLabel}について、管理部により取消されましたのでお知らせします。`,
+    '',
+    `対象スタッフ：${staffName || '(氏名不明)'}${staffCode ? `（社員番号 ${staffCode}）` : ''}`,
+    `取消理由：${reason}`,
+    '',
+    'ご不明点・再度の依頼が必要な場合は、管理部までご連絡ください。',
+    `担当営業の方はこちら：${APP_URL}/dashboard/sales`,
+    '',
+    '※本メールは自動送信です。このアドレスへの返信には対応しておりません。',
+  ].join('\n')
+
+  const html = `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F7FC;padding:24px 0;">
+  <tr><td align="center">
+    <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:8px;max-width:480px;width:100%;">
+      <tr><td style="padding:32px 32px 8px 32px;font-family:sans-serif;font-size:14px;color:#1A2340;">
+        お疲れ様です。<br>APパートナーズ 契約書管理システムです。
+      </td></tr>
+      <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
+        以前ご依頼いただいた${typeLabel}について、管理部により取消されましたのでお知らせします。
+      </td></tr>
+      <tr><td style="padding:16px 32px 0 32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#FDECEC;border-radius:6px;">
+          <tr><td style="padding:14px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.8;">
+            対象スタッフ：${staffName || '(氏名不明)'}${staffCode ? `（社員番号 ${staffCode}）` : ''}<br>
+            取消理由：${reason}
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:20px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">
+        ご不明点・再度の依頼が必要な場合は、管理部までご連絡ください。
+      </td></tr>
+      <tr><td align="center" style="padding:20px 32px 28px 32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0">
+          <tr><td align="center" bgcolor="#1B3A8C" style="border-radius:6px;">
+            <a href="${APP_URL}/dashboard/sales" target="_blank" style="display:inline-block;padding:14px 32px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">
+              担当営業ダッシュボードを開く
+            </a>
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:0 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
+        ※本メールは自動送信です。このアドレスへの返信には対応しておりません。
+      </td></tr>
+    </table>
+  </td></tr>
+</table>`.trim()
+
+  await transporter.sendMail({
+    from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject,
+    text: lines,
+    html,
+  })
+}

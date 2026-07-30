@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
-import { supabase } from '@/lib/supabase'
+import { supabase, getAuthHeader } from '@/lib/supabase'
 import { runAutoChecks, isMinimumWageMasterMissing, computeWageCheckDetail, type MinimumWageRow } from '@/lib/autoChecks'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
@@ -1624,7 +1624,7 @@ function ApplyPageInner() {
         .limit(1)
         .maybeSingle()
 
-      const { error } = await supabase.from('requests').insert([{
+      const { data: inserted, error } = await supabase.from('requests').insert([{
         request_type: 'staff_register',
         staff_name: reqName,
         staff_code: reqEmployeeNumber,
@@ -1645,7 +1645,7 @@ function ApplyPageInner() {
         // テスト送信でここがnullのまま保存され、管理部画面に申請者情報が出ない事故があった）
         requested_by_name: (submitterStaffRow as any)?.name || user.email || null,
         requested_by_dept: (submitterStaffRow as any)?.department_master?.dept_name || null,
-      }])
+      }]).select('id').single()
 
       if (error) {
         console.error('依頼送信エラー:', error)
@@ -1655,6 +1655,15 @@ function ApplyPageInner() {
       }
       setReqSubmitted(true)
       setReqSubmitting(false)
+      // 2026-07-31追加：依頼保存自体は完了しているため、通知メールの送信に失敗しても
+      // 画面上のエラー表示・依頼のロールバックはしない（気づきやすくするための付随機能）。
+      if (inserted?.id) {
+        fetch('/api/requests/notify-created', {
+          method: 'POST',
+          headers: { ...(await getAuthHeader()), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requestId: inserted.id }),
+        }).catch(() => {})
+      }
     } catch (e: any) {
       setReqError('依頼の送信中に問題が発生しました。お手数ですが、もう一度お試しください。')
       setReqSubmitting(false)
@@ -1681,7 +1690,7 @@ function ApplyPageInner() {
         .limit(1)
         .maybeSingle()
 
-      const { error } = await supabase.from('requests').insert([{
+      const { data: inserted, error } = await supabase.from('requests').insert([{
         request_type: 'csv_import',
         staff_name: selectedStaff?.name || null,
         staff_code: selectedStaff?.employee_number || null,
@@ -1695,7 +1704,7 @@ function ApplyPageInner() {
         requested_by: user.id,
         requested_by_name: (submitterStaffRow as any)?.name || user.email || null,
         requested_by_dept: (submitterStaffRow as any)?.department_master?.dept_name || null,
-      }])
+      }]).select('id').single()
 
       if (error) {
         console.error('CSVインポート依頼送信エラー:', error)
@@ -1705,6 +1714,15 @@ function ApplyPageInner() {
       }
       setCsvRequestSent(true)
       setCsvRequestSubmitting(false)
+      // 2026-07-31追加：依頼保存自体は完了しているため、通知メールの送信に失敗しても
+      // 画面上のエラー表示・依頼のロールバックはしない（気づきやすくするための付随機能）。
+      if (inserted?.id) {
+        fetch('/api/requests/notify-created', {
+          method: 'POST',
+          headers: { ...(await getAuthHeader()), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requestId: inserted.id }),
+        }).catch(() => {})
+      }
     } catch (e: any) {
       setCsvRequestError('依頼の送信中に問題が発生しました。お手数ですが、もう一度お試しください。')
       setCsvRequestSubmitting(false)

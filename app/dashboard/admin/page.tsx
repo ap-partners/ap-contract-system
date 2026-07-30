@@ -59,6 +59,7 @@ type RequestRow = {
   csv_import_status: string | null
   staff_register_cancel_reason: string | null
   csv_import_cancel_reason: string | null
+  requested_by: string | null
   requested_by_name: string | null
   requested_by_dept: string | null
   requested_at: string
@@ -929,22 +930,53 @@ export default function AdminDashboard() {
 
   const visibleRequests = requests.slice(0, visibleCount)
 
-  const handleCancelTask = async (
+  // 2026-07-31変更：取消・完了とも依頼元（担当営業）への通知メールを新設したため、
+  // メール送信が必要なサーバー側API（/api/requests/[id]/resolve）経由に統一した
+  // （従来はここで直接supabase.update()していたが、メール送信にはservice roleが必要なため）。
+  const handleResolveTask = async (
+    requestId: string,
+    statusField: 'staff_register_status' | 'csv_import_status',
+    reasonField: 'staff_register_cancel_reason' | 'csv_import_cancel_reason',
+    action: 'complete' | 'cancel',
+    reason?: string
+  ) => {
+    try {
+      const res = await fetch(`/api/requests/${requestId}/resolve`, {
+        method: 'POST',
+        headers: { ...(await getAuthHeader()), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ statusField, action, reason }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        showError((action === 'complete' ? '完了処理' : '取消') + 'に失敗しました: ' + (json?.error || ''))
+        return false
+      }
+      if (json?.notifyError) {
+        showError('処理は完了しましたが、依頼元への通知メール送信に失敗しました: ' + json.notifyError)
+      }
+      const newStatus = action === 'complete' ? 'completed' : 'cancelled'
+      setRequests(prev => prev.map(r => r.id === requestId
+        ? { ...r, [statusField]: newStatus, ...(action === 'cancel' ? { [reasonField]: reason } : {}) }
+        : r))
+      // 完了・取消により「未対応」から外れるため、独立集計のバッジ件数も更新する
+      fetchPendingTotalCountAll()
+      return true
+    } catch (e: any) {
+      showError((action === 'complete' ? '完了処理' : '取消') + '中に問題が発生しました。')
+      return false
+    }
+  }
+  const handleCancelTask = (
     requestId: string,
     statusField: 'staff_register_status' | 'csv_import_status',
     reasonField: 'staff_register_cancel_reason' | 'csv_import_cancel_reason',
     reason: string
-  ) => {
-    const { error } = await supabase
-      .from('requests')
-      .update({ [statusField]: 'cancelled', [reasonField]: reason })
-      .eq('id', requestId)
-    if (error) { showError('取消の保存に失敗しました: ' + error.message); return false }
-    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, [statusField]: 'cancelled', [reasonField]: reason } : r))
-    // 取消により「未対応」から外れる可能性があるため、独立集計のバッジ件数も更新する
-    fetchPendingTotalCountAll()
-    return true
-  }
+  ) => handleResolveTask(requestId, statusField, reasonField, 'cancel', reason)
+  const handleCompleteTask = (
+    requestId: string,
+    statusField: 'staff_register_status' | 'csv_import_status',
+    reasonField: 'staff_register_cancel_reason' | 'csv_import_cancel_reason'
+  ) => handleResolveTask(requestId, statusField, reasonField, 'complete')
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -1637,7 +1669,8 @@ export default function AdminDashboard() {
             <div className="grid gap-3">
               {visibleRequests.map(r => (
                 <RequestCard key={r.id} r={r}
-                  onCancel={(statusField, reasonField, reason) => handleCancelTask(r.id, statusField, reasonField, reason)} />
+                  onCancel={(statusField, reasonField, reason) => handleCancelTask(r.id, statusField, reasonField, reason)}
+                  onComplete={(statusField, reasonField) => handleCompleteTask(r.id, statusField, reasonField)} />
               ))}
             </div>
 
@@ -2339,9 +2372,10 @@ function BulkOverlay({ loading, doneCount, skippedCount = 0, notifyFailedCount =
   )
 }
 
-function RequestCard({ r, onCancel }: {
+function RequestCard({ r, onCancel, onComplete }: {
   r: RequestRow
   onCancel: (statusField: 'staff_register_status' | 'csv_import_status', reasonField: 'staff_register_cancel_reason' | 'csv_import_cancel_reason', reason: string) => Promise<boolean>
+  onComplete: (statusField: 'staff_register_status' | 'csv_import_status', reasonField: 'staff_register_cancel_reason' | 'csv_import_cancel_reason') => Promise<boolean>
 }) {
   return (
     <article className={`${cardBase} p-5`}>
@@ -2382,6 +2416,7 @@ function RequestCard({ r, onCancel }: {
               status={r.staff_register_status}
               cancelReason={r.staff_register_cancel_reason}
               onCancel={reason => onCancel('staff_register_status', 'staff_register_cancel_reason', reason)}
+              onComplete={() => onComplete('staff_register_status', 'staff_register_cancel_reason')}
             />
           )}
           {r.csv_import_status && r.csv_import_status !== 'not_required' && (
@@ -2390,6 +2425,7 @@ function RequestCard({ r, onCancel }: {
               status={r.csv_import_status}
               cancelReason={r.csv_import_cancel_reason}
               onCancel={reason => onCancel('csv_import_status', 'csv_import_cancel_reason', reason)}
+              onComplete={() => onComplete('csv_import_status', 'csv_import_cancel_reason')}
             />
           )}
         </div>
@@ -2398,18 +2434,21 @@ function RequestCard({ r, onCancel }: {
   )
 }
 
-function StatusRow({ label, status, cancelReason, onCancel }: {
+function StatusRow({ label, status, cancelReason, onCancel, onComplete }: {
   label: string
   status: string
   cancelReason: string | null
   onCancel: (reason: string) => Promise<boolean>
+  onComplete: () => Promise<boolean>
 }) {
   const [showCancelForm, setShowCancelForm] = useState(false)
   const [reasonText, setReasonText] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [completing, setCompleting] = useState(false)
   // 2026-07-22追加（alert/confirm置き換えPhase4・①必須項目チェック扱い）：取消理由未入力時のalert()を
   // インライン警告バナー(ValidationBanner)に置き換えるためのローカルstate。
   const [reasonError, setReasonError] = useState<string | null>(null)
+  const confirmDialog = useConfirm()
 
   const isDone = status === 'completed'
   const isCancelled = status === 'cancelled'
@@ -2426,6 +2465,20 @@ function StatusRow({ label, status, cancelReason, onCancel }: {
     if (ok) setShowCancelForm(false)
   }
 
+  // 2026-07-31新設：手動完了操作自体がこれまで存在しなかったため新規追加。
+  // 依頼元へ完了通知メールが飛ぶ（自動マッチ完了時と同じ内容）ため、確認モーダルを挟む。
+  const handleCompleteClick = async () => {
+    const ok = await confirmDialog({
+      title: 'この依頼を完了にしますか？',
+      message: '完了にすると、依頼元（担当営業）へ完了通知メールが送信されます。',
+      confirmLabel: '完了にする',
+    })
+    if (!ok) return
+    setCompleting(true)
+    await onComplete()
+    setCompleting(false)
+  }
+
   return (
     <div className={`rounded-2xl border px-4 py-3 ${rowTone}`}>
       <div className="flex items-center justify-between gap-3">
@@ -2434,10 +2487,16 @@ function StatusRow({ label, status, cancelReason, onCancel }: {
           <span className="break-words text-sm font-semibold text-[#1F2937]">{label}</span>
         </div>
         {status === 'pending' && !showCancelForm && (
-          <button onClick={() => setShowCancelForm(true)}
-            className="shrink-0 rounded-xl border border-[#E8EDF5] bg-white px-3 py-2 text-xs font-semibold text-[#6B7280] transition hover:border-[#F59E42] hover:text-[#F59E42]">
-            取消
-          </button>
+          <div className="flex shrink-0 gap-2">
+            <button onClick={handleCompleteClick} disabled={completing}
+              className="rounded-xl border border-[#BFE7CF] bg-white px-3 py-2 text-xs font-semibold text-[#2E9B5A] transition hover:border-[#2E9B5A] hover:bg-[#F0FBF4] disabled:opacity-60">
+              {completing ? '処理中...' : '完了にする'}
+            </button>
+            <button onClick={() => setShowCancelForm(true)}
+              className="rounded-xl border border-[#E8EDF5] bg-white px-3 py-2 text-xs font-semibold text-[#6B7280] transition hover:border-[#F59E42] hover:text-[#F59E42]">
+              取消
+            </button>
+          </div>
         )}
       </div>
 

@@ -42,3 +42,22 @@ export async function hasMailingList(scopeType: MailingListScope, deptNo?: numbe
   const email = await resolveMailingListEmail(scopeType, deptNo)
   return !!email
 }
+
+// requests（スタッフマスタ登録依頼・CSVインポート依頼）の依頼元（担当営業）への通知先を解決する。
+// 2026-07-31新設。依頼元の「現在の」所属部署（staff_rolesが正）のメーリングリストが
+// 登録されていればそちらへ、未登録なら依頼者本人のログインアカウントのメールアドレスに
+// フォールバックする（他の通知と同じ「メーリングリスト優先・個人宛フォールバック」の考え方）。
+export async function resolveRequesterNotifyEmail(requestedBy: string): Promise<string | null> {
+  const { data: roleRow } = await supabaseAdmin
+    .from('staff_roles')
+    .select('dept_no')
+    .eq('id', requestedBy)
+    .maybeSingle()
+  const deptNo = roleRow?.dept_no ?? null
+
+  const mailingEmail = await resolveMailingListEmail('dept', deptNo)
+  if (mailingEmail) return mailingEmail
+
+  const { data: userData } = await supabaseAdmin.auth.admin.getUserById(requestedBy)
+  return userData?.user?.email || null
+}

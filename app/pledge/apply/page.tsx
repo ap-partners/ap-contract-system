@@ -34,7 +34,7 @@ import Image from 'next/image'
 import { excludeRetiredStaffOr } from '@/lib/staffFilters'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
-import { SALARY_RULES, toHalfWidthDigits, parseAmount, normalizeTel, validateTel, clampDateYear, TOOLTIPS } from '@/app/apply/_lib/helpers'
+import { SALARY_RULES, toHalfWidthDigits, parseAmount, normalizeTel, validateTel, clampDateYear, TOOLTIPS, getDeptSearchScope } from '@/app/apply/_lib/helpers'
 import { Tooltip } from '@/app/apply/_components/FormParts'
 import { runPledgeAutoChecks } from '@/lib/autoChecks'
 import { WAGE_PAYMENT_TEXT } from '@/lib/pdf/documentText'
@@ -325,26 +325,55 @@ export default function PledgeApplyPage() {
     checkUser()
   }, [router])
 
-  // STEP1スタッフ検索の自部門制限用：担当営業自身の部門番号を取得（/applyと同じロジック）
+  // STEP1スタッフ検索の自部門制限用：担当営業自身の部門番号をstaff_rolesテーブル（本人のid一致）
+  // から取得する（2026-07-30修正：従来はstaffテーブルをemail一致で参照していたが、これは
+  // app/apply/page.tsxが2026-07-29に是正済みの古い仕組みが誓約書側に残っていたもの。在籍スタッフ
+  // 0名の統括部門〔広域本部・北日本営業部・西日本営業部等〕のアカウントはstaffテーブルに該当行が
+  // 無く機能しなかったため、/applyと同じくstaff_rolesを参照する形に統一した。
+  // 下の自社拠点マスタ絞り込みでもこのmyDeptNoを使うため、正しい値を取れることが前提になる）
   useEffect(() => {
     if (!user) return
     const role = user.user_metadata?.role
     if (role !== '担当営業') { setMyDeptNo(null); return }
     const loadMyDeptNo = async () => {
-      const { data } = await supabase.from('staff').select('dept_no').eq('email', user.email).limit(1).maybeSingle()
+      const { data } = await supabase
+        .from('staff_roles')
+        .select('dept_no')
+        .eq('id', user.id)
+        .maybeSingle()
       setMyDeptNo(data?.dept_no ?? null)
     }
     loadMyDeptNo()
   }, [user])
 
-  // 自社拠点マスタの読み込み（STEP2で使用。ページ読み込み時に一度だけ取得）
+  // 自社拠点マスタの読み込み（STEP2で使用。2026-07-30修正：従来は部門を問わず8拠点すべてを
+  // 無条件表示していたが、担当営業については自部門に紐づく拠点のみに絞り込むよう変更。
+  // 統括部門（広域本部・北日本営業部・西日本営業部・HRソリューション営業部）に所属する担当営業は
+  // getDeptSearchScope()で実部門群に展開したうえで、それぞれの部門が紐づく拠点をすべて表示する
+  // （例：西日本営業部なら中部・関西・中国・九州・沖縄の5拠点）。SSC・管理部は従来通り全拠点。
+  // 該当拠点が1件も取得できない場合（想定外のデータ不備時の保険）は絞り込まず全拠点を表示する。
   useEffect(() => {
+    if (!user) return
+    const role = user.user_metadata?.role
     const loadOffices = async () => {
-      const { data } = await supabase.from('office_master').select('id, office_name, postal_code, address, tel').order('sort_order', { ascending: true })
-      setOffices(data || [])
+      const { data: allOffices } = await supabase
+        .from('office_master')
+        .select('id, office_name, postal_code, address, tel')
+        .order('sort_order', { ascending: true })
+      if (role !== '担当営業') { setOffices(allOffices || []); return }
+      if (myDeptNo === undefined) return // 担当営業自身の部門番号を取得中のため、確定するまで待つ
+      if (myDeptNo === null) { setOffices(allOffices || []); return }
+      const scopeDeptNos = getDeptSearchScope(myDeptNo)
+      const { data: depts } = await supabase
+        .from('department_master')
+        .select('office_id')
+        .in('dept_no', scopeDeptNos)
+      const officeIds = Array.from(new Set((depts || []).map(d => d.office_id).filter((id): id is string => !!id)))
+      if (officeIds.length === 0) { setOffices(allOffices || []); return }
+      setOffices((allOffices || []).filter(o => officeIds.includes(o.id)))
     }
     loadOffices()
-  }, [])
+  }, [user, myDeptNo])
 
   // 業務内容テンプレートマスタの読み込み（STEP3で使用。2026-07-22追加）
   useEffect(() => {

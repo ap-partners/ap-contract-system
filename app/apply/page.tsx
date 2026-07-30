@@ -1851,9 +1851,9 @@ function ApplyPageInner() {
   // STEP2：CSV検索結果から1件選択した時、STEP2〜5の詳細項目に自動反映する
   const handleCsvResultSelect = (r: any, idx: number) => {
     setCsvSelectedId(idx)
-    setWorkLocationName(r.name)
-    setWorkLocationAddress(r.address)
-    setWorkLocationTel(r.tel)
+    setWorkLocationName(r.name || '')
+    setWorkLocationAddress(r.address || '')
+    setWorkLocationTel(r.tel || '')
     setCsvContractNo(r.contractNo || '')
 
     // raw_data（CSVの生データ）からシステムごとに項目を抽出

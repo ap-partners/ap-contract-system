@@ -211,11 +211,12 @@ export const normalizeTel = (v: string) => v
   .replace(/[^0-9-]/g, '')
 
 export const validateTel = (v: string) => {
-  const digits = v.replace(/-/g, '')
+  const safe = v || ''
+  const digits = safe.replace(/-/g, '')
   if (digits.length === 0) return null
   if (!/^\d+$/.test(digits)) return '数字と-のみ入力できます'
   if (digits.length < 10 || digits.length > 11) return '10〜11桁で入力してください'
-  if (!/^\d{2,4}-\d{2,4}-\d{4}$/.test(v)) return '例）03-1234-5678 の形式で入力してください'
+  if (!/^\d{2,4}-\d{2,4}-\d{4}$/.test(safe)) return '例）03-1234-5678 の形式で入力してください'
   return null
 }
 

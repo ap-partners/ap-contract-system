@@ -76,8 +76,21 @@ export async function POST(
     ? await supabaseAdmin.from('department_master').select('dept_name').eq('dept_no', contract.created_by_dept_no).maybeSingle()
     : { data: null }
 
+  // 2026-07-30追加（伊藤さんフィードバック対応）：冒頭の承認者表記をSSC固定から実際の
+  // 承認者ロールに応じた表記へ変更するため、approved_byをstaff_rolesで引く。
+  // 何らかの理由でロールが取得できない場合は従来通り「SSC」表記にフォールバックする。
+  const { data: approverRow } = contract.approved_by
+    ? await supabaseAdmin.from('staff_roles').select('role').eq('id', contract.approved_by).maybeSingle()
+    : { data: null }
+  const approverRoleLabel = approverRow?.role || 'SSC'
+
   const systemType = contract.input_data?.csvMeta?.csvSystem || '(不明)'
   const documentLabel = getDocumentLabel(contract.document_type, contract.contract_type)
+  // 2026-07-30追加：就業場所名・CSVデータ上の派遣期間を本文に追加表示するため、
+  // 申請時にinput_data.fieldsへ保存済みの値（STEP2就業先情報・STEP3期間情報）を参照する。
+  const workLocationName = contract.input_data?.fields?.locationName || ''
+  const dispatchStart = contract.input_data?.fields?.dispatchStart || null
+  const dispatchEnd = contract.input_data?.fields?.dispatchEnd || null
 
   // 条件付き更新（同時実行時の二重送信防止）：まだ通知していない場合のみ「送信済み」に更新してから送る
   const now = new Date().toISOString()
@@ -104,7 +117,11 @@ export async function POST(
       staffRow?.name || '(氏名不明)',
       documentLabel,
       contract.csv_modified_fields,
-      id
+      id,
+      workLocationName,
+      dispatchStart,
+      dispatchEnd,
+      approverRoleLabel
     )
   } catch (e: any) {
     // メール送信失敗時：通知フラグを戻し、次回の承認関連操作で再試行できるようにする。

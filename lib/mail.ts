@@ -1008,18 +1008,29 @@ export async function sendCsvModifiedNotifyMail(
   staffName: string,
   documentLabel: string,
   modifiedFields: CsvModifiedFieldMailItem[],
-  contractId: string
+  contractId: string,
+  // 2026-07-30追加（伊藤さんフィードバック対応）：
+  // ①就業場所名、②CSVデータ上の派遣期間（開始日〜終了日）を本文に追加表示。
+  // ③冒頭の承認者表記を「SSC」固定ではなく実際の承認者ロールに応じて動的に変える
+  //   （管理部が承認した場合は「管理部が承認」と表示。approved_byをstaff_rolesで引いた結果を渡す）。
+  workLocationName: string,
+  dispatchStart: string | null,
+  dispatchEnd: string | null,
+  approverRoleLabel: string
 ): Promise<void> {
   const subject = `【要確認】CSV反映項目の修正あり（${staffName}様・${documentLabel}）`
   const detailUrl = `${APP_URL}/dashboard/ssc/contracts/${contractId}`
+  const dispatchPeriodLabel = (dispatchStart && dispatchEnd) ? `${dispatchStart} ～ ${dispatchEnd}` : '―'
 
   const lines: string[] = [
     'お疲れ様です。',
     'APパートナーズ 契約書管理システムです。',
     '',
-    '担当営業がCSV自動反映項目を修正した状態で申請し、SSCが承認しましたのでお知らせします。',
+    `担当営業がCSV自動反映項目を修正した状態で申請し、${approverRoleLabel}が承認しましたのでお知らせします。`,
     '',
     `対象システム：${systemType}`,
+    `就業場所名：${workLocationName || '―'}`,
+    `派遣期間（CSVデータ上）：${dispatchPeriodLabel}`,
     `申請者：${applicantDeptName}　${applicantName}`,
     `対象スタッフ：${staffName}様（社員番号 ${employeeNumber}）`,
     `書類種別：${documentLabel}`,
@@ -1031,7 +1042,7 @@ export async function sendCsvModifiedNotifyMail(
   }
   lines.push(
     '',
-    '個別契約書の情報とご相違ないか、必要に応じて修正依頼の対応をお願いいたします。',
+    '詳細内容は下記「詳細画面を開く」からご確認頂けます。',
     `詳細画面：${detailUrl}`,
     '',
     '※本メールは自動送信です。このアドレスへの返信には対応しておりません。',
@@ -1051,10 +1062,12 @@ export async function sendCsvModifiedNotifyMail(
         お疲れ様です。<br>APパートナーズ 契約書管理システムです。
       </td></tr>
       <tr><td style="padding:16px 32px 8px 32px;font-family:sans-serif;font-size:14px;font-weight:bold;color:#1A2340;">
-        担当営業がCSV自動反映項目を修正した状態で申請し、SSCが承認しましたのでお知らせします。
+        担当営業がCSV自動反映項目を修正した状態で申請し、${approverRoleLabel}が承認しましたのでお知らせします。
       </td></tr>
       <tr><td style="padding:0 32px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
       <tr><td style="padding:14px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">対象システム：${systemType}</td></tr>
+      <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">就業場所名：${workLocationName || '―'}</td></tr>
+      <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">派遣期間（CSVデータ上）：${dispatchPeriodLabel}</td></tr>
       <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">申請者：${applicantDeptName}　${applicantName}</td></tr>
       <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#1B3A8C;">対象スタッフ：${staffName}様（社員番号 ${employeeNumber}）</td></tr>
       <tr><td style="padding:4px 32px 12px 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">書類種別：${documentLabel}</td></tr>
@@ -1063,7 +1076,7 @@ export async function sendCsvModifiedNotifyMail(
       ${itemsHtml}
       <tr><td style="padding:16px 32px 0 32px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0 0 16px;"></td></tr>
       <tr><td style="padding:0 32px 20px 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">
-        個別契約書の情報とご相違ないか、必要に応じて修正依頼の対応をお願いいたします。
+        詳細内容は下記「詳細画面を開く」からご確認頂けます。
       </td></tr>
       <tr><td style="padding:0 32px 4px 32px;"><a href="${detailUrl}" style="display:inline-block;background:#1B3A8C;color:#fff;text-decoration:none;font-family:sans-serif;font-size:13px;font-weight:bold;padding:10px 20px;border-radius:6px;">詳細画面を開く</a></td></tr>
       <tr><td style="padding:20px 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">

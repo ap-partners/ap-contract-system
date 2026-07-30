@@ -1042,7 +1042,8 @@ export async function sendCsvModifiedNotifyMail(
     'お疲れ様です。',
     'APパートナーズ 契約書管理システムです。',
     '',
-    `担当営業がCSV自動反映項目を修正した状態で申請し、${approverRoleLabel}が承認しましたのでお知らせします。`,
+    `担当営業がCSV自動反映項目を修正した状態で申請し、`,
+    `${approverRoleLabel}が承認しましたのでお知らせします。`,
     '',
     `対象システム：${systemType}`,
     `契約番号：${contractNo || '―'}`,
@@ -1079,7 +1080,7 @@ export async function sendCsvModifiedNotifyMail(
         お疲れ様です。<br>APパートナーズ 契約書管理システムです。
       </td></tr>
       <tr><td style="padding:16px 32px 8px 32px;font-family:sans-serif;font-size:14px;font-weight:bold;color:#1A2340;">
-        担当営業がCSV自動反映項目を修正した状態で申請し、${approverRoleLabel}が承認しましたのでお知らせします。
+        担当営業がCSV自動反映項目を修正した状態で申請し、<br>${approverRoleLabel}が承認しましたのでお知らせします。
       </td></tr>
       <tr><td style="padding:0 32px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
       <tr><td style="padding:14px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">対象システム：${systemType}</td></tr>

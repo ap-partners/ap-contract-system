@@ -404,8 +404,13 @@ export default function PledgeApplyPage() {
     let byNumberQuery = supabase.from('staff').select('*, department_master(dept_name)').ilike('employee_number', `%${query}%`).or(retiredAtOk).or(retirementScheduledOk).limit(20)
     let byNameQuery = supabase.from('staff').select('*, department_master(dept_name)').ilike('name', `%${normalized}%`).or(retiredAtOk).or(retirementScheduledOk).limit(20)
     if (restrictToOwnDept) {
-      byNumberQuery = byNumberQuery.eq('dept_no', myDeptNo)
-      byNameQuery = byNameQuery.eq('dept_no', myDeptNo)
+      // 2026-07-30変更：在籍スタッフ0名の統括部門（広域本部等）を選んだアカウントは、自部門1件
+      // だけでなく、グループ範囲（getDeptSearchScope）に含まれる複数の実務部門をまとめて検索対象
+      // にする。対象外の通常部門は従来通り自部門1件のみ（app/apply/page.tsxの同種修正＝
+      // 2026-07-29と同じ考え方。誓約書側だけこの対応が漏れていたため今回是正した）。
+      const scopeDeptNos = getDeptSearchScope(myDeptNo ?? null)
+      byNumberQuery = byNumberQuery.in('dept_no', scopeDeptNos)
+      byNameQuery = byNameQuery.in('dept_no', scopeDeptNos)
     }
     const [byNumber, byName] = await Promise.all([byNumberQuery, byNameQuery])
     const merged = [...(byNumber.data || []), ...(byName.data || [])]

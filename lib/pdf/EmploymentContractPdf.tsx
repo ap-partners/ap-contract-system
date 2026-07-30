@@ -83,6 +83,11 @@ const EmploymentPeriodRow = ({ p }: { p: EmploymentContractPdfProps }) => {
 }
 
 export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
+  // 2026-07-30追加：有期契約の場合のみ「契約更新の有無・基準・無期転換」の行が増える分、
+  // 2026-07-10と同じ考え方（本文の文字サイズには触れず、タイトル・末尾文言・欄外の
+  // 「余白」だけを詰めて吸収する）で、この行が無い無期契約・正社員・アルバイトの
+  // 既存レイアウトには一切影響しないよう、有期契約の場合のみさらに詰める。
+  const hasRenewalClause = p.contractType === '有期契約'
   const retirementClause = getRetirementClause(p.contractType)
   const workDaysText = getWorkDaysText(p.workDays, p.workDaysOther)
   const overtimeHoursNote = Number(p.overtimeHours) > 0 ? `※定額残業時間：${p.overtimeHours}時間` : ''
@@ -92,14 +97,16 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
 
   return (
     <Document>
-      <Page size="A4" style={sharedStyles.page}>
+      <Page size="A4" style={[sharedStyles.page, hasRenewalClause ? { paddingTop: 22, paddingBottom: 22 } : {}]}>
         {/* 2026-07-10追加：長い就業場所・業務内容を自動縮小してもなお、極端に長い場合は
             会社印欄の最後の2行だけがページ2にはみ出すことがあった（伊藤さん報告・0710-03.pdf）。
             本文の文字サイズには触れず、タイトル・末尾文言・印欄前後の「余白」だけを詰めて
             吸収する（伊藤さんと合意・2026-07-10）。パターンB・CのsharedStyles.title等の
-            共通スタイルには影響しないよう、このファイル内でのみ上書きする。 */}
-        <Text style={[sharedStyles.title, { marginBottom: 8 }]}>{p.documentLabel}</Text>
-        <Text style={[sharedStyles.intro, { marginBottom: 4 }]}>
+            共通スタイルには影響しないよう、このファイル内でのみ上書きする。
+            2026-07-30追加：有期契約はさらに1行増える分、同じ考え方でpaddingTop/Bottom・
+            marginBottomをもう一段だけ詰める（無期契約等は対象外なので現状のまま）。 */}
+        <Text style={[sharedStyles.title, { marginBottom: hasRenewalClause ? 4 : 8 }]}>{p.documentLabel}</Text>
+        <Text style={[sharedStyles.intro, { marginBottom: hasRenewalClause ? 2 : 4 }]}>
           株式会社ＡＰパートナーズ(以下「甲」という)と　{p.employeeName}　(以下「乙」という)は、下記のとおり雇用契約を締結する。
         </Text>
 
@@ -202,11 +209,25 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
 
           {/* 2026-07-30追加：雇用形態が有期契約の場合のみ、契約更新の有無・基準・無期転換の
               固定文言（documentText.tsのCONTRACT_RENEWAL_TEXT。兼用版パターンCと共通）を表示する。
-              パターンAはA4 1ページ固定のため、AutoFitFreeTextで文字サイズを自動縮小し
-              ページあふれを防ぐ（伊藤さん指示・実際のPDF確認まで完了扱いにしない）。 */}
-          {p.contractType === '有期契約' && (
+              パターンAはA4 1ページ固定のため、伊藤さん報告（実際に2ページ目へあふれた）を受けて
+              tsxで実際にPDFをレンダリングしページ数を検証しながら原因調査・修正した。
+              判明した原因：①CONTRACT_RENEWAL_TEXTは改行（\n）区切りで5行の固定文言のため、
+              AutoFitFreeTextはどのフォントサイズでも最小5行にしかならず、sizes配列は先頭
+              （最大値）から順に「5行に収まる最初の値」を採用する仕組み上、5.6や5.0といった
+              小さい値を配列に追加しても8.3が既に5行に収まってしまい一切選ばれていなかった
+              （縮小が効いていなかった）。②この行のラベル「契約更新の有無・\n基準・無期転換」が
+              2行のため、値欄を空にしても行自体の高さ（約28pt）だけで既存の余白（約26pt）を
+              超えてしまうほど、パターンAは元々ぎりぎりの余白しか無かった。
+              対策：sizesを最初から現実的な単一値(7.0pt)に決め、かつ2026-07-10の対応
+              （タイトル・末尾文言の余白だけを詰めて吸収する）と同じ考え方で、この行が増える
+              有期契約の場合のみpaddingTop/Bottom・marginBottomをもう一段だけ詰めた
+              （hasRenewalClause変数。無期契約・正社員・アルバイトは対象外なので既存レイアウトに
+              一切影響しない）。実データ（関谷綺菜様の実契約データ＋住所を大幅に長くした
+              ストレステスト）でtsxレンダリング→PDFバイト列の/Type /Pages Countを直接検証し、
+              1ページに収まることを確認済み（伊藤さんの実際のPDF目視確認は別途必要）。 */}
+          {hasRenewalClause && (
             <LabeledRow label={'契約更新の有無・\n基準・無期転換'}>
-              <AutoFitFreeText text={CONTRACT_RENEWAL_TEXT} maxLines={5} widthPt={441} sizes={[8.3, 7.6, 6.9, 6.2, 5.6]} lineHeight={1.15} />
+              <AutoFitFreeText text={CONTRACT_RENEWAL_TEXT} maxLines={5} widthPt={448} sizes={[7.0]} lineHeight={1.05} tightPadding />
             </LabeledRow>
           )}
 
@@ -219,7 +240,7 @@ export const EmploymentContractPdf = (p: EmploymentContractPdfProps) => {
           </LabeledRow>
         </View>
 
-        <Text style={[sharedStyles.footerText, { marginTop: 4, marginBottom: 6 }]}>
+        <Text style={[sharedStyles.footerText, { marginTop: hasRenewalClause ? 2 : 4, marginBottom: hasRenewalClause ? 2 : 6 }]}>
           株式会社APパートナーズは本書にて提示した内容に相違ないことを保証し、従業員は上記提示内容を承諾する。
         </Text>
 

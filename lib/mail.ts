@@ -1018,9 +1018,22 @@ export async function sendCsvModifiedNotifyMail(
   dispatchEnd: string | null,
   approverRoleLabel: string
 ): Promise<void> {
-  const subject = `【要確認】CSV反映項目の修正あり（${staffName}様・${documentLabel}）`
+  // 2026-07-30追加（伊藤さんフィードバック対応）：
+  // ①スタッフ氏名の全角スペース（e-staffing等のCSV由来データで発生）を半角スペースに統一。
+  // ②宛名の「様」表記は本メールでは不要なため削除（件名・本文とも）。
+  // ③CSVデータ上の派遣期間の日付表記を「YYYY-MM-DD」から「YYYY年MM月DD日」に変更。
+  const normalizedStaffName = staffName.replace(/　/g, ' ')
+  const formatJapaneseDate = (dateStr: string | null): string | null => {
+    if (!dateStr) return null
+    const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    if (!m) return dateStr
+    return `${m[1]}年${m[2]}月${m[3]}日`
+  }
+  const subject = `【要確認】CSV反映項目の修正あり（${normalizedStaffName}・${documentLabel}）`
   const detailUrl = `${APP_URL}/dashboard/ssc/contracts/${contractId}`
-  const dispatchPeriodLabel = (dispatchStart && dispatchEnd) ? `${dispatchStart} ～ ${dispatchEnd}` : '―'
+  const dispatchStartLabel = formatJapaneseDate(dispatchStart)
+  const dispatchEndLabel = formatJapaneseDate(dispatchEnd)
+  const dispatchPeriodLabel = (dispatchStartLabel && dispatchEndLabel) ? `${dispatchStartLabel} ～ ${dispatchEndLabel}` : '―'
 
   const lines: string[] = [
     'お疲れ様です。',
@@ -1032,7 +1045,7 @@ export async function sendCsvModifiedNotifyMail(
     `就業場所名：${workLocationName || '―'}`,
     `派遣期間（CSVデータ上）：${dispatchPeriodLabel}`,
     `申請者：${applicantDeptName}　${applicantName}`,
-    `対象スタッフ：${staffName}様（社員番号 ${employeeNumber}）`,
+    `対象スタッフ：${normalizedStaffName}（社員番号 ${employeeNumber}）`,
     `書類種別：${documentLabel}`,
     '',
     '【修正項目一覧】',
@@ -1069,7 +1082,7 @@ export async function sendCsvModifiedNotifyMail(
       <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">就業場所名：${workLocationName || '―'}</td></tr>
       <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">派遣期間（CSVデータ上）：${dispatchPeriodLabel}</td></tr>
       <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">申請者：${applicantDeptName}　${applicantName}</td></tr>
-      <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#1B3A8C;">対象スタッフ：${staffName}様（社員番号 ${employeeNumber}）</td></tr>
+      <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#1B3A8C;">対象スタッフ：${normalizedStaffName}（社員番号 ${employeeNumber}）</td></tr>
       <tr><td style="padding:4px 32px 12px 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">書類種別：${documentLabel}</td></tr>
       <tr><td style="padding:0 32px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
       <tr><td style="padding:12px 32px 0 32px;font-family:sans-serif;font-size:13px;font-weight:bold;color:#1A2340;">【修正項目一覧】</td></tr>

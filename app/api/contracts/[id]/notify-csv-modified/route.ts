@@ -88,7 +88,10 @@ export async function POST(
   const documentLabel = getDocumentLabel(contract.document_type, contract.contract_type)
   // 2026-07-30追加：就業場所名・CSVデータ上の派遣期間を本文に追加表示するため、
   // 申請時にinput_data.fieldsへ保存済みの値（STEP2就業先情報・STEP3期間情報）を参照する。
-  const workLocationName = contract.input_data?.fields?.locationName || ''
+  // 2026-07-30実機確認で発覚した不具合の修正：フィールドの実キー名は「workLocationName」
+  // （STEP2 UIコンポーネント側の保存キー名）であり「locationName」ではなかったため、
+  // 常に空欄（本文「―」表示）になっていた。実データで確認したキー名に修正。
+  const workLocationName = contract.input_data?.fields?.workLocationName || ''
   const dispatchStart = contract.input_data?.fields?.dispatchStart || null
   const dispatchEnd = contract.input_data?.fields?.dispatchEnd || null
 

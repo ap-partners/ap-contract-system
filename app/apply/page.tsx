@@ -127,6 +127,10 @@ function ApplyPageInner() {
   // 現在値とこのスナップショットを比較し、一致していれば「CSV反映」、異なれば「CSV反映（修正済み）」と判定する
   // （元に戻せば自動的に「CSV反映」表示に戻る。派遣元側のmasterSnapshotと同じ仕組み）
   const [csvSnapshot, setCsvSnapshot] = useState<Record<string, string>>({})
+  // 2026-07-30追加：CSV由来データ修正時の管理部通知メールに契約番号を表示するため、
+  // 選択したCSV行のcsv_raw_data.unique_key（e-staffing=契約No／HRstation=契約番号／
+  // winworks=個別契約番号／Staffia=個別契約書番号。DB側で既に正規化済みの値）を保持する。
+  const [csvContractNo, setCsvContractNo] = useState('')
 
   // STEP3
   const [cmd_dept, setCmdDept] = useState('')
@@ -569,7 +573,6 @@ function ApplyPageInner() {
       const staffSnap = row.input_data?.staff || {}
       const f = row.input_data?.fields || {}
       const csvMeta = row.input_data?.csvMeta || {}
-
       // STEP1：対象スタッフ・雇用区分・就業場所区分・書類種別
       // 2026-07-09追加：住所も他フィールドと同様にスナップショットから復元する（下記staffSnapshotの修正と対）
       setSelectedStaff({
@@ -590,6 +593,8 @@ function ApplyPageInner() {
       setCsvSystem(csvMeta.csvSystem || 'e-staffing')
       setCsvDispatchStart(csvMeta.csvDispatchStart || '')
       setCsvSnapshot(csvMeta.csvSnapshot || {})
+      // 差し戻し再申請：CSVデータ自体は変わらない前提のため、前回契約の契約番号をそのまま復元する。
+      setCsvContractNo(csvMeta.csvContractNo || '')
       setWorkLocationName(f.workLocationName || '')
       setWorkLocationAddress(f.workLocationAddress || '')
       setWorkLocationTel(f.workLocationTel || '')
@@ -726,14 +731,22 @@ function ApplyPageInner() {
       const prevFields = (prevContract.input_data as any)?.fields || {}
 
       let csvFields: Record<string, any> | null = null
+      // 2026-07-30追加：契約番号も「前回契約のもの」ではなく「更新後の新しいCSV行のもの」を
+      // 使う（伊藤さんとの確認・実態＝最新のCSV反映内容と一致させるため）。
+      // StaffiaのみDB上のunique_keyが「個別契約書番号+氏名コード」の複合キーのため、
+      // raw_data内の「個別契約書番号」（単体）を使う。それ以外はunique_keyがそのまま契約番号。
+      let newContractNo = ''
       if (candidate.new_csv_raw_data_id) {
         const { data: csvRow } = await supabase
           .from('csv_raw_data')
-          .select('raw_data')
+          .select('raw_data, unique_key')
           .eq('id', candidate.new_csv_raw_data_id)
           .maybeSingle()
         if (csvRow?.raw_data) {
           csvFields = extractCsvFields(candidate.csv_system || '', csvRow.raw_data) as Record<string, any>
+          newContractNo = candidate.csv_system === 'Staffia'
+            ? (csvRow.raw_data?.['個別契約書番号'] || '')
+            : (csvRow.unique_key || '')
         }
       }
 
@@ -788,6 +801,8 @@ function ApplyPageInner() {
       setCsvSystem(csvMeta.csvSystem || 'e-staffing')
       setCsvDispatchStart(csvMeta.csvDispatchStart || '')
       setCsvSnapshot(csvMeta.csvSnapshot || {})
+      // 更新申請：新しいCSV行の契約番号を優先。新しいCSV行が無い場合のみ前回契約の値にフォールバック。
+      setCsvContractNo(newContractNo || csvMeta.csvContractNo || '')
       setWorkLocationName(f.workLocationName || '')
       setWorkLocationAddress(f.workLocationAddress || '')
       setWorkLocationTel(f.workLocationTel || '')
@@ -935,6 +950,8 @@ function ApplyPageInner() {
       setCsvSystem(csvMeta.csvSystem || 'e-staffing')
       setCsvDispatchStart(csvMeta.csvDispatchStart || '')
       setCsvSnapshot(csvMeta.csvSnapshot || {})
+      // 最低賃金改定再申請：CSVデータ自体は変わらない前提のため、前回契約の契約番号をそのまま復元する。
+      setCsvContractNo(csvMeta.csvContractNo || '')
       setWorkLocationName(f.workLocationName || '')
       setWorkLocationAddress(f.workLocationAddress || '')
       setWorkLocationTel(f.workLocationTel || '')
@@ -1290,9 +1307,11 @@ function ApplyPageInner() {
         .maybeSingle()
 
       // CSV関連の記録（SSC確認画面での差分表示・将来の振り返り用）
+      // csvContractNo：2026-07-30追加。CSV修正管理部通知メールに契約番号を表示するための値。
       const csvMeta = {
         csvMode, csvSystem, csvDispatchStart,
         csvSnapshot, masterSnapshot, mgrCmpSource,
+        csvContractNo,
       }
 
       // 申請対象スタッフのスナップショット（後でstaffマスタの情報が変わっても、申請時点の記録が残る）
@@ -1755,6 +1774,7 @@ function ApplyPageInner() {
             start: r.dispatch_start,
             end: r.dispatch_end,
             raw: r.raw_data,
+            contractNo: r.unique_key || '',
           })))
           setCsvFallbackMatch(true)
           setCsvSearched(true)
@@ -1819,6 +1839,10 @@ function ApplyPageInner() {
       start: r.dispatch_start,
       end: r.dispatch_end,
       raw: r.raw_data, // STEP2〜5の詳細項目反映時にここから取り出す
+      // 契約番号：StaffiaのみKEF00104側のunique_keyが「個別契約書番号+氏名コード」の複合キーで
+      // そのままでは表示に適さないため、raw_data内の「個別契約書番号」（単体）を使う。
+      // それ以外の3システムはunique_key自体が単一の契約番号なのでそのまま使う。
+      contractNo: csvSystem === 'Staffia' ? (r.raw_data?.['個別契約書番号'] || '') : (r.unique_key || ''),
     })))
     setCsvSearched(true)
     setCsvLoading(false)
@@ -1830,6 +1854,7 @@ function ApplyPageInner() {
     setWorkLocationName(r.name)
     setWorkLocationAddress(r.address)
     setWorkLocationTel(r.tel)
+    setCsvContractNo(r.contractNo || '')
 
     // raw_data（CSVの生データ）からシステムごとに項目を抽出
     const fields = extractCsvFields(csvSystem, r.raw)

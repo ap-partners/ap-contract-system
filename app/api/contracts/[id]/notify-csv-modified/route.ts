@@ -94,6 +94,10 @@ export async function POST(
   const workLocationName = contract.input_data?.fields?.workLocationName || ''
   const dispatchStart = contract.input_data?.fields?.dispatchStart || null
   const dispatchEnd = contract.input_data?.fields?.dispatchEnd || null
+  // 2026-07-30追加：対象システムの下に契約番号（csv_raw_data.unique_key相当。
+  // e-staffing=契約No／HRstation=契約番号／winworks=個別契約番号／Staffia=個別契約書番号）を追加表示。
+  // app/apply/page.tsx申請時にinput_data.csvMeta.csvContractNoとして保存済みの値をそのまま使う。
+  const contractNo = contract.input_data?.csvMeta?.csvContractNo || ''
 
   // 条件付き更新（同時実行時の二重送信防止）：まだ通知していない場合のみ「送信済み」に更新してから送る
   const now = new Date().toISOString()
@@ -124,7 +128,8 @@ export async function POST(
       workLocationName,
       dispatchStart,
       dispatchEnd,
-      approverRoleLabel
+      approverRoleLabel,
+      contractNo
     )
   } catch (e: any) {
     // メール送信失敗時：通知フラグを戻し、次回の承認関連操作で再試行できるようにする。

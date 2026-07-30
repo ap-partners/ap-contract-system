@@ -2081,3 +2081,18 @@ STEP2の検索は「使用システム＋派遣開始日＋スタッフ社員番
 以上、不具合修正1件＋追加調整3件をあわせて`lib/mail.ts`・`app/api/contracts/[id]/notify-csv-modified/route.ts`に反映済み（コード変更のみ・未デプロイ）。次回デプロイ後、就業場所名の正しい表示・日付表記・氏名表記（様なし・半角スペース）を再度実機確認する必要がある。テスト契約（後藤初樺・104674）は確認後に`renewal_candidates`→`contracts`の順で削除予定。
 
 **【完了・実機確認済み・2026-07-30】** デプロイ後の再確認：既存テスト契約の`csv_modified_notified_at`をSupabase MCPで一度nullに戻し、管理部ログイン中のブラウザから同APIを再実行（`javascript_tool`でセッショントークンを使い直接POST）してメールを再送。Gmailで実際の受信メールを確認した結果、5件すべて正しく反映されていることを確認：①就業場所名「ベルシステム２４ 札幌（日本生命）」が正しく表示（バグ修正確認）、②派遣期間「2026年06月01日 ～ 2026年08月31日」の日本語表記、③件名「【要確認】CSV反映項目の修正あり（後藤 初樺・雇用契約書）」に「様」なし、④本文の対象スタッフ表記も「後藤 初樺（社員番号 104674）」で「様」なし、⑤氏名の全角スペースが半角スペースに変換済み（件名・本文とも）。テスト契約（後藤初樺・104674、id: 91478852-c6eb-49d7-9e8f-ef8e170c00fe）は`renewal_candidates`→`contracts`の順で削除済み。これでCSV由来データ修正時の管理部通知メール機能（Task #12本体＋今回の内容改善5件）はすべて完了。
+
+### 2026-07-30 CSV修正管理部通知メールへの契約番号追加（要デプロイ＋実機確認）
+
+伊藤さんから「メールの対象システムの下に契約番号も出したかったのでは」との確認を受け、実コード調査の結果、契約番号（4システム共通で存在するが呼び名が異なる項目）は`lib/csvImportShared.ts`の`UNIQUE_KEY_COLUMNS`で以下の通り定義されていることを確認：e-staffing＝「契約No」、HRstation＝「契約番号」、winworks＝「個別契約番号」、Staffia（KEF00103/KEF00104共通）＝「個別契約書番号」。これらはCSVインポート時にDB側`csv_raw_data.unique_key`へ正規化済み（Staffiaのみ`個別契約書番号+氏名コード`の複合キー）。現状この値は契約（`contracts.input_data`）側には保存されておらず、通知メールにも表示されていなかったため、追加実装を実施。
+
+伊藤さんに「更新申請（`/apply?renewal=`）の場合、契約番号は前回契約の値と新しいCSV行の値のどちらを使うか」を確認したところ、**新しいCSV行の契約番号を使う**（実態＝最新のCSV反映内容と一致させる）ことで決定。ただし既存設計では`csvMeta`（csvSnapshot等）自体は更新申請でも前回契約のものをそのまま複製する仕様になっており、契約番号だけこの扱いから外れる形になる点は伊藤さんに事前共有済み。
+
+実装：
+- `app/apply/page.tsx`に`csvContractNo`state新設。STEP2のCSV検索結果（通常検索・winworksフォールバック検索）に`contractNo`（Staffiaは`raw_data['個別契約書番号']`、それ以外は`csv_raw_data.unique_key`）を含め、`handleCsvResultSelect()`で選択時にstateへ保存。申請保存時に`input_data.csvMeta.csvContractNo`として保存。
+- 差し戻し再申請（`?edit=`）・最低賃金改定再申請（`?wageAmend=`）：CSVは変わらない前提のため、前回契約の`csvMeta.csvContractNo`をそのまま復元。
+- 更新申請（`?renewal=`）：`renewal_candidates.new_csv_raw_data_id`が指す新しいCSV行から`unique_key`（Staffiaは`raw_data['個別契約書番号']`）を取得し優先使用。新しいCSV行が無い場合のみ前回契約の値にフォールバック。
+- `app/api/contracts/[id]/notify-csv-modified/route.ts`で`input_data.csvMeta.csvContractNo`を読み取り、`lib/mail.ts`の`sendCsvModifiedNotifyMail()`に新規引数`contractNo`として追加（text・HTML両方、「対象システム」の直下に「契約番号：xxx」を表示。値が無い場合は「―」）。
+- 今回の実装より前に申請済みの契約は`csvContractNo`を持たないため、通知メールでは「契約番号：―」表示になる（過去分への遡及反映はできない）。
+
+要デプロイ＋実機確認（新規申請での契約番号表示、および可能であれば更新申請での「新しいCSV行の契約番号」反映）。

@@ -1016,7 +1016,10 @@ export async function sendCsvModifiedNotifyMail(
   workLocationName: string,
   dispatchStart: string | null,
   dispatchEnd: string | null,
-  approverRoleLabel: string
+  approverRoleLabel: string,
+  // 2026-07-30追加：対象システムの下に契約番号（csv_raw_data.unique_key相当。システムごとに
+  // 契約No／契約番号／個別契約番号／個別契約書番号と呼び名が異なる項目をDB側で正規化した値）を表示。
+  contractNo: string
 ): Promise<void> {
   // 2026-07-30追加（伊藤さんフィードバック対応）：
   // ①スタッフ氏名の全角スペース（e-staffing等のCSV由来データで発生）を半角スペースに統一。
@@ -1042,6 +1045,7 @@ export async function sendCsvModifiedNotifyMail(
     `担当営業がCSV自動反映項目を修正した状態で申請し、${approverRoleLabel}が承認しましたのでお知らせします。`,
     '',
     `対象システム：${systemType}`,
+    `契約番号：${contractNo || '―'}`,
     `就業場所名：${workLocationName || '―'}`,
     `派遣期間（CSVデータ上）：${dispatchPeriodLabel}`,
     `申請者：${applicantDeptName}　${applicantName}`,
@@ -1079,6 +1083,7 @@ export async function sendCsvModifiedNotifyMail(
       </td></tr>
       <tr><td style="padding:0 32px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
       <tr><td style="padding:14px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">対象システム：${systemType}</td></tr>
+      <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">契約番号：${contractNo || '―'}</td></tr>
       <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">就業場所名：${workLocationName || '―'}</td></tr>
       <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">派遣期間（CSVデータ上）：${dispatchPeriodLabel}</td></tr>
       <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">申請者：${applicantDeptName}　${applicantName}</td></tr>

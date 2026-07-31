@@ -671,14 +671,21 @@ export async function sendRenewalDigestMail(
 export async function sendCsvImportMatchedMail(
   toEmail: string,
   staffName: string | null,
-  workLocationName: string | null
+  workLocationName: string | null,
+  // 2026-07-31追加：管理部の「完了にする」ボタンによる手動完了時にもこのメールを再利用する
+  // ようになったため、自動マッチ時の「自動的に完了しました」という文言のままだと事実と異なる。
+  // trueの場合は「管理部により完了と確認されました」に文言を差し替える。
+  isManual = false
 ): Promise<void> {
   const subject = `【APパートナーズ】CSVインポート依頼が完了しました（${staffName || '対象スタッフ'}様）`
+  const completedLine = isManual
+    ? '以前ご依頼いただいたCSVインポート依頼について、管理部により完了と確認されました。'
+    : '以前ご依頼いただいたCSVインポート依頼について、該当データが取り込まれ、自動的に完了しました。'
   const text = [
     'お疲れ様です。',
     'APパートナーズ 契約書管理システムです。',
     '',
-    `以前ご依頼いただいたCSVインポート依頼について、該当データが取り込まれ、自動的に完了しました。`,
+    completedLine,
     '',
     `対象スタッフ：${staffName || '(氏名不明)'}`,
     `就業先：${workLocationName || '(就業先不明)'}`,
@@ -700,7 +707,7 @@ export async function sendCsvImportMatchedMail(
         お疲れ様です。<br>APパートナーズ 契約書管理システムです。
       </td></tr>
       <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
-        以前ご依頼いただいたCSVインポート依頼について、該当データが取り込まれ、自動的に完了しました。
+        ${completedLine}
       </td></tr>
       <tr><td style="padding:16px 32px 0 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#F5F7FC;border-radius:6px;">
@@ -810,14 +817,19 @@ export async function sendFaqAnswerMail(
 export async function sendStaffRegisterMatchedMail(
   toEmail: string,
   staffName: string | null,
-  staffCode: string | null
+  staffCode: string | null,
+  // 2026-07-31追加：sendCsvImportMatchedMailと同じ理由（手動完了での再利用）
+  isManual = false
 ): Promise<void> {
   const subject = `【APパートナーズ】スタッフマスタ登録依頼が完了しました（${staffName || '対象スタッフ'}様）`
+  const completedLine = isManual
+    ? '以前ご依頼いただいたスタッフマスタ登録依頼について、管理部により完了と確認されました。'
+    : '以前ご依頼いただいたスタッフマスタ登録依頼について、該当データが取り込まれ、自動的に完了しました。'
   const text = [
     'お疲れ様です。',
     'APパートナーズ 契約書管理システムです。',
     '',
-    `以前ご依頼いただいたスタッフマスタ登録依頼について、該当データが取り込まれ、自動的に完了しました。`,
+    completedLine,
     '',
     `対象スタッフ：${staffName || '(氏名不明)'}`,
     `社員番号：${staffCode || '(社員番号不明)'}`,
@@ -838,7 +850,7 @@ export async function sendStaffRegisterMatchedMail(
         お疲れ様です。<br>APパートナーズ 契約書管理システムです。
       </td></tr>
       <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
-        以前ご依頼いただいたスタッフマスタ登録依頼について、該当データが取り込まれ、自動的に完了しました。
+        ${completedLine}
       </td></tr>
       <tr><td style="padding:16px 32px 0 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#F5F7FC;border-radius:6px;">

@@ -90,9 +90,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (toEmail) {
         if (action === 'complete') {
           if (statusField === 'staff_register_status') {
-            await sendStaffRegisterMatchedMail(toEmail, request.staff_name, request.staff_code)
+            await sendStaffRegisterMatchedMail(toEmail, request.staff_name, request.staff_code, true)
           } else {
-            await sendCsvImportMatchedMail(toEmail, request.staff_name, request.client_name)
+            await sendCsvImportMatchedMail(toEmail, request.staff_name, request.client_name, true)
           }
         } else {
           await sendRequestCancelledMail(toEmail, {

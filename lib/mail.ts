@@ -62,8 +62,9 @@ function buildRequestDetailLines(info: RequestMailInfo): string[] {
       `入社日：${formatJaDate(info.staffHireDate)}`,
     ]
     if (info.csvAlsoRequested) {
+      // 2026-07-31：見出しの前に空行を挟むと、html版で行区切り用の<br>と空行用の<br>が
+      // 二重になり不要な余白ができるため、見出しの太字表示だけで区切りを表現する。
       lines.push(
-        '',
         '【CSVインポートも同時に依頼されています】',
         `使用システム：${info.systemType || '（未入力）'}`,
         `派遣開始日：${formatJaDate(info.dispatchStartDate)}`,

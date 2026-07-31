@@ -59,6 +59,9 @@ export type RenewalCandidate = {
   staff_name: string | null
   dept_no: number | null
   work_location_name: string | null
+  // 2026-07-31追加：一覧カードに就業場所住所を表示するため。work_location_nameと同じタイミング
+  // （syncCandidates実行時）でスナップショットする。既存行は導入時に一度だけバックフィル済み。
+  work_location_address: string | null
   employ_start_date: string | null
   employ_end_date: string | null
   dispatch_start_date: string | null
@@ -216,6 +219,7 @@ export function useRenewalCandidates() {
           staff_name: c.staff_name || null,
           dept_no: c.created_by_dept_no,
           work_location_name: c.work_location_name || null,
+          work_location_address: c.work_location_address || null,
           // 開始日（自）も前回値として保存する（伊藤さんご指摘・2026-07-15：自と至は必ずセットで
           // 変わるため、差異表示で至だけでなく自も分かるようにしたい、への対応）
           employ_start_date: c.employ_start || null,

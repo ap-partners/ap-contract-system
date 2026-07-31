@@ -91,38 +91,71 @@ function formatDocumentType(documentType: string | null): string {
   return documentType.replace(/\n/g, ' ').trim()
 }
 
+// 2026-07-31追加（伊藤さんレビュー：日付は「年月日」表記でないと分かりづらい、との指摘対応）。
+// lib/mail.tsの同名ヘルパーとロジックは同じだが、クライアント側コンポーネントのため個別に定義。
+function formatDateJp(dateStr: string | null): string {
+  if (!dateStr) return '―'
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr)
+  return m ? `${m[1]}年${m[2]}月${m[3]}日` : dateStr
+}
+function formatPeriodJp(start: string | null, end: string | null): string {
+  if (!start && !end) return '―'
+  return `${formatDateJp(start)} 〜 ${formatDateJp(end)}`
+}
+
+// 就業場所ブロックの地図ピンアイコン（既存の手描きinline SVG方式を踏襲。アイコンフォント等の
+// 新規依存は追加しない）。
+function MapPinIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className="mt-0.5 h-4 w-4 shrink-0" style={{ color: '#244CB3' }} aria-hidden="true">
+      <path d="M12 21s7-6.1 7-11.5A7 7 0 0 0 5 9.5C5 14.9 12 21 12 21Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <circle cx="12" cy="9.5" r="2.3" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  )
+}
+
 // 2026-07-31新設：更新期限管理タブの5分類の定義（表示名・色・？アイコンの説明文）。
 // 伊藤さんとの確認で確定した内容（docs/SYSTEM_DESIGN.md 10章2026-07-31参照）。
-const TAB_DEFS: { key: RenewalTab; label: string; color: string; helpText: string }[] = [
+// 2026-07-31追加（伊藤さんレビュー2回目・3回目）：
+// ・「修正更新」は「期間のみ更新」と対で意味が伝わるよう「期間以外も修正する」に改名。
+// ・「CSVインポート待ち」は、選ぶと即座に管理部へインポート依頼が送信される（受動的に待つのではない）
+//   ことが伝わるよう「CSVインポートを依頼する」に改名。
+// ・helpColorは？バッジの文字色（白丸バッジ自体は固定・文字色だけをタブの色を濃くした同系色にする）。
+const TAB_DEFS: { key: RenewalTab; label: string; color: string; helpColor: string; helpText: string }[] = [
   {
     key: 'unassigned',
     label: '仕分け待ち',
     color: '#C2410C',
-    helpText: 'まだ「期間のみ更新」「修正更新」「CSVインポート待ち」のどれで\n進めるか決まっていない人です。\n一覧でチェックして振り分けてください。',
+    helpColor: '#9A3412',
+    helpText: 'まだ「期間のみ更新」「期間以外も修正する」「CSVインポートを依頼する」のどれで\n進めるか決まっていない人です。\n一覧でチェックして振り分けてください。',
   },
   {
     key: 'csv_auto',
     label: 'CSV自動反映',
     color: '#244CB3',
+    helpColor: '#1E3A8A',
     helpText: '次の契約の期間が、CSVデータから自動で見つかっています。\n内容を確認して、そのまま一括で更新できます。',
   },
   {
     key: 'period_only',
     label: '期間のみ更新',
     color: '#1F7A45',
+    helpColor: '#14532D',
     helpText: '次の契約の期間を自分で入力し、\nまとめて更新する人です。',
   },
   {
     key: 'edit',
-    label: '修正更新',
+    label: '期間以外も修正する',
     color: '#5A3EC8',
+    helpColor: '#3B2884',
     helpText: '期間だけでなく、他の内容も直して更新したい人です。\n個別に申請画面を開いて修正します。',
   },
   {
     key: 'import_wait',
-    label: 'CSVインポート待ち',
+    label: 'CSVインポートを依頼する',
     color: '#5F5E5A',
-    helpText: '管理部にCSVインポートを依頼していて、まだ結果待ちの人です。\n取り込みが終わると自動で「CSV自動反映」に移動します。',
+    helpColor: '#3A3937',
+    helpText: '選ぶと同時に管理部へCSVインポートを依頼します。\n取り込みが終わると自動で「CSV自動反映」に移動します。',
   },
 ]
 const TAB_LABEL: Record<RenewalTab, string> = Object.fromEntries(TAB_DEFS.map(t => [t.key, t.label])) as Record<RenewalTab, string>
@@ -148,7 +181,7 @@ function UsageHelpPanel({ open, onToggle }: { open: boolean; onToggle: () => voi
             <p className="mb-1 font-semibold text-[#1F2937]">①まず「仕分け待ち」タブを確認する</p>
             <p className="leading-relaxed">
               新しく出てきた対象は全員ここに入ります。<br />
-              「期間のみ更新」「修正更新」「CSVインポート待ち」のどれで進めるかを選び、<br />
+              「期間のみ更新」「期間以外も修正する」「CSVインポートを依頼する」のどれで進めるかを選び、<br />
               チェックを入れて「振り分ける」ボタンを押してください。
             </p>
           </div>
@@ -156,22 +189,22 @@ function UsageHelpPanel({ open, onToggle }: { open: boolean; onToggle: () => voi
             <p className="mb-1 font-semibold text-[#1F2937]">②各タブで内容を確認・入力する</p>
             <p className="leading-relaxed">
               「CSV自動反映」は内容を確認するだけ、「期間のみ更新」は次の期間を入力、<br />
-              「修正更新」は個別に申請画面を開いて内容を直します。<br />
-              「CSVインポート待ち」は結果が来るまで待つだけです。
+              「期間以外も修正する」は個別に申請画面を開いて内容を直します。<br />
+              「CSVインポートを依頼する」は取り込みの結果が来るまで待つだけです。
             </p>
           </div>
           <div>
             <p className="mb-1 font-semibold text-[#1F2937]">③まとめて実行する</p>
             <p className="leading-relaxed">
               「CSV自動反映」「期間のみ更新」はチェックを入れた分をまとめて一括更新できます。<br />
-              「修正更新」は1件ずつ「更新申請する」から申請します。
+              「期間以外も修正する」は1件ずつ「更新申請する」から申請します。
             </p>
           </div>
           <div>
             <p className="mb-1 font-semibold text-[#1F2937]">④分類を間違えた・契約を更新しない場合</p>
             <p className="leading-relaxed">
               各行の「他のタブへ移動」でいつでも振り分け直せます。<br />
-              契約自体を更新しないと決まった場合は「更新しないで確定する」を押し、理由を入力してください。<br />
+              契約自体を更新しないと決まった場合は「更新しない」を押し、理由を入力してください。<br />
               （管理部へ通知メールが届きます）
             </p>
           </div>
@@ -207,7 +240,7 @@ function MoveToOtherTabMenu({
               onClick={() => onMove(t.key)}
               className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F3F5F8]"
             >
-              {t.label}へ
+              {t.label}{t.label.endsWith('する') ? 'に' : 'へ'}
             </button>
           ))}
         </div>
@@ -265,7 +298,7 @@ export default function RenewalManagementTab({
     countByTab[c.renewal_tab]++
   }
   const tabItems: SubTabItem<RenewalTab>[] = TAB_DEFS.map(t => ({
-    key: t.key, label: t.label, count: countByTab[t.key], color: t.color, helpText: t.helpText,
+    key: t.key, label: t.label, count: countByTab[t.key], color: t.color, helpColor: t.helpColor, helpText: t.helpText,
   }))
 
   const tabCandidates = candidates.filter(c => c.renewal_tab === activeTab)
@@ -329,7 +362,10 @@ export default function RenewalManagementTab({
     return <div className="rounded-[18px] border border-[#E8EDF5] bg-white p-8 text-center text-sm text-[#6B7280]">読み込み中です…</div>
   }
 
-  const renderCommonFooter = (c: RenewalCandidate) => (
+  // 2026-07-31追加：CSV自動反映タブから「期間のみ更新」へ移動する場合のみ、派遣先変更等の
+  // 手動切替であることの理由入力を挟む（旧「派遣先変更のため手入力に切替」ボタンの役割を
+  // 「他のタブへ移動」に統合したもの。onMoveOverrideを渡さない呼び出し元は従来通り即時移動）。
+  const renderCommonFooter = (c: RenewalCandidate, opts?: { onMoveOverride?: (tab: RenewalTab) => void }) => (
     <div className="flex shrink-0 items-center gap-3">
       {canFinalize && (
         <MoveToOtherTabMenu
@@ -337,7 +373,11 @@ export default function RenewalManagementTab({
           currentTab={activeTab}
           open={moveMenuId === c.id}
           onToggle={() => setMoveMenuId(moveMenuId === c.id ? null : c.id)}
-          onMove={tab => { setRenewalTab(c.id, tab); setMoveMenuId(null) }}
+          onMove={tab => {
+            if (opts?.onMoveOverride) opts.onMoveOverride(tab)
+            else setRenewalTab(c.id, tab)
+            setMoveMenuId(null)
+          }}
         />
       )}
       {c.status !== 'not_renewing' && (
@@ -345,7 +385,7 @@ export default function RenewalManagementTab({
           onClick={() => { setNotRenewingReasonId(c.id); setNotRenewingReasonText('') }}
           className="text-[11px] font-semibold underline text-[#8B98B1] hover:text-[#6B7280]"
         >
-          更新しないで確定する
+          更新しない
         </button>
       )}
     </div>
@@ -355,7 +395,7 @@ export default function RenewalManagementTab({
     <>
       {c.status === 'not_renewing' && (
         <div className="mt-4 rounded-2xl bg-[#F3F5F8] px-4 py-3">
-          <span className="text-xs font-semibold rounded-full px-2.5 py-1 mr-2" style={{ background: '#E8EDF5', color: '#6B7280' }}>更新しないで確定</span>
+          <span className="text-xs font-semibold rounded-full px-2.5 py-1 mr-2" style={{ background: '#E8EDF5', color: '#6B7280' }}>更新しない</span>
           <span className="text-xs text-[#6B7280]">理由：{c.no_renewal_reason || '―'}</span>
         </div>
       )}
@@ -379,7 +419,7 @@ export default function RenewalManagementTab({
                 setNotRenewingReasonId(null)
               }}
               className="rounded-2xl bg-[#E74C3C] text-white text-xs font-semibold px-4 py-1.5 whitespace-nowrap"
-            >更新しないで確定</button>
+            >更新しない</button>
             <button onClick={() => setNotRenewingReasonId(null)} className="rounded-2xl border border-[#E8EDF5] text-xs font-semibold px-4 py-1.5 whitespace-nowrap">キャンセル</button>
           </div>
         </div>
@@ -403,7 +443,6 @@ export default function RenewalManagementTab({
           <p className="mt-1 text-xs font-medium text-[#8B98B1]">
             {c.employee_number}
             {metaParts.length > 0 && <span className="ml-1.5">・{metaParts.join('・')}</span>}
-            <span className="ml-1.5">・{c.work_location_name || '就業先不明'}</span>
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-3">
@@ -414,21 +453,59 @@ export default function RenewalManagementTab({
     )
   }
 
-  const renderSecondaryGrid = (c: RenewalCandidate) => (
-    <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[#E8EDF5] pt-3 sm:grid-cols-3">
-      <div className="min-w-0">
-        <p className="mb-1 text-xs font-semibold text-[#6B7280]">書類種別</p>
-        <p className="text-xs font-medium leading-5 text-[#1F2937]">{formatDocumentType(c.document_type)}</p>
+  // 2026-07-31全面改修（伊藤さんレビュー）：就業場所名は薄いグレーで目立たなかったため
+  // 専用ブロックに独立させ住所も追加表示。雇用期間・派遣期間も「至」だけでなく自〜至の範囲を
+  // 分けて表示し、これが「現在（前回契約）」の情報であることが伝わるようラベルに明記する。
+  // 書類種別（document_type＝雇用契約書／就業条件明示書／雇用契約書 兼 就業条件明示書）に応じて
+  // 該当する期間だけを出し分ける（兼用は両方、雇用契約書のみは雇用期間だけ、就業条件明示書のみは
+  // 派遣期間だけ）。
+  const renderSecondaryGrid = (c: RenewalCandidate) => {
+    const docType = formatDocumentType(c.document_type)
+    const showEmploy = docType.includes('雇用契約書')
+    const showDispatch = docType.includes('就業条件明示書')
+    const sameDates = showEmploy && showDispatch
+      && (c.employ_start_date || null) === (c.dispatch_start_date || null)
+      && (c.employ_end_date || null) === (c.dispatch_end_date || null)
+    return (
+      <div className="mt-3 border-t border-[#E8EDF5] pt-3">
+        <div className="flex items-start gap-2 rounded-2xl bg-[#F7FBFF] px-3 py-2.5">
+          <MapPinIcon />
+          <div className="min-w-0">
+            <p className="text-[13px] font-semibold leading-5 text-[#1F2937]">{c.work_location_name || '就業先不明'}</p>
+            <p className="mt-0.5 text-[11px] leading-5 text-[#6B7280]">{c.work_location_address || '住所は未登録です'}</p>
+          </div>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="min-w-0">
+            <p className="mb-1 text-xs font-semibold text-[#6B7280]">書類種別</p>
+            <p className="text-xs font-medium leading-5 text-[#1F2937]">{formatDocumentType(c.document_type)}</p>
+          </div>
+          {showEmploy && (
+            <div className="min-w-0">
+              <p className="mb-1 text-xs font-semibold text-[#6B7280]">雇用期間（現在）</p>
+              <p className="text-xs font-medium leading-5 text-[#1F2937]">{formatPeriodJp(c.employ_start_date, c.employ_end_date)}</p>
+            </div>
+          )}
+          {showDispatch && (
+            <div className="min-w-0">
+              <p className="mb-1 text-xs font-semibold text-[#6B7280]">派遣期間（現在）</p>
+              <p className="text-xs font-medium leading-5 text-[#1F2937]">
+                {sameDates ? '雇用期間と同一' : formatPeriodJp(c.dispatch_start_date, c.dispatch_end_date)}
+              </p>
+            </div>
+          )}
+        </div>
       </div>
-      <div className="min-w-0">
-        <p className="mb-1 text-xs font-semibold text-[#6B7280]">雇用/派遣期間_至</p>
-        <p className="text-xs font-medium leading-5 text-[#1F2937]">
-          {c.employ_end_date && c.dispatch_end_date && c.employ_end_date === c.dispatch_end_date
-            ? `同一・${c.employ_end_date}`
-            : `雇${c.employ_end_date || '―'} / 派${c.dispatch_end_date || '―'}`}
-        </p>
-      </div>
-    </div>
+    )
+  }
+
+  // 2026-07-31追加：「契約内容をすべて確認」（前回契約のSTEP項目を全項目表示する読み取り専用
+  // ポップアップ）を開くリンク。従来はCSV自動反映タブ（内容を確認 展開後）・修正更新タブの
+  // 行動線にのみ存在していたが、他のタブでも同じ内容を確認したいという要望に応え全タブ共通化。
+  const renderConfirmLink = (c: RenewalCandidate) => (
+    <button onClick={() => setConfirmModalCandidate(c)} className="mt-3 text-xs font-semibold text-[#2F5FD0] underline">
+      契約内容をすべて確認
+    </button>
   )
 
   // ===== タブ別の中身 =====
@@ -439,10 +516,11 @@ export default function RenewalManagementTab({
       <article key={c.id} className="rounded-[18px] border border-[#E8EDF5] bg-white p-5">
         {renderRowHead(c, renderCommonFooter(c))}
         {renderSecondaryGrid(c)}
+        {renderConfirmLink(c)}
         {c.data_source === 'csv' && c.status === 'csv_pending' && (
           <p className="mt-2 text-[11px] font-medium leading-relaxed" style={{ color: '#B45309' }}>
             {STATUS_LABEL.csv_pending}：次の契約のCSVがまだ見つかっていません。<br />
-            「CSVインポート待ち」を選ぶと管理部に取り込みを依頼できます。
+            「CSVインポートを依頼する」を選ぶと、選んだ直後に管理部へ取り込みを依頼します。
           </p>
         )}
         {c.status !== 'not_renewing' && canFinalize && (
@@ -456,13 +534,13 @@ export default function RenewalManagementTab({
             <label className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold" style={{ background: choice === 'edit' ? '#5A3EC8' : '#F3ECFF', color: choice === 'edit' ? '#fff' : '#5A3EC8' }}>
               <input type="radio" name={`triage-${c.id}`} className="hidden" checked={choice === 'edit'}
                 onChange={() => setUnassignedChoice(prev => ({ ...prev, [c.id]: 'edit' }))} />
-              修正更新
+              期間以外も修正する
             </label>
             {c.data_source === 'csv' && (
               <label className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold" style={{ background: choice === 'import_wait' ? '#5F5E5A' : '#F1EFE8', color: choice === 'import_wait' ? '#fff' : '#5F5E5A' }}>
                 <input type="radio" name={`triage-${c.id}`} className="hidden" checked={choice === 'import_wait'}
                   onChange={() => setUnassignedChoice(prev => ({ ...prev, [c.id]: 'import_wait' }))} />
-                CSVインポート待ち
+                CSVインポートを依頼する
               </label>
             )}
             {choice && (
@@ -477,6 +555,14 @@ export default function RenewalManagementTab({
 
   const renderCsvAutoRow = (c: RenewalCandidate) => {
     const ready = periodReady(c)
+    // 2026-07-31変更（伊藤さんレビュー：「派遣先変更のため手入力に切替」は独立ボタンとして
+    // 分かりづらく「他のタブへ移動」で代替可能、との指摘）：専用ボタンは廃止し、「他のタブへ移動」で
+    // 「期間のみ更新」を選んだ場合だけ理由入力を挟む形に統合する（監査ログ用のmanual_override_reason
+    // は維持）。それ以外の移動先は従来通り即時移動。
+    const handleMoveOverride = (tab: RenewalTab) => {
+      if (tab === 'period_only') { setOverrideReasonId(c.id); setOverrideReasonText('') }
+      else setRenewalTab(c.id, tab)
+    }
     return (
       <article key={c.id} className="rounded-[18px] border border-[#E8EDF5] bg-white p-5">
         {renderRowHead(c, (
@@ -488,7 +574,7 @@ export default function RenewalManagementTab({
                 一括申請に含める
               </label>
             )}
-            {renderCommonFooter(c)}
+            {renderCommonFooter(c, { onMoveOverride: handleMoveOverride })}
           </div>
         ))}
         {renderSecondaryGrid(c)}
@@ -496,15 +582,6 @@ export default function RenewalManagementTab({
           <button onClick={() => toggleExpand(c)} className="text-xs font-semibold text-[#2F5FD0] underline">
             {expandedId === c.id ? '内容を閉じる' : '内容を確認'}
           </button>
-          {c.status !== 'not_renewing' && canFinalize && (
-            <button
-              onClick={() => { setOverrideReasonId(c.id); setOverrideReasonText('') }}
-              className="text-[11px] font-semibold underline"
-              style={{ color: '#F59E42' }}
-            >
-              派遣先変更のため手入力に切替
-            </button>
-          )}
         </div>
         {expandedId === c.id && renderCsvDiff(c)}
         {overrideReasonId === c.id && (
@@ -619,51 +696,61 @@ export default function RenewalManagementTab({
           </div>
         ))}
         {renderSecondaryGrid(c)}
+        {renderConfirmLink(c)}
         <div className="mt-3 flex flex-col gap-3 border-t border-[#E8EDF5] pt-3">
           {hasDispatch ? (
             <>
-              <div className="grid grid-cols-3 gap-2 items-end">
-                <div>
-                  <div className="text-[11px] text-[#6B7280] mb-1">派遣期間_自</div>
-                  <input type="date" value={draft.start} onChange={e => setManualDraft(prev => ({ ...prev, [c.id]: { start: clampDateYear(e.target.value), end: prev[c.id]?.end || draft.end } }))}
-                    className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" />
-                </div>
-                <div>
-                  <div className="text-[11px] text-[#6B7280] mb-1">派遣期間_至</div>
-                  <input type="date" value={draft.end} onChange={e => setManualDraft(prev => ({ ...prev, [c.id]: { start: prev[c.id]?.start || draft.start, end: clampDateYear(e.target.value) } }))}
-                    className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" />
-                </div>
-                {hasEmploy && (
-                  <button onClick={() => draft.start && draft.end && copyDispatchToEmploy(c.id, draft.start, draft.end)}
-                    className="rounded-2xl border border-[#E8EDF5] px-3 py-1.5 text-xs font-semibold whitespace-nowrap" style={{ background: '#EAF1FF', color: '#244CB3' }}>
-                    雇用期間へコピー ↓
-                  </button>
-                )}
-              </div>
-              {hasEmploy && (
-                <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-2xl border border-[#E8EDF5] p-3.5">
+                <p className="mb-2 text-xs font-semibold text-[#1F2937]">派遣期間</p>
+                <div className="grid grid-cols-3 gap-2 items-end">
                   <div>
-                    <div className="text-[11px] text-[#6B7280] mb-1">雇用期間_自</div>
-                    <input readOnly value={c.new_employ_start || ''} className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" style={{ background: '#F3F5F8' }} />
+                    <div className="text-[11px] text-[#6B7280] mb-1">派遣期間の開始日</div>
+                    <input type="date" value={draft.start} onChange={e => setManualDraft(prev => ({ ...prev, [c.id]: { start: clampDateYear(e.target.value), end: prev[c.id]?.end || draft.end } }))}
+                      className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" />
                   </div>
                   <div>
-                    <div className="text-[11px] text-[#6B7280] mb-1">雇用期間_至</div>
-                    <input readOnly value={c.new_employ_end || ''} className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" style={{ background: '#F3F5F8' }} />
+                    <div className="text-[11px] text-[#6B7280] mb-1">派遣期間の終了日</div>
+                    <input type="date" value={draft.end} onChange={e => setManualDraft(prev => ({ ...prev, [c.id]: { start: prev[c.id]?.start || draft.start, end: clampDateYear(e.target.value) } }))}
+                      className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" />
+                  </div>
+                  {hasEmploy && (
+                    <button onClick={() => draft.start && draft.end && copyDispatchToEmploy(c.id, draft.start, draft.end)}
+                      className="rounded-2xl border border-[#E8EDF5] px-3 py-1.5 text-xs font-semibold whitespace-nowrap" style={{ background: '#EAF1FF', color: '#244CB3' }}>
+                      雇用期間へコピー ↓
+                    </button>
+                  )}
+                </div>
+              </div>
+              {hasEmploy && (
+                <div className="rounded-2xl border border-[#E8EDF5] p-3.5">
+                  <p className="mb-2 text-xs font-semibold text-[#1F2937]">雇用期間（派遣期間をコピーした内容。兼用のため自動で揃えています）</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <div className="text-[11px] text-[#6B7280] mb-1">雇用期間の開始日</div>
+                      <input readOnly value={c.new_employ_start || ''} className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" style={{ background: '#F3F5F8' }} />
+                    </div>
+                    <div>
+                      <div className="text-[11px] text-[#6B7280] mb-1">雇用期間の終了日</div>
+                      <input readOnly value={c.new_employ_end || ''} className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" style={{ background: '#F3F5F8' }} />
+                    </div>
                   </div>
                 </div>
               )}
             </>
           ) : (
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <div className="text-[11px] text-[#6B7280] mb-1">雇用期間_自</div>
-                <input type="date" value={c.new_employ_start || ''} onChange={e => updateCandidate(c.id, { new_employ_start: clampDateYear(e.target.value) })}
-                  className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" />
-              </div>
-              <div>
-                <div className="text-[11px] text-[#6B7280] mb-1">雇用期間_至</div>
-                <input type="date" value={c.new_employ_end || ''} onChange={e => updateCandidate(c.id, { new_employ_end: clampDateYear(e.target.value) })}
-                  className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" />
+            <div className="rounded-2xl border border-[#E8EDF5] p-3.5">
+              <p className="mb-2 text-xs font-semibold text-[#1F2937]">雇用期間</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <div className="text-[11px] text-[#6B7280] mb-1">雇用期間の開始日</div>
+                  <input type="date" value={c.new_employ_start || ''} onChange={e => updateCandidate(c.id, { new_employ_start: clampDateYear(e.target.value) })}
+                    className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" />
+                </div>
+                <div>
+                  <div className="text-[11px] text-[#6B7280] mb-1">雇用期間の終了日</div>
+                  <input type="date" value={c.new_employ_end || ''} onChange={e => updateCandidate(c.id, { new_employ_end: clampDateYear(e.target.value) })}
+                    className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" />
+                </div>
               </div>
             </div>
           )}
@@ -707,16 +794,17 @@ export default function RenewalManagementTab({
     <article key={c.id} className="rounded-[18px] border border-[#E8EDF5] bg-white p-5">
       {renderRowHead(c, renderCommonFooter(c))}
       {renderSecondaryGrid(c)}
+      {renderConfirmLink(c)}
       <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[#E8EDF5] pt-3">
-        <span className="text-xs text-[#8B98B1]">CSVインポート依頼済み・結果待ちです。</span>
+        <span className="text-xs text-[#8B98B1]">CSVインポートを依頼済みです。管理部が取り込みを確認しています。</span>
         {canFinalize && (
           <>
             <button onClick={() => handleRecheck(c)} disabled={recheckingId === c.id}
               className="rounded-2xl border border-[#D0DAF0] bg-white px-3 py-1.5 text-xs font-semibold text-[#2F5FD0] disabled:opacity-50">
               {recheckingId === c.id ? '再検索中…' : 'CSVを再検索'}
             </button>
-            <button onClick={() => setRenewalTab(c.id, 'edit')} className="rounded-2xl border border-[#E8EDF5] bg-white px-3 py-1.5 text-xs font-semibold text-[#5A3EC8]">修正更新へ切替</button>
-            <button onClick={() => setRenewalTab(c.id, 'period_only')} className="rounded-2xl border border-[#E8EDF5] bg-white px-3 py-1.5 text-xs font-semibold text-[#1F7A45]">期間更新へ切替</button>
+            <button onClick={() => setRenewalTab(c.id, 'edit')} className="rounded-2xl border border-[#E8EDF5] bg-white px-3 py-1.5 text-xs font-semibold text-[#5A3EC8]">期間以外も修正するに切替</button>
+            <button onClick={() => setRenewalTab(c.id, 'period_only')} className="rounded-2xl border border-[#E8EDF5] bg-white px-3 py-1.5 text-xs font-semibold text-[#1F7A45]">期間のみ更新に切替</button>
           </>
         )}
       </div>
@@ -873,7 +961,7 @@ export default function RenewalManagementTab({
                     </ul>
                     <p className="mt-2 text-[11px] leading-relaxed" style={{ color: '#B91C1C' }}>
                       失敗した案件はそのままタブに残っています。<br />
-                      再実行するか、修正更新に切り替えてください。
+                      再実行するか、期間以外も修正するに切り替えてください。
                     </p>
                   </div>
                 )}

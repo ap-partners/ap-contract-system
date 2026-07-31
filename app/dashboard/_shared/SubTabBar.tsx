@@ -13,7 +13,10 @@ import { useState } from 'react'
 // 修正更新／CSVインポート待ち）で、タブごとに意味の異なる色分けを行うため、任意の
 // `color`（アクティブ時の背景色）・`helpText`（？アイコンでの説明文）を追加。指定が無い
 // 場合は従来通りの青一色（既存の呼び出し箇所は無変更で従来通りの見た目のまま）。
-export type SubTabItem<T extends string> = { key: T; label: string; count: number; color?: string; helpText?: string }
+// 2026-07-31追加（伊藤さんレビュー：？の色がタブの色に紛れて見えづらい／単色統一だと逆にダサい、との
+// 指摘対応）：？バッジは常に白丸にして視認性を確保しつつ、文字色だけをそのタブ自身の色を濃くした
+// 同系色にする（helpColor）。指定が無い場合は既存通りグレー系にフォールバック。
+export type SubTabItem<T extends string> = { key: T; label: string; count: number; color?: string; helpColor?: string; helpText?: string }
 
 export function SubTabBar<T extends string>({
   items,
@@ -47,9 +50,8 @@ export function SubTabBar<T extends string>({
                 {item.helpText && (
                   <span
                     onClick={e => { e.stopPropagation(); setOpenHelpKey(openHelpKey === item.key ? null : item.key) }}
-                    className={`ml-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-semibold align-middle ${
-                      active ? 'bg-white/25 text-white' : 'bg-[#E8EDF5] text-[#6B7280]'
-                    }`}
+                    style={{ color: item.helpColor || '#6B7280' }}
+                    className="ml-1.5 inline-flex h-[19px] w-[19px] items-center justify-center rounded-full border border-black/5 bg-white text-[11px] font-bold align-middle shadow-[0_1px_3px_rgba(0,0,0,.2)] cursor-pointer"
                   >?</span>
                 )}
               </button>

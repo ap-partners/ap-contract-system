@@ -22,6 +22,67 @@ const transporter = nodemailer.createTransport({
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://ap-contract-system.vercel.app'
 
+// 2026-07-31追加：日付（'YYYY-MM-DD'）を「YYYY年MM月DD日」表記に変換する共通ヘルパー。
+// 従来sendCsvModifiedNotifyMail内にのみ同じロジックがローカルで存在していたが、
+// 依頼系メール（新規・完了・取消）でも同じ表記を使うため共通化した。
+function formatJaDate(dateStr: string | null): string {
+  if (!dateStr) return '（未入力）'
+  const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!m) return dateStr
+  return `${m[1]}年${m[2]}月${m[3]}日`
+}
+
+// 2026-07-31追加：依頼（スタッフマスタ登録・CSVインポート）メール3種
+// （新規依頼・完了・取消）で共通して使う項目一式。伊藤さんの指摘（項目の網羅・
+// 申請者の所属部署名/氏名を全メール必須化）を受け、フォームの入力項目と1対1で
+// 対応させる形に統一した。
+export type RequestMailInfo = {
+  requestType: 'staff_register' | 'csv_import'
+  staffName: string | null
+  staffCode: string | null
+  staffDept: string | null
+  staffHireDate: string | null // 'YYYY-MM-DD'（staff_register時のみ意味を持つ）
+  clientName: string | null // 就業場所名（CSVインポート関連時のみ）
+  systemType: string | null // 使用システム（CSVインポート関連時のみ）
+  dispatchStartDate: string | null // 派遣開始日（CSVインポート関連時のみ）
+  csvAlsoRequested: boolean // staff_register時、CSVインポートも同時に依頼されたか
+  requestedByName: string | null
+  requestedByDept: string | null
+}
+
+// 依頼内容ブロック（対象スタッフ・依頼種別ごとの項目）をtext/html共通のデータとして組み立てる。
+// text版は「ラベル：値」を1行に、html版は同じ内容を<br>区切りの箱に入れる。
+function buildRequestDetailLines(info: RequestMailInfo): string[] {
+  if (info.requestType === 'staff_register') {
+    const lines = [
+      `依頼種別：スタッフマスタ登録依頼`,
+      `社員番号：${info.staffCode || '（未入力）'}`,
+      `スタッフ氏名：${info.staffName || '（未入力）'}`,
+      `部門名：${info.staffDept || '（未入力）'}`,
+      `入社日：${formatJaDate(info.staffHireDate)}`,
+    ]
+    if (info.csvAlsoRequested) {
+      lines.push(
+        '',
+        '【CSVインポートも同時に依頼されています】',
+        `使用システム：${info.systemType || '（未入力）'}`,
+        `派遣開始日：${formatJaDate(info.dispatchStartDate)}`,
+        `就業場所名：${info.clientName || '（未入力）'}`,
+      )
+    }
+    return lines
+  }
+  return [
+    `依頼種別：CSVインポート依頼`,
+    `社員番号：${info.staffCode || '（未入力）'}`,
+    `スタッフ氏名：${info.staffName || '（未入力）'}`,
+    `所属部門：${info.staffDept || '（未入力）'}`,
+    `使用システム：${info.systemType || '（未入力）'}`,
+    `派遣開始日：${formatJaDate(info.dispatchStartDate)}`,
+    `就業場所名：${info.clientName || '（未入力）'}`,
+  ]
+}
+
 // 署名依頼／確認依頼メールを送信する。
 // isConfirmationOnly=true の場合はパターンB（就業条件明示書のみ）用の文言になる。
 // 2026-07-13追加：本人確認方式を「社員番号＋生年月日」から「社員番号＋6桁認証コード」へ
@@ -670,30 +731,53 @@ export async function sendRenewalDigestMail(
 // 氏名・就業先名を本文に含めてよい（署名依頼メールと異なるルール。renewal digestと同様）。
 export async function sendCsvImportMatchedMail(
   toEmail: string,
-  staffName: string | null,
-  workLocationName: string | null,
+  info: {
+    staffName: string | null
+    staffCode: string | null
+    staffDept: string | null
+    workLocationName: string | null
+    systemType: string | null
+    dispatchStartDate: string | null
+    requestedByName: string | null
+    requestedByDept: string | null
+  },
   // 2026-07-31追加：管理部の「完了にする」ボタンによる手動完了時にもこのメールを再利用する
   // ようになったため、自動マッチ時の「自動的に完了しました」という文言のままだと事実と異なる。
   // trueの場合は「管理部により完了と確認されました」に文言を差し替える。
   isManual = false
 ): Promise<void> {
+  const { staffName, staffCode, staffDept, workLocationName, systemType, dispatchStartDate, requestedByName, requestedByDept } = info
   const subject = `【APパートナーズ】CSVインポート依頼が完了しました（${staffName || '対象スタッフ'}様）`
+  // 2026-07-31：伊藤さんの指摘（項目の網羅・改行位置の読みやすさ）を受け、対象スタッフ・
+  // 依頼内容・申請者をブロックごとに分け、1文1行・句点や助詞の切れ目でのみ改行する形に見直した。
   const completedLine = isManual
-    ? '以前ご依頼いただいたCSVインポート依頼について、管理部により完了と確認されました。'
-    : '以前ご依頼いただいたCSVインポート依頼について、該当データが取り込まれ、自動的に完了しました。'
+    ? ['以前ご依頼いただいたCSVインポートについて、', '管理部により完了と確認されました。']
+    : ['以前ご依頼いただいたCSVインポートについて、', '該当データが取り込まれ、自動的に完了しました。']
   const text = [
     'お疲れ様です。',
     'APパートナーズ 契約書管理システムです。',
     '',
-    completedLine,
+    ...completedLine,
     '',
-    `対象スタッフ：${staffName || '(氏名不明)'}`,
-    `就業先：${workLocationName || '(就業先不明)'}`,
+    '【対象スタッフ】',
+    `社員番号：${staffCode || '（未入力）'}`,
+    `スタッフ氏名：${staffName || '（未入力）'}`,
+    `所属部門：${staffDept || '（未入力）'}`,
     '',
-    '申請画面（STEP2）からCSV検索を行うと、内容が反映できる状態になっています。',
+    '【依頼内容】',
+    `使用システム：${systemType || '（未入力）'}`,
+    `派遣開始日：${formatJaDate(dispatchStartDate)}`,
+    `就業場所名：${workLocationName || '（未入力）'}`,
+    '',
+    '【申請者】',
+    `${requestedByDept || '（部門不明）'}　${requestedByName || '（氏名不明）'}`,
+    '',
+    '申請画面（STEP2）からCSV検索を行うと、',
+    '内容が反映できる状態になっています。',
     `担当営業の方はこちら：${APP_URL}/dashboard/sales`,
     '',
-    '※本メールは自動送信です。このアドレスへの返信には対応しておりません。ご不明点は管理部までご連絡ください。',
+    '※本メールは自動送信です。このアドレスへの返信には対応しておりません。',
+    'ご不明点は管理部までご連絡ください。',
   ].join('\n')
 
   // 2026-07-22追加：他の社内向けメール（署名依頼・更新期限ダイジェスト等）と見た目を揃えるため、
@@ -707,18 +791,32 @@ export async function sendCsvImportMatchedMail(
         お疲れ様です。<br>APパートナーズ 契約書管理システムです。
       </td></tr>
       <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
-        ${completedLine}
+        ${completedLine.join('<br>')}
       </td></tr>
       <tr><td style="padding:16px 32px 0 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#F5F7FC;border-radius:6px;">
-          <tr><td style="padding:14px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.8;">
-            対象スタッフ：${staffName || '(氏名不明)'}<br>
-            就業先：${workLocationName || '(就業先不明)'}
+          <tr><td style="padding:14px 16px 4px 16px;font-family:sans-serif;font-size:12px;color:#5A6A8A;font-weight:bold;">対象スタッフ</td></tr>
+          <tr><td style="padding:0 16px 12px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.8;">
+            社員番号：${staffCode || '（未入力）'}<br>
+            スタッフ氏名：${staffName || '（未入力）'}<br>
+            所属部門：${staffDept || '（未入力）'}
+          </td></tr>
+          <tr><td style="padding:0 16px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
+          <tr><td style="padding:12px 16px 4px 16px;font-family:sans-serif;font-size:12px;color:#5A6A8A;font-weight:bold;">依頼内容</td></tr>
+          <tr><td style="padding:0 16px 12px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.8;">
+            使用システム：${systemType || '（未入力）'}<br>
+            派遣開始日：${formatJaDate(dispatchStartDate)}<br>
+            就業場所名：${workLocationName || '（未入力）'}
+          </td></tr>
+          <tr><td style="padding:0 16px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
+          <tr><td style="padding:12px 16px 4px 16px;font-family:sans-serif;font-size:12px;color:#5A6A8A;font-weight:bold;">申請者</td></tr>
+          <tr><td style="padding:0 16px 14px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;">
+            ${requestedByDept || '（部門不明）'}　${requestedByName || '（氏名不明）'}
           </td></tr>
         </table>
       </td></tr>
-      <tr><td style="padding:20px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">
-        申請画面（STEP2）からCSV検索を行うと、内容が反映できる状態になっています。
+      <tr><td style="padding:20px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.7;">
+        申請画面（STEP2）からCSV検索を行うと、<br>内容が反映できる状態になっています。
       </td></tr>
       <tr><td align="center" style="padding:20px 32px 28px 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0">
@@ -729,8 +827,8 @@ export async function sendCsvImportMatchedMail(
           </td></tr>
         </table>
       </td></tr>
-      <tr><td style="padding:0 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
-        ※本メールは自動送信です。このアドレスへの返信には対応しておりません。ご不明点は管理部までご連絡ください。
+      <tr><td style="padding:0 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;line-height:1.6;">
+        ※本メールは自動送信です。このアドレスへの返信には対応しておりません。<br>ご不明点は管理部までご連絡ください。
       </td></tr>
     </table>
   </td></tr>
@@ -816,28 +914,44 @@ export async function sendFaqAnswerMail(
 
 export async function sendStaffRegisterMatchedMail(
   toEmail: string,
-  staffName: string | null,
-  staffCode: string | null,
+  info: {
+    staffName: string | null
+    staffCode: string | null
+    staffDept: string | null
+    staffHireDate: string | null
+    requestedByName: string | null
+    requestedByDept: string | null
+  },
   // 2026-07-31追加：sendCsvImportMatchedMailと同じ理由（手動完了での再利用）
   isManual = false
 ): Promise<void> {
+  const { staffName, staffCode, staffDept, staffHireDate, requestedByName, requestedByDept } = info
   const subject = `【APパートナーズ】スタッフマスタ登録依頼が完了しました（${staffName || '対象スタッフ'}様）`
+  // 2026-07-31：項目網羅・改行位置の見直し（sendCsvImportMatchedMailと同様の方針）。
   const completedLine = isManual
-    ? '以前ご依頼いただいたスタッフマスタ登録依頼について、管理部により完了と確認されました。'
-    : '以前ご依頼いただいたスタッフマスタ登録依頼について、該当データが取り込まれ、自動的に完了しました。'
+    ? ['以前ご依頼いただいたスタッフマスタ登録について、', '管理部により完了と確認されました。']
+    : ['以前ご依頼いただいたスタッフマスタ登録について、', '該当データが取り込まれ、自動的に完了しました。']
   const text = [
     'お疲れ様です。',
     'APパートナーズ 契約書管理システムです。',
     '',
-    completedLine,
+    ...completedLine,
     '',
-    `対象スタッフ：${staffName || '(氏名不明)'}`,
-    `社員番号：${staffCode || '(社員番号不明)'}`,
+    '【対象スタッフ】',
+    `社員番号：${staffCode || '（未入力）'}`,
+    `スタッフ氏名：${staffName || '（未入力）'}`,
+    `部門名：${staffDept || '（未入力）'}`,
+    `入社日：${formatJaDate(staffHireDate)}`,
     '',
-    '申請画面（STEP1）からスタッフ検索を行うと、内容が反映できる状態になっています。',
+    '【申請者】',
+    `${requestedByDept || '（部門不明）'}　${requestedByName || '（氏名不明）'}`,
+    '',
+    '申請画面（STEP1）からスタッフ検索を行うと、',
+    '内容が反映できる状態になっています。',
     `担当営業の方はこちら：${APP_URL}/dashboard/sales`,
     '',
-    '※本メールは自動送信です。このアドレスへの返信には対応しておりません。ご不明点は管理部までご連絡ください。',
+    '※本メールは自動送信です。このアドレスへの返信には対応しておりません。',
+    'ご不明点は管理部までご連絡ください。',
   ].join('\n')
 
   // 2026-07-22追加：sendCsvImportMatchedMailと同様の理由でHTML版を追加
@@ -850,18 +964,26 @@ export async function sendStaffRegisterMatchedMail(
         お疲れ様です。<br>APパートナーズ 契約書管理システムです。
       </td></tr>
       <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
-        ${completedLine}
+        ${completedLine.join('<br>')}
       </td></tr>
       <tr><td style="padding:16px 32px 0 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#F5F7FC;border-radius:6px;">
-          <tr><td style="padding:14px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.8;">
-            対象スタッフ：${staffName || '(氏名不明)'}<br>
-            社員番号：${staffCode || '(社員番号不明)'}
+          <tr><td style="padding:14px 16px 4px 16px;font-family:sans-serif;font-size:12px;color:#5A6A8A;font-weight:bold;">対象スタッフ</td></tr>
+          <tr><td style="padding:0 16px 12px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.8;">
+            社員番号：${staffCode || '（未入力）'}<br>
+            スタッフ氏名：${staffName || '（未入力）'}<br>
+            部門名：${staffDept || '（未入力）'}<br>
+            入社日：${formatJaDate(staffHireDate)}
+          </td></tr>
+          <tr><td style="padding:0 16px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
+          <tr><td style="padding:12px 16px 4px 16px;font-family:sans-serif;font-size:12px;color:#5A6A8A;font-weight:bold;">申請者</td></tr>
+          <tr><td style="padding:0 16px 14px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;">
+            ${requestedByDept || '（部門不明）'}　${requestedByName || '（氏名不明）'}
           </td></tr>
         </table>
       </td></tr>
-      <tr><td style="padding:20px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">
-        申請画面（STEP1）からスタッフ検索を行うと、内容が反映できる状態になっています。
+      <tr><td style="padding:20px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.7;">
+        申請画面（STEP1）からスタッフ検索を行うと、<br>内容が反映できる状態になっています。
       </td></tr>
       <tr><td align="center" style="padding:20px 32px 28px 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0">
@@ -872,8 +994,8 @@ export async function sendStaffRegisterMatchedMail(
           </td></tr>
         </table>
       </td></tr>
-      <tr><td style="padding:0 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
-        ※本メールは自動送信です。このアドレスへの返信には対応しておりません。ご不明点は管理部までご連絡ください。
+      <tr><td style="padding:0 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;line-height:1.6;">
+        ※本メールは自動送信です。このアドレスへの返信には対応しておりません。<br>ご不明点は管理部までご連絡ください。
       </td></tr>
     </table>
   </td></tr>
@@ -1038,6 +1160,9 @@ export async function sendCsvModifiedNotifyMail(
   // ②宛名の「様」表記は本メールでは不要なため削除（件名・本文とも）。
   // ③CSVデータ上の派遣期間の日付表記を「YYYY-MM-DD」から「YYYY年MM月DD日」に変更。
   const normalizedStaffName = staffName.replace(/　/g, ' ')
+  // 2026-07-31：日付フォーマットは共通ヘルパー(formatJaDate)に統合。ただしこの関数では
+  // 未入力時にnullを返す挙動に依存している箇所（dispatchPeriodLabelの「―」表示）があるため、
+  // 共通ヘルパー（未入力時は'（未入力）'を返す）をそのまま使わず、この関数専用の薄いラッパーとする。
   const formatJapaneseDate = (dateStr: string | null): string | null => {
     if (!dateStr) return null
     const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
@@ -1132,40 +1257,42 @@ export async function sendCsvModifiedNotifyMail(
 // 宛先は管理部（メーリングリスト優先・未登録なら個人宛にフォールバック。呼び出し元のAPIルートで解決）。
 export async function sendNewRequestMail(
   toEmails: string[],
-  params: {
-    requestType: 'staff_register' | 'csv_import'
-    staffName: string | null
-    staffCode: string | null
-    clientName: string | null
-    requestedByName: string | null
-    requestedByDept: string | null
-    requestedAt: string
-  }
+  info: RequestMailInfo & { requestedAt: string }
 ): Promise<void> {
   if (toEmails.length === 0) return
 
-  const { requestType, staffName, staffCode, clientName, requestedByName, requestedByDept, requestedAt } = params
+  const { requestType, staffName, requestedByName, requestedByDept, requestedAt } = info
   const typeLabel = requestType === 'staff_register' ? 'スタッフマスタ登録依頼' : 'CSVインポート依頼'
   const requestedAtLabel = new Date(requestedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
   const subject = `【APパートナーズ】新しい依頼が届きました（${typeLabel}・${staffName || '対象スタッフ'}様）`
+  const detailLines = buildRequestDetailLines(info)
 
+  // 2026-07-31：伊藤さんの指摘（フォームの入力項目を漏れなく記載・改行位置の読みやすさ）を
+  // 受け全面的に見直した。1文1行を基本とし、句点・助詞の切れ目以外では改行しない。
   const lines = [
     'お疲れ様です。',
     'APパートナーズ 契約書管理システムです。',
     '',
-    `${typeLabel}が新しく届きましたのでお知らせします。`,
+    `${typeLabel}が新しく届きましたので、`,
+    'お知らせします。',
     '',
-    `依頼種別：${typeLabel}`,
-    `対象スタッフ：${staffName || '(氏名不明)'}${staffCode ? `（社員番号 ${staffCode}）` : ''}`,
-    `就業先：${clientName || '(未入力)'}`,
-    `申請者：${requestedByDept ? `${requestedByDept}　` : ''}${requestedByName || '(不明)'}`,
+    '【依頼内容】',
+    ...detailLines,
+    '',
+    '【申請者】',
+    `${requestedByDept || '（部門不明）'}　${requestedByName || '（氏名不明）'}`,
     `依頼日時：${requestedAtLabel}`,
     '',
-    '内容のご確認・対応をお願いいたします。',
+    '内容をご確認のうえ、',
+    '対応をお願いします。',
     `管理部ダッシュボードはこちら：${APP_URL}/dashboard/admin`,
     '',
     '※本メールは自動送信です。このアドレスへの返信には対応しておりません。',
   ].join('\n')
+
+  const detailHtml = detailLines
+    .map(l => (l === '' ? '<br>' : l.startsWith('【') ? `<strong>${l}</strong>` : l))
+    .join('<br>')
 
   const html = `
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F7FC;padding:24px 0;">
@@ -1175,21 +1302,24 @@ export async function sendNewRequestMail(
         お疲れ様です。<br>APパートナーズ 契約書管理システムです。
       </td></tr>
       <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
-        ${typeLabel}が新しく届きましたのでお知らせします。
+        ${typeLabel}が新しく届きましたので、<br>お知らせします。
       </td></tr>
       <tr><td style="padding:16px 32px 0 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#F5F7FC;border-radius:6px;">
-          <tr><td style="padding:14px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.8;">
-            依頼種別：${typeLabel}<br>
-            対象スタッフ：${staffName || '(氏名不明)'}${staffCode ? `（社員番号 ${staffCode}）` : ''}<br>
-            就業先：${clientName || '(未入力)'}<br>
-            申請者：${requestedByDept ? `${requestedByDept}　` : ''}${requestedByName || '(不明)'}<br>
+          <tr><td style="padding:14px 16px 4px 16px;font-family:sans-serif;font-size:12px;color:#5A6A8A;font-weight:bold;">依頼内容</td></tr>
+          <tr><td style="padding:0 16px 12px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.8;">
+            ${detailHtml}
+          </td></tr>
+          <tr><td style="padding:0 16px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
+          <tr><td style="padding:12px 16px 4px 16px;font-family:sans-serif;font-size:12px;color:#5A6A8A;font-weight:bold;">申請者</td></tr>
+          <tr><td style="padding:0 16px 14px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.8;">
+            ${requestedByDept || '（部門不明）'}　${requestedByName || '（氏名不明）'}<br>
             依頼日時：${requestedAtLabel}
           </td></tr>
         </table>
       </td></tr>
-      <tr><td style="padding:20px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">
-        内容のご確認・対応をお願いいたします。
+      <tr><td style="padding:20px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.7;">
+        内容をご確認のうえ、<br>対応をお願いします。
       </td></tr>
       <tr><td align="center" style="padding:20px 32px 28px 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0">
@@ -1223,31 +1353,40 @@ export async function sendNewRequestMail(
 // （呼び出し元のAPIルートで解決）。
 export async function sendRequestCancelledMail(
   toEmail: string,
-  params: {
-    requestType: 'staff_register' | 'csv_import'
-    staffName: string | null
-    staffCode: string | null
-    reason: string
-  }
+  info: RequestMailInfo & { reason: string }
 ): Promise<void> {
-  const { requestType, staffName, staffCode, reason } = params
+  const { requestType, staffName, requestedByName, requestedByDept, reason } = info
   const typeLabel = requestType === 'staff_register' ? 'スタッフマスタ登録依頼' : 'CSVインポート依頼'
   const subject = `【APパートナーズ】${typeLabel}が取消されました（${staffName || '対象スタッフ'}様）`
+  const detailLines = buildRequestDetailLines(info)
 
+  // 2026-07-31：項目網羅・改行位置の見直し（sendNewRequestMailと同じ方針）。
   const lines = [
     'お疲れ様です。',
     'APパートナーズ 契約書管理システムです。',
     '',
-    `以前ご依頼いただいた${typeLabel}について、管理部により取消されましたのでお知らせします。`,
+    `以前ご依頼いただいた${typeLabel}について、`,
+    '管理部により取消されましたので、',
+    'お知らせします。',
     '',
-    `対象スタッフ：${staffName || '(氏名不明)'}${staffCode ? `（社員番号 ${staffCode}）` : ''}`,
+    '【依頼内容】',
+    ...detailLines,
+    '',
+    '【申請者】',
+    `${requestedByDept || '（部門不明）'}　${requestedByName || '（氏名不明）'}`,
+    '',
     `取消理由：${reason}`,
     '',
-    'ご不明点・再度の依頼が必要な場合は、管理部までご連絡ください。',
+    'ご不明点・再度の依頼が必要な場合は、',
+    '管理部までご連絡ください。',
     `担当営業の方はこちら：${APP_URL}/dashboard/sales`,
     '',
     '※本メールは自動送信です。このアドレスへの返信には対応しておりません。',
   ].join('\n')
+
+  const detailHtml = detailLines
+    .map(l => (l === '' ? '<br>' : l.startsWith('【') ? `<strong>${l}</strong>` : l))
+    .join('<br>')
 
   const html = `
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F7FC;padding:24px 0;">
@@ -1257,18 +1396,30 @@ export async function sendRequestCancelledMail(
         お疲れ様です。<br>APパートナーズ 契約書管理システムです。
       </td></tr>
       <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
-        以前ご依頼いただいた${typeLabel}について、管理部により取消されましたのでお知らせします。
+        以前ご依頼いただいた${typeLabel}について、<br>管理部により取消されましたので、<br>お知らせします。
+      </td></tr>
+      <tr><td style="padding:16px 32px 0 32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#F5F7FC;border-radius:6px;">
+          <tr><td style="padding:14px 16px 4px 16px;font-family:sans-serif;font-size:12px;color:#5A6A8A;font-weight:bold;">依頼内容</td></tr>
+          <tr><td style="padding:0 16px 12px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.8;">
+            ${detailHtml}
+          </td></tr>
+          <tr><td style="padding:0 16px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
+          <tr><td style="padding:12px 16px 4px 16px;font-family:sans-serif;font-size:12px;color:#5A6A8A;font-weight:bold;">申請者</td></tr>
+          <tr><td style="padding:0 16px 12px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;">
+            ${requestedByDept || '（部門不明）'}　${requestedByName || '（氏名不明）'}
+          </td></tr>
+        </table>
       </td></tr>
       <tr><td style="padding:16px 32px 0 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#FDECEC;border-radius:6px;">
           <tr><td style="padding:14px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.8;">
-            対象スタッフ：${staffName || '(氏名不明)'}${staffCode ? `（社員番号 ${staffCode}）` : ''}<br>
             取消理由：${reason}
           </td></tr>
         </table>
       </td></tr>
-      <tr><td style="padding:20px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">
-        ご不明点・再度の依頼が必要な場合は、管理部までご連絡ください。
+      <tr><td style="padding:20px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.7;">
+        ご不明点・再度の依頼が必要な場合は、<br>管理部までご連絡ください。
       </td></tr>
       <tr><td align="center" style="padding:20px 32px 28px 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0">

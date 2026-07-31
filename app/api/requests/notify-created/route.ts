@@ -31,9 +31,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '依頼IDが指定されていません。' }, { status: 400 })
   }
 
+  // 2026-07-31：メール本文の項目網羅（伊藤さん指摘）のため、フォームの入力項目一式
+  // （staff_dept・staff_hire_date・system_type・dispatch_start_date・csv_import_status）を追加。
   const { data: request, error } = await supabaseAdmin
     .from('requests')
-    .select('id, request_type, staff_name, staff_code, client_name, requested_by_name, requested_by_dept, requested_at')
+    .select('id, request_type, staff_name, staff_code, staff_dept, staff_hire_date, client_name, system_type, dispatch_start_date, csv_import_status, requested_by_name, requested_by_dept, requested_at')
     .eq('id', requestId)
     .maybeSingle()
 
@@ -69,7 +71,15 @@ export async function POST(req: NextRequest) {
       requestType: request.request_type,
       staffName: request.staff_name,
       staffCode: request.staff_code,
+      staffDept: request.staff_dept,
+      staffHireDate: request.staff_hire_date,
       clientName: request.client_name,
+      systemType: request.system_type,
+      dispatchStartDate: request.dispatch_start_date,
+      // staff_register依頼で「CSVインポートも同時に依頼する」がオンだった場合のみtrue
+      // （csv_import_statusが明示的に'pending'の場合。csv_import単独依頼時はこのフラグ自体を
+      // 使わない＝buildRequestDetailLines側でrequestType判定が優先される）
+      csvAlsoRequested: request.request_type === 'staff_register' && request.csv_import_status === 'pending',
       requestedByName: request.requested_by_name,
       requestedByDept: request.requested_by_dept,
       requestedAt: request.requested_at,

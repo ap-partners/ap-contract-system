@@ -300,9 +300,11 @@ async function processStaffMasterFile(buffer: Buffer, uploadedBy: string): Promi
 // これまで一度も実装されていなかった機能ギャップだったため、今回のスタッフマスタ取込と
 // 同じタイミングで実装した）。
 async function runStaffRegisterAutoMatch(uploaderId: string) {
+  // 2026-07-31：完了通知メールの項目網羅（伊藤さん指摘）のため、staff_dept・staff_hire_date・
+  // requested_by_name・requested_by_dept を追加取得。
   const { data: pendingRequests, error } = await supabaseAdmin
     .from('requests')
-    .select('id, staff_code, staff_name, requested_by')
+    .select('id, staff_code, staff_name, staff_dept, staff_hire_date, requested_by, requested_by_name, requested_by_dept')
     .eq('staff_register_status', 'pending')
 
   if (error || !pendingRequests || pendingRequests.length === 0) {
@@ -338,7 +340,14 @@ async function runStaffRegisterAutoMatch(uploaderId: string) {
         // メーリングリストが登録されていればそちらへ送る（未登録なら従来通り個人宛）。
         const toEmail = process.env.RENEWAL_NOTIFY_OVERRIDE_EMAIL || await resolveRequesterNotifyEmail(req.requested_by)
         if (toEmail) {
-          await sendStaffRegisterMatchedMail(toEmail, req.staff_name, req.staff_code)
+          await sendStaffRegisterMatchedMail(toEmail, {
+            staffName: req.staff_name,
+            staffCode: req.staff_code,
+            staffDept: req.staff_dept,
+            staffHireDate: req.staff_hire_date,
+            requestedByName: req.requested_by_name,
+            requestedByDept: req.requested_by_dept,
+          })
           notifiedCount++
         } else {
           notifyErrors.push(`依頼ID ${req.id}：依頼者の通知先メールアドレスが見つかりませんでした`)
@@ -354,9 +363,11 @@ async function runStaffRegisterAutoMatch(uploaderId: string) {
 
 // CSVインポート依頼（requests）の自動マッチ・自動完了・通知
 async function runAutoMatch(dbSystemType: DbSystemType, uploaderId: string) {
+  // 2026-07-31：完了通知メールの項目網羅（伊藤さん指摘）のため、staff_dept・system_type・
+  // requested_by_name・requested_by_dept を追加取得。
   const { data: pendingRequests, error } = await supabaseAdmin
     .from('requests')
-    .select('id, staff_code, staff_name, client_name, dispatch_start_date, requested_by')
+    .select('id, staff_code, staff_name, staff_dept, client_name, system_type, dispatch_start_date, requested_by, requested_by_name, requested_by_dept')
     .eq('csv_import_status', 'pending')
     .eq('system_type', dbSystemType)
 
@@ -408,7 +419,16 @@ async function runAutoMatch(dbSystemType: DbSystemType, uploaderId: string) {
         // メーリングリストが登録されていればそちらへ送る（未登録なら従来通り個人宛）。
         const toEmail = process.env.RENEWAL_NOTIFY_OVERRIDE_EMAIL || await resolveRequesterNotifyEmail(req.requested_by)
         if (toEmail) {
-          await sendCsvImportMatchedMail(toEmail, req.staff_name, req.client_name)
+          await sendCsvImportMatchedMail(toEmail, {
+            staffName: req.staff_name,
+            staffCode: req.staff_code,
+            staffDept: req.staff_dept,
+            workLocationName: req.client_name,
+            systemType: req.system_type,
+            dispatchStartDate: req.dispatch_start_date,
+            requestedByName: req.requested_by_name,
+            requestedByDept: req.requested_by_dept,
+          })
           notifiedCount++
         } else {
           notifyErrors.push(`依頼ID ${req.id}：依頼者の通知先メールアドレスが見つかりませんでした`)

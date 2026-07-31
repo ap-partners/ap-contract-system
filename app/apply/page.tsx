@@ -1695,6 +1695,10 @@ function ApplyPageInner() {
         staff_name: selectedStaff?.name || null,
         staff_code: selectedStaff?.employee_number || null,
         staff_id: selectedStaff?.id || null,
+        // 2026-07-31追加：この依頼時点でスタッフはSTEP1で検索・特定済みのため、
+        // 所属部門も分かっているはずなのに、従来ここでは保存していなかった
+        // （通知メールに「対象スタッフの所属部門」を出せない不具合の原因だった）
+        staff_dept: (selectedStaff as any)?.department_master?.dept_name || null,
         client_name: csvRequestWorkLocation.trim(),
         system_type: csvSystem,
         dispatch_start_date: csvDispatchStart,

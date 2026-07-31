@@ -49,9 +49,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: '取消理由を入力してください。' }, { status: 400 })
   }
 
+  // 2026-07-31：完了・取消メールの項目網羅（伊藤さん指摘）のため、フォームの入力項目一式を追加。
   const { data: request, error: fetchError } = await supabaseAdmin
     .from('requests')
-    .select('id, request_type, staff_name, staff_code, client_name, requested_by, staff_register_status, csv_import_status')
+    .select('id, request_type, staff_name, staff_code, staff_dept, staff_hire_date, client_name, system_type, dispatch_start_date, requested_by, requested_by_name, requested_by_dept, staff_register_status, csv_import_status')
     .eq('id', requestId)
     .maybeSingle()
 
@@ -90,15 +91,41 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (toEmail) {
         if (action === 'complete') {
           if (statusField === 'staff_register_status') {
-            await sendStaffRegisterMatchedMail(toEmail, request.staff_name, request.staff_code, true)
+            await sendStaffRegisterMatchedMail(toEmail, {
+              staffName: request.staff_name,
+              staffCode: request.staff_code,
+              staffDept: request.staff_dept,
+              staffHireDate: request.staff_hire_date,
+              requestedByName: request.requested_by_name,
+              requestedByDept: request.requested_by_dept,
+            }, true)
           } else {
-            await sendCsvImportMatchedMail(toEmail, request.staff_name, request.client_name, true)
+            await sendCsvImportMatchedMail(toEmail, {
+              staffName: request.staff_name,
+              staffCode: request.staff_code,
+              staffDept: request.staff_dept,
+              workLocationName: request.client_name,
+              systemType: request.system_type,
+              dispatchStartDate: request.dispatch_start_date,
+              requestedByName: request.requested_by_name,
+              requestedByDept: request.requested_by_dept,
+            }, true)
           }
         } else {
+          const requestType = statusField === 'staff_register_status' ? 'staff_register' : 'csv_import'
           await sendRequestCancelledMail(toEmail, {
-            requestType: statusField === 'staff_register_status' ? 'staff_register' : 'csv_import',
+            requestType,
             staffName: request.staff_name,
             staffCode: request.staff_code,
+            staffDept: request.staff_dept,
+            staffHireDate: request.staff_hire_date,
+            clientName: request.client_name,
+            systemType: request.system_type,
+            dispatchStartDate: request.dispatch_start_date,
+            // staff_register依頼で、CSVインポートも同時依頼されていた場合のみtrue
+            csvAlsoRequested: requestType === 'staff_register' && request.csv_import_status === 'pending',
+            requestedByName: request.requested_by_name,
+            requestedByDept: request.requested_by_dept,
             reason: reason!.trim(),
           })
         }

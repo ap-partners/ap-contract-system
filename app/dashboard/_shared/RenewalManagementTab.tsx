@@ -709,7 +709,7 @@ export default function RenewalManagementTab({
     </article>
   )
 
-  const rowRenderer: Record<RenewalTab, (c: RenewalCandidate) => JSX.Element> = {
+  const rowRenderer: Record<RenewalTab, (c: RenewalCandidate) => ReactNode> = {
     unassigned: renderUnassignedRow,
     csv_auto: renderCsvAutoRow,
     period_only: renderPeriodOnlyRow,

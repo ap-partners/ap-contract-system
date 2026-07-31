@@ -494,7 +494,7 @@ export default function AdminDashboard() {
     candidates: renewalCandidates, loading: renewalLoading,
     syncCandidates, fetchCandidates, updateCandidate,
     searchCsvRenewal, requestCsvImport, switchToManualOverride,
-    copyDispatchToEmploy, confirmNotRenewing, setTriageMode, executeBulkApply,
+    copyDispatchToEmploy, confirmNotRenewing, setTriageMode, setRenewalTab, executeBulkApply,
   } = useRenewalCandidates()
 
   // 契約状況モニタリング（フェーズ1・2026-07-23実装。管理部専用）
@@ -2209,6 +2209,7 @@ export default function AdminDashboard() {
                   copyDispatchToEmploy={copyDispatchToEmploy}
                   confirmNotRenewing={confirmNotRenewing}
                   setTriageMode={setTriageMode}
+                  setRenewalTab={setRenewalTab}
                   executeBulkApply={executeBulkApply}
                   currentUserId={user.id}
                   currentUserEmail={user.email}

@@ -262,7 +262,7 @@ export default function SalesDashboard() {
     candidates: renewalCandidates, loading: renewalLoading,
     syncCandidates, fetchCandidates, updateCandidate,
     searchCsvRenewal, requestCsvImport, switchToManualOverride,
-    copyDispatchToEmploy, confirmNotRenewing, setTriageMode, executeBulkApply,
+    copyDispatchToEmploy, confirmNotRenewing, setTriageMode, setRenewalTab, executeBulkApply,
   } = useRenewalCandidates()
   // 最低賃金改定対応（2026-07-29実装。担当営業は自部門分のみ。contractsのRLSで自動的に絞り込まれる）
   const [renewalSubTab, setRenewalSubTab] = useState<RenewalSubTab>('candidates')
@@ -856,6 +856,7 @@ export default function SalesDashboard() {
                 copyDispatchToEmploy={copyDispatchToEmploy}
                 confirmNotRenewing={confirmNotRenewing}
                 setTriageMode={setTriageMode}
+                setRenewalTab={setRenewalTab}
                 executeBulkApply={executeBulkApply}
                 currentUserId={user.id}
                 currentUserEmail={user.email}

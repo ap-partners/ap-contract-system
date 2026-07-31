@@ -3,10 +3,14 @@
 // 「更新期限管理タブの仕様を確定」参照）。
 //
 // スコープ：
-// ①現場契約（work_place='現場'）のうち雇用期間終了日が45日以内（超過含む）の最新契約を検知し、
-//   renewal_candidatesへ登録する。②CSV対象は新しい派遣期間を自動検索して差異表示、CSV非対象
-// （または「派遣先変更」で手入力に切替た場合）は派遣期間を手入力→雇用期間へコピー。
+// ①現場契約（work_place='現場'）・社内契約（work_place='社内'。2026-07-31追加。RLSで管理部
+//   〔is_internal_approver〕のみ閲覧可）のうち雇用期間終了日が45日以内（超過含む）の最新契約を
+//   検知し、renewal_candidatesへ登録する。②CSV対象は新しい派遣期間を自動検索して差異表示、
+//   CSV非対象（または「派遣先変更」で手入力に切替た場合）は派遣期間を手入力→雇用期間へコピー。
 // ③CSVインポート依頼（requestsテーブル）。
+// 2026-07-31追加：一覧の見せ方を5タブ（renewal_tab。unassigned/csv_auto/period_only/edit/
+// import_wait）に再設計。triage_mode（undecided/bulk/individual）は廃止せず、タブ内での
+// 実行単位フラグ（一括対象へのチェック・個別申請の進行中表示）としての役割に narrowing した。
 // 2026-07-16（意思決定ログ「更新期限管理タブの改修方針を確定」チャットA）：スタッフ意向・
 // クライアント意向のトグルと、それに連動する「送付準備完了」への一括更新は廃止した。理由は
 // 営業担当が手動で都度更新する自己申告データであり、実際の更新申請という確実な行動が発生する
@@ -16,12 +20,20 @@
 // チャットC（一括申請の実装）、チャットD（`/apply`プリフィル・個別申請の実装）。
 'use client'
 
-import { useState, useCallback } from 'react'
-import { supabase } from '@/lib/supabase'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { supabase, getAuthHeader } from '@/lib/supabase'
 import { extractCsvFields } from '@/app/apply/_lib/helpers'
 import { buildMergedFields } from './renewalFieldMap'
 import { runAutoChecks, MinimumWageRow } from '@/lib/autoChecks'
 import { excludeRetiredStaffOr } from '@/lib/staffFilters'
+
+// 2026-07-31追加（更新期限管理タブの情報設計見直し・5タブ化）：
+// unassigned=仕分け待ち、csv_auto=CSV自動反映、period_only=期間のみ更新、
+// edit=修正更新、import_wait=CSVインポート待ち。csv_auto・import_waitの遷移は
+// 原則システムが自動判定し（searchCsvRenewal成功時／requestCsvImport実行時）、
+// それ以外はユーザーの振り分け操作（setRenewalTab）で確定する。
+// docs/SYSTEM_DESIGN.md 10章 2026-07-31「更新期限管理タブの情報設計見直し」参照。
+export type RenewalTab = 'unassigned' | 'csv_auto' | 'period_only' | 'edit' | 'import_wait'
 
 export const RENEWAL_ALERT_WINDOW_DAYS = 45
 
@@ -53,6 +65,11 @@ export type RenewalCandidate = {
   dispatch_end_date: string | null
   data_source: 'csv' | 'manual'
   csv_system: string | null
+  // 2026-07-31追加：元契約のwork_place（現場／社内）。社内は管理部（is_internal_approver）
+  // のみRLSで閲覧可（SSC・担当営業は常に不可）。
+  work_place: '現場' | '社内'
+  // 2026-07-31追加：更新期限管理タブの5分類。
+  renewal_tab: RenewalTab
   // 2026-07-16追加：前回契約の書類種別（就業条件明示書／雇用契約書 兼 就業条件明示書 等）。
   // 一覧カードに表示する。書類種別そのものを変える更新はチャットD（新規申請ルート）でのみ対応。
   document_type: string | null
@@ -118,8 +135,11 @@ export function useRenewalCandidates() {
       // `get_latest_genba_contracts_for_renewal()`にDISTINCT ONでの絞り込みを移し、
       // 必要な列だけをテキストとして受け取るように変更。RLSは呼び出しロールのものがそのまま
       // 適用される（関数はSECURITY INVOKERのデフォルトのまま）。
+      // 2026-07-31：対象範囲を「現場」のみから「現場」＋「社内」に拡張したことに伴い、
+      // RPC関数名も実態に合わせて改称（get_latest_genba_contracts_for_renewal→
+      // get_latest_contracts_for_renewal）。社内の閲覧制限はrenewal_candidatesのRLSで担保。
       const { data: contracts, error: contractsError } = await supabase
-        .rpc('get_latest_genba_contracts_for_renewal')
+        .rpc('get_latest_contracts_for_renewal')
 
       if (contractsError) { console.error('更新候補の同期エラー（contracts取得）:', contractsError); return }
       if (!contracts) return
@@ -186,6 +206,8 @@ export function useRenewalCandidates() {
           dispatch_end_date: c.dispatch_end || null,
           data_source: c.csv_mode === 'csv' ? 'csv' : 'manual',
           csv_system: c.csv_system || null,
+          // 2026-07-31追加：新規行のみwork_placeを設定する（既存行は上書きしない方針を踏襲）。
+          work_place: c.work_place || '現場',
           // 2026-07-16追加：前回契約の書類種別（一覧カード表示用）
           document_type: c.document_type || null,
           // 2026-07-16追加（チャットB）：前回契約の指揮命令者・派遣先責任者・苦情処理申出先
@@ -346,6 +368,10 @@ export function useRenewalCandidates() {
       resp: { dept: extracted.respDept || null, role: extracted.respRole || null, name: extracted.respName || null, tel: extracted.respTel || null },
       comp: { dept: extracted.compDept || null, role: extracted.compRole || null, name: extracted.compName || null, tel: extracted.compTel || null },
     }
+    // 2026-07-31追加：CSVで新しい契約が見つかった時点で、まだ「仕分け待ち」または
+    // 「CSVインポート待ち」の候補は自動的に「CSV自動反映」タブへ移動する。既に担当営業が
+    // 「期間のみ更新」「修正更新」へ手動で振り分け済みの場合は、その選択を尊重し上書きしない。
+    const autoPromote = candidate.renewal_tab === 'unassigned' || candidate.renewal_tab === 'import_wait'
     await updateCandidate(candidate.id, {
       new_dispatch_start: r.dispatch_start,
       new_dispatch_end: r.dispatch_end,
@@ -356,8 +382,31 @@ export function useRenewalCandidates() {
       new_csv_raw_data_id: r.id,
       new_contact_fields: newContactFields,
       status: 'pending',
+      ...(autoPromote ? { renewal_tab: 'csv_auto' as RenewalTab } : {}),
     })
   }, [updateCandidate])
+
+  // 2026-07-31追加：CSV対象の候補が「仕分け待ち」に入った直後、行を展開しなくても
+  // 「CSV自動反映」タブの内容・件数が正しく見えるよう、一覧取得のたびにバックグラウンドで
+  // 未検索のCSV対象を自動検索する（従来は行を展開するまでsearchCsvRenewalが呼ばれず、
+  // CSV有タブが空のまま止まって見えるという不具合があったため）。「まだ検索していない」は
+  // new_csv_raw_data_idが無い＋status='pending'（csv_pendingは検索済みで見つからなかった意味
+  // なので対象外）で判定する。同じ行を二重に検索しないよう実行済みIDをrefで記録する。
+  const autoSearchedIdsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const targets = candidates.filter(c =>
+      c.data_source === 'csv'
+      && c.renewal_tab === 'unassigned'
+      && c.status === 'pending'
+      && !c.new_csv_raw_data_id
+      && !autoSearchedIdsRef.current.has(c.id)
+    )
+    if (targets.length === 0) return
+    for (const c of targets) {
+      autoSearchedIdsRef.current.add(c.id)
+      searchCsvRenewal(c)
+    }
+  }, [candidates, searchCsvRenewal])
 
   // ④CSVインポート依頼（既存のrequestsテーブル・STEP2と同じ導線を流用）
   const requestCsvImport = useCallback(async (
@@ -380,12 +429,16 @@ export function useRenewalCandidates() {
     if (error) {
       console.error('CSVインポート依頼の保存エラー:', error)
       alert('インポート依頼の送信に失敗しました。もう一度お試しください。')
+      return
     }
-  }, [])
+    // 2026-07-31追加：依頼が成功したら「CSVインポート待ち」タブへ移動する。
+    await updateCandidate(candidate.id, { renewal_tab: 'import_wait' })
+  }, [updateCandidate])
 
-  // ⑤派遣先変更のため手入力に切り替える（例外操作・理由必須）
+  // ⑤派遣先変更のため手入力に切り替える（例外操作・理由必須）。
+  // 2026-07-31追加：切替後は「期間のみ更新」タブへ移動し、自分で新しい期間を入力できるようにする。
   const switchToManualOverride = useCallback(async (id: string, reason: string) => {
-    await updateCandidate(id, { manual_override: true, manual_override_reason: reason, status: 'pending' })
+    await updateCandidate(id, { manual_override: true, manual_override_reason: reason, status: 'pending', renewal_tab: 'period_only' })
   }, [updateCandidate])
 
   // 派遣期間を入力した際、雇用期間へコピーする（applyの雇用期間コピー機能と同じ考え方）
@@ -401,8 +454,43 @@ export function useRenewalCandidates() {
   // 「更新しない」を確定する（担当営業・SSC・管理部の誰でも操作可能。理由入力必須。
   // 2026-07-16：以前は意向トグルの不一致時のみ出る導線だったが、意向トグル廃止に伴い
   // 常時操作可能なボタンに変更）
+  // 2026-07-31追加：確定と同時に管理部へメール通知する（他の通知と同じメーリングリスト
+  // マスタ優先・個人宛フォールバック方式。/api/renewal-candidates/notify-not-renewing）。
+  // メール送信に失敗してもステータス確定自体は既に完了しているため、コンソールに記録するのみで
+  // 画面操作は止めない（伊藤さんとの他の通知系実装と同じ考え方）。
   const confirmNotRenewing = useCallback(async (id: string, reason: string) => {
+    const candidate = candidates.find(c => c.id === id)
     await updateCandidate(id, { status: 'not_renewing', no_renewal_reason: reason })
+    if (!candidate) return
+    try {
+      const authHeader = await getAuthHeader()
+      const res = await fetch('/api/renewal-candidates/notify-not-renewing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader },
+        body: JSON.stringify({
+          staffName: candidate.staff_name,
+          employeeNumber: candidate.employee_number,
+          deptNo: candidate.dept_no,
+          workLocationName: candidate.work_location_name,
+          reason,
+        }),
+      })
+      if (!res.ok) {
+        const json = await res.json().catch(() => null)
+        console.error('更新しない通知メールの送信エラー:', json?.error)
+      }
+    } catch (e) {
+      console.error('更新しない通知メールの送信エラー:', e)
+    }
+  }, [candidates, updateCandidate])
+
+  // 2026-07-31追加：更新期限管理タブの5分類（renewal_tab）を手動で切り替える。
+  // ①仕分け待ちからの振り分け、②各タブの「他のタブへ移動」、③インポート待ちの
+  // 「修正更新へ切替」「期間更新へ切替」、④CSV自動反映・期間のみ更新からの「修正更新へ移動」、
+  // すべてこの1関数で統一的に扱う（副作用は一切無い純粋な分類変更。executeBulkApply等の
+  // 実行系処理とは独立）。
+  const setRenewalTab = useCallback(async (id: string, tab: RenewalTab) => {
+    await updateCandidate(id, { renewal_tab: tab })
   }, [updateCandidate])
 
   // 2026-07-17追加（チャットC・⑤）：仕分けフラグの切り替え。副作用は一切無く、単に
@@ -589,6 +677,7 @@ export function useRenewalCandidates() {
     confirmNotRenewing,
     copyDispatchToEmploy,
     setTriageMode,
+    setRenewalTab,
     executeBulkApply,
   }
 }

@@ -207,7 +207,7 @@ export default function SSCDashboard() {
     candidates: renewalCandidates, loading: renewalLoading,
     syncCandidates, fetchCandidates, updateCandidate,
     searchCsvRenewal, requestCsvImport, switchToManualOverride,
-    copyDispatchToEmploy, confirmNotRenewing, setTriageMode, executeBulkApply,
+    copyDispatchToEmploy, confirmNotRenewing, setTriageMode, setRenewalTab, executeBulkApply,
   } = useRenewalCandidates()
   // 最低賃金改定対応（2026-07-29実装。SSCは全部門を閲覧・自分の申請分は再申請も可能）
   const [renewalSubTab, setRenewalSubTab] = useState<RenewalSubTab>('candidates')
@@ -832,6 +832,7 @@ export default function SSCDashboard() {
                 copyDispatchToEmploy={copyDispatchToEmploy}
                 confirmNotRenewing={confirmNotRenewing}
                 setTriageMode={setTriageMode}
+                setRenewalTab={setRenewalTab}
                 executeBulkApply={executeBulkApply}
                 currentUserId={user.id}
                 currentUserEmail={user.email}

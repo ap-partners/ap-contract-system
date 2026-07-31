@@ -1,0 +1,93 @@
+// ===== 更新期限管理：「更新しない」確定時の管理部通知API（2026-07-31新設） =====
+// 更新期限管理タブ（5タブ再設計）で「更新しないで確定する」を押した際に呼ばれる。
+// 担当営業・SSC・管理部の誰でも操作できる既存仕様（confirmNotRenewing）に合わせ、
+// ロール制限はせず認証済みスタッフであれば呼べるようにする。
+// 宛先は管理部メーリングリスト優先・未登録なら個人（管理部ロール全員）宛にフォールバック。
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { sendRenewalNotRenewingNotifyMail } from '@/lib/mail'
+import { getAuthenticatedStaff } from '@/lib/apiAuth'
+import { resolveMailingListEmail } from '@/lib/mailingList'
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
+
+export async function POST(req: NextRequest) {
+  const staffAuth = await getAuthenticatedStaff(req)
+  if (!staffAuth) {
+    return NextResponse.json({ error: 'ログインが必要です。' }, { status: 401 })
+  }
+
+  const body = await req.json()
+  const { staffName, employeeNumber, deptNo, workLocationName, reason } = body as {
+    staffName: string | null
+    employeeNumber: string
+    deptNo: number | null
+    workLocationName: string | null
+    reason: string
+  }
+  if (!employeeNumber || !reason) {
+    return NextResponse.json({ error: '必要な情報が不足しています。' }, { status: 400 })
+  }
+
+  const [deptRow, confirmedByRow] = await Promise.all([
+    deptNo != null
+      ? supabaseAdmin.from('department_master').select('dept_name').eq('dept_no', deptNo).maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabaseAdmin.from('staff_roles').select('role, dept_no').eq('id', staffAuth.userId).maybeSingle(),
+  ])
+  const deptName = deptRow?.data?.dept_name || null
+
+  let confirmedByDept: string | null = null
+  const confirmedByDeptNo = confirmedByRow?.data?.dept_no ?? null
+  if (confirmedByDeptNo != null) {
+    const { data: cbDeptRow } = await supabaseAdmin
+      .from('department_master').select('dept_name').eq('dept_no', confirmedByDeptNo).maybeSingle()
+    confirmedByDept = cbDeptRow?.dept_name || null
+  } else if (confirmedByRow?.data?.role) {
+    confirmedByDept = confirmedByRow.data.role
+  }
+
+  const { data: userData } = await supabaseAdmin.auth.admin.getUserById(staffAuth.userId)
+  const { data: confirmedByStaffRow } = await supabaseAdmin
+    .from('staff').select('name').eq('email', userData?.user?.email || '').maybeSingle()
+  const confirmedByName = confirmedByStaffRow?.name || userData?.user?.email || null
+
+  const { data: roleRows } = await supabaseAdmin.from('staff_roles').select('id, role')
+  const { data: usersList } = await supabaseAdmin.auth.admin.listUsers({ perPage: 200 })
+  const emailById = new Map<string, string>((usersList?.users || []).map(u => [u.id, u.email || '']))
+  const individualMgmtEmails = Array.from(new Set(
+    (roleRows || [])
+      .filter((r: any) => r.role === '管理部')
+      .map((r: any) => emailById.get(r.id))
+      .filter((e): e is string => !!e)
+  ))
+
+  const adminMailingEmail = await resolveMailingListEmail('admin')
+  const toEmails = adminMailingEmail ? [adminMailingEmail] : individualMgmtEmails
+
+  const overrideEmail = process.env.RENEWAL_NOTIFY_OVERRIDE_EMAIL || null
+  const finalTo = overrideEmail ? [overrideEmail] : toEmails
+
+  if (finalTo.length === 0) {
+    return NextResponse.json({ error: '送信先メールアドレスが見つかりませんでした（管理部メーリングリスト未登録・個人アカウントも0件）。' }, { status: 422 })
+  }
+
+  try {
+    await sendRenewalNotRenewingNotifyMail(finalTo, {
+      staffName,
+      employeeNumber,
+      deptName,
+      workLocationName,
+      reason,
+      confirmedByName,
+      confirmedByDept,
+    })
+  } catch (e: any) {
+    return NextResponse.json({ error: 'メール送信に失敗しました: ' + (e?.message || '') }, { status: 500 })
+  }
+
+  return NextResponse.json({ sent: true })
+}

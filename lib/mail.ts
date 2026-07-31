@@ -1446,3 +1446,96 @@ export async function sendRequestCancelledMail(
     html,
   })
 }
+
+// ===== 更新期限管理：「更新しない」確定時の管理部通知メール（2026-07-31新設） =====
+// 更新期限管理タブ（5タブ再設計）で担当営業・SSC・管理部の誰かが「更新しない」を確定した際、
+// 従来は通知が一切無く、管理部が一覧を能動的に見に行かない限り気づけなかった（伊藤さんご指摘）。
+// 宛先は他の通知と同じ「メーリングリストマスタ（管理部）優先・未登録なら個人宛にフォールバック」
+// 方式（呼び出し元のAPIルートで解決）。社内向け業務メールのため氏名・就業先名を本文に含めてよい。
+export async function sendRenewalNotRenewingNotifyMail(
+  toEmails: string[],
+  info: {
+    staffName: string | null
+    employeeNumber: string
+    deptName: string | null
+    workLocationName: string | null
+    reason: string
+    confirmedByName: string | null
+    confirmedByDept: string | null
+  }
+): Promise<void> {
+  if (toEmails.length === 0) return
+  const { staffName, employeeNumber, deptName, workLocationName, reason, confirmedByName, confirmedByDept } = info
+  const subject = `【APパートナーズ】更新期限管理：更新しないで確定されました（${staffName || '対象スタッフ'}）`
+
+  const lines = [
+    'お疲れ様です。',
+    'APパートナーズ 契約書管理システムです。',
+    '',
+    '更新期限管理タブで、下記スタッフが「更新しない」で確定されましたので、',
+    'お知らせします。',
+    '',
+    `対象スタッフ：${staffName || '(氏名不明)'}（社員番号 ${employeeNumber}／${deptName || '所属部署不明'}）`,
+    `就業先：${workLocationName || '―'}`,
+    `理由：${reason}`,
+    '',
+    `確定した人：${confirmedByDept || '（部門不明）'}　${confirmedByName || '（氏名不明）'}`,
+    '',
+    '内容に誤りがある場合は、更新期限管理タブから対応をお願いします。',
+    `管理部ダッシュボードはこちら：${APP_URL}/dashboard/admin`,
+    '',
+    '※本メールは自動送信です。このアドレスへの返信には対応しておりません。',
+  ].join('\n')
+
+  const html = `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F7FC;padding:24px 0;">
+  <tr><td align="center">
+    <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:8px;max-width:480px;width:100%;">
+      <tr><td style="padding:32px 32px 8px 32px;font-family:sans-serif;font-size:14px;color:#1A2340;">
+        お疲れ様です。<br>APパートナーズ 契約書管理システムです。
+      </td></tr>
+      <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
+        更新期限管理タブで、下記スタッフが「更新しない」で確定されましたので、<br>お知らせします。
+      </td></tr>
+      <tr><td style="padding:16px 32px 0 32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#F5F7FC;border-radius:6px;">
+          <tr><td style="padding:14px 16px 4px 16px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#1B3A8C;">
+            ${staffName || '(氏名不明)'}（社員番号 ${employeeNumber}／${deptName || '所属部署不明'}）
+          </td></tr>
+          <tr><td style="padding:0 16px 12px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.8;">
+            就業先：${workLocationName || '―'}<br>
+            理由：${reason}
+          </td></tr>
+          <tr><td style="padding:0 16px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
+          <tr><td style="padding:12px 16px 14px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;">
+            確定した人：${confirmedByDept || '（部門不明）'}　${confirmedByName || '（氏名不明）'}
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:20px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.7;">
+        内容に誤りがある場合は、更新期限管理タブから対応をお願いします。
+      </td></tr>
+      <tr><td align="center" style="padding:20px 32px 28px 32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0">
+          <tr><td align="center" bgcolor="#1B3A8C" style="border-radius:6px;">
+            <a href="${APP_URL}/dashboard/admin" target="_blank" style="display:inline-block;padding:14px 32px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">
+              管理部ダッシュボードを開く
+            </a>
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:0 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
+        ※本メールは自動送信です。このアドレスへの返信には対応しておりません。
+      </td></tr>
+    </table>
+  </td></tr>
+</table>`.trim()
+
+  await transporter.sendMail({
+    from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
+    to: toEmails.join(','),
+    subject,
+    text: lines,
+    html,
+  })
+}

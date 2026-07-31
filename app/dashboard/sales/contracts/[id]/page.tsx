@@ -612,9 +612,12 @@ export default function SalesContractDetail() {
                 )}
               </div>
             </div>
+            {/* 2026-07-31修正：「パターンA」等の内部呼称（伊藤さん・Claude間の会話専用の略称で、
+                他の人には伝わらない）がそのまま画面に表示されていたため削除。書類種別は1つ上の行で
+                正式名称（雇用契約書等）を既に表示しているため、情報は失われない。 */}
             <div className="grid grid-cols-1 md:grid-cols-[160px_1fr]">
-              <div className="px-4 py-3 text-xs font-medium" style={{ background: '#EEF2FA', color: '#5A6A8A' }}>パターン / 雇用区分</div>
-              <div className="px-4 py-3 text-sm" style={{ color: '#1A2340' }}>パターン{pattern} / {contractType}</div>
+              <div className="px-4 py-3 text-xs font-medium" style={{ background: '#EEF2FA', color: '#5A6A8A' }}>雇用区分</div>
+              <div className="px-4 py-3 text-sm" style={{ color: '#1A2340' }}>{contractType}</div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-[160px_1fr]">
               <div className="px-4 py-3 text-xs font-medium" style={{ background: '#EEF2FA', color: '#5A6A8A' }}>申請日時</div>

@@ -19,6 +19,7 @@ import {
   RenewalTab,
   addDays,
   ContactFields,
+  periodReady,
 } from './useRenewalCandidates'
 import { clampDateYear } from '@/app/apply/_lib/helpers'
 import { SubTabBar, SubTabItem } from './SubTabBar'
@@ -90,17 +91,6 @@ function formatDocumentType(documentType: string | null): string {
   return documentType.replace(/\n/g, ' ').trim()
 }
 
-// 「一括申請」に切り替えられるのは、新しい雇用期間・派遣期間（対象がある場合のみ）が
-// 両方確定している行のみ。業務委託・社内（派遣期間の概念が無い）は雇用期間のみで判定する。
-function periodReady(c: RenewalCandidate): boolean {
-  if (c.status !== 'pending') return false
-  // 派遣の概念が無い（業務委託／社内＝派遣期間終了日が元々無い）場合は雇用期間のみで判定する。
-  if (!c.dispatch_end_date) return Boolean(c.new_employ_start && c.new_employ_end)
-  const dispatchOk = Boolean(c.new_dispatch_start && c.new_dispatch_end)
-  const employOk = c.employ_end_date ? Boolean(c.new_employ_start && c.new_employ_end) : true
-  return dispatchOk && employOk
-}
-
 // 2026-07-31新設：更新期限管理タブの5分類の定義（表示名・色・？アイコンの説明文）。
 // 伊藤さんとの確認で確定した内容（docs/SYSTEM_DESIGN.md 10章2026-07-31参照）。
 const TAB_DEFS: { key: RenewalTab; label: string; color: string; helpText: string }[] = [
@@ -108,31 +98,31 @@ const TAB_DEFS: { key: RenewalTab; label: string; color: string; helpText: strin
     key: 'unassigned',
     label: '仕分け待ち',
     color: '#C2410C',
-    helpText: 'まだ「期間のみ更新」「修正更新」「CSVインポート待ち」のどれで進めるか決まっていない人です。一覧でチェックして振り分けてください。',
+    helpText: 'まだ「期間のみ更新」「修正更新」「CSVインポート待ち」のどれで\n進めるか決まっていない人です。\n一覧でチェックして振り分けてください。',
   },
   {
     key: 'csv_auto',
     label: 'CSV自動反映',
     color: '#244CB3',
-    helpText: '次の契約の期間が、CSVデータから自動で見つかっています。内容を確認して、そのまま一括で更新できます。',
+    helpText: '次の契約の期間が、CSVデータから自動で見つかっています。\n内容を確認して、そのまま一括で更新できます。',
   },
   {
     key: 'period_only',
     label: '期間のみ更新',
     color: '#1F7A45',
-    helpText: '次の契約の期間を自分で入力し、まとめて更新する人です。',
+    helpText: '次の契約の期間を自分で入力し、\nまとめて更新する人です。',
   },
   {
     key: 'edit',
     label: '修正更新',
     color: '#5A3EC8',
-    helpText: '期間だけでなく、他の内容も直して更新したい人です。個別に申請画面を開いて修正します。',
+    helpText: '期間だけでなく、他の内容も直して更新したい人です。\n個別に申請画面を開いて修正します。',
   },
   {
     key: 'import_wait',
     label: 'CSVインポート待ち',
     color: '#5F5E5A',
-    helpText: '管理部にCSVインポートを依頼していて、まだ結果待ちの人です。取り込みが終わると自動で「CSV自動反映」に移動します。',
+    helpText: '管理部にCSVインポートを依頼していて、まだ結果待ちの人です。\n取り込みが終わると自動で「CSV自動反映」に移動します。',
   },
 ]
 const TAB_LABEL: Record<RenewalTab, string> = Object.fromEntries(TAB_DEFS.map(t => [t.key, t.label])) as Record<RenewalTab, string>
@@ -151,23 +141,39 @@ function UsageHelpPanel({ open, onToggle }: { open: boolean; onToggle: () => voi
         <div className="flex flex-col gap-4 border-t border-[#E8EDF5] px-5 py-4 text-xs leading-relaxed text-[#4B5563]">
           <p className="text-[#1F2937]">
             この一覧には、契約の期限（雇用期間・派遣期間の終了日）が近づいてきたスタッフが自動で表示されます。<br />
-            上のタブごとに「今どういう状態の人か」が分かれています。タブ名の横の？を押すと、そのタブの意味を確認できます。
+            上のタブごとに「今どういう状態の人か」が分かれています。<br />
+            タブ名の横の？を押すと、そのタブの意味を確認できます。
           </p>
           <div>
             <p className="mb-1 font-semibold text-[#1F2937]">①まず「仕分け待ち」タブを確認する</p>
-            <p>新しく出てきた対象は全員ここに入ります。「期間のみ更新」「修正更新」「CSVインポート待ち」のどれで進めるかを選び、チェックを入れて「振り分ける」ボタンを押してください。</p>
+            <p className="leading-relaxed">
+              新しく出てきた対象は全員ここに入ります。<br />
+              「期間のみ更新」「修正更新」「CSVインポート待ち」のどれで進めるかを選び、<br />
+              チェックを入れて「振り分ける」ボタンを押してください。
+            </p>
           </div>
           <div>
             <p className="mb-1 font-semibold text-[#1F2937]">②各タブで内容を確認・入力する</p>
-            <p>「CSV自動反映」は内容を確認するだけ、「期間のみ更新」は次の期間を入力、「修正更新」は個別に申請画面を開いて内容を直します。「CSVインポート待ち」は結果が来るまで待つだけです。</p>
+            <p className="leading-relaxed">
+              「CSV自動反映」は内容を確認するだけ、「期間のみ更新」は次の期間を入力、<br />
+              「修正更新」は個別に申請画面を開いて内容を直します。<br />
+              「CSVインポート待ち」は結果が来るまで待つだけです。
+            </p>
           </div>
           <div>
             <p className="mb-1 font-semibold text-[#1F2937]">③まとめて実行する</p>
-            <p>「CSV自動反映」「期間のみ更新」はチェックを入れた分をまとめて一括更新できます。「修正更新」は1件ずつ「更新申請する」から申請します。</p>
+            <p className="leading-relaxed">
+              「CSV自動反映」「期間のみ更新」はチェックを入れた分をまとめて一括更新できます。<br />
+              「修正更新」は1件ずつ「更新申請する」から申請します。
+            </p>
           </div>
           <div>
             <p className="mb-1 font-semibold text-[#1F2937]">④分類を間違えた・契約を更新しない場合</p>
-            <p>各行の「他のタブへ移動」でいつでも振り分け直せます。契約自体を更新しないと決まった場合は「更新しないで確定する」を押し、理由を入力してください（管理部へ通知メールが届きます）。</p>
+            <p className="leading-relaxed">
+              各行の「他のタブへ移動」でいつでも振り分け直せます。<br />
+              契約自体を更新しないと決まった場合は「更新しないで確定する」を押し、理由を入力してください。<br />
+              （管理部へ通知メールが届きます）
+            </p>
           </div>
         </div>
       )}
@@ -355,7 +361,10 @@ export default function RenewalManagementTab({
       )}
       {notRenewingReasonId === c.id && (
         <div className="mt-4 rounded-2xl bg-[#FDECEC] px-4 py-3">
-          <div className="text-xs mb-2" style={{ color: '#B91C1C' }}>更新しない理由を入力してください。確定すると管理部へ通知メールが送信されます。</div>
+          <div className="text-xs mb-2 leading-relaxed" style={{ color: '#B91C1C' }}>
+            更新しない理由を入力してください。<br />
+            確定すると管理部へ通知メールが送信されます。
+          </div>
           <div className="flex gap-2">
             <input
               value={notRenewingReasonText}
@@ -431,7 +440,10 @@ export default function RenewalManagementTab({
         {renderRowHead(c, renderCommonFooter(c))}
         {renderSecondaryGrid(c)}
         {c.data_source === 'csv' && c.status === 'csv_pending' && (
-          <p className="mt-2 text-[11px] font-medium" style={{ color: '#B45309' }}>{STATUS_LABEL.csv_pending}：次の契約のCSVがまだ見つかっていません。「CSVインポート待ち」を選ぶと管理部に取り込みを依頼できます。</p>
+          <p className="mt-2 text-[11px] font-medium leading-relaxed" style={{ color: '#B45309' }}>
+            {STATUS_LABEL.csv_pending}：次の契約のCSVがまだ見つかっていません。<br />
+            「CSVインポート待ち」を選ぶと管理部に取り込みを依頼できます。
+          </p>
         )}
         {c.status !== 'not_renewing' && canFinalize && (
           <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[#E8EDF5] pt-3">
@@ -497,7 +509,10 @@ export default function RenewalManagementTab({
         {expandedId === c.id && renderCsvDiff(c)}
         {overrideReasonId === c.id && (
           <div className="mt-3 rounded-2xl bg-[#FFF8F1] px-4 py-3">
-            <div className="text-xs text-[#8B98B1] mb-2">派遣先クライアントの変更理由を入力してください（「期間のみ更新」タブへ切り替わります）</div>
+            <div className="text-xs text-[#8B98B1] mb-2 leading-relaxed">
+              派遣先クライアントの変更理由を入力してください。<br />
+              （「期間のみ更新」タブへ切り替わります）
+            </div>
             <div className="flex gap-2">
               <input value={overrideReasonText} onChange={e => setOverrideReasonText(e.target.value)} placeholder="例：派遣先が◯◯から××に変更" className="flex-1 text-xs rounded-lg border border-[#E8EDF5] bg-white px-2 py-1.5" />
               <button
@@ -791,7 +806,8 @@ export default function RenewalManagementTab({
               <div className="w-full rounded-[18px] border border-[#BFE7CF] bg-[#F0FBF4] p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)]">
                 <p className="text-sm font-semibold text-[#1F2937]">「{TAB_LABEL[activeTab]}」の{bulkTargets.length}件を、確定済みの新しい期間で申請しますか</p>
                 <p className="mt-2 text-xs font-medium leading-6 text-[#6B7280]">
-                  各対象者について、新規の契約申請（申請中ステータス）が自動で作成されます。作成後は通常の申請と同じくSSC・管理部の承認が必要です。<br />
+                  各対象者について、新規の契約申請（申請中ステータス）が自動で作成されます。<br />
+                  作成後は通常の申請と同じくSSC・管理部の承認が必要です。<br />
                   内容に誤りがないか、対象者ごとに「契約内容をすべて確認」で今一度ご確認ください。
                 </p>
                 <div className="mt-4 max-h-48 overflow-y-auto rounded-2xl border border-[#E8EDF5] bg-white">
@@ -835,7 +851,10 @@ export default function RenewalManagementTab({
               <>
                 <div className="mx-auto mb-6 h-14 w-14 animate-spin rounded-full border-4 border-[#DDE8FF] border-t-[#2F5FD0]" />
                 <p className="text-lg font-semibold text-[#1F2937]">実行しています</p>
-                <p className="mt-3 text-sm font-medium leading-6 text-[#6B7280]">完了までしばらくお待ちください。画面を閉じずにお待ちください。</p>
+                <p className="mt-3 text-sm font-medium leading-6 text-[#6B7280]">
+                  完了までしばらくお待ちください。<br />
+                  画面を閉じずにお待ちください。
+                </p>
               </>
             ) : (
               <>
@@ -852,7 +871,10 @@ export default function RenewalManagementTab({
                         <li key={i} className="text-xs" style={{ color: '#B91C1C' }}>{f.staffName || '―'}（{f.employeeNumber}）：{f.reason}</li>
                       ))}
                     </ul>
-                    <p className="mt-2 text-[11px]" style={{ color: '#B91C1C' }}>失敗した案件はそのままタブに残っています。再実行するか、修正更新に切り替えてください。</p>
+                    <p className="mt-2 text-[11px] leading-relaxed" style={{ color: '#B91C1C' }}>
+                      失敗した案件はそのままタブに残っています。<br />
+                      再実行するか、修正更新に切り替えてください。
+                    </p>
                   </div>
                 )}
                 <button onClick={handleBulkApplyDoneOk} className="mt-7 inline-flex h-[52px] w-full items-center justify-center rounded-2xl bg-[#2F5FD0] px-6 text-sm font-semibold text-white transition hover:bg-[#244CB3]">OK</button>

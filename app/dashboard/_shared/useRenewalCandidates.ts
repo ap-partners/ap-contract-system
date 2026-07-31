@@ -117,6 +117,24 @@ export const addDays = (dateStr: string, days: number) => {
   return d.toISOString().split('T')[0]
 }
 
+// 2026-07-31追加（デプロイ後の実機確認で発覚した不具合の修正）：「一括申請／一括更新に含める」
+// チェックボックスが有効になる条件。当初は`c.status !== 'pending'`で判定していたが、CSV検索で
+// 一度でも「見つからない」（status='csv_pending'）を経験した候補は、その後「期間のみ更新」タブへ
+// 手動振り分けし新しい期間を入力しても、statusがcsv_pendingのまま残るためチェックボックスが
+// 永久にdisabledになってしまう不具合があった（statusは元々「CSV検索の結果」を表す項目であり、
+// 「この案件がまだ有効か（更新しない・申請済みではないか）」とは別の意味を持っていたことが原因）。
+// 「更新しない」「申請済み」以外なら期間確定状況のみで判定するよう修正し、
+// RenewalManagementTab.tsx（UIのチェックボックス制御）とexecuteBulkApply（実行時の再チェック）の
+// 両方でこの1関数を共用することで判定基準のズレを防ぐ。
+export function periodReady(c: Pick<RenewalCandidate, 'status' | 'dispatch_end_date' | 'employ_end_date' | 'new_dispatch_start' | 'new_dispatch_end' | 'new_employ_start' | 'new_employ_end'>): boolean {
+  if (c.status === 'not_renewing' || c.status === 'applied') return false
+  // 派遣の概念が無い（業務委託／社内＝派遣期間終了日が元々無い）場合は雇用期間のみで判定する。
+  if (!c.dispatch_end_date) return Boolean(c.new_employ_start && c.new_employ_end)
+  const dispatchOk = Boolean(c.new_dispatch_start && c.new_dispatch_end)
+  const employOk = c.employ_end_date ? Boolean(c.new_employ_start && c.new_employ_end) : true
+  return dispatchOk && employOk
+}
+
 export function useRenewalCandidates() {
   const [candidates, setCandidates] = useState<RenewalCandidate[]>([])
   const [loading, setLoading] = useState(false)
@@ -530,8 +548,11 @@ export function useRenewalCandidates() {
     for (const c of targets) {
       try {
         // 念のための再チェック（一覧表示後にCSVが再取込まれる等でデータが変わっている
-        // 可能性への備え。「一括申請」に切り替えられる条件と同じ）
-        if (c.status !== 'pending' || !c.new_employ_start || !c.new_employ_end || !c.new_dispatch_start || !c.new_dispatch_end) {
+        // 可能性への備え。「一括申請に含める」チェックボックスが有効になる条件と同じ関数を使う
+        // ことで判定基準のズレを防ぐ（2026-07-31修正：以前はc.status!=='pending'固定で
+        // 判定しており、CSV未検出（csv_pending）を経験した候補が期間のみ更新タブで手動入力しても
+        // 永久に実行できない不具合があった）。
+        if (!periodReady(c)) {
           failed.push({ employeeNumber: c.employee_number, staffName: c.staff_name, reason: '新しい雇用期間・派遣期間が確定していません' })
           continue
         }

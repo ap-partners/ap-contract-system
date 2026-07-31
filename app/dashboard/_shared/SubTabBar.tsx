@@ -54,7 +54,10 @@ export function SubTabBar<T extends string>({
                 )}
               </button>
               {item.helpText && openHelpKey === item.key && (
-                <div className="absolute left-0 top-full z-20 mt-1.5 w-64 rounded-xl bg-[#1F2937] px-3 py-2.5 text-left text-xs font-normal leading-relaxed text-white shadow-[0_10px_30px_rgba(15,23,42,.2)]">
+                <div
+                  className="absolute left-0 top-full z-20 mt-1.5 w-64 rounded-xl bg-[#1F2937] px-3 py-2.5 text-left text-xs font-normal leading-relaxed text-white shadow-[0_10px_30px_rgba(15,23,42,.2)]"
+                  style={{ whiteSpace: 'pre-line' }}
+                >
                   {item.helpText}
                 </div>
               )}

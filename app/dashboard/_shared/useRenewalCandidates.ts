@@ -120,6 +120,18 @@ export const addDays = (dateStr: string, days: number) => {
   return d.toISOString().split('T')[0]
 }
 
+// 2026-08-03追加：書類種別（document_type）を正として「雇用期間／派遣期間のどちらが
+// 必要か」を判定する共通関数。RenewalManagementTab.tsxのrenderSecondaryGridが2026-07-31から
+// 使っている`docType.includes('雇用契約書')`/`includes('就業条件明示書')`と同じ基準を、
+// periodReady()・renderPeriodOnlyRowの入力欄出し分けでも共用する（判定基準が3箇所でズレる
+// ことを防ぐ）。document_typeが空（欠落データ等）の場合はresolved=falseを返し、呼び出し側で
+// 旧来の「フィールドの有無」による判定にフォールバックできるようにする。
+export function getDocumentPeriodFlags(documentType: string | null): { needsEmploy: boolean; needsDispatch: boolean; resolved: boolean } {
+  const docType = (documentType || '').replace(/\n/g, ' ').trim()
+  if (!docType) return { needsEmploy: false, needsDispatch: false, resolved: false }
+  return { needsEmploy: docType.includes('雇用契約書'), needsDispatch: docType.includes('就業条件明示書'), resolved: true }
+}
+
 // 2026-07-31追加（デプロイ後の実機確認で発覚した不具合の修正）：「一括申請／一括更新に含める」
 // チェックボックスが有効になる条件。当初は`c.status !== 'pending'`で判定していたが、CSV検索で
 // 一度でも「見つからない」（status='csv_pending'）を経験した候補は、その後「期間のみ更新」タブへ
@@ -129,9 +141,21 @@ export const addDays = (dateStr: string, days: number) => {
 // 「更新しない」「申請済み」以外なら期間確定状況のみで判定するよう修正し、
 // RenewalManagementTab.tsx（UIのチェックボックス制御）とexecuteBulkApply（実行時の再チェック）の
 // 両方でこの1関数を共用することで判定基準のズレを防ぐ。
-export function periodReady(c: Pick<RenewalCandidate, 'status' | 'dispatch_end_date' | 'employ_end_date' | 'new_dispatch_start' | 'new_dispatch_end' | 'new_employ_start' | 'new_employ_end'>): boolean {
+// 2026-08-03修正（実機確認で発覚：関谷綺菜様・104747＝雇用契約書のみの契約で、前回契約の
+// input_data.fields.dispatchStart/dispatchEndにCSV連携時の残骸が残っていたため
+// `!c.dispatch_end_date`による判定が「派遣期間が必要」と誤判定し、本来不要な派遣期間の入力を
+// 一括更新の条件として要求してしまっていた）。書類種別（document_type）を正とする
+// getDocumentPeriodFlags()で判定し、document_typeが欠落している場合のみ旧来の
+// フィールド有無判定にフォールバックする。
+export function periodReady(c: Pick<RenewalCandidate, 'status' | 'document_type' | 'dispatch_end_date' | 'employ_end_date' | 'new_dispatch_start' | 'new_dispatch_end' | 'new_employ_start' | 'new_employ_end'>): boolean {
   if (c.status === 'not_renewing' || c.status === 'applied') return false
-  // 派遣の概念が無い（業務委託／社内＝派遣期間終了日が元々無い）場合は雇用期間のみで判定する。
+  const flags = getDocumentPeriodFlags(c.document_type)
+  if (flags.resolved) {
+    const dispatchOk = !flags.needsDispatch || Boolean(c.new_dispatch_start && c.new_dispatch_end)
+    const employOk = !flags.needsEmploy || Boolean(c.new_employ_start && c.new_employ_end)
+    return dispatchOk && employOk
+  }
+  // フォールバック（document_type欠落時の旧ロジック）
   if (!c.dispatch_end_date) return Boolean(c.new_employ_start && c.new_employ_end)
   const dispatchOk = Boolean(c.new_dispatch_start && c.new_dispatch_end)
   const employOk = c.employ_end_date ? Boolean(c.new_employ_start && c.new_employ_end) : true
@@ -584,16 +608,23 @@ export function useRenewalCandidates() {
           }
         }
 
+        // 2026-08-03追加：新しく作成する契約の書類種別（=prevContract.document_type。更新では
+        // 書類種別自体は変わらない）に応じて、不要な期間フィールドは明示的にnullへ揃える。
+        // 上流（CSV自動反映・過去の手入力等）の経緯を問わず、実際にcontractsへ書き込む直前の
+        // この1箇所で整合性を担保することで、periodReady()等の判定基準を今後また個別に
+        // 追いかけ直さずに済むようにする（関谷綺菜様・104747の不具合調査を踏まえた恒久対応）。
+        const newContractDocFlags = getDocumentPeriodFlags(prevContract.document_type)
+
         // 明示的にRecord<string, any>と型注釈しておかないと、TypeScriptがスプレッド元
         // （buildMergedFieldsの戻り値）のインデックスシグネチャを無視し、以下で追加している
         // 明示プロパティ（employStart等）だけの狭い型として推論してしまい、salaryType等
         // 他のプロパティへのアクセスがビルド時型エラーになる（2026-07-17 Vercelビルドで発覚）。
         const mergedFields: Record<string, any> = {
           ...buildMergedFields(prevFields, csvFields),
-          employStart: c.new_employ_start,
-          employEnd: c.new_employ_end,
-          dispatchStart: c.new_dispatch_start,
-          dispatchEnd: c.new_dispatch_end,
+          employStart: (!newContractDocFlags.resolved || newContractDocFlags.needsEmploy) ? c.new_employ_start : null,
+          employEnd: (!newContractDocFlags.resolved || newContractDocFlags.needsEmploy) ? c.new_employ_end : null,
+          dispatchStart: (!newContractDocFlags.resolved || newContractDocFlags.needsDispatch) ? c.new_dispatch_start : null,
+          dispatchEnd: (!newContractDocFlags.resolved || newContractDocFlags.needsDispatch) ? c.new_dispatch_end : null,
           workLocationName: c.new_work_location_name || prevFields.workLocationName,
           workLocationAddress: c.new_work_address || prevFields.workLocationAddress,
           // 2026-07-17決定（伊藤さんとの確認）：試用期間は入社時の見極めを目的とした制度のため、

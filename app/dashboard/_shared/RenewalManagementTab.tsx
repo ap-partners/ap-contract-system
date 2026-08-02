@@ -20,6 +20,7 @@ import {
   addDays,
   ContactFields,
   periodReady,
+  getDocumentPeriodFlags,
 } from './useRenewalCandidates'
 import { clampDateYear } from '@/app/apply/_lib/helpers'
 import { SubTabBar, SubTabItem } from './SubTabBar'
@@ -460,9 +461,12 @@ export default function RenewalManagementTab({
   // 該当する期間だけを出し分ける（兼用は両方、雇用契約書のみは雇用期間だけ、就業条件明示書のみは
   // 派遣期間だけ）。
   const renderSecondaryGrid = (c: RenewalCandidate) => {
+    // 2026-08-03：periodReady()・renderPeriodOnlyRowと判定基準を統一するため
+    // getDocumentPeriodFlags()を共用（document_type欠落時のみ旧来のincludes判定にフォールバック）。
+    const docFlags = getDocumentPeriodFlags(c.document_type)
     const docType = formatDocumentType(c.document_type)
-    const showEmploy = docType.includes('雇用契約書')
-    const showDispatch = docType.includes('就業条件明示書')
+    const showEmploy = docFlags.resolved ? docFlags.needsEmploy : docType.includes('雇用契約書')
+    const showDispatch = docFlags.resolved ? docFlags.needsDispatch : docType.includes('就業条件明示書')
     const sameDates = showEmploy && showDispatch
       && (c.employ_start_date || null) === (c.dispatch_start_date || null)
       && (c.employ_end_date || null) === (c.dispatch_end_date || null)
@@ -674,8 +678,14 @@ export default function RenewalManagementTab({
   }
 
   const renderPeriodOnlyRow = (c: RenewalCandidate) => {
-    const hasDispatch = !!c.dispatch_end_date
-    const hasEmploy = !!c.employ_end_date
+    // 2026-08-03修正：従来は`dispatch_end_date`/`employ_end_date`（前回契約フィールドの
+    // 有無）で「派遣期間欄／雇用期間欄のどちらを出すか」を判定していたが、雇用契約書のみの
+    // 契約でも前回契約にCSV連携時の派遣期間の残骸が残っているケースがあり、本来出ないはずの
+    // 派遣期間欄が表示され「兼用のため自動で揃えています」という誤った文言も出てしまう不具合が
+    // あった（関谷綺菜様・104747で発覚）。書類種別（document_type）を正として判定する。
+    const docFlags = getDocumentPeriodFlags(c.document_type)
+    const hasDispatch = docFlags.resolved ? docFlags.needsDispatch : !!c.dispatch_end_date
+    const hasEmploy = docFlags.resolved ? docFlags.needsEmploy : !!c.employ_end_date
     const draft = manualDraft[c.id] || {
       start: c.new_dispatch_start || (c.dispatch_end_date ? addDays(c.dispatch_end_date, 1) : ''),
       end: c.new_dispatch_end || '',
@@ -901,8 +911,13 @@ export default function RenewalManagementTab({
                 <div className="mt-4 max-h-48 overflow-y-auto rounded-2xl border border-[#E8EDF5] bg-white">
                   <ul className="divide-y divide-[#E8EDF5]">
                     {bulkTargets.map(t => {
+                      // 2026-08-03修正：ここも`dispatch_end_date`の有無ではなく書類種別で判定する
+                      // （他の箇所と同じ理由。雇用契約書のみの契約で残骸のdispatch_end_dateにより
+                      // 誤って「雇〜／派〜」の2本立て表示になっていた）。
+                      const tDocFlags = getDocumentPeriodFlags(t.document_type)
+                      const showDispatchLabel = tDocFlags.resolved ? tDocFlags.needsDispatch : !!t.dispatch_end_date
                       const sameNewDate = t.new_employ_end && t.new_dispatch_end && t.new_employ_end === t.new_dispatch_end
-                      const newPeriodLabel = t.dispatch_end_date
+                      const newPeriodLabel = showDispatchLabel
                         ? (sameNewDate ? `〜${t.new_employ_end}` : `雇〜${t.new_employ_end || '―'} / 派〜${t.new_dispatch_end || '―'}`)
                         : `〜${t.new_employ_end || '―'}`
                       return (

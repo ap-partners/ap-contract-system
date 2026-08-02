@@ -104,6 +104,17 @@ function formatPeriodJp(start: string | null, end: string | null): string {
   return `${formatDateJp(start)} 〜 ${formatDateJp(end)}`
 }
 
+// 2026-08-03追加：正社員・無期契約は雇用期間（employ_start_date/employ_end_date）を持たず、
+// 契約条件適用開始日（contract_start_date）のみを持つ。契約一覧（contractDisplay.tsxの
+// getEmployPeriodLabel()）が既に使っている「期間の定めなし」という表現をそのまま流用し、
+// 新しい言い回しを増やさない（伊藤さん確認済み）。日付の書式自体は、更新期限管理タブの
+// 既存方針（2026-07-31決定・年月日表記）を踏襲しformatDateJp()で統一する。
+function formatEmployPeriodDisplay(c: Pick<RenewalCandidate, 'employ_start_date' | 'employ_end_date' | 'contract_start_date'>): string {
+  if (c.employ_start_date && c.employ_end_date) return formatPeriodJp(c.employ_start_date, c.employ_end_date)
+  if (c.contract_start_date) return `${formatDateJp(c.contract_start_date)} 〜 期間の定めなし`
+  return '―'
+}
+
 // 就業場所ブロックの地図ピンアイコン（既存の手描きinline SVG方式を踏襲。アイコンフォント等の
 // 新規依存は追加しない）。
 function MapPinIcon() {
@@ -428,13 +439,30 @@ export default function RenewalManagementTab({
     </>
   )
 
-  // 行の1行目（氏名・社員番号・所属・就業先・残日数バッジ）。全タブ共通。
-  const renderRowHead = (c: RenewalCandidate, rightSlot: ReactNode) => {
+  // 2026-08-03改修（ブロック1＝ヘッダー）：伊藤さんの実機レビュー指摘（雇用期間が「－」表示になる／
+  // 「他のタブへ移動」と「更新しない」の縦位置がズレている）を受けた3ブロック化の一部。
+  // 残日数バッジを氏名の「上」に独立配置し緊急度を最初に視界に入れるようにし、よく使う操作である
+  // 「一括申請/一括更新に含める」チェック（checkboxSlot）はバッジのすぐ右に配置して目立たせる。
+  // 「他のタブへ移動」「更新しない」（cornerSlot）は右上の独立した行にまとめる。ただし位置は
+  // 目立たせても見た目（文字の大きさ・色）は従来通りの控えめなテキストのまま維持する
+  // （契約一覧の「詳細を見る」ボタンと同じ右上の位置に濃い色のボタンを置くと、担当者が主操作だと
+  // 誤認して誤タップする恐れがあるため。「更新しない」は押すと管理部へ通知メールが送信される
+  // 操作でもあり、位置と視覚的重要度をあえて分離している。伊藤さん確認済み・2026-08-03）。
+  const renderRowHead = (c: RenewalCandidate, cornerSlot: ReactNode, checkboxSlot?: ReactNode) => {
     const days = remainingDays(c)
     const metaParts = [c.current_dept_name, c.current_contract_type].filter(Boolean)
     return (
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
+      <div>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-3">
+            {daysBadge(days)}
+            {checkboxSlot}
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
+            {cornerSlot}
+          </div>
+        </div>
+        <div className="mt-2.5 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <p className="break-words text-[17px] font-semibold leading-6 text-[#1F2937]">{c.staff_name || '―'}</p>
             {c.work_place === '社内' && (
@@ -446,10 +474,6 @@ export default function RenewalManagementTab({
             {metaParts.length > 0 && <span className="ml-1.5">・{metaParts.join('・')}</span>}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-3">
-          {daysBadge(days)}
-          {rightSlot}
-        </div>
       </div>
     )
   }
@@ -460,7 +484,13 @@ export default function RenewalManagementTab({
   // 書類種別（document_type＝雇用契約書／就業条件明示書／雇用契約書 兼 就業条件明示書）に応じて
   // 該当する期間だけを出し分ける（兼用は両方、雇用契約書のみは雇用期間だけ、就業条件明示書のみは
   // 派遣期間だけ）。
-  const renderSecondaryGrid = (c: RenewalCandidate) => {
+  // 2026-08-03改修（ブロック2・3）：①就業場所ブロック（青背景）の右端に「内容を確認」ボタンを
+  // 統合配置できるよう`confirmSlot`引数を追加（従来はグリッドの下に別行のテキストリンクとして
+  // 独立していたものを、契約一覧の情報密度に寄せて集約）。②書類種別を契約一覧と同じ色付きチップ
+  // 表示に変更（プレーンテキストのままだと書類種別の違いが一覧上でぱっと見分けにくかったため）。
+  // ③雇用期間（現在）の表示を`formatEmployPeriodDisplay()`に置き換え、正社員・無期契約で
+  // 「－」表示になっていた不具合を解消（伊藤さん指摘・2026-08-03）。
+  const renderSecondaryGrid = (c: RenewalCandidate, confirmSlot?: ReactNode) => {
     // 2026-08-03：periodReady()・renderPeriodOnlyRowと判定基準を統一するため
     // getDocumentPeriodFlags()を共用（document_type欠落時のみ旧来のincludes判定にフォールバック）。
     const docFlags = getDocumentPeriodFlags(c.document_type)
@@ -472,22 +502,27 @@ export default function RenewalManagementTab({
       && (c.employ_end_date || null) === (c.dispatch_end_date || null)
     return (
       <div className="mt-3 border-t border-[#E8EDF5] pt-3">
-        <div className="flex items-start gap-2 rounded-2xl bg-[#F7FBFF] px-3 py-2.5">
-          <MapPinIcon />
-          <div className="min-w-0">
-            <p className="text-[13px] font-semibold leading-5 text-[#1F2937]">{c.work_location_name || '就業先不明'}</p>
-            <p className="mt-0.5 text-[11px] leading-5 text-[#6B7280]">{c.work_location_address || '住所は未登録です'}</p>
+        <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#F7FBFF] px-3 py-2.5">
+          <div className="flex min-w-0 items-start gap-2">
+            <MapPinIcon />
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold leading-5 text-[#1F2937]">{c.work_location_name || '就業先不明'}</p>
+              <p className="mt-0.5 text-[11px] leading-5 text-[#6B7280]">{c.work_location_address || '住所は未登録です'}</p>
+            </div>
           </div>
+          {confirmSlot && <div className="shrink-0">{confirmSlot}</div>}
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
           <div className="min-w-0">
             <p className="mb-1 text-xs font-semibold text-[#6B7280]">書類種別</p>
-            <p className="text-xs font-medium leading-5 text-[#1F2937]">{formatDocumentType(c.document_type)}</p>
+            <span className="mt-0.5 inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-semibold" style={{ background: '#EAF1FF', color: '#2F5FD0' }}>
+              {formatDocumentType(c.document_type)}
+            </span>
           </div>
           {showEmploy && (
             <div className="min-w-0">
               <p className="mb-1 text-xs font-semibold text-[#6B7280]">雇用期間（現在）</p>
-              <p className="text-xs font-medium leading-5 text-[#1F2937]">{formatPeriodJp(c.employ_start_date, c.employ_end_date)}</p>
+              <p className="text-xs font-medium leading-5 text-[#1F2937]">{formatEmployPeriodDisplay(c)}</p>
             </div>
           )}
           {showDispatch && (
@@ -506,9 +541,15 @@ export default function RenewalManagementTab({
   // 2026-07-31追加：「契約内容をすべて確認」（前回契約のSTEP項目を全項目表示する読み取り専用
   // ポップアップ）を開くリンク。従来はCSV自動反映タブ（内容を確認 展開後）・修正更新タブの
   // 行動線にのみ存在していたが、他のタブでも同じ内容を確認したいという要望に応え全タブ共通化。
+  // 2026-08-03改修：テキストリンクだと押せる操作だと気づかれにくいとの指摘を受け、既存の
+  // 枠付きピルボタン様式（renderCsvDiff内の同名ボタンと同じ見た目）に統一し、ブロック2
+  // （就業場所ブロック）の右端に配置する`confirmSlot`として渡す形に変更。
   const renderConfirmLink = (c: RenewalCandidate) => (
-    <button onClick={() => setConfirmModalCandidate(c)} className="mt-3 text-xs font-semibold text-[#2F5FD0] underline">
-      契約内容をすべて確認
+    <button
+      onClick={() => setConfirmModalCandidate(c)}
+      className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[#D0DAF0] bg-white px-3 py-1.5 text-xs font-semibold text-[#2F5FD0]"
+    >
+      内容を確認
     </button>
   )
 
@@ -519,8 +560,7 @@ export default function RenewalManagementTab({
     return (
       <article key={c.id} className="rounded-[18px] border border-[#E8EDF5] bg-white p-5">
         {renderRowHead(c, renderCommonFooter(c))}
-        {renderSecondaryGrid(c)}
-        {renderConfirmLink(c)}
+        {renderSecondaryGrid(c, renderConfirmLink(c))}
         {c.data_source === 'csv' && c.status === 'csv_pending' && (
           <p className="mt-2 text-[11px] font-medium leading-relaxed" style={{ color: '#B45309' }}>
             {STATUS_LABEL.csv_pending}：次の契約のCSVがまだ見つかっていません。<br />
@@ -567,26 +607,24 @@ export default function RenewalManagementTab({
       if (tab === 'period_only') { setOverrideReasonId(c.id); setOverrideReasonText('') }
       else setRenewalTab(c.id, tab)
     }
+    const checkboxSlot = c.status !== 'not_renewing' && (
+      <label className={`flex items-center gap-1.5 text-[13px] font-semibold whitespace-nowrap ${ready ? 'text-[#1F2937]' : 'text-[#8B98B1]'}`}>
+        <input type="checkbox" checked={c.triage_mode === 'bulk'} disabled={!canFinalize || !ready}
+          onChange={e => setTriageMode(c.id, e.target.checked ? 'bulk' : 'undecided')} className="h-4 w-4 rounded" />
+        一括申請に含める
+      </label>
+    )
     return (
       <article key={c.id} className="rounded-[18px] border border-[#E8EDF5] bg-white p-5">
-        {renderRowHead(c, (
-          <div className="flex items-center gap-3">
-            {c.status !== 'not_renewing' && (
-              <label className={`flex items-center gap-1.5 text-xs font-semibold whitespace-nowrap ${ready ? 'text-[#1F2937]' : 'text-[#8B98B1]'}`}>
-                <input type="checkbox" checked={c.triage_mode === 'bulk'} disabled={!canFinalize || !ready}
-                  onChange={e => setTriageMode(c.id, e.target.checked ? 'bulk' : 'undecided')} className="h-4 w-4 rounded" />
-                一括申請に含める
-              </label>
-            )}
-            {renderCommonFooter(c, { onMoveOverride: handleMoveOverride })}
-          </div>
-        ))}
-        {renderSecondaryGrid(c)}
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <button onClick={() => toggleExpand(c)} className="text-xs font-semibold text-[#2F5FD0] underline">
+        {renderRowHead(c, renderCommonFooter(c, { onMoveOverride: handleMoveOverride }), checkboxSlot)}
+        {renderSecondaryGrid(c, (
+          <button
+            onClick={() => toggleExpand(c)}
+            className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[#D0DAF0] bg-white px-3 py-1.5 text-xs font-semibold text-[#2F5FD0]"
+          >
             {expandedId === c.id ? '内容を閉じる' : '内容を確認'}
           </button>
-        </div>
+        ))}
         {expandedId === c.id && renderCsvDiff(c)}
         {overrideReasonId === c.id && (
           <div className="mt-3 rounded-2xl bg-[#FFF8F1] px-4 py-3">
@@ -691,22 +729,17 @@ export default function RenewalManagementTab({
       end: c.new_dispatch_end || '',
     }
     const ready = periodReady(c)
+    const checkboxSlot = c.status !== 'not_renewing' && (
+      <label className={`flex items-center gap-1.5 text-[13px] font-semibold whitespace-nowrap ${ready ? 'text-[#1F2937]' : 'text-[#8B98B1]'}`}>
+        <input type="checkbox" checked={c.triage_mode === 'bulk'} disabled={!canFinalize || !ready}
+          onChange={e => setTriageMode(c.id, e.target.checked ? 'bulk' : 'undecided')} className="h-4 w-4 rounded" />
+        一括更新に含める
+      </label>
+    )
     return (
       <article key={c.id} className="rounded-[18px] border border-[#E8EDF5] bg-white p-5">
-        {renderRowHead(c, (
-          <div className="flex items-center gap-3">
-            {c.status !== 'not_renewing' && (
-              <label className={`flex items-center gap-1.5 text-xs font-semibold whitespace-nowrap ${ready ? 'text-[#1F2937]' : 'text-[#8B98B1]'}`}>
-                <input type="checkbox" checked={c.triage_mode === 'bulk'} disabled={!canFinalize || !ready}
-                  onChange={e => setTriageMode(c.id, e.target.checked ? 'bulk' : 'undecided')} className="h-4 w-4 rounded" />
-                一括更新に含める
-              </label>
-            )}
-            {renderCommonFooter(c)}
-          </div>
-        ))}
-        {renderSecondaryGrid(c)}
-        {renderConfirmLink(c)}
+        {renderRowHead(c, renderCommonFooter(c), checkboxSlot)}
+        {renderSecondaryGrid(c, renderConfirmLink(c))}
         <div className="mt-3 flex flex-col gap-3 border-t border-[#E8EDF5] pt-3">
           {hasDispatch ? (
             <>
@@ -773,7 +806,7 @@ export default function RenewalManagementTab({
   const renderEditRow = (c: RenewalCandidate) => (
     <article key={c.id} className="rounded-[18px] border border-[#E8EDF5] bg-white p-5">
       {renderRowHead(c, renderCommonFooter(c))}
-      {renderSecondaryGrid(c)}
+      {renderSecondaryGrid(c, renderConfirmLink(c))}
       <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-[#E8EDF5] pt-3">
         {c.triage_mode === 'individual' ? (
           <div className="flex flex-wrap items-center gap-2">
@@ -794,7 +827,6 @@ export default function RenewalManagementTab({
             更新申請する →
           </button>
         ) : null}
-        <button onClick={() => setConfirmModalCandidate(c)} className="rounded-2xl border border-[#D0DAF0] bg-white px-3 py-1.5 text-xs font-semibold text-[#2F5FD0]">契約内容をすべて確認</button>
       </div>
       {renderReasonBoxes(c)}
     </article>
@@ -803,8 +835,7 @@ export default function RenewalManagementTab({
   const renderImportWaitRow = (c: RenewalCandidate) => (
     <article key={c.id} className="rounded-[18px] border border-[#E8EDF5] bg-white p-5">
       {renderRowHead(c, renderCommonFooter(c))}
-      {renderSecondaryGrid(c)}
-      {renderConfirmLink(c)}
+      {renderSecondaryGrid(c, renderConfirmLink(c))}
       <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[#E8EDF5] pt-3">
         <span className="text-xs text-[#8B98B1]">CSVインポートを依頼済みです。管理部が取り込みを確認しています。</span>
         {canFinalize && (

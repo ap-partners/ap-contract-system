@@ -64,6 +64,12 @@ export type RenewalCandidate = {
   work_location_address: string | null
   employ_start_date: string | null
   employ_end_date: string | null
+  // 2026-08-03追加：正社員・無期契約は雇用期間(employ_start_date/employ_end_date)を持たず、
+  // 契約条件適用開始日のみを持つ（app/apply/_components/StepPeriod.tsxがこの2パターンを
+  // 出し分けて集めているため）。契約一覧（contractDisplay.tsxのgetEmployPeriodLabel）は
+  // 既にこの値を使って「期間の定めなし」表示をしているが、更新期限管理タブ側はこれまで
+  // この項目自体を持っておらず「雇用期間（現在）」が－表示になっていた（伊藤さん指摘・2026-08-03）。
+  contract_start_date: string | null
   dispatch_start_date: string | null
   dispatch_end_date: string | null
   data_source: 'csv' | 'manual'
@@ -248,6 +254,8 @@ export function useRenewalCandidates() {
           // 変わるため、差異表示で至だけでなく自も分かるようにしたい、への対応）
           employ_start_date: c.employ_start || null,
           employ_end_date: c.employ_end || null,
+          // 2026-08-03追加：正社員・無期契約の「契約条件適用開始日」スナップショット。
+          contract_start_date: c.contract_start_date || null,
           dispatch_start_date: c.dispatch_start || null,
           dispatch_end_date: c.dispatch_end || null,
           data_source: c.csv_mode === 'csv' ? 'csv' : 'manual',

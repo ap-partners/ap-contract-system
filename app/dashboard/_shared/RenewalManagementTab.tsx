@@ -21,6 +21,9 @@ import {
   ContactFields,
   periodReady,
   getDocumentPeriodFlags,
+  formatDateJp,
+  formatPeriodJp,
+  formatEmployPeriodDisplay,
 } from './useRenewalCandidates'
 import { clampDateYear } from '@/app/apply/_lib/helpers'
 import { SubTabBar, SubTabItem } from './SubTabBar'
@@ -90,29 +93,6 @@ const STATUS_LABEL: Record<string, string> = {
 function formatDocumentType(documentType: string | null): string {
   if (!documentType) return '―'
   return documentType.replace(/\n/g, ' ').trim()
-}
-
-// 2026-07-31追加（伊藤さんレビュー：日付は「年月日」表記でないと分かりづらい、との指摘対応）。
-// lib/mail.tsの同名ヘルパーとロジックは同じだが、クライアント側コンポーネントのため個別に定義。
-function formatDateJp(dateStr: string | null): string {
-  if (!dateStr) return '―'
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr)
-  return m ? `${m[1]}年${m[2]}月${m[3]}日` : dateStr
-}
-function formatPeriodJp(start: string | null, end: string | null): string {
-  if (!start && !end) return '―'
-  return `${formatDateJp(start)} 〜 ${formatDateJp(end)}`
-}
-
-// 2026-08-03追加：正社員・無期契約は雇用期間（employ_start_date/employ_end_date）を持たず、
-// 契約条件適用開始日（contract_start_date）のみを持つ。契約一覧（contractDisplay.tsxの
-// getEmployPeriodLabel()）が既に使っている「期間の定めなし」という表現をそのまま流用し、
-// 新しい言い回しを増やさない（伊藤さん確認済み）。日付の書式自体は、更新期限管理タブの
-// 既存方針（2026-07-31決定・年月日表記）を踏襲しformatDateJp()で統一する。
-function formatEmployPeriodDisplay(c: Pick<RenewalCandidate, 'employ_start_date' | 'employ_end_date' | 'contract_start_date'>): string {
-  if (c.employ_start_date && c.employ_end_date) return formatPeriodJp(c.employ_start_date, c.employ_end_date)
-  if (c.contract_start_date) return `${formatDateJp(c.contract_start_date)} 〜 期間の定めなし`
-  return '―'
 }
 
 // 就業場所ブロックの地図ピンアイコン（既存の手描きinline SVG方式を踏襲。アイコンフォント等の
@@ -453,7 +433,11 @@ export default function RenewalManagementTab({
     const metaParts = [c.current_dept_name, c.current_contract_type].filter(Boolean)
     return (
       <div>
-        <div className="flex items-start justify-between gap-4">
+        {/* 2026-08-03修正：左の残日数バッジ（丸ピル・上下余白あり）と右の「他のタブへ移動」
+            「更新しない」（プレーンテキストで高さが低い）を`items-start`で上端揃えにしていたため、
+            高さの差でバッジより右側のリンクが浮いて見える不具合があった（伊藤さん指摘）。
+            `items-center`にして両者の縦中心を揃える。 */}
+        <div className="flex items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
             {daysBadge(days)}
             {checkboxSlot}
@@ -497,9 +481,6 @@ export default function RenewalManagementTab({
     const docType = formatDocumentType(c.document_type)
     const showEmploy = docFlags.resolved ? docFlags.needsEmploy : docType.includes('雇用契約書')
     const showDispatch = docFlags.resolved ? docFlags.needsDispatch : docType.includes('就業条件明示書')
-    const sameDates = showEmploy && showDispatch
-      && (c.employ_start_date || null) === (c.dispatch_start_date || null)
-      && (c.employ_end_date || null) === (c.dispatch_end_date || null)
     return (
       <div className="mt-3 border-t border-[#E8EDF5] pt-3">
         <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#F7FBFF] px-3 py-2.5">
@@ -529,7 +510,7 @@ export default function RenewalManagementTab({
             <div className="min-w-0">
               <p className="mb-1 text-xs font-semibold text-[#6B7280]">派遣期間（現在）</p>
               <p className="text-xs font-medium leading-5 text-[#1F2937]">
-                {sameDates ? '雇用期間と同一' : formatPeriodJp(c.dispatch_start_date, c.dispatch_end_date)}
+                {formatPeriodJp(c.dispatch_start_date, c.dispatch_end_date)}
               </p>
             </div>
           )}
@@ -648,10 +629,15 @@ export default function RenewalManagementTab({
   }
 
   const renderCsvDiff = (c: RenewalCandidate) => {
-    const formatPeriod = (start: string | null, end: string | null) =>
-      (!start && !end) ? '―' : `自${start || '―'} 〜 至${end || '―'}`
+    // 2026-08-03修正：①雇用期間の「原契約」欄は生の`employ_start_date`/`employ_end_date`を
+    // そのまま`formatPeriod()`に渡していたため、正社員・無期契約（この2項目を持たず
+    // `contract_start_date`のみ持つ）で常に「－」表示になっていた不具合を修正
+    // （一覧の「雇用期間（現在）」と同じ`formatEmployPeriodDisplay()`を使い表示ルールを統一）。
+    // ②日付書式もこのパネルだけ生のハイフン表記（`2026-05-01`）のままだったため、
+    // タブ内の他の日付表示と同じ`formatPeriodJp()`（年月日表記）に統一。
+    const formatPeriod = (start: string | null, end: string | null) => formatPeriodJp(start, end)
     const diffRows = [
-      { label: '雇用期間', before: formatPeriod(c.employ_start_date, c.employ_end_date), after: formatPeriod(c.new_employ_start, c.new_employ_end), changed: (c.employ_start_date || null) !== (c.new_employ_start || null) || (c.employ_end_date || null) !== (c.new_employ_end || null) },
+      { label: '雇用期間', before: formatEmployPeriodDisplay(c), after: formatPeriod(c.new_employ_start, c.new_employ_end), changed: (c.employ_start_date || null) !== (c.new_employ_start || null) || (c.employ_end_date || null) !== (c.new_employ_end || null) },
       { label: '派遣期間', before: formatPeriod(c.dispatch_start_date, c.dispatch_end_date), after: formatPeriod(c.new_dispatch_start, c.new_dispatch_end), changed: (c.dispatch_start_date || null) !== (c.new_dispatch_start || null) || (c.dispatch_end_date || null) !== (c.new_dispatch_end || null) },
       { label: '就業場所', before: c.work_location_name || '―', after: c.new_work_location_name || '―', changed: (c.work_location_name || null) !== (c.new_work_location_name || null) },
     ].filter(r => r.changed)
@@ -671,18 +657,20 @@ export default function RenewalManagementTab({
 
     return (
       <div className="mt-3 rounded-2xl bg-[#F7FBFF] px-4 py-4">
-        <button onClick={() => setConfirmModalCandidate(c)} className="mb-3 self-start rounded-2xl border border-[#D0DAF0] bg-white px-4 py-1.5 text-xs font-semibold text-[#2F5FD0]">契約内容をすべて確認</button>
         <div className="text-[11px] text-[#8B98B1]">CSVから自動取得した最新内容との差異</div>
         {diffRows.length === 0 ? (
-          <div className="mt-1 text-xs text-[#6B7280]">前回契約から変更点はありません。</div>
+          <div className="mt-1 text-xs text-[#6B7280]">原契約から変更点はありません。</div>
         ) : (
           <table className="mt-1 text-xs w-full">
             <tbody>
-              <tr className="text-[#6B7280]"><td className="py-1 pr-3 w-1/5">項目</td><td className="py-1 pr-3 w-2/5">前回</td><td className="py-1 w-2/5">今回</td></tr>
+              {/* 2026-08-03修正：取り消し線は見づらいとの指摘で削除。見出しも一覧の「（現在）」表記と
+                  揃うよう「前回」→「原契約」に統一（「前回」という独自の言い回しが1箇所だけ残っており
+                  表記ルールがズレていた）。 */}
+              <tr className="text-[#6B7280]"><td className="py-1 pr-3 w-1/5">項目</td><td className="py-1 pr-3 w-2/5">原契約</td><td className="py-1 w-2/5">今回</td></tr>
               {diffRows.map(r => (
                 <tr key={r.label}>
                   <td className="py-1 pr-3 align-top">{r.label}</td>
-                  <td className="py-1 pr-3 text-[#8B98B1] line-through align-top">{r.before}</td>
+                  <td className="py-1 pr-3 text-[#8B98B1] align-top">{r.before}</td>
                   <td className="py-1 font-semibold align-top" style={{ color: '#E74C3C' }}>{r.after}</td>
                 </tr>
               ))}
@@ -698,11 +686,11 @@ export default function RenewalManagementTab({
             {contactDetailId === c.id && (
               <table className="mt-2 text-xs w-full">
                 <tbody>
-                  <tr className="text-[#6B7280]"><td className="py-1 pr-3 w-1/5">項目</td><td className="py-1 pr-3 w-2/5">前回</td><td className="py-1 w-2/5">今回</td></tr>
+                  <tr className="text-[#6B7280]"><td className="py-1 pr-3 w-1/5">項目</td><td className="py-1 pr-3 w-2/5">原契約</td><td className="py-1 w-2/5">今回</td></tr>
                   {contactDiffRows.map((r, i) => (
                     <tr key={i}>
                       <td className="py-1 pr-3 align-top">{r.group}・{r.field}</td>
-                      <td className="py-1 pr-3 text-[#8B98B1] line-through align-top">{r.before}</td>
+                      <td className="py-1 pr-3 text-[#8B98B1] align-top">{r.before}</td>
                       <td className="py-1 font-semibold align-top" style={{ color: '#E74C3C' }}>{r.after}</td>
                     </tr>
                   ))}
@@ -711,6 +699,13 @@ export default function RenewalManagementTab({
             )}
           </div>
         )}
+        {/* 2026-08-03修正：「契約内容をすべて確認」ボタンは従来パネル冒頭（左上）にあったが、
+            トリガーの「内容を確認」ボタンは就業場所ブロック右端にあり、開いた直後にパネル左上へ
+            視線を移す動線になっておらず気づきにくいとの指摘（伊藤さん）。差異の内容を読み終えた
+            後の「次のアクション」として自然な位置＝パネル最下部に移動。 */}
+        <div className="mt-4 border-t border-[#E8EDF5] pt-3">
+          <button onClick={() => setConfirmModalCandidate(c)} className="rounded-2xl border border-[#D0DAF0] bg-white px-4 py-1.5 text-xs font-semibold text-[#2F5FD0]">契約内容をすべて確認</button>
+        </div>
       </div>
     )
   }

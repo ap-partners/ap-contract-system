@@ -138,6 +138,32 @@ export function getDocumentPeriodFlags(documentType: string | null): { needsEmpl
   return { needsEmploy: docType.includes('雇用契約書'), needsDispatch: docType.includes('就業条件明示書'), resolved: true }
 }
 
+// 2026-08-03追加（伊藤さんレビュー：日付は「年月日」表記でないと分かりづらい、との指摘対応）。
+// lib/mail.tsの同名ヘルパーとロジックは同じだが、クライアント側コンポーネントのため個別に定義。
+// RenewalManagementTab.tsx・RenewalContractConfirmModal.tsxの両方から使う共通ヘルパーのため
+// ここに集約する（2026-08-03：従来RenewalManagementTab.tsx内にのみ定義されておりモーダル側は
+// 別の生ハイフン表記`formatPeriod()`を使っていたため表記が揃っていなかった不具合を修正）。
+export function formatDateJp(dateStr: string | null): string {
+  if (!dateStr) return '―'
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr)
+  return m ? `${m[1]}年${m[2]}月${m[3]}日` : dateStr
+}
+export function formatPeriodJp(start: string | null, end: string | null): string {
+  if (!start && !end) return '―'
+  return `${formatDateJp(start)} 〜 ${formatDateJp(end)}`
+}
+
+// 2026-08-03追加：正社員・無期契約は雇用期間（employ_start_date/employ_end_date）を持たず、
+// 契約条件適用開始日（contract_start_date）のみを持つ。「〜期間の定めなし」という言い回しは
+// 伊藤さんレビューにより「契約条件適用開始日　○○年○○月○○日 〜」に変更（2026-08-03再訂正。
+// 当初「期間の定めなし」という契約一覧の既存表現を流用していたが、更新期限管理タブでは
+// 「契約条件適用開始日」であることを明示した方が分かりやすいとの指摘を受けて再修正）。
+export function formatEmployPeriodDisplay(c: Pick<RenewalCandidate, 'employ_start_date' | 'employ_end_date' | 'contract_start_date'>): string {
+  if (c.employ_start_date && c.employ_end_date) return formatPeriodJp(c.employ_start_date, c.employ_end_date)
+  if (c.contract_start_date) return `契約条件適用開始日　${formatDateJp(c.contract_start_date)} 〜`
+  return '―'
+}
+
 // 2026-07-31追加（デプロイ後の実機確認で発覚した不具合の修正）：「一括申請／一括更新に含める」
 // チェックボックスが有効になる条件。当初は`c.status !== 'pending'`で判定していたが、CSV検索で
 // 一度でも「見つからない」（status='csv_pending'）を経験した候補は、その後「期間のみ更新」タブへ

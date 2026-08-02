@@ -12,7 +12,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { extractCsvFields } from '@/app/apply/_lib/helpers'
-import { RenewalCandidate } from './useRenewalCandidates'
+import { RenewalCandidate, formatPeriodJp, formatEmployPeriodDisplay } from './useRenewalCandidates'
 import { RENEWAL_SECTIONS as SECTIONS, RenewalFieldDef } from './renewalFieldMap'
 
 type Props = {
@@ -20,9 +20,10 @@ type Props = {
   onClose: () => void
 }
 
-function formatPeriod(start: string | null, end: string | null) {
-  return (!start && !end) ? '―' : `自${start || '―'} 〜 至${end || '―'}`
-}
+// 2026-08-03修正：従来はこの画面だけ生のハイフン表記（`2026-05-01`）の独自`formatPeriod()`を
+// 使っており、タブ内の他の日付表示（`formatPeriodJp()`＝年月日表記）と揃っていなかった。
+// `useRenewalCandidates.ts`へ集約した共通ヘルパーを使うよう統一する。
+const formatPeriod = formatPeriodJp
 
 export default function RenewalContractConfirmModal({ candidate, onClose }: Props) {
   const [loading, setLoading] = useState(true)
@@ -92,7 +93,7 @@ export default function RenewalContractConfirmModal({ candidate, onClose }: Prop
 
         <div className="max-h-[75vh] overflow-y-auto px-6 py-5">
           <div className="mb-4 rounded-2xl bg-[#EAF1FF] px-4 py-3 text-xs text-[#244CB3]">
-            前回契約の内容と、CSVから反映される最新内容をSTEP1〜8と同じ並びで全項目表示しています。修正したい場合は一覧から「個別に申請する」を選んでください（この画面自体は編集できません）。
+            原契約の内容と、CSVから反映される最新内容をSTEP1〜8と同じ並びで全項目表示しています。修正したい場合は一覧から「個別に申請する」を選んでください（この画面自体は編集できません）。
           </div>
 
           {loading ? (
@@ -103,9 +104,14 @@ export default function RenewalContractConfirmModal({ candidate, onClose }: Prop
                 <p className="mb-2 text-xs font-semibold text-[#1F2937]">雇用期間・派遣期間</p>
                 <table className="w-full text-xs">
                   <tbody>
-                    <tr className="text-[#8B98B1]"><td className="w-1/4 py-1 pr-3">項目</td><td className="w-3/8 py-1 pr-3">前回</td><td className="w-3/8 py-1">今回</td></tr>
+                    {/* 2026-08-03修正：見出しを一覧の「（現在）」表記と揃うよう「前回」→「原契約」に統一。
+                        取り消し線も見づらいとの指摘で削除。 */}
+                    <tr className="text-[#8B98B1]"><td className="w-1/4 py-1 pr-3">項目</td><td className="w-3/8 py-1 pr-3">原契約</td><td className="w-3/8 py-1">今回</td></tr>
                     {[
-                      { label: '雇用期間', before: formatPeriod(candidate.employ_start_date, candidate.employ_end_date), after: formatPeriod(candidate.new_employ_start, candidate.new_employ_end) },
+                      // 2026-08-03修正：正社員・無期契約は雇用期間ではなく契約条件適用開始日のみを
+                      // 持つため、生の日付だけで組み立てると常に「－」表示になっていた不具合を修正
+                      // （一覧の「雇用期間（現在）」と同じformatEmployPeriodDisplay()に統一）。
+                      { label: '雇用期間', before: formatEmployPeriodDisplay(candidate), after: formatPeriod(candidate.new_employ_start, candidate.new_employ_end) },
                       { label: '派遣期間', before: formatPeriod(candidate.dispatch_start_date, candidate.dispatch_end_date), after: formatPeriod(candidate.new_dispatch_start, candidate.new_dispatch_end) },
                       {
                         // 2026-07-17決定：試用期間は更新のたびに引き継がず、一括申請では必ず「無」にする
@@ -122,7 +128,7 @@ export default function RenewalContractConfirmModal({ candidate, onClose }: Prop
                       return (
                         <tr key={r.label}>
                           <td className="py-1 pr-3 align-top text-[#6B7280]">{r.label}</td>
-                          <td className={`py-1 pr-3 align-top ${changed ? 'text-[#B4B8C2] line-through' : 'text-[#6B7280]'}`}>{r.before}</td>
+                          <td className={`py-1 pr-3 align-top ${changed ? 'text-[#B4B8C2]' : 'text-[#6B7280]'}`}>{r.before}</td>
                           <td className={`py-1 align-top ${changed ? 'font-semibold text-[#E74C3C]' : 'text-[#6B7280]'}`}>{r.after}</td>
                         </tr>
                       )
@@ -136,7 +142,7 @@ export default function RenewalContractConfirmModal({ candidate, onClose }: Prop
                   <p className="mb-2 text-xs font-semibold text-[#1F2937]">{section.title}</p>
                   <table className="w-full text-xs">
                     <tbody>
-                      <tr className="text-[#8B98B1]"><td className="w-1/4 py-1 pr-3">項目</td><td className="w-3/8 py-1 pr-3">前回</td><td className="w-3/8 py-1">今回</td></tr>
+                      <tr className="text-[#8B98B1]"><td className="w-1/4 py-1 pr-3">項目</td><td className="w-3/8 py-1 pr-3">原契約</td><td className="w-3/8 py-1">今回</td></tr>
                       {section.title === '就業場所'
                         ? [
                             { label: '就業場所名', before: candidate.work_location_name || '―', after: candidate.new_work_location_name || candidate.work_location_name || '―' },
@@ -147,7 +153,7 @@ export default function RenewalContractConfirmModal({ candidate, onClose }: Prop
                             return (
                               <tr key={r.label}>
                                 <td className="py-1 pr-3 align-top text-[#6B7280]">{r.label}</td>
-                                <td className={`py-1 pr-3 align-top ${changed ? 'text-[#B4B8C2] line-through' : 'text-[#6B7280]'}`}>{r.before}</td>
+                                <td className={`py-1 pr-3 align-top ${changed ? 'text-[#B4B8C2]' : 'text-[#6B7280]'}`}>{r.before}</td>
                                 <td className={`py-1 align-top ${changed ? 'font-semibold text-[#E74C3C]' : 'text-[#6B7280]'}`}>{r.after}</td>
                               </tr>
                             )
@@ -161,7 +167,7 @@ export default function RenewalContractConfirmModal({ candidate, onClose }: Prop
                             return (
                               <tr key={def.label}>
                                 <td className="py-1 pr-3 align-top text-[#6B7280]">{def.label}</td>
-                                <td className={`py-1 pr-3 align-top ${changed ? 'text-[#B4B8C2] line-through' : 'text-[#6B7280]'} ${def.multiline ? 'whitespace-pre-wrap' : ''}`}>{beforeText}</td>
+                                <td className={`py-1 pr-3 align-top ${changed ? 'text-[#B4B8C2]' : 'text-[#6B7280]'} ${def.multiline ? 'whitespace-pre-wrap' : ''}`}>{beforeText}</td>
                                 <td className={`py-1 align-top ${changed ? 'font-semibold text-[#E74C3C]' : 'text-[#6B7280]'} ${def.multiline ? 'whitespace-pre-wrap' : ''}`}>{afterText}</td>
                               </tr>
                             )

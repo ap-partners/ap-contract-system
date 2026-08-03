@@ -179,8 +179,19 @@ export function formatEmployPeriodDisplay(c: Pick<RenewalCandidate, 'employ_star
 // 一括更新の条件として要求してしまっていた）。書類種別（document_type）を正とする
 // getDocumentPeriodFlags()で判定し、document_typeが欠落している場合のみ旧来の
 // フィールド有無判定にフォールバックする。
+// 2026-08-03追加：終了日が開始日より前になっていないかのチェック。/apply側STEP3の
+// 「終了日は開始日以降の日付にしてください」と同じ考え方だが、この一覧は入力するたび
+// 即保存される作りのため、ここでは「両方入力済みで、かつ順番が逆でないか」だけを見る
+// 単純な文字列比較（YYYY-MM-DD形式なので文字列比較で日付比較として成立する）。
+export function isPeriodOrderValid(start: string | null | undefined, end: string | null | undefined): boolean {
+  if (!start || !end) return true
+  return start <= end
+}
+
 export function periodReady(c: Pick<RenewalCandidate, 'status' | 'document_type' | 'dispatch_end_date' | 'employ_end_date' | 'new_dispatch_start' | 'new_dispatch_end' | 'new_employ_start' | 'new_employ_end'>): boolean {
   if (c.status === 'not_renewing' || c.status === 'applied') return false
+  if (!isPeriodOrderValid(c.new_dispatch_start, c.new_dispatch_end)) return false
+  if (!isPeriodOrderValid(c.new_employ_start, c.new_employ_end)) return false
   const flags = getDocumentPeriodFlags(c.document_type)
   if (flags.resolved) {
     const dispatchOk = !flags.needsDispatch || Boolean(c.new_dispatch_start && c.new_dispatch_end)

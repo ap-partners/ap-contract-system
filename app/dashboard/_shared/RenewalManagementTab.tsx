@@ -20,6 +20,7 @@ import {
   addDays,
   ContactFields,
   periodReady,
+  isPeriodOrderValid,
   getDocumentPeriodFlags,
   formatDateJp,
   formatPeriodJp,
@@ -357,21 +358,30 @@ export default function RenewalManagementTab({
   // 入り口として、呼び出し元（振り分けるボタン・他のタブへ移動ドロップダウンの両方）を
   // 必ずここを通す形に統一する（従来は「他のタブへ移動」からimport_waitを選んだ場合だけ
   // `setRenewalTab()`を直接呼んでおり、実際には依頼が送信されないまま画面上だけタブが
-  // 変わってしまうバグがあった）。あわせて、メール送信という副作用を伴う操作のため
-  // 確認ダイアログ（useConfirm）を追加。単純な仕分け直し（期間のみ更新⇔期間以外も修正する等）
-  // には確認を付けない（伊藤さん確認済み・2026-08-03）。
+  // 変わってしまうバグがあった）。
+  // 2026-08-03修正（伊藤さん指摘：「振り分けるボタンを押した際も確認メッセージ必要じゃない？
+  // 誤った内容の入力やクリックを想定して」）：以前はCSVインポートを依頼する対象が含まれる
+  // 場合のみ確認ダイアログを出していたが、複数件をラジオボタンで選んでから最後に1回だけ
+  // 実行する「振り分ける」ボタンは、選択漏れ・選択し忘れたままの誤クリックの影響範囲が
+  // 1件ずつの「他のタブへ移動」より大きいため、内容に関わらず必ず内訳（何件がどこへ）付きの
+  // 確認を挟む形に変更する。単純な仕分け直し（1件ずつの「他のタブへ移動」）は従来通り
+  // 確認なしのまま（伊藤さんとの2026-08-03合意は「振り分けるボタン」に限った見直し）。
   const handleTriageExecute = async () => {
     const entries = Object.entries(unassignedChoice).filter(([id]) => tabCandidates.some(c => c.id === id))
     if (entries.length === 0 || triaging) return
-    const importWaitCount = entries.filter(([, choice]) => choice === 'import_wait').length
-    if (importWaitCount > 0) {
-      const ok = await confirmDialog({
-        title: 'CSVインポートを依頼',
-        message: `選択した中に「CSVインポートを依頼する」対象が${importWaitCount}件含まれます。実行すると、その${importWaitCount}件について管理部へ実際のインポート依頼が送信されます。よろしいですか？`,
-        confirmLabel: '実行する',
-      })
-      if (!ok) return
-    }
+    const countsByChoice: Record<'period_only' | 'edit' | 'import_wait', number> = { period_only: 0, edit: 0, import_wait: 0 }
+    for (const [, choice] of entries) countsByChoice[choice]++
+    const breakdownLines = (['period_only', 'edit', 'import_wait'] as const)
+      .filter(k => countsByChoice[k] > 0)
+      .map(k => `・${TAB_LABEL[k]}：${countsByChoice[k]}件`)
+      .join('\n')
+    const importWaitCount = countsByChoice.import_wait
+    const ok = await confirmDialog({
+      title: '振り分けを実行',
+      message: `選択した${entries.length}件を振り分けます。\n${breakdownLines}${importWaitCount > 0 ? `\n\n「${TAB_LABEL.import_wait}」の${importWaitCount}件は、実行すると同時に管理部へ実際のインポート依頼が送信されます。` : ''}\n\nよろしいですか？`,
+      confirmLabel: '実行する',
+    })
+    if (!ok) return
     setTriaging(true)
     for (const [id, choice] of entries) {
       const c = tabCandidates.find(x => x.id === id)
@@ -780,6 +790,12 @@ export default function RenewalManagementTab({
       end: c.new_dispatch_end || '',
     }
     const ready = periodReady(c)
+    // 2026-08-03追加：終了日が開始日より前になっている場合の警告表示。periodReady()側で
+    // 既に「一括更新に含める」チェックを無効化しているが、なぜチェックできないのかが
+    // 画面上で分からないと伊藤さんの指摘（誤った日付入力を想定したチェック）に応えきれない
+    // ため、該当ブロックの下に理由を明示する。
+    const dispatchOrderInvalid = hasDispatch && !isPeriodOrderValid(draft.start, draft.end)
+    const employOnlyOrderInvalid = !hasDispatch && !isPeriodOrderValid(c.new_employ_start, c.new_employ_end)
     const checkboxSlot = c.status !== 'not_renewing' && (
       <label className={`flex items-center gap-1.5 text-[13px] font-semibold whitespace-nowrap ${ready ? 'text-[#1F2937]' : 'text-[#8B98B1]'}`}>
         <input type="checkbox" checked={c.triage_mode === 'bulk'} disabled={!canFinalize || !ready}
@@ -814,6 +830,9 @@ export default function RenewalManagementTab({
                     </button>
                   )}
                 </div>
+                {dispatchOrderInvalid && (
+                  <p className="mt-2 text-xs font-semibold" style={{ color: '#C0392B' }}>終了日は開始日以降の日付にしてください。</p>
+                )}
               </div>
               {hasEmploy && (
                 <div className="rounded-2xl border border-[#E8EDF5] p-3.5">
@@ -846,6 +865,9 @@ export default function RenewalManagementTab({
                     className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" />
                 </div>
               </div>
+              {employOnlyOrderInvalid && (
+                <p className="mt-2 text-xs font-semibold" style={{ color: '#C0392B' }}>終了日は開始日以降の日付にしてください。</p>
+              )}
             </div>
           )}
         </div>

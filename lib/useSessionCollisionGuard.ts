@@ -17,13 +17,24 @@
 import { useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { useToast } from '@/app/_shared/ui/ToastProvider'
 
 // expectedUserId: この画面を開いた時点で確認したログインユーザーのid。
 // これと異なるユーザーへ認証情報が変わったことを検知したら、強制ログアウト＋ログイン画面へ遷移する。
 // loginPath: 遷移先のログイン画面（社内ダッシュボード系は'/login'固定でよいが、念のため引数化）。
+//
+// 2026-08-04修正：強制ログアウト理由の通知に、禁止済みのブラウザネイティブalert()を使っていた
+// （2026-07-22の全体置き換え作業の対象漏れ。2026-08-03に更新期限管理タブのalert()置き換え作業中に
+// 発見し、伊藤さんの指示でいったんタスク化・後日着手としていたもの）。他画面と同じ`useToast()`の
+// `showError()`（画面右上のトースト通知）に置き換える。`ToastProvider`はルートレイアウト
+// （app/layout.tsx）でアプリ全体を包んでおり、`router.push(loginPath)`はNext.jsのクライアント側
+// 遷移（ページの再読み込みを伴わない）のためProvider自体は再マウントされない。したがって
+// showError()を呼んだ直後にログイン画面へ遷移しても、トーストの表示状態はそのまま引き継がれ、
+// 遷移後のログイン画面にも正しく表示される。
 export function useSessionCollisionGuard(expectedUserId: string | null | undefined, loginPath: string = '/login') {
   const router = useRouter()
   const handledRef = useRef(false)
+  const { showError } = useToast()
 
   useEffect(() => {
     if (!expectedUserId) return
@@ -36,12 +47,12 @@ export function useSessionCollisionGuard(expectedUserId: string | null | undefin
       if (currentId && currentId !== expectedUserId) {
         handledRef.current = true
         supabase.auth.signOut().finally(() => {
-          alert('別のタブまたは別の端末で、別のアカウントにログインされたことを検知しました。\n安全のため、いったんログアウトしました。お手数ですが、もう一度ログインし直してください。')
+          showError('別のタブまたは別の端末で、別のアカウントにログインされたことを検知しました。\n安全のため、いったんログアウトしました。お手数ですが、もう一度ログインし直してください。')
           router.push(loginPath)
         })
       }
     })
 
     return () => { listener.subscription.unsubscribe() }
-  }, [expectedUserId, loginPath, router])
+  }, [expectedUserId, loginPath, router, showError])
 }

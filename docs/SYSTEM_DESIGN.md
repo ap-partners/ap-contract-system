@@ -2495,7 +2495,7 @@ CLAUDE.mdの残タスク一覧にある「既存メールテンプレート・�
 
 **伊藤さんへの確認事項（未回答）**：①メール・画面メッセージ読みやすさ見直しと合流させて一緒に進めるか、②独立タスクとして先に片付けるか、③今回どこまでスコープを広げるか（日付表記だけに絞るか、関連する`formatDateTime`等の重複実装の共通化まで含めるか）。着手前に、読みやすさ見直しと同じやり方（Exploreエージェント等による全箇所洗い出し→優先度案の提示→伊藤さんのOK）を踏む想定。実装は未着手。
 
-### 2026-08-03：契約状況モニタリングを担当営業ダッシュボードにも追加（閲覧のみ・自部門のみ／実装完了・要デプロイ＋実機確認）
+### 2026-08-03：契約状況モニタリングを担当営業ダッシュボードにも追加（閲覧のみ・自部門のみ／実装完了・実機確認済み）
 
 2026-07-29の上司デモ指摘⑨「契約状況モニタリングを担当営業側にも表示するか検討」に対応。プロの業務改善責任者／PdM／UI-UXデザイナー目線で2点を整理し、伊藤さんに確認（ルール16）。
 
@@ -2511,4 +2511,18 @@ CLAUDE.mdの残タスク一覧にある「既存メールテンプレート・�
 - `ContractMonitoringSection.tsx`に`readOnly`prop（省略時false＝管理部の従来動作）を新設。`readOnly=true`の場合：①「担当営業へ確認依頼」ボタンを非表示、②「対応状況」をクリック可能な`ActionStatusSegmented`ではなく、非活性の単色バッジ（未対応なら薄いグレー、それ以外なら濃い青地に白文字）で表示するのみに変更。あわせて`requestFollowUp`・`updateActionStatus`propを任意（optional）化し、担当営業側の呼び出し元では渡さなくても型エラーにならないようにした。
 - `app/dashboard/sales/page.tsx`：`useContractMonitoring()`・`ContractMonitoringSection`を新規import。`RenewalSubTab`型に`'monitoring'`を追加し、既存の`SubTabBar`（期限間近の更新候補／最低賃金改定対応）に「契約状況モニタリング」を2番目のタブとして追加（`admin/page.tsx`と同じ並び・件数計算ロジック＝台帳なし・解消済みを除いた要対応件数）。ページ読み込み時の`Promise.all`に`fetchMonitoring()`を追加し、サブタブを開く前から件数バッジが正しく表示されるようにした（2026-07-29の管理部側と同じ理由）。`currentUserName`propには`deptNameRef.current`（部門名）を渡しているが、`readOnly`時はどのみち使われない（確認依頼ボタン自体が表示されないため）。
 
-**検証**：`typescript`パッケージの`transpileModule`による構文チェックを実施（`app/dashboard/sales/page.tsx`・`ContractMonitoringSection.tsx`・`app/dashboard/admin/page.tsx`いずれも診断0件。admin側は`ContractMonitoringSection`のprops型変更による影響がないことの確認目的）。Vercelデプロイ後の実機確認はまだ実施していない。
+**検証**：`typescript`パッケージの`transpileModule`による構文チェックを実施（`app/dashboard/sales/page.tsx`・`ContractMonitoringSection.tsx`・`app/dashboard/admin/page.tsx`いずれも診断0件。admin側は`ContractMonitoringSection`のprops型変更による影響がないことの確認目的）。
+
+**実機確認（2026-08-03・デプロイ後）**：Claude in Chromeで2ロールを確認。①担当営業（山田太郎・北海道営業所・`ito+demo@appart.co.jp`）でログインし、更新期限管理タブの「契約状況モニタリング」サブタブを開いたところ、自部門の三國駿様（105026）1件のみが表示され（管理部側の全社10件から正しく絞り込まれている）、「対応状況」は非活性のバッジ表示のみでクリックできず、「担当営業へ確認依頼」ボタンも表示されないことを確認。コンソールエラーも無し。②管理部（管理部テスト・`admin-test@appart.co.jp`）で別タブからログインし同タブを確認したところ、従来通り全社分10件が表示され、「担当営業へ確認依頼」ボタン・対応状況の変更ボタン（未着手／依頼済み／対応中／解消のセグメントコントロール）とも変更前と同じく操作可能な状態のままであることを確認（`readOnly`分岐によるリグレッション無し）。コンソールエラーも無し。なお②のログイン時に既存の`useSessionCollisionGuard`機能（別タブでの別アカウントログインを検知し強制ログアウトする2026-07-22実装の機能）が働き①の担当営業タブが自動的にログアウトされたが、これは仕様通りの既存動作であり今回の変更によるものではない（①の確認はログアウトが発生する前に完了済み）。今回はいずれも閲覧のみのテストのためDBへの変更は無く、復元作業も不要。
+
+### 2026-08-04：useSessionCollisionGuard.tsに残っていた禁止済みalert()の修正（実装完了・要デプロイ＋実機確認）
+
+2026-08-03の更新期限管理タブのalert()置き換え作業中に、`app/`配下の`alert(`全文検索で`lib/useSessionCollisionGuard.ts`にもう1件の生きた`alert()`が残っていることを発見していた（セッション衝突検知機能＝別タブ・別端末で別アカウントにログインされたことを検知し安全のため強制ログアウトする機能。`onAuthStateChange`のハンドラ内で、強制ログアウト理由をユーザーに伝える箇所）。発見時は伊藤さんの指示で「タスクとして記録し、着手は後日」としていた（CLAUDE.md🔴残タスク一覧に記録）。伊藤さんから改めて着手の指示を受け、今回対応。
+
+**着手前の懸念点の確認**：発見時点で「直し方は`useToast()`の`showError()`への置き換えでよいはずだが、着手前に呼び出し元（強制ログアウト直後の画面遷移とのタイミング）を確認する必要がある」としていた点について、`app/layout.tsx`（ルートレイアウト）を確認したところ、`ToastProvider`はアプリ全体（`<html><body>`直下）を包む形で配置されていることを確認した。`useSessionCollisionGuard`内の`router.push(loginPath)`はNext.js App Routerのクライアント側遷移（ページの再読み込みを伴わない）であるため、ルートレイアウトごと再マウントされることはない。したがって`showError()`を呼んでから`router.push()`で画面遷移しても、トースト自体の表示状態（React state）はそのまま引き継がれ、遷移後の`/login`画面でも問題なく表示され続けると判断した。
+
+**実装内容**：`lib/useSessionCollisionGuard.ts`に`import { useToast } from '@/app/_shared/ui/ToastProvider'`を追加し、フック内で`const { showError } = useToast()`を呼び出す形に変更。`onAuthStateChange`ハンドラ内の`alert('別のタブまたは別の端末で、別のアカウントにログインされたことを検知しました。...')`を`showError(...)`（同一メッセージ）に置き換え。`useEffect`の依存配列にも`showError`を追加（`ToastProvider`側で`useCallback`によりレンダー間で参照が安定しているため、無限再実行の懸念はない）。
+
+**検証**：`typescript`パッケージの`transpileModule`で`lib/useSessionCollisionGuard.ts`の構文チェックを実施し診断0件を確認。あわせて`lib/`配下を`alert(`で全文検索し、コメント内の言及以外に生きた`alert()`が残っていないことを確認済み。
+
+要デプロイ＋実機確認（2タブでの別アカウントログインによる強制ログアウトを実際に発生させ、alertダイアログが出ないこと・ログイン画面遷移後もトーストメッセージが正しく表示されることを確認する予定）。

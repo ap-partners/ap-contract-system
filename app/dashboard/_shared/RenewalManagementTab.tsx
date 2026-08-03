@@ -26,6 +26,7 @@ import {
   formatEmployPeriodDisplay,
 } from './useRenewalCandidates'
 import { clampDateYear } from '@/app/apply/_lib/helpers'
+import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import { SubTabBar, SubTabItem } from './SubTabBar'
 
 const CONTACT_GROUP_LABELS: Record<keyof ContactFields, string> = {
@@ -216,8 +217,15 @@ function MoveToOtherTabMenu({
   onToggle: () => void
   onMove: (tab: RenewalTab) => void
 }) {
+  // 2026-08-03修正：伊藤さんの再指摘で、items-center化後もまだ「他のタブへ移動」と「更新しない」に
+  // 1〜2px程度の縦ズレが残っていた。実機で計測した結果、原因はflexboxの仕様上「flexコンテナの
+  // 直接の子要素はblock化される」のに対し、この`<button>`だけ間に`<div className="relative">`
+  // （ドロップダウン位置決め用）を挟んでいたため直接の子ではなく、button自身はinline-blockの
+  // ままレイアウトされ、微妙な行送り分だけ「更新しない」（直接の子でblock化されている）とズレて
+  // いたことが判明。ラッパーdiv自体を`inline-flex items-center`にし、中のbuttonをこのdivの
+  // flexアイテムとしてblock化させることで、両者の箱のサイズ計算方法を完全に一致させ解消する。
   return (
-    <div className="relative">
+    <div className="relative inline-flex items-center">
       <button
         onClick={onToggle}
         className="text-[11px] font-semibold underline text-[#8B98B1] hover:text-[#6B7280]"
@@ -225,14 +233,19 @@ function MoveToOtherTabMenu({
         他のタブへ移動
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-20 mt-1.5 w-44 rounded-xl border border-[#E8EDF5] bg-white p-1.5 shadow-[0_10px_30px_rgba(15,23,42,.12)]">
+        // 2026-08-03修正（伊藤さん指摘）：従来は「〜する」で終わる項目名だけ助詞を「に」に変え
+        // （それ以外は「へ」）、リストの中で1項目だけ語尾が違って見え統一感がなかった。
+        // 助詞を使わず「→ タブ名」という矢印表記に統一し、文法上の使い分け自体を無くした。
+        // あわせて折り返し防止のため`whitespace-nowrap`を付け、最長の項目名でも収まるよう
+        // ドロップダウン幅を`w-44`→`w-60`に拡大。
+        <div className="absolute right-0 top-full z-20 mt-1.5 w-60 rounded-xl border border-[#E8EDF5] bg-white p-1.5 shadow-[0_10px_30px_rgba(15,23,42,.12)]">
           {TAB_DEFS.filter(t => t.key !== currentTab).map(t => (
             <button
               key={t.key}
               onClick={() => onMove(t.key)}
-              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F3F5F8]"
+              className="block w-full whitespace-nowrap rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F3F5F8]"
             >
-              {t.label}{t.label.endsWith('する') ? 'に' : 'へ'}
+              → {t.label}
             </button>
           ))}
         </div>
@@ -248,6 +261,7 @@ export default function RenewalManagementTab({
   currentUserId, currentUserEmail, currentUserDeptName, canFinalize = true,
 }: Props) {
   const router = useRouter()
+  const confirmDialog = useConfirm()
   const [helpOpen, setHelpOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<RenewalTab>('unassigned')
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -333,9 +347,31 @@ export default function RenewalManagementTab({
     setBulkApplyResult(null)
   }
 
+  // 2026-08-03修正（伊藤さん指摘）：「CSVインポートを依頼する」タブに入る＝管理部へ実際の
+  // インポート依頼を送信する、という業務アクションそのものであり、単なる仕分け直し（箱の
+  // 移し替え）とは性質が違う。伊藤さんの整理により、この「依頼する」という具体的な処理は
+  // "CSVインポートを依頼する"という文脈固有の処理として一本化すべきで、汎用的な箱の移動処理
+  // （setRenewalTab）に混ぜ込むべきではない、と確定。既存の`requestCsvImport()`が元々
+  // 「requestsテーブルへ依頼を保存→成功したらrenewal_tab='import_wait'へ移動」まで
+  // 一体で行う設計だったため、これを「CSVインポートを依頼するタブへ入る」ための唯一の
+  // 入り口として、呼び出し元（振り分けるボタン・他のタブへ移動ドロップダウンの両方）を
+  // 必ずここを通す形に統一する（従来は「他のタブへ移動」からimport_waitを選んだ場合だけ
+  // `setRenewalTab()`を直接呼んでおり、実際には依頼が送信されないまま画面上だけタブが
+  // 変わってしまうバグがあった）。あわせて、メール送信という副作用を伴う操作のため
+  // 確認ダイアログ（useConfirm）を追加。単純な仕分け直し（期間のみ更新⇔期間以外も修正する等）
+  // には確認を付けない（伊藤さん確認済み・2026-08-03）。
   const handleTriageExecute = async () => {
     const entries = Object.entries(unassignedChoice).filter(([id]) => tabCandidates.some(c => c.id === id))
     if (entries.length === 0 || triaging) return
+    const importWaitCount = entries.filter(([, choice]) => choice === 'import_wait').length
+    if (importWaitCount > 0) {
+      const ok = await confirmDialog({
+        title: 'CSVインポートを依頼',
+        message: `選択した中に「CSVインポートを依頼する」対象が${importWaitCount}件含まれます。実行すると、その${importWaitCount}件について管理部へ実際のインポート依頼が送信されます。よろしいですか？`,
+        confirmLabel: '実行する',
+      })
+      if (!ok) return
+    }
     setTriaging(true)
     for (const [id, choice] of entries) {
       const c = tabCandidates.find(x => x.id === id)
@@ -354,6 +390,27 @@ export default function RenewalManagementTab({
     return <div className="rounded-[18px] border border-[#E8EDF5] bg-white p-8 text-center text-sm text-[#6B7280]">読み込み中です…</div>
   }
 
+  // 「他のタブへ移動」ドロップダウンから移動先を選んだ時の共通処理。
+  // 2026-08-03修正：移動先が「CSVインポートを依頼する」の場合は、どのタブから移動する場合でも
+  // 必ず`requestCsvImport()`（確認ダイアログ→依頼の実送信→タブ移動、を一体で行う）を通す。
+  // これにより「他のタブへ移動」経由でも確実に依頼が送信される（従来はここだけ`setRenewalTab()`
+  // を直接呼んでおり、タブは変わるのに依頼が送信されないバグがあった）。それ以外の移動先は
+  // 従来通り軽量な仕分け直しとして確認なしで即時移動（onMoveOverrideがあればそちらを優先）。
+  const handleMoveToTab = async (c: RenewalCandidate, tab: RenewalTab, opts?: { onMoveOverride?: (tab: RenewalTab) => void }) => {
+    if (tab === 'import_wait') {
+      const ok = await confirmDialog({
+        title: 'CSVインポートを依頼',
+        message: `${c.staff_name || '対象スタッフ'}様の次契約について、CSVインポートを依頼します。選ぶと同時に管理部へ実際の依頼が送信されます。よろしいですか？`,
+        confirmLabel: '依頼する',
+      })
+      if (!ok) return
+      await requestCsvImport(c, currentUserId, currentUserDeptName)
+      return
+    }
+    if (opts?.onMoveOverride) opts.onMoveOverride(tab)
+    else await setRenewalTab(c.id, tab)
+  }
+
   // 2026-07-31追加：CSV自動反映タブから「期間のみ更新」へ移動する場合のみ、派遣先変更等の
   // 手動切替であることの理由入力を挟む（旧「派遣先変更のため手入力に切替」ボタンの役割を
   // 「他のタブへ移動」に統合したもの。onMoveOverrideを渡さない呼び出し元は従来通り即時移動）。
@@ -365,9 +422,8 @@ export default function RenewalManagementTab({
           currentTab={activeTab}
           open={moveMenuId === c.id}
           onToggle={() => setMoveMenuId(moveMenuId === c.id ? null : c.id)}
-          onMove={tab => {
-            if (opts?.onMoveOverride) opts.onMoveOverride(tab)
-            else setRenewalTab(c.id, tab)
+          onMove={async tab => {
+            await handleMoveToTab(c, tab, opts)
             setMoveMenuId(null)
           }}
         />
@@ -831,17 +887,18 @@ export default function RenewalManagementTab({
     <article key={c.id} className="rounded-[18px] border border-[#E8EDF5] bg-white p-5">
       {renderRowHead(c, renderCommonFooter(c))}
       {renderSecondaryGrid(c, renderConfirmLink(c))}
+      {/* 2026-08-03修正（伊藤さん指摘）：「期間以外も修正するに切替」「期間のみ更新に切替」の
+          2ボタンは、同じ行の右上にある「他のタブへ移動」ドロップダウンと機能が完全に重複していた
+          （同じsetRenewalTab()を別の2通りの操作で呼べる状態で、保守も分かりにくくなっていた）。
+          重複ボタンを廃止し「他のタブへ移動」に一本化。「CSVを再検索」はタブ移動ではなく
+          別機能（CSV再検索）のため維持。 */}
       <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[#E8EDF5] pt-3">
         <span className="text-xs text-[#8B98B1]">CSVインポートを依頼済みです。管理部が取り込みを確認しています。</span>
         {canFinalize && (
-          <>
-            <button onClick={() => handleRecheck(c)} disabled={recheckingId === c.id}
-              className="rounded-2xl border border-[#D0DAF0] bg-white px-3 py-1.5 text-xs font-semibold text-[#2F5FD0] disabled:opacity-50">
-              {recheckingId === c.id ? '再検索中…' : 'CSVを再検索'}
-            </button>
-            <button onClick={() => setRenewalTab(c.id, 'edit')} className="rounded-2xl border border-[#E8EDF5] bg-white px-3 py-1.5 text-xs font-semibold text-[#5A3EC8]">期間以外も修正するに切替</button>
-            <button onClick={() => setRenewalTab(c.id, 'period_only')} className="rounded-2xl border border-[#E8EDF5] bg-white px-3 py-1.5 text-xs font-semibold text-[#1F7A45]">期間のみ更新に切替</button>
-          </>
+          <button onClick={() => handleRecheck(c)} disabled={recheckingId === c.id}
+            className="rounded-2xl border border-[#D0DAF0] bg-white px-3 py-1.5 text-xs font-semibold text-[#2F5FD0] disabled:opacity-50">
+            {recheckingId === c.id ? '再検索中…' : 'CSVを再検索'}
+          </button>
         )}
       </div>
       {renderReasonBoxes(c)}

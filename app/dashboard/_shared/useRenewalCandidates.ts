@@ -26,6 +26,7 @@ import { extractCsvFields } from '@/app/apply/_lib/helpers'
 import { buildMergedFields } from './renewalFieldMap'
 import { runAutoChecks, MinimumWageRow } from '@/lib/autoChecks'
 import { excludeRetiredStaffOr } from '@/lib/staffFilters'
+import { useToast } from '@/app/_shared/ui/ToastProvider'
 
 // 2026-07-31追加（更新期限管理タブの情報設計見直し・5タブ化）：
 // unassigned=仕分け待ち、csv_auto=CSV自動反映、period_only=期間のみ更新、
@@ -209,6 +210,10 @@ export function useRenewalCandidates() {
   const [candidates, setCandidates] = useState<RenewalCandidate[]>([])
   const [loading, setLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  // 2026-08-03修正：以前はこのファイル内2箇所で保存失敗時にブラウザネイティブalert()を
+  // 直接呼んでいた（2026-07-22の全体置き換え作業から漏れていた残骸）。実機確認中に日付の
+  // 前後チェックのテストで偶然踏んで発覚。他画面と同じ`useToast()`のトースト通知に統一する。
+  const { showError } = useToast()
 
   // ①検知・登録：現場契約のうち、スタッフごとに最新の契約を対象に、雇用期間終了日が
   // 45日以内（超過含む）のものをrenewal_candidatesへupsertする。既存行のステータス等
@@ -409,9 +414,9 @@ export function useRenewalCandidates() {
     if (error) {
       console.error('更新候補の保存エラー:', error)
       if (prevSnapshot) setCandidates(prev => prev.map(c => c.id === id ? prevSnapshot : c))
-      alert('保存に失敗しました。入力内容（特に日付の形式）をご確認の上、もう一度お試しください。')
+      showError('保存に失敗しました。入力内容（特に日付の形式）をご確認の上、もう一度お試しください。')
     }
-  }, [candidates])
+  }, [candidates, showError])
 
   // ③CSV対象：新しい派遣期間（前回終了日の翌日を基準日として検索）を自動検索し、差異を反映する。
   // 見つからない場合はstatusを'csv_pending'にする（画面側でCSVインポート依頼ボタンを出す）。
@@ -519,12 +524,12 @@ export function useRenewalCandidates() {
     })
     if (error) {
       console.error('CSVインポート依頼の保存エラー:', error)
-      alert('インポート依頼の送信に失敗しました。もう一度お試しください。')
+      showError('インポート依頼の送信に失敗しました。もう一度お試しください。')
       return
     }
     // 2026-07-31追加：依頼が成功したら「CSVインポート待ち」タブへ移動する。
     await updateCandidate(candidate.id, { renewal_tab: 'import_wait' })
-  }, [updateCandidate])
+  }, [updateCandidate, showError])
 
   // ⑤派遣先変更のため手入力に切り替える（例外操作・理由必須）。
   // 2026-07-31追加：切替後は「期間のみ更新」タブへ移動し、自分で新しい期間を入力できるようにする。

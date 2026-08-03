@@ -5,6 +5,12 @@
 // 「対応依頼」ボタンからの担当営業への即時メール送信（/api/contract-monitoring/notify）を追加。
 // 「解消」にした行はデフォルト非表示にする（台帳なしトグルと同じ考え方。対応済みの案件で
 // 一覧が埋まらないようにするため）。
+// 2026-08-03追加：担当営業ダッシュボードにも「閲覧のみ」で表示する要望（伊藤さんとの検討で
+// 「担当営業は閲覧のみ・自部門のみ」で確定）。担当営業向けには`readOnly`propを渡し、
+// 「担当営業へ確認依頼」ボタン（担当営業自身が自分宛に依頼を送る形になり意味が無いため）と
+// 対応状況の変更操作（ActionStatusSegmented）を非表示にし、対応状況は非活性のバッジ表示のみに
+// する。表示対象の絞り込み（自部門のみ）はDB側の`get_contract_monitoring_status()`で
+// `current_dept_scope()`を使って行っており、このコンポーネント自体はrowsをそのまま表示するだけ。
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -17,11 +23,13 @@ type Props = {
   loading: boolean
   onRefresh: () => void
   currentUserName: string | null
-  requestFollowUp: (
+  requestFollowUp?: (
     row: Pick<MonitoringRow, 'employeeNumber' | 'staffName' | 'deptNo' | 'issues'>,
     requestedByName: string | null
   ) => Promise<{ ok: boolean; error?: string }>
-  updateActionStatus: (employeeNumber: string, status: ActionStatus) => Promise<boolean>
+  updateActionStatus?: (employeeNumber: string, status: ActionStatus) => Promise<boolean>
+  // 担当営業向け：閲覧のみ（対応状況の変更・確認依頼ボタンとも非表示）。省略時はfalse（管理部の従来動作）。
+  readOnly?: boolean
 }
 
 const SEVERITY_META: Record<1 | 2 | 3 | 4, { label: string; bg: string; color: string; dot: string }> = {
@@ -77,7 +85,7 @@ function ActionStatusSegmented({
 }
 
 export default function ContractMonitoringSection({
-  rows, loading, onRefresh, currentUserName, requestFollowUp, updateActionStatus,
+  rows, loading, onRefresh, currentUserName, requestFollowUp, updateActionStatus, readOnly = false,
 }: Props) {
   const [showLedgerless, setShowLedgerless] = useState(false)
   const [showResolved, setShowResolved] = useState(false)
@@ -98,6 +106,7 @@ export default function ContractMonitoringSection({
   }
 
   const handleRequest = async (row: MonitoringRow) => {
+    if (!requestFollowUp) return
     const ok = await confirmDialog({
       title: '担当営業への確認依頼',
       message: `${row.staffName || '対象スタッフ'}様（${row.deptName || '所属部署不明'}）の契約状況について、担当営業へ確認依頼メールを送信します。よろしいですか？`,
@@ -115,6 +124,7 @@ export default function ContractMonitoringSection({
   }
 
   const handleStatusChange = async (row: MonitoringRow, status: ActionStatus) => {
+    if (!updateActionStatus) return
     const ok = await updateActionStatus(row.employeeNumber, status)
     if (!ok) showError('対応状況の更新に失敗しました。もう一度お試しください。')
   }
@@ -182,21 +192,34 @@ export default function ContractMonitoringSection({
                     </p>
                   )}
                 </div>
-                <button
-                  onClick={() => handleRequest(row)}
-                  disabled={sendingFor === row.employeeNumber}
-                  className="text-xs font-semibold rounded-full px-3 py-1.5 whitespace-nowrap text-white disabled:opacity-60"
-                  style={{ background: '#2F5FD0' }}
-                >
-                  {sendingFor === row.employeeNumber ? '送信中…' : '担当営業へ確認依頼'}
-                </button>
+                {!readOnly && (
+                  <button
+                    onClick={() => handleRequest(row)}
+                    disabled={sendingFor === row.employeeNumber}
+                    className="text-xs font-semibold rounded-full px-3 py-1.5 whitespace-nowrap text-white disabled:opacity-60"
+                    style={{ background: '#2F5FD0' }}
+                  >
+                    {sendingFor === row.employeeNumber ? '送信中…' : '担当営業へ確認依頼'}
+                  </button>
+                )}
               </div>
               <div className="mt-3 pt-3 flex items-center gap-2 flex-wrap" style={{ borderTop: '1px solid #F3F5F8' }}>
                 <span className="text-xs text-[#8B98B1]">対応状況</span>
-                <ActionStatusSegmented
-                  value={row.actionStatus}
-                  onChange={status => handleStatusChange(row, status)}
-                />
+                {readOnly ? (
+                  <span
+                    className="text-xs font-semibold rounded-full px-2.5 py-1 whitespace-nowrap"
+                    style={row.actionStatus === '未着手'
+                      ? { color: '#6B7280', background: '#F3F5F8' }
+                      : { background: '#2F5FD0', color: '#fff' }}
+                  >
+                    {row.actionStatus}
+                  </span>
+                ) : (
+                  <ActionStatusSegmented
+                    value={row.actionStatus}
+                    onChange={status => handleStatusChange(row, status)}
+                  />
+                )}
               </div>
             </div>
           ))}

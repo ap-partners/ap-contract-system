@@ -21,6 +21,8 @@ import { useApprovedAccumulator, APPROVED_WINDOW_DAYS } from '../_shared/useAppr
 import RenewalManagementTab from '../_shared/RenewalManagementTab'
 import WageRevisionSection from '../_shared/WageRevisionSection'
 import { useWageRevisionCandidates } from '../_shared/useWageRevisionCandidates'
+import ContractMonitoringSection from '../_shared/ContractMonitoringSection'
+import { useContractMonitoring } from '../_shared/useContractMonitoring'
 import PledgeListSection from '../_shared/PledgeListSection'
 import LoggedInUserChip from '../_shared/LoggedInUserChip'
 import NewDocumentMenu from '../_shared/NewDocumentMenu'
@@ -38,8 +40,9 @@ type Contract = ContractForDisplay & {
   sign_requested_at: string | null
 }
 
-// 更新期限管理タブのサブタブ（2026-07-29：最低賃金改定対応の追加に伴い新設。admin/page.tsxと同じ考え方）
-type RenewalSubTab = 'candidates' | 'wageRevision'
+// 更新期限管理タブのサブタブ（2026-07-29：最低賃金改定対応の追加に伴い新設。admin/page.tsxと同じ考え方。
+// 2026-08-03：契約状況モニタリングを担当営業にも「閲覧のみ・自部門のみ」で追加）
+type RenewalSubTab = 'candidates' | 'wageRevision' | 'monitoring'
 
 type MyRequest = {
   id: string
@@ -270,6 +273,11 @@ export default function SalesDashboard() {
     rows: wageRevisionRows, loading: wageRevisionLoading, error: wageRevisionError,
     fetchCandidates: fetchWageRevisionCandidates,
   } = useWageRevisionCandidates()
+  // 契約状況モニタリング（2026-08-03追加。担当営業は閲覧のみ・自部門のみ。DB関数
+  // get_contract_monitoring_status()側で担当営業ロールの場合のみ自部門グループに絞り込み済み）
+  const {
+    rows: monitoringRows, loading: monitoringLoading, fetchMonitoring,
+  } = useContractMonitoring()
 
   useEffect(() => {
     const init = async () => {
@@ -312,6 +320,8 @@ export default function SalesDashboard() {
         // 2026-07-29：最低賃金改定対応サブタブのピル件数が、サブタブを開くまで0件のまま表示される
         // 不具合防止のため（契約状況モニタリングと同じ理由）、ページ読み込み時に先読みする。
         fetchWageRevisionCandidates(),
+        // 2026-08-03：契約状況モニタリングサブタブも同じ理由で先読みする（admin/page.tsxと同じ考え方）。
+        fetchMonitoring(),
       ])
       setLoading(false)
     }
@@ -832,11 +842,25 @@ export default function SalesDashboard() {
             <SubTabBar
               items={[
                 { key: 'candidates' as const, label: '期限間近の更新候補', count: renewalCandidates.length },
+                {
+                  key: 'monitoring' as const,
+                  label: '契約状況モニタリング',
+                  count: monitoringRows.filter(r => r.topSeverity !== 1 && r.actionStatus !== '解消').length,
+                },
                 { key: 'wageRevision' as const, label: '最低賃金改定対応', count: wageRevisionRows.length },
               ]}
               activeKey={renewalSubTab}
               onChange={setRenewalSubTab}
             />
+            {renewalSubTab === 'monitoring' && (
+              <ContractMonitoringSection
+                rows={monitoringRows}
+                loading={monitoringLoading}
+                onRefresh={fetchMonitoring}
+                currentUserName={deptNameRef.current}
+                readOnly
+              />
+            )}
             {renewalSubTab === 'wageRevision' && (
               <WageRevisionSection
                 rows={wageRevisionRows}

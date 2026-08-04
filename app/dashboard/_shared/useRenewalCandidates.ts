@@ -91,6 +91,12 @@ export type RenewalCandidate = {
   manual_override_reason: string | null
   new_employ_start: string | null
   new_employ_end: string | null
+  // 2026-08-04追加（①正社員の雇用期間バグ修正）：正社員・無期契約（雇用の側面が
+  // 「期間の定めなし」の対象者）向け。兼用契約でこの対象者の場合、雇用期間の日付レンジ
+  // ではなくこの単一の契約条件適用開始日を編集対象とする（RenewalManagementTab.tsx
+  // のrenderPeriodOnlyRow参照）。未編集の間はUI側でcontract_start_date（前回値）を
+  // 初期表示し、そのまま実行可能（変更したい場合のみ編集する）。
+  new_contract_start_date: string | null
   new_dispatch_start: string | null
   new_dispatch_end: string | null
   new_work_location_name: string | null
@@ -137,6 +143,14 @@ export function getDocumentPeriodFlags(documentType: string | null): { needsEmpl
   const docType = (documentType || '').replace(/\n/g, ' ').trim()
   if (!docType) return { needsEmploy: false, needsDispatch: false, resolved: false }
   return { needsEmploy: docType.includes('雇用契約書'), needsDispatch: docType.includes('就業条件明示書'), resolved: true }
+}
+
+// 2026-08-04追加（①正社員の雇用期間バグ修正）：正社員・無期契約は雇用期間が
+// 「期間の定めなし」（契約条件適用開始日のみ）であり、有期契約・アルバイトのような
+// 開始日〜終了日の日付レンジという概念を持たない（app/apply/_components/StepPeriod.tsx
+// の`period === '無期' || contractType === '正社員'`判定と同じ基準）。
+export function isIndefiniteEmployType(contractType: string | null | undefined): boolean {
+  return contractType === '正社員' || contractType === '無期契約'
 }
 
 // 2026-08-03追加（伊藤さんレビュー：日付は「年月日」表記でないと分かりづらい、との指摘対応）。
@@ -189,20 +203,31 @@ export function isPeriodOrderValid(start: string | null | undefined, end: string
   return start <= end
 }
 
-export function periodReady(c: Pick<RenewalCandidate, 'status' | 'document_type' | 'dispatch_end_date' | 'employ_end_date' | 'new_dispatch_start' | 'new_dispatch_end' | 'new_employ_start' | 'new_employ_end'>): boolean {
+export function periodReady(c: Pick<RenewalCandidate, 'status' | 'document_type' | 'dispatch_end_date' | 'employ_end_date' | 'new_dispatch_start' | 'new_dispatch_end' | 'new_employ_start' | 'new_employ_end' | 'current_contract_type' | 'contract_start_date' | 'new_contract_start_date'>): boolean {
   if (c.status === 'not_renewing' || c.status === 'applied') return false
   if (!isPeriodOrderValid(c.new_dispatch_start, c.new_dispatch_end)) return false
-  if (!isPeriodOrderValid(c.new_employ_start, c.new_employ_end)) return false
+  const isIndefinite = isIndefiniteEmployType(c.current_contract_type)
+  // 2026-08-04修正（①）：正社員・無期契約は雇用期間が日付レンジを持たないため、
+  // new_employ_start/new_employ_endの前後チェック自体が対象外。
+  if (!isIndefinite && !isPeriodOrderValid(c.new_employ_start, c.new_employ_end)) return false
   const flags = getDocumentPeriodFlags(c.document_type)
+  const employReady = (): boolean => {
+    if (isIndefinite) {
+      // 正社員・無期契約：契約条件適用開始日（新規入力 or 前回値の引き継ぎ）があればOK。
+      // 前回値がそのまま引き継がれる想定のため、未編集でも「準備完了」として扱う。
+      return Boolean(c.new_contract_start_date || c.contract_start_date)
+    }
+    return Boolean(c.new_employ_start && c.new_employ_end)
+  }
   if (flags.resolved) {
     const dispatchOk = !flags.needsDispatch || Boolean(c.new_dispatch_start && c.new_dispatch_end)
-    const employOk = !flags.needsEmploy || Boolean(c.new_employ_start && c.new_employ_end)
+    const employOk = !flags.needsEmploy || employReady()
     return dispatchOk && employOk
   }
   // フォールバック（document_type欠落時の旧ロジック）
-  if (!c.dispatch_end_date) return Boolean(c.new_employ_start && c.new_employ_end)
+  if (!c.dispatch_end_date) return employReady()
   const dispatchOk = Boolean(c.new_dispatch_start && c.new_dispatch_end)
-  const employOk = c.employ_end_date ? Boolean(c.new_employ_start && c.new_employ_end) : true
+  const employOk = c.employ_end_date ? employReady() : true
   return dispatchOk && employOk
 }
 
@@ -283,10 +308,31 @@ export function useRenewalCandidates() {
         }
       }
 
+      // 2026-08-04追加（①正社員の雇用期間バグ）：正社員・無期契約は雇用期間が「期間の定めなし」
+      // （契約条件適用開始日のみ）であり、employ_end自体が残骸データで非nullになっているケースも
+      // 実データで確認された（関谷綺菜様・104747＝雇用契約書のみで、employ_end_date・
+      // dispatch_end_dateの両方に残骸が残っていた）。登録判定でも雇用形態を見て除外できるよう、
+      // 対象社員番号の雇用形態をあらかじめ取得しておく。
+      const { data: contractTypeRows } = empNosAll.length > 0
+        ? await supabase.from('staff').select('employee_number, contract_type').in('employee_number', empNosAll)
+        : { data: [] as { employee_number: string; contract_type: string | null }[] }
+      const contractTypeByEmpNo = new Map((contractTypeRows || []).map(r => [r.employee_number, r.contract_type]))
+
       const today = new Date(); today.setHours(0, 0, 0, 0)
       const rows: any[] = []
       for (const c of latestRows) {
-        const endDate = c.employ_end || c.dispatch_end
+        // 2026-08-04修正（①正社員の雇用期間バグ）：書類種別を見ずに`c.employ_end || c.dispatch_end`
+        // で判定していたため、「雇用契約書のみ」の契約でもSTEP2のCSV連携時に残った派遣期間の
+        // 残骸（dispatchEnd）だけで誤って「更新期限が近い」と登録されてしまう不具合があった
+        // （永井優大様・104010＝正社員・雇用契約書のみで発覚。正社員の雇用期間は「期間の定めなし」
+        // で本来この一覧に上がる理由が無い）。書類種別が実際に必要とする方の終了日だけを見る。
+        // さらに、正社員・無期契約はemploy_end自体が残骸データで非nullなことがあるため
+        // （関谷綺菜様・104747で確認）、雇用形態でも重ねてガードする。
+        const docFlags = getDocumentPeriodFlags(c.document_type)
+        const isIndefiniteEmployee = isIndefiniteEmployType(contractTypeByEmpNo.get(c.employee_number))
+        const relevantEmployEnd = ((!docFlags.resolved || docFlags.needsEmploy) && !isIndefiniteEmployee) ? c.employ_end : null
+        const relevantDispatchEnd = (!docFlags.resolved || docFlags.needsDispatch) ? c.dispatch_end : null
+        const endDate = relevantEmployEnd || relevantDispatchEnd
         if (!endDate) continue
         const end = new Date(endDate); end.setHours(0, 0, 0, 0)
         const diffDays = Math.floor((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
@@ -475,11 +521,20 @@ export function useRenewalCandidates() {
     // 「CSVインポート待ち」の候補は自動的に「CSV自動反映」タブへ移動する。既に担当営業が
     // 「期間のみ更新」「修正更新」へ手動で振り分け済みの場合は、その選択を尊重し上書きしない。
     const autoPromote = candidate.renewal_tab === 'unassigned' || candidate.renewal_tab === 'import_wait'
+    // 2026-08-04修正（①正社員の雇用期間バグ）：従来はここで書類種別・雇用形態を見ずに
+    // 派遣期間の日付を無条件で雇用期間にもコピーしていた。正社員・無期契約は雇用期間が
+    // 「期間の定めなし」（契約条件適用開始日のみ）で日付レンジという概念自体を持たないため、
+    // これらの対象者には雇用期間の日付を一切設定しない（契約条件適用開始日は
+    // RenewalManagementTab.tsx側でnew_contract_start_date／前回値からユーザーが編集する）。
+    const docFlags = getDocumentPeriodFlags(candidate.document_type)
+    const isIndefinite = isIndefiniteEmployType(candidate.current_contract_type)
+    const employDates = ((!docFlags.resolved || docFlags.needsEmploy) && !isIndefinite)
+      ? { new_employ_start: r.dispatch_start, new_employ_end: r.dispatch_end }
+      : {}
     await updateCandidate(candidate.id, {
       new_dispatch_start: r.dispatch_start,
       new_dispatch_end: r.dispatch_end,
-      new_employ_start: r.dispatch_start,
-      new_employ_end: r.dispatch_end,
+      ...employDates,
       new_work_location_name: r.work_location,
       new_work_address: r.work_address,
       new_csv_raw_data_id: r.id,
@@ -676,10 +731,16 @@ export function useRenewalCandidates() {
         // （buildMergedFieldsの戻り値）のインデックスシグネチャを無視し、以下で追加している
         // 明示プロパティ（employStart等）だけの狭い型として推論してしまい、salaryType等
         // 他のプロパティへのアクセスがビルド時型エラーになる（2026-07-17 Vercelビルドで発覚）。
+        // 2026-08-04追加（①正社員の雇用期間バグ修正）：正社員・無期契約は雇用期間が日付レンジを
+        // 持たないため、employStart/employEndは常にnull（StepPeriod.tsxが元々これらを収集しない
+        // のと同じ扱い）。契約条件適用開始日はRenewalManagementTab.tsxで編集された値
+        // （new_contract_start_date）を優先し、未編集ならbuildMergedFieldsが前回契約から
+        // 引き継いだ値（prevFields.contractStartDate由来）をそのまま使う。
+        const isIndefiniteEmploy = isIndefiniteEmployType(c.current_contract_type)
         const mergedFields: Record<string, any> = {
           ...buildMergedFields(prevFields, csvFields),
-          employStart: (!newContractDocFlags.resolved || newContractDocFlags.needsEmploy) ? c.new_employ_start : null,
-          employEnd: (!newContractDocFlags.resolved || newContractDocFlags.needsEmploy) ? c.new_employ_end : null,
+          employStart: (!newContractDocFlags.resolved || newContractDocFlags.needsEmploy) && !isIndefiniteEmploy ? c.new_employ_start : null,
+          employEnd: (!newContractDocFlags.resolved || newContractDocFlags.needsEmploy) && !isIndefiniteEmploy ? c.new_employ_end : null,
           dispatchStart: (!newContractDocFlags.resolved || newContractDocFlags.needsDispatch) ? c.new_dispatch_start : null,
           dispatchEnd: (!newContractDocFlags.resolved || newContractDocFlags.needsDispatch) ? c.new_dispatch_end : null,
           workLocationName: c.new_work_location_name || prevFields.workLocationName,
@@ -691,6 +752,9 @@ export function useRenewalCandidates() {
           trialPeriod: '無',
           trialStart: '',
           trialEnd: '',
+          // 2026-08-04追加（①）：正社員・無期契約で契約条件適用開始日が編集されていれば
+          // その値を優先。未編集ならbuildMergedFields由来（前回契約からの引き継ぎ）のまま。
+          ...(isIndefiniteEmploy && c.new_contract_start_date ? { contractStartDate: c.new_contract_start_date } : {}),
         }
 
         // 2026-07-17 実機テストで判明：staffテーブルに"department"列は存在しない（部署名は

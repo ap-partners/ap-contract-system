@@ -12,7 +12,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { extractCsvFields } from '@/app/apply/_lib/helpers'
-import { RenewalCandidate, formatPeriodJp, formatEmployPeriodDisplay } from './useRenewalCandidates'
+import { RenewalCandidate, formatPeriodJp, formatEmployPeriodDisplay, getDocumentPeriodFlags, isIndefiniteEmployType, formatDateJp } from './useRenewalCandidates'
 import { RENEWAL_SECTIONS as SECTIONS, RenewalFieldDef } from './renewalFieldMap'
 
 type Props = {
@@ -78,6 +78,15 @@ export default function RenewalContractConfirmModal({ candidate, onClose }: Prop
     return csvFields[def.csvKey] ?? null
   }
 
+  // 2026-08-04修正（②差異表示が書類種別を無視するバグの関連箇所）：renderCsvDiff()と同じ
+  // バグ（雇用期間・派遣期間を書類種別を見ずに無条件表示）がこの画面にも重複して存在していた
+  // ため、同じ基準（getDocumentPeriodFlags）でガードする。①正社員の雇用期間バグ修正に伴い、
+  // 正社員・無期契約の場合は「雇用期間」ではなく「契約条件適用開始日」を表示する。
+  const docFlags = getDocumentPeriodFlags(candidate.document_type)
+  const showEmploy = !docFlags.resolved || docFlags.needsEmploy
+  const showDispatch = !docFlags.resolved || docFlags.needsDispatch
+  const isIndefinite = isIndefiniteEmployType(candidate.current_contract_type)
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0F172A]/45 p-4 sm:p-8">
       <div className="w-full max-w-3xl rounded-[18px] bg-white shadow-[0_20px_60px_rgba(15,23,42,.25)]">
@@ -108,11 +117,21 @@ export default function RenewalContractConfirmModal({ candidate, onClose }: Prop
                         取り消し線も見づらいとの指摘で削除。 */}
                     <tr className="text-[#8B98B1]"><td className="w-1/4 py-1 pr-3">項目</td><td className="w-3/8 py-1 pr-3">原契約</td><td className="w-3/8 py-1">今回</td></tr>
                     {[
-                      // 2026-08-03修正：正社員・無期契約は雇用期間ではなく契約条件適用開始日のみを
-                      // 持つため、生の日付だけで組み立てると常に「－」表示になっていた不具合を修正
-                      // （一覧の「雇用期間（現在）」と同じformatEmployPeriodDisplay()に統一）。
-                      { label: '雇用期間', before: formatEmployPeriodDisplay(candidate), after: formatPeriod(candidate.new_employ_start, candidate.new_employ_end) },
-                      { label: '派遣期間', before: formatPeriod(candidate.dispatch_start_date, candidate.dispatch_end_date), after: formatPeriod(candidate.new_dispatch_start, candidate.new_dispatch_end) },
+                      // 2026-08-04修正（②）：書類種別が必要とする方だけを表示する。正社員・無期契約は
+                      // 「雇用期間」ではなく「契約条件適用開始日」（単一日付）を表示する（①関連対応）。
+                      ...(!showEmploy ? [] : isIndefinite ? [{
+                        label: '契約条件適用開始日',
+                        before: candidate.contract_start_date ? `${formatDateJp(candidate.contract_start_date)} 〜` : '―',
+                        after: (candidate.new_contract_start_date || candidate.contract_start_date) ? `${formatDateJp(candidate.new_contract_start_date || candidate.contract_start_date)} 〜` : '―',
+                      }] : [
+                        // 2026-08-03修正：正社員・無期契約は雇用期間ではなく契約条件適用開始日のみを
+                        // 持つため、生の日付だけで組み立てると常に「－」表示になっていた不具合を修正
+                        // （一覧の「雇用期間（現在）」と同じformatEmployPeriodDisplay()に統一）。
+                        { label: '雇用期間', before: formatEmployPeriodDisplay(candidate), after: formatPeriod(candidate.new_employ_start, candidate.new_employ_end) },
+                      ]),
+                      ...(!showDispatch ? [] : [
+                        { label: '派遣期間', before: formatPeriod(candidate.dispatch_start_date, candidate.dispatch_end_date), after: formatPeriod(candidate.new_dispatch_start, candidate.new_dispatch_end) },
+                      ]),
                       {
                         // 2026-07-17決定：試用期間は更新のたびに引き継がず、一括申請では必ず「無」にする
                         // （入社時の見極めが目的の制度のため。詳細はCLAUDE.md該当日の意思決定ログ参照）。

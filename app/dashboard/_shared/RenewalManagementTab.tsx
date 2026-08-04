@@ -22,6 +22,7 @@ import {
   periodReady,
   isPeriodOrderValid,
   getDocumentPeriodFlags,
+  isIndefiniteEmployType,
   formatDateJp,
   formatPeriodJp,
   formatEmployPeriodDisplay,
@@ -715,14 +716,42 @@ export default function RenewalManagementTab({
     // ②日付書式もこのパネルだけ生のハイフン表記（`2026-05-01`）のままだったため、
     // タブ内の他の日付表示と同じ`formatPeriodJp()`（年月日表記）に統一。
     const formatPeriod = (start: string | null, end: string | null) => formatPeriodJp(start, end)
+    // 2026-08-04修正（②差異表示が書類種別を無視するバグ）：従来は書類種別を見ずに雇用期間・
+    // 派遣期間・指揮命令者等の差異を無条件で計算・表示しており、雇用契約書のみの契約でも
+    // 無関係な「派遣期間」の差異行が出てしまう不具合があった。一覧本体（renderSecondaryGrid・
+    // periodReady）と同じgetDocumentPeriodFlags()の基準でガードする。
+    const docFlags = getDocumentPeriodFlags(c.document_type)
+    const showEmploy = !docFlags.resolved || docFlags.needsEmploy
+    const showDispatch = !docFlags.resolved || docFlags.needsDispatch
+    // 2026-08-04追加（①正社員の雇用期間バグ修正の関連対応）：正社員・無期契約は雇用期間が
+    // 日付レンジを持たないため、差異表示も「契約条件適用開始日」の単一日付で行う。
+    const isIndefinite = isIndefiniteEmployType(c.current_contract_type)
+    const employDiffRow = !showEmploy ? null : isIndefinite
+      ? {
+          label: '契約条件適用開始日',
+          before: c.contract_start_date ? `${formatDateJp(c.contract_start_date)} 〜` : '―',
+          after: (c.new_contract_start_date || c.contract_start_date) ? `${formatDateJp(c.new_contract_start_date || c.contract_start_date)} 〜` : '―',
+          changed: Boolean(c.new_contract_start_date) && (c.new_contract_start_date || null) !== (c.contract_start_date || null),
+        }
+      : {
+          label: '雇用期間',
+          before: formatEmployPeriodDisplay(c),
+          after: formatPeriod(c.new_employ_start, c.new_employ_end),
+          changed: (c.employ_start_date || null) !== (c.new_employ_start || null) || (c.employ_end_date || null) !== (c.new_employ_end || null),
+        }
+    const dispatchDiffRow = !showDispatch ? null : {
+      label: '派遣期間', before: formatPeriod(c.dispatch_start_date, c.dispatch_end_date), after: formatPeriod(c.new_dispatch_start, c.new_dispatch_end), changed: (c.dispatch_start_date || null) !== (c.new_dispatch_start || null) || (c.dispatch_end_date || null) !== (c.new_dispatch_end || null),
+    }
     const diffRows = [
-      { label: '雇用期間', before: formatEmployPeriodDisplay(c), after: formatPeriod(c.new_employ_start, c.new_employ_end), changed: (c.employ_start_date || null) !== (c.new_employ_start || null) || (c.employ_end_date || null) !== (c.new_employ_end || null) },
-      { label: '派遣期間', before: formatPeriod(c.dispatch_start_date, c.dispatch_end_date), after: formatPeriod(c.new_dispatch_start, c.new_dispatch_end), changed: (c.dispatch_start_date || null) !== (c.new_dispatch_start || null) || (c.dispatch_end_date || null) !== (c.new_dispatch_end || null) },
+      employDiffRow,
+      dispatchDiffRow,
       { label: '就業場所', before: c.work_location_name || '―', after: c.new_work_location_name || '―', changed: (c.work_location_name || null) !== (c.new_work_location_name || null) },
-    ].filter(r => r.changed)
+    ].filter((r): r is { label: string; before: string; after: string; changed: boolean } => r !== null && r.changed)
 
+    // 2026-08-04修正（②）：指揮命令者・派遣先責任者・苦情処理申出先は派遣の側面にのみ関係する
+    // 項目のため、雇用契約書のみの契約では計算自体を行わない。
     const contactDiffRows: { group: string; field: string; before: string; after: string }[] = []
-    if (c.previous_contact_fields && c.new_contact_fields) {
+    if (showDispatch && c.previous_contact_fields && c.new_contact_fields) {
       (['cmd', 'resp', 'comp'] as const).forEach(g => {
         (['dept', 'role', 'name', 'tel'] as const).forEach(f => {
           const before = c.previous_contact_fields?.[g]?.[f] || null
@@ -798,6 +827,11 @@ export default function RenewalManagementTab({
     const docFlags = getDocumentPeriodFlags(c.document_type)
     const hasDispatch = docFlags.resolved ? docFlags.needsDispatch : !!c.dispatch_end_date
     const hasEmploy = docFlags.resolved ? docFlags.needsEmploy : !!c.employ_end_date
+    // 2026-08-04追加（①正社員の雇用期間バグ修正）：正社員・無期契約は雇用期間が日付レンジを
+    // 持たず「契約条件適用開始日」の単一日付のみを持つ（app/apply/_components/StepPeriod.tsxと
+    // 同じ考え方）。この場合、雇用期間欄は日付レンジの入力欄ではなく契約条件適用開始日の
+    // 編集欄として表示する（未編集なら前回値をそのまま引き継いで実行可能）。
+    const isIndefinite = isIndefiniteEmployType(c.current_contract_type)
     const draft = manualDraft[c.id] || {
       start: c.new_dispatch_start || (c.dispatch_end_date ? addDays(c.dispatch_end_date, 1) : ''),
       end: c.new_dispatch_end || '',
@@ -808,7 +842,7 @@ export default function RenewalManagementTab({
     // 画面上で分からないと伊藤さんの指摘（誤った日付入力を想定したチェック）に応えきれない
     // ため、該当ブロックの下に理由を明示する。
     const dispatchOrderInvalid = hasDispatch && !isPeriodOrderValid(draft.start, draft.end)
-    const employOnlyOrderInvalid = !hasDispatch && !isPeriodOrderValid(c.new_employ_start, c.new_employ_end)
+    const employOnlyOrderInvalid = !hasDispatch && !isIndefinite && !isPeriodOrderValid(c.new_employ_start, c.new_employ_end)
     const checkboxSlot = c.status !== 'not_renewing' && (
       <label className={`flex items-center gap-1.5 text-[13px] font-semibold whitespace-nowrap ${ready ? 'text-[#1F2937]' : 'text-[#8B98B1]'}`}>
         <input type="checkbox" checked={c.triage_mode === 'bulk'} disabled={!canFinalize || !ready}
@@ -837,10 +871,18 @@ export default function RenewalManagementTab({
                       className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" />
                   </div>
                   {hasEmploy && (
-                    <button onClick={() => draft.start && draft.end && copyDispatchToEmploy(c.id, draft.start, draft.end)}
-                      className="rounded-2xl border border-[#E8EDF5] px-3 py-1.5 text-xs font-semibold whitespace-nowrap" style={{ background: '#EAF1FF', color: '#244CB3' }}>
-                      雇用期間へコピー ↓
-                    </button>
+                    isIndefinite ? (
+                      <button onClick={() => draft.start && updateCandidate(c.id, { new_contract_start_date: draft.start })}
+                        disabled={!draft.start}
+                        className="rounded-2xl border border-[#E8EDF5] px-3 py-1.5 text-xs font-semibold whitespace-nowrap disabled:opacity-40" style={{ background: '#EAF1FF', color: '#244CB3' }}>
+                        契約条件適用開始日へコピー ↓
+                      </button>
+                    ) : (
+                      <button onClick={() => draft.start && draft.end && copyDispatchToEmploy(c.id, draft.start, draft.end)}
+                        className="rounded-2xl border border-[#E8EDF5] px-3 py-1.5 text-xs font-semibold whitespace-nowrap" style={{ background: '#EAF1FF', color: '#244CB3' }}>
+                        雇用期間へコピー ↓
+                      </button>
+                    )
                   )}
                 </div>
                 {dispatchOrderInvalid && (
@@ -848,40 +890,66 @@ export default function RenewalManagementTab({
                 )}
               </div>
               {hasEmploy && (
-                <div className="rounded-2xl border border-[#E8EDF5] p-3.5">
-                  <p className="mb-2 text-xs font-semibold text-[#1F2937]">雇用期間（派遣期間をコピーした内容。兼用のため自動で揃えています）</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <div className="text-[11px] text-[#6B7280] mb-1">雇用期間の開始日</div>
-                      <input readOnly value={c.new_employ_start || ''} className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" style={{ background: '#F3F5F8' }} />
+                isIndefinite ? (
+                  <div className="rounded-2xl border border-[#E8EDF5] p-3.5">
+                    <p className="mb-2 text-xs font-semibold text-[#1F2937]">契約条件適用開始日（正社員・無期契約のため雇用期間は期間の定めなしです）</p>
+                    <div className="max-w-xs">
+                      <div className="text-[11px] text-[#6B7280] mb-1">契約条件適用開始日</div>
+                      <input type="date" value={c.new_contract_start_date || c.contract_start_date || ''}
+                        onChange={e => updateCandidate(c.id, { new_contract_start_date: clampDateYear(e.target.value) })}
+                        className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" />
                     </div>
-                    <div>
-                      <div className="text-[11px] text-[#6B7280] mb-1">雇用期間の終了日</div>
-                      <input readOnly value={c.new_employ_end || ''} className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" style={{ background: '#F3F5F8' }} />
+                    <p className="mt-2 text-xs text-[#6B7280]">変更が無ければそのまま実行できます。給与改定等で条件が変わった場合のみ修正してください。</p>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-[#E8EDF5] p-3.5">
+                    <p className="mb-2 text-xs font-semibold text-[#1F2937]">雇用期間（派遣期間をコピーした内容。兼用のため自動で揃えています）</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <div className="text-[11px] text-[#6B7280] mb-1">雇用期間の開始日</div>
+                        <input readOnly value={c.new_employ_start || ''} className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" style={{ background: '#F3F5F8' }} />
+                      </div>
+                      <div>
+                        <div className="text-[11px] text-[#6B7280] mb-1">雇用期間の終了日</div>
+                        <input readOnly value={c.new_employ_end || ''} className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" style={{ background: '#F3F5F8' }} />
+                      </div>
                     </div>
                   </div>
-                </div>
+                )
               )}
             </>
           ) : (
-            <div className="rounded-2xl border border-[#E8EDF5] p-3.5">
-              <p className="mb-2 text-xs font-semibold text-[#1F2937]">雇用期間</p>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <div className="text-[11px] text-[#6B7280] mb-1">雇用期間の開始日</div>
-                  <input type="date" value={c.new_employ_start || ''} onChange={e => updateCandidate(c.id, { new_employ_start: clampDateYear(e.target.value) })}
+            isIndefinite ? (
+              <div className="rounded-2xl border border-[#E8EDF5] p-3.5">
+                <p className="mb-2 text-xs font-semibold text-[#1F2937]">契約条件適用開始日（正社員・無期契約のため雇用期間は期間の定めなしです）</p>
+                <div className="max-w-xs">
+                  <div className="text-[11px] text-[#6B7280] mb-1">契約条件適用開始日</div>
+                  <input type="date" value={c.new_contract_start_date || c.contract_start_date || ''}
+                    onChange={e => updateCandidate(c.id, { new_contract_start_date: clampDateYear(e.target.value) })}
                     className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" />
                 </div>
-                <div>
-                  <div className="text-[11px] text-[#6B7280] mb-1">雇用期間の終了日</div>
-                  <input type="date" value={c.new_employ_end || ''} onChange={e => updateCandidate(c.id, { new_employ_end: clampDateYear(e.target.value) })}
-                    className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" />
-                </div>
+                <p className="mt-2 text-xs text-[#6B7280]">変更が無ければそのまま実行できます。</p>
               </div>
-              {employOnlyOrderInvalid && (
-                <p className="mt-2 text-xs font-semibold" style={{ color: '#C0392B' }}>終了日は開始日以降の日付にしてください。</p>
-              )}
-            </div>
+            ) : (
+              <div className="rounded-2xl border border-[#E8EDF5] p-3.5">
+                <p className="mb-2 text-xs font-semibold text-[#1F2937]">雇用期間</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <div className="text-[11px] text-[#6B7280] mb-1">雇用期間の開始日</div>
+                    <input type="date" value={c.new_employ_start || ''} onChange={e => updateCandidate(c.id, { new_employ_start: clampDateYear(e.target.value) })}
+                      className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" />
+                  </div>
+                  <div>
+                    <div className="text-[11px] text-[#6B7280] mb-1">雇用期間の終了日</div>
+                    <input type="date" value={c.new_employ_end || ''} onChange={e => updateCandidate(c.id, { new_employ_end: clampDateYear(e.target.value) })}
+                      className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" />
+                  </div>
+                </div>
+                {employOnlyOrderInvalid && (
+                  <p className="mt-2 text-xs font-semibold" style={{ color: '#C0392B' }}>終了日は開始日以降の日付にしてください。</p>
+                )}
+              </div>
+            )
           )}
         </div>
         {renderReasonBoxes(c)}

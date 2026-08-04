@@ -215,9 +215,16 @@ export function useRenewalCandidates() {
   // 前後チェックのテストで偶然踏んで発覚。他画面と同じ`useToast()`のトースト通知に統一する。
   const { showError } = useToast()
 
-  // ①検知・登録：現場契約のうち、スタッフごとに最新の契約を対象に、雇用期間終了日が
-  // 45日以内（超過含む）のものをrenewal_candidatesへupsertする。既存行のステータス等
-  // （担当営業が入力した値）は上書きしない。退職済み・退職予定のスタッフは対象外。
+  // ①検知・登録：現場契約のうち、「雇用の側面」「派遣の側面」それぞれの最新契約（アスペクト単位）
+  // を対象に、雇用期間終了日が45日以内（超過含む）のものをrenewal_candidatesへupsertする。
+  // 既存行のステータス等（担当営業が入力した値）は上書きしない。退職済み・退職予定のスタッフは対象外。
+  // 2026-08-04変更（docs/SYSTEM_DESIGN.md 10章 2026-08-04「アスペクト単位への見直し」）：
+  // 従来は「社員番号ごとに最新1件」だけを追跡しており、同じスタッフが雇用契約書のみ／
+  // 就業条件明示書のみを別々の時期に持つ実例（長谷川様100531・三國様105026・村田様105611）で
+  // 片方が更新期限管理から漏れていた。DB関数側がアスペクト単位（雇用の側面・派遣の側面）で
+  // 1〜2行を返すようになったため、こちら側も「社員番号ごとに1件」の前提を廃止し、
+  // 返された行をそのまま対象として扱う（2つの側面が同じ契約に収束すれば結果的に1行、
+  // 異なれば2行のまま処理される）。
   const syncCandidates = useCallback(async () => {
     setSyncing(true)
     try {
@@ -231,28 +238,31 @@ export function useRenewalCandidates() {
       // 2026-07-31：対象範囲を「現場」のみから「現場」＋「社内」に拡張したことに伴い、
       // RPC関数名も実態に合わせて改称（get_latest_genba_contracts_for_renewal→
       // get_latest_contracts_for_renewal）。社内の閲覧制限はrenewal_candidatesのRLSで担保。
+      // 2026-08-04：関数本体をアスペクト単位（雇用の側面／派遣の側面）の探索に全面書き換え
+      // 済み（docs/SYSTEM_DESIGN.md 10章参照）。戻り値の形（列構成）自体は変わっていない。
       const { data: contracts, error: contractsError } = await supabase
         .rpc('get_latest_contracts_for_renewal')
 
       if (contractsError) { console.error('更新候補の同期エラー（contracts取得）:', contractsError); return }
       if (!contracts) return
 
-      // DB関数側で既にスタッフ（社員番号）ごとの最新1件に絞り込み済み
-      const latestByStaff = new Map<string, any>()
-      for (const c of contracts) {
-        const empNo = c.employee_number
-        if (!empNo) continue
-        latestByStaff.set(empNo, c)
-      }
+      // 2026-08-04変更：DB関数が既にアスペクト単位（雇用の側面・派遣の側面）で1〜2行/人を
+      // 返すため、ここで社員番号キーのMapに詰め直して1件に潰すことはしない
+      // （潰すと従来と同じ「片方の書類種別が消える」バグに逆戻りするため）。
+      const latestRows: any[] = contracts.filter((c: any) => c.employee_number)
 
       // 総合レビュー指摘17対応（2026-07-15）：契約が更新されると、同じスタッフでも新しい
       // contract_idで別行がupsertされる（upsertのonConflictがsource_contract_id単位のため）。
       // 旧契約に紐づく行は削除されずに残り、同じスタッフのカードが2枚並んでしまっていた。
-      // ここで、現時点の最新契約（latestByStaff）と食い違うsource_contract_idを持つ既存行を
-      // employee_number単位で洗い出し、削除する（スタッフが入力済みの意向等も含めて丸ごと
-      // 削除されるが、旧契約はもう有効ではないため妥当）。
-      const empNosAll = Array.from(latestByStaff.keys())
+      // 2026-08-04変更：以前は「社員番号ごとの最新1件」とだけ比較していたが、アスペクト単位化に
+      // 伴い、1人が最大2件（雇用の側面・派遣の側面）の有効な契約を持ちうるようになったため、
+      // 単純な社員番号比較では正しい行まで誤って「旧契約」と判定して消してしまう。ここでは
+      // 「その行のsource_contract_idが、今回DB関数が返した“どちらかの側面の最新契約”の
+      // 契約ID集合に含まれているか」で判定する（含まれていなければ、その書類種別はもう
+      // どちらの側面の最新契約でもなくなった＝古い契約として削除して良い）。
+      const empNosAll = Array.from(new Set(latestRows.map(r => r.employee_number)))
       if (empNosAll.length > 0) {
+        const validContractIds = new Set(latestRows.map(r => r.id))
         const { data: existingRows, error: existingError } = await supabase
           .from('renewal_candidates')
           .select('id, employee_number, source_contract_id')
@@ -261,10 +271,7 @@ export function useRenewalCandidates() {
           console.error('更新候補の同期エラー（既存行取得）:', existingError)
         } else if (existingRows && existingRows.length > 0) {
           const staleIds = existingRows
-            .filter(r => {
-              const latest = latestByStaff.get(r.employee_number)
-              return latest && latest.id !== r.source_contract_id
-            })
+            .filter(r => !validContractIds.has(r.source_contract_id))
             .map(r => r.id)
           if (staleIds.length > 0) {
             const { error: deleteError } = await supabase
@@ -278,7 +285,7 @@ export function useRenewalCandidates() {
 
       const today = new Date(); today.setHours(0, 0, 0, 0)
       const rows: any[] = []
-      for (const [empNo, c] of latestByStaff.entries()) {
+      for (const c of latestRows) {
         const endDate = c.employ_end || c.dispatch_end
         if (!endDate) continue
         const end = new Date(endDate); end.setHours(0, 0, 0, 0)
@@ -287,7 +294,7 @@ export function useRenewalCandidates() {
 
         rows.push({
           source_contract_id: c.id,
-          employee_number: empNo,
+          employee_number: c.employee_number,
           staff_name: c.staff_name || null,
           dept_no: c.created_by_dept_no,
           work_location_name: c.work_location_name || null,

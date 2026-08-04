@@ -494,9 +494,16 @@ export default function RenewalManagementTab({
   // （契約一覧の「詳細を見る」ボタンと同じ右上の位置に濃い色のボタンを置くと、担当者が主操作だと
   // 誤認して誤タップする恐れがあるため。「更新しない」は押すと管理部へ通知メールが送信される
   // 操作でもあり、位置と視覚的重要度をあえて分離している。伊藤さん確認済み・2026-08-03）。
+  // 2026-08-04追加：伊藤さんの実機レビュー指摘「更新用のCSVが既に見つかっているなら、氏名付近に
+  // 目立つバッジを付けられないか」に対応。従来は「CSV未反映：次の契約のCSVがまだ見つかっていません。」
+  // という見つからない場合の注意書きのみで、見つかっている場合の表示が無かった。data_source==='csv'
+  // かつnew_csv_raw_data_idが設定済み（＝次契約のCSVが実際に見つかっている状態）の場合にのみ、
+  // 緑の丸バッジ「CSV反映あり」を氏名の右隣（既存の「社内」バッジと同じ位置・同じ形）に表示する。
+  // renderRowHeadは5タブすべてで共用のため、この1箇所の修正で全タブに反映される。
   const renderRowHead = (c: RenewalCandidate, cornerSlot: ReactNode, checkboxSlot?: ReactNode) => {
     const days = remainingDays(c)
     const metaParts = [c.current_dept_name, c.current_contract_type].filter(Boolean)
+    const hasCsvMatched = c.data_source === 'csv' && Boolean(c.new_csv_raw_data_id)
     return (
       <div>
         {/* 2026-08-03修正：左の残日数バッジ（丸ピル・上下余白あり）と右の「他のタブへ移動」
@@ -517,6 +524,12 @@ export default function RenewalManagementTab({
             <p className="break-words text-[17px] font-semibold leading-6 text-[#1F2937]">{c.staff_name || '―'}</p>
             {c.work_place === '社内' && (
               <span className="text-[10px] font-semibold rounded-full px-2 py-0.5" style={{ background: '#F1EFE8', color: '#5F5E5A' }}>社内</span>
+            )}
+            {hasCsvMatched && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-0.5" style={{ background: '#E7F7EE', color: '#1E9E5A' }}>
+                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: '#1E9E5A' }} />
+                CSV反映あり
+              </span>
             )}
           </div>
           <p className="mt-1 text-xs font-medium text-[#8B98B1]">

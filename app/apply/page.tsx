@@ -79,6 +79,43 @@ function ApplyPageInner() {
   const [workPlace, setWorkPlace] = useState('現場')
   const [documentType, setDocumentType] = useState('')
 
+  // 2026-08-04追加（更新期限管理「アスペクト単位」見直し・実装D）：新規申請（差し戻し再申請・
+  // 更新期限管理個別申請・最低賃金改定再申請のいずれでもない、STEP1で書類種別を自由に選べる
+  // 通常の申請フロー）でのみ、対象スタッフの「派遣の側面」が現在有効かを見て、雇用契約書単体への
+  // 変更時に派遣終了確認を挟む。docs/SYSTEM_DESIGN.md 10章 2026-08-04参照。
+  const isNewApplicationFlow = !editContractId && !renewalCandidateId && !wageAmendContractId
+  // 対象スタッフに現在有効な「派遣の側面」の契約があるか（null=未確認・確認不要）
+  const [hasActiveDispatchAspect, setHasActiveDispatchAspect] = useState<boolean | null>(null)
+  useEffect(() => {
+    if (!isNewApplicationFlow || !selectedStaff?.employee_number) { setHasActiveDispatchAspect(null); return }
+    let cancelled = false
+    supabase.rpc('has_active_dispatch_aspect', { p_employee_number: selectedStaff.employee_number })
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error) { console.error('派遣の側面の確認エラー:', error); setHasActiveDispatchAspect(null); return }
+        setHasActiveDispatchAspect(Boolean(data))
+      })
+    return () => { cancelled = true }
+  }, [isNewApplicationFlow, selectedStaff?.employee_number])
+  // STEP8「申請する」の直前に挟む「派遣契約を終了扱いにしますか？」確認モーダル関連の状態。
+  // 理由入力は必須（伊藤さん確定・「更新しない」ボタンと同じ思想）。
+  const [showDispatchTerminationModal, setShowDispatchTerminationModal] = useState(false)
+  const [dispatchTerminationReason, setDispatchTerminationReason] = useState('')
+  const [dispatchTerminationConfirmed, setDispatchTerminationConfirmed] = useState(false)
+  // 「いいえ、書類種別を選び直す」を選んだ直後にSTEP1へ案内バナーを出すためのフラグ。
+  // documentTypeが変わったら（雇用契約書以外を選び直したら）自動的に消える。
+  const [dispatchTerminationDeclined, setDispatchTerminationDeclined] = useState(false)
+  useEffect(() => {
+    // 書類種別・対象スタッフが変わったら、以前の確認結果は無効化し再確認を必須にする
+    setDispatchTerminationConfirmed(false)
+    setDispatchTerminationReason('')
+    if (documentType !== '雇用契約書') setDispatchTerminationDeclined(false)
+  }, [documentType, selectedStaff?.employee_number])
+  // 新規申請フローで、雇用契約書単体を選んでいて、かつ対象スタッフに現在有効な派遣の側面がある場合のみ
+  // 派遣終了確認が必要（社内選択でdocumentTypeが自動的に雇用契約書へ固定される既存ロジックも、
+  // 結果的にこの条件に自然に合致するため、社内異動用の特別分岐は不要）。
+  const needsDispatchTerminationConfirm = isNewApplicationFlow && documentType === '雇用契約書' && hasActiveDispatchAspect === true
+
   const pattern = getPattern(documentType)
   // アルバイトは雇用期間・試用期間まわりのバリデーションを有期契約と同じ扱いにする（表示用の帳票名ラベルは別途getFullDocumentName側で「アルバイト」と表示する）
   const period = contractType === '有期契約' ? '有期' : contractType === '無期契約' ? '無期' : contractType === 'アルバイト' ? '有期' : ''
@@ -1398,6 +1435,12 @@ function ApplyPageInner() {
         // 2026-07-30追加（タスク⑥）：CSV反映項目が1つでも修正されていれば詳細一覧を保存。
         // SSC承認時点でnotify-csv-modified APIがこれを読み、管理部へ通知する。
         csv_modified_fields: csvModifiedFieldsDiff.length > 0 ? csvModifiedFieldsDiff : null,
+        // 2026-08-04追加：STEP8「派遣契約を終了扱いにしますか？」確認で「はい」を選んだ場合のみ
+        // trueになる。承認済みステータスに達して初めて実質的な効力を持つ（差し戻し・取り下げの
+        // 場合はこの契約自体が無効になるため自動的に無効化される。docs/SYSTEM_DESIGN.md
+        // 10章 2026-08-04参照）。
+        dispatch_terminated: dispatchTerminationConfirmed,
+        dispatch_terminated_reason: dispatchTerminationConfirmed ? dispatchTerminationReason : null,
       }
 
       // 総合レビュー（QA監査2026-07-22）指摘C2対応：新規申請（editContractIdが無い場合）の直前に、
@@ -2159,6 +2202,8 @@ function ApplyPageInner() {
               documentType={documentType} setDocumentType={setDocumentType}
               fullDocumentName={fullDocumentName} pattern={pattern}
               deptWageMasterMissing={deptWageMasterMissing}
+              hasActiveDispatchAspect={hasActiveDispatchAspect}
+              dispatchTerminationDeclined={dispatchTerminationDeclined}
               handleNext={handleNext}
             />
           )}
@@ -2348,6 +2393,14 @@ function ApplyPageInner() {
               submitError={submitError} isSubmitting={isSubmitting}
               setShowConfirmModal={setShowConfirmModal} handleSubmitContract={handleSubmitContract}
               showConfirmModal={showConfirmModal} originalFieldsSnapshot={originalFieldsSnapshot} buildCurrentFields={buildCurrentFields}
+              needsDispatchTerminationConfirm={needsDispatchTerminationConfirm}
+              dispatchTerminationConfirmed={dispatchTerminationConfirmed}
+              setDispatchTerminationConfirmed={setDispatchTerminationConfirmed}
+              showDispatchTerminationModal={showDispatchTerminationModal}
+              setShowDispatchTerminationModal={setShowDispatchTerminationModal}
+              dispatchTerminationReason={dispatchTerminationReason}
+              setDispatchTerminationReason={setDispatchTerminationReason}
+              setDispatchTerminationDeclined={setDispatchTerminationDeclined}
               handleBack={handleBack}
             />
           )}

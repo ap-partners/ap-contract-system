@@ -47,6 +47,10 @@ type ContractDetail = {
   created_at: string
   withdrawn_reason: string | null
   withdrawn_at: string | null
+  // 2026-08-04追加：この契約の承認により対象スタッフの派遣（就業条件明示書）の側面を終了扱いに
+  // するかどうか。docs/SYSTEM_DESIGN.md 10章 2026-08-04参照。
+  dispatch_terminated: boolean
+  dispatch_terminated_reason: string | null
 }
 
 const SIGN_DEADLINE_DAYS = 7 // 署名期日＝通知から7日（初期値。将来アラート日数マスタで変更可能にする予定）
@@ -498,6 +502,14 @@ export default function SalesContractDetail() {
               style={{ background: '#B91C1C' }}>
               ↩ 再申請する
             </button>
+          )}
+
+          {/* 派遣終了バナー（2026-08-04追加）。docs/SYSTEM_DESIGN.md 10章 2026-08-04参照。 */}
+          {contract.dispatch_terminated && (
+            <p className="text-sm mt-1 leading-relaxed" style={{ color: '#B91C1C' }}>
+              ⚠️ この契約の承認により、このスタッフの派遣契約は終了扱いになります
+              {contract.dispatch_terminated_reason && `（終了理由：${contract.dispatch_terminated_reason}）`}
+            </p>
           )}
 
           {(contract.status === '申請中' || contract.status === '差し戻し中') && !showWithdrawForm && (

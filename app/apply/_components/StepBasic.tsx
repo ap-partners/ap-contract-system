@@ -48,6 +48,13 @@ interface StepBasicProps {
   pattern: string
   deptWageMasterMissing: boolean
 
+  // 2026-08-04追加（更新期限管理「アスペクト単位」見直し・STEP1事前ヒント）：
+  // 対象スタッフに現在有効な「派遣の側面」の契約があるか（新規申請フローでのみ確認する。
+  // docs/SYSTEM_DESIGN.md 10章 2026-08-04参照）
+  hasActiveDispatchAspect: boolean | null
+  // STEP8の派遣終了確認で「いいえ、書類種別を選び直す」を選んだ直後の案内表示用
+  dispatchTerminationDeclined: boolean
+
   handleNext: () => void
 }
 
@@ -63,6 +70,7 @@ export default function StepBasic({
   showContractTypeLockedMsg, setShowContractTypeLockedMsg,
   workPlace, setWorkPlace, documentType, setDocumentType,
   fullDocumentName, pattern, deptWageMasterMissing,
+  hasActiveDispatchAspect, dispatchTerminationDeclined,
   handleNext,
 }: StepBasicProps) {
   // 2026-07-22追加（alert/confirm置き換えPhase3・①必須項目チェック）：「次へ進む」時のalert()を
@@ -364,6 +372,27 @@ export default function StepBasic({
               )}
             </div>
           </FormRow>
+
+          {/* 2026-08-04追加：対象スタッフに現在有効な「派遣の側面」の契約がある場合の事前ヒント。
+              STEP8まで進んでから初めて派遣終了確認が出ると手戻り感があるため、書類種別を選ぶ前に
+              軽く注意喚起する（docs/SYSTEM_DESIGN.md 10章 2026-08-04参照）。機能上は必須ではない。 */}
+          {hasActiveDispatchAspect === true && (
+            <div className="max-w-2xl rounded-lg px-4 py-3 border" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }}>
+              <p className="text-xs leading-relaxed" style={{ color: '#1A2340' }}>
+                ℹ️ このスタッフは現在、就業条件明示書（派遣）の契約が有効です。
+                <br />
+                「雇用契約書」のみを選択すると、派遣契約は終了扱いになります（最終確認画面で改めて確認します）。
+              </p>
+            </div>
+          )}
+          {dispatchTerminationDeclined && documentType === '雇用契約書' && (
+            <div className="max-w-2xl rounded-lg px-4 py-3 border-2" style={{ background: '#FFFBEB', borderColor: '#D97706' }}>
+              <p className="text-xs leading-relaxed" style={{ color: '#92400E' }}>
+                先ほど「いいえ」を選択されました。派遣契約を終了しない場合は、書類種別を「就業条件明示書」または
+                「雇用契約書 兼 就業条件明示書」に変更してください。
+              </p>
+            </div>
+          )}
 
           <FormRow label="帳票種別" required>
             <div className="grid grid-cols-3 gap-2 max-w-2xl">

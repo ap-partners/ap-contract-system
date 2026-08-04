@@ -61,6 +61,10 @@ type ContractDetail = {
   // 2026-07-30追加（タスク⑥）：CSV反映項目修正時の管理部通知用データ
   csv_modified_fields: { key: string; label: string; csvValue: string; newValue: string }[] | null
   csv_modified_notified_at: string | null
+  // 2026-08-04追加：この契約の承認により対象スタッフの派遣（就業条件明示書）の側面を終了扱いに
+  // するかどうか。docs/SYSTEM_DESIGN.md 10章 2026-08-04参照。
+  dispatch_terminated: boolean
+  dispatch_terminated_reason: string | null
 }
 
 // ===== ユーティリティ =====
@@ -788,6 +792,22 @@ export default function SSCContractDetail() {
         {warningLevel !== 'none' && (
           <div className="mb-6">
             <AutoCheckWarningBanner level={warningLevel} results={contract.auto_check_results || []} />
+          </div>
+        )}
+
+        {/* 派遣終了バナー（2026-08-04追加）：承認者がこれと気づかずに承認してしまうことを防ぐため、
+            他の警告バナーと同じ場所・同じ見た目のパターンで表示する。
+            docs/SYSTEM_DESIGN.md 10章 2026-08-04参照。 */}
+        {contract.dispatch_terminated && (
+          <div className="mb-6 rounded-xl p-4 border-2" style={{ background: '#FEF2F2', borderColor: '#DC2626' }}>
+            <p className="text-sm font-bold" style={{ color: '#B91C1C' }}>
+              ⚠️ この契約の承認により、このスタッフの派遣契約は終了扱いになります
+            </p>
+            {contract.dispatch_terminated_reason && (
+              <p className="text-sm mt-1 leading-relaxed" style={{ color: '#1A2340' }}>
+                終了理由：{contract.dispatch_terminated_reason}
+              </p>
+            )}
           </div>
         )}
 

@@ -100,6 +100,18 @@ interface StepFinalCheckProps {
   originalFieldsSnapshot: string | null
   buildCurrentFields: () => any
 
+  // 2026-08-04追加（更新期限管理「アスペクト単位」見直し・実装D）：新規申請フローで、対象スタッフの
+  // 「派遣の側面」が現在有効な状態のまま雇用契約書単体を申請しようとした場合の確認モーダル。
+  // docs/SYSTEM_DESIGN.md 10章 2026-08-04参照。
+  needsDispatchTerminationConfirm: boolean
+  dispatchTerminationConfirmed: boolean
+  setDispatchTerminationConfirmed: (v: boolean) => void
+  showDispatchTerminationModal: boolean
+  setShowDispatchTerminationModal: (v: boolean) => void
+  dispatchTerminationReason: string
+  setDispatchTerminationReason: (v: string) => void
+  setDispatchTerminationDeclined: (v: boolean) => void
+
   handleBack: () => void
 }
 
@@ -132,6 +144,9 @@ export default function StepFinalCheck({
   hasCsvModifiedFields, csvModWarningChecked, setCsvModWarningChecked,
   submitError, isSubmitting, setShowConfirmModal, handleSubmitContract,
   showConfirmModal, originalFieldsSnapshot, buildCurrentFields,
+  needsDispatchTerminationConfirm, dispatchTerminationConfirmed, setDispatchTerminationConfirmed,
+  showDispatchTerminationModal, setShowDispatchTerminationModal,
+  dispatchTerminationReason, setDispatchTerminationReason, setDispatchTerminationDeclined,
   handleBack,
 }: StepFinalCheckProps) {
   const router = useRouter()
@@ -418,6 +433,12 @@ export default function StepFinalCheck({
               return
             }
             setCheckboxError(null)
+            // 2026-08-04追加：派遣終了確認がまだ済んでいなければ、通常の申請確認モーダルより先に
+            // こちらを挟む（docs/SYSTEM_DESIGN.md 10章 2026-08-04参照）。
+            if (needsDispatchTerminationConfirm && !dispatchTerminationConfirmed) {
+              setShowDispatchTerminationModal(true)
+              return
+            }
             setShowConfirmModal(true)
           }}
           className="w-full py-3.5 rounded-lg text-white font-bold text-sm mb-2 mt-3"
@@ -428,6 +449,57 @@ export default function StepFinalCheck({
           この申請をやめる
         </button>
       </div>
+      )}
+
+      {/* ===== 派遣終了確認モーダル（2026-08-04追加） =====
+          対象スタッフの「派遣の側面」が現在有効なまま雇用契約書単体で申請しようとした場合のみ表示。
+          docs/SYSTEM_DESIGN.md 10章 2026-08-04参照。理由入力は必須（伊藤さん確定）。 */}
+      {showDispatchTerminationModal && (
+        <div className="fixed inset-0 flex items-center justify-center p-4 z-50" style={{ background: 'rgba(26, 35, 64, 0.5)' }}>
+          <div className="bg-white rounded-xl shadow-lg w-full max-w-md p-6">
+            <h3 className="text-base font-bold mb-3" style={{ color: '#1A2340' }}>派遣契約を終了扱いにしますか？</h3>
+            <p className="text-xs leading-relaxed mb-4" style={{ color: '#5A6A8A' }}>
+              このスタッフは現在、就業条件明示書（派遣）の契約が有効です。
+              <br />
+              今回、雇用契約書のみで申請すると、派遣契約は終了したものとして扱われます。
+              <br />
+              よろしいですか？
+            </p>
+            <label className="text-xs font-medium flex items-center gap-1 mb-1" style={{ color: '#1A2340' }}>
+              終了理由
+              <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>必須</span>
+            </label>
+            <textarea
+              value={dispatchTerminationReason}
+              onChange={e => setDispatchTerminationReason(e.target.value.slice(0, 2000))}
+              rows={3}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none mb-4 placeholder:text-gray-400"
+              style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
+              placeholder="例）派遣先契約満了に伴い、当社での就業に切り替えるため" />
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowDispatchTerminationModal(false)
+                  setDispatchTerminationDeclined(true)
+                  setCurrentStep(1)
+                }}
+                className="flex-1 py-2.5 rounded-lg text-sm font-medium border" style={{ borderColor: '#D0DAF0', color: '#5A6A8A' }}>
+                いいえ、書類種別を選び直す
+              </button>
+              <button
+                disabled={!dispatchTerminationReason.trim()}
+                onClick={() => {
+                  setDispatchTerminationConfirmed(true)
+                  setShowDispatchTerminationModal(false)
+                  setShowConfirmModal(true)
+                }}
+                className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white"
+                style={{ background: dispatchTerminationReason.trim() ? '#DC2626' : '#F3B4B4', cursor: dispatchTerminationReason.trim() ? 'pointer' : 'not-allowed' }}>
+                はい、派遣契約を終了する
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ===== 申請確認モーダル ===== */}

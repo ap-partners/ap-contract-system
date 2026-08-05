@@ -24,6 +24,8 @@ import { useDeptNameMap, getApplicantLabel } from './useDeptNameMap'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import { SubTabBar } from './SubTabBar'
+// 2026-08-05：日付表記統一によりローカル定義（スラッシュ表記）を廃止し共通ヘルパーへ移行
+import { formatDateTimeJp as formatDateTime } from '@/lib/dateFormat'
 
 type PledgeRow = {
   id: string
@@ -50,12 +52,6 @@ const STATUS_BADGE: Record<string, { label: string; bg: string; color: string }>
   '署名待ち': { label: '署名待ち', bg: '#FFF7E6', color: '#B45309' },
   '署名済み': { label: '署名済み', bg: '#ECFDF5', color: '#047857' },
   '取り下げ': { label: '取り下げ', bg: '#F3F4F6', color: '#6B7280' },
-}
-
-const formatDateTime = (iso: string | null) => {
-  if (!iso) return '―'
-  const d = new Date(iso)
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 type FilterKey = '承認待ち' | '差し戻し中' | '署名待ち' | '署名済み' | '取り下げ'

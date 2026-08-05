@@ -15,6 +15,8 @@ import { useToast } from '@/app/_shared/ui/ToastProvider'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 import PdfPreviewButton from '@/app/_shared/ui/PdfPreviewButton'
 import { useDeptNameMap, getApplicantLabel } from '@/app/dashboard/_shared/useDeptNameMap'
+// 2026-08-05：日付表記統一によりローカル定義（スラッシュ表記）を廃止し共通ヘルパーへ移行
+import { formatDateTimeJp as formatDateTime } from '@/lib/dateFormat'
 
 type ScheduleRow = { label: string; start: string; end: string; breakMinutes: string; contractHours: string }
 
@@ -42,12 +44,6 @@ type PledgeDetail = {
     scheduleRows?: ScheduleRow[]
     salary?: { salaryType?: string; basicSalary?: string; rolePay?: string; skillPay?: string; salesPay?: string; transportType?: string }
   }
-}
-
-const formatDateTime = (iso: string | null) => {
-  if (!iso) return '―'
-  const d = new Date(iso)
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 const formatYen = (v: string | undefined) => {

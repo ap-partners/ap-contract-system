@@ -11,6 +11,8 @@ import { useRouter } from 'next/navigation'
 import { CLOSING_PATTERNS, parseAmount } from '../_lib/helpers'
 import { FinalSection, FinalRow, FinalGroupHeader, CriticalWarning, AutoBadge } from './FormParts'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
+// 2026-08-05：日付表記統一によりハイフン生値表示（2026-05-01）を廃止し漢字表記へ
+import { formatDateJp, formatPeriodJp } from '@/lib/dateFormat'
 
 type TrialCalc = { over6: boolean; months: number; days: number } | null
 
@@ -264,19 +266,19 @@ export default function StepFinalCheck({
         onEdit={() => setCurrentStep(pattern === 'A' ? 3 : 5)} editLabel={isRejected ? '確認・修正する' : '修正する'}>
         {(pattern === 'B' || pattern === 'C') && (
           <>
-            <FinalRow label="派遣期間" value={(dispatchStart && dispatchEnd) ? `${dispatchStart} 〜 ${dispatchEnd}` : '―'} />
-            {!isConflictDateExempt && <FinalRow label="抵触日（事業所単位）" value={conflictDate || '―'} badge={<CsvBadge name="conflict" />} oldValue={csvSnapshot.conflict} />}
-            {!isConflictDateExempt && <FinalRow label="抵触日（組織単位）" value={conflictDateOrg || '―'} badge={<CsvBadge name="conflictOrg" />} oldValue={csvSnapshot.conflictOrg} />}
+            <FinalRow label="派遣期間" value={(dispatchStart && dispatchEnd) ? formatPeriodJp(dispatchStart, dispatchEnd) : '―'} />
+            {!isConflictDateExempt && <FinalRow label="抵触日（事業所単位）" value={conflictDate ? formatDateJp(conflictDate) : '―'} badge={<CsvBadge name="conflict" />} oldValue={csvSnapshot.conflict ? formatDateJp(csvSnapshot.conflict) : csvSnapshot.conflict} />}
+            {!isConflictDateExempt && <FinalRow label="抵触日（組織単位）" value={conflictDateOrg ? formatDateJp(conflictDateOrg) : '―'} badge={<CsvBadge name="conflictOrg" />} oldValue={csvSnapshot.conflictOrg ? formatDateJp(csvSnapshot.conflictOrg) : csvSnapshot.conflictOrg} />}
             <FinalRow label="組織単位" value={organizationUnit || '―'} badge={<CsvBadge name="org" />} oldValue={csvSnapshot.org} />
           </>
         )}
         <FinalRow label="雇用期間" value={
           (period === '無期' || contractType === '正社員')
-            ? (contractStartDate ? `${contractStartDate} 〜 期間の定めなし` : '―')
-            : (employStart ? `${employStart} 〜 ${employEnd || '―'}` : '―')
+            ? (contractStartDate ? `${formatDateJp(contractStartDate)} 〜 期間の定めなし` : '―')
+            : (employStart ? formatPeriodJp(employStart, employEnd) : '―')
         } />
         <FinalRow label="試用期間" value={
-          trialPeriod === '有' ? `有　${trialStart || '―'} 〜 ${trialEnd || '―'}` : trialPeriod === '無' ? '無' : '―'
+          trialPeriod === '有' ? `有　${trialStart ? formatDateJp(trialStart) : '―'} 〜 ${trialEnd ? formatDateJp(trialEnd) : '―'}` : trialPeriod === '無' ? '無' : '―'
         } />
         {trialPeriod === '有' && trialCalc?.over6 && (
           <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] border-b" style={{ borderColor: '#D0DAF0' }}>

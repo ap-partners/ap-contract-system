@@ -14,6 +14,8 @@ import { getAuthHeader } from '@/lib/supabase'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import { clampDateYear } from '@/app/apply/_lib/helpers'
 import SkeletonBlock from '@/app/_shared/ui/SkeletonBlock'
+// 2026-08-05：日付表記統一によりtoLocaleDateString('ja-JP')のスラッシュ表記を廃止し漢字表記へ
+import { formatDateJp } from '@/lib/dateFormat'
 
 type Department = { id: string; dept_no: number; dept_name: string; created_at: string }
 type MinimumWage = { id: string; dept_no: number; hourly_wage: number; effective_from: string; created_at: string; updated_at: string }
@@ -582,7 +584,7 @@ function DispatchFeeSection({ data, reload }: { data: MasterData; reload: () => 
                     />
                   </td>
                   <td className="px-3 py-3 text-xs font-medium text-[#6B7280]">
-                    {existing ? new Date(existing.updated_at).toLocaleDateString('ja-JP') : '未登録'}
+                    {existing ? formatDateJp(existing.updated_at) : '未登録'}
                   </td>
                   <td className="px-3 py-3">
                     <button
@@ -694,7 +696,7 @@ function OfficeSection({ data, reload }: { data: MasterData; reload: () => Promi
                     />
                   </td>
                   <td className="px-3 py-3 text-xs font-medium text-[#6B7280]">
-                    {existing ? new Date(existing.updated_at).toLocaleDateString('ja-JP') : '未登録'}
+                    {existing ? formatDateJp(existing.updated_at) : '未登録'}
                   </td>
                   <td className="px-3 py-3">
                     <button
@@ -793,7 +795,7 @@ function MailingListSection({ data, reload }: { data: MasterData; reload: () => 
                     />
                   </td>
                   <td className="px-3 py-3 text-xs font-medium text-[#6B7280]">
-                    {existing ? new Date(existing.updated_at).toLocaleDateString('ja-JP') : '未登録'}
+                    {existing ? formatDateJp(existing.updated_at) : '未登録'}
                   </td>
                   <td className="px-3 py-3">
                     <button

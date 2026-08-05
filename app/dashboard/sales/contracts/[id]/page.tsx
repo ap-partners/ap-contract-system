@@ -8,6 +8,8 @@ import { useRouter, useParams } from 'next/navigation'
 import Image from 'next/image'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
+// 2026-08-05：日付表記統一によりローカル定義（スラッシュ表記）を廃止し共通ヘルパーへ移行
+import { formatDateTimeJp as formatDateTime } from '@/lib/dateFormat'
 
 // ===== 型定義 =====
 
@@ -62,12 +64,10 @@ const parseAmount = (str: any): number => {
   return parseInt(String(str).replace(/[^0-9]/g, ''), 10) || 0
 }
 
-const formatDateTime = (iso: string | null) => {
-  if (!iso) return '―'
-  const d = new Date(iso)
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-const formatDate = (d: Date) => `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
+// Dateオブジェクト専用（呼び出し元がnew Date()で渡してくるため）。
+// 文字列用のformatDateJpに素通しでUTC変換すると日付がずれる（JST 0時=UTC前日15時）ため、
+// ローカルの年月日をそのまま漢字表記に組み立てる（app/dashboard/sales/page.tsxと同じ考え方）。
+const formatDate = (d: Date) => `${d.getFullYear()}年${String(d.getMonth() + 1).padStart(2, '0')}月${String(d.getDate()).padStart(2, '0')}日`
 
 const CLOSING_PATTERNS = [
   { id: 'auto',  label: '指定しない',           desc: '承認が完了すると、システムが従業員へ確認用URLを自動送信します。' },

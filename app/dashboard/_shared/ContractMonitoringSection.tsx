@@ -17,6 +17,8 @@ import { useEffect, useState } from 'react'
 import { ActionStatus, MonitoringRow } from './useContractMonitoring'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
+// 2026-08-05：日付表記統一によりtoLocaleString('ja-JP')のスラッシュ表記を廃止し漢字表記へ
+import { formatDateTimeJp } from '@/lib/dateFormat'
 
 type Props = {
   rows: MonitoringRow[]
@@ -188,7 +190,7 @@ export default function ContractMonitoringSection({
                   </ul>
                   {row.requestedAt && (
                     <p className="mt-1.5 text-xs text-[#8B98B1]">
-                      {new Date(row.requestedAt).toLocaleString('ja-JP')}に{row.requestedByName ? `${row.requestedByName}が` : ''}確認依頼を送信済み
+                      {formatDateTimeJp(row.requestedAt)}に{row.requestedByName ? `${row.requestedByName}が` : ''}確認依頼を送信済み
                     </p>
                   )}
                 </div>

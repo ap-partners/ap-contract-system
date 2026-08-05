@@ -8,6 +8,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { drawSeal } from '@/app/sign/[id]/seal'
+// 2026-08-05：日付表記統一によりゼロ埋めなし（2026年8月5日）を廃止し共通ヘルパー（ゼロ埋めあり）へ
+import { formatDateJp } from '@/lib/dateFormat'
 
 type Stage = 'loading' | 'view' | 'action' | 'done'
 type SignAction = 'signature' | 'confirmation'
@@ -106,9 +108,8 @@ export default function StaffDocumentPage() {
   // 署名済み画面用の日付表示（マイページ一覧の表記と統一）
   const signedAtLabel = (() => {
     if (!signedAt) return null
-    const d = new Date(signedAt)
-    if (Number.isNaN(d.getTime())) return null
-    const dateLabel = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+    const dateLabel = formatDateJp(signedAt)
+    if (dateLabel === '―') return null
     return signAction === 'signature' ? `${dateLabel}に署名済み` : `${dateLabel}に確認済み`
   })()
 

@@ -7,6 +7,7 @@ import { createClient } from '@supabase/supabase-js'
 import * as XLSX from 'xlsx'
 import { getAuthenticatedStaff } from '@/lib/apiAuth'
 import type { ProtectedRowDetail } from '@/lib/csvImportShared'
+import { formatDateTimeJp } from '@/lib/dateFormat'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -30,7 +31,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const details = (importRow.protected_detail || []) as ProtectedRowDetail[]
   if (details.length === 0) return NextResponse.json({ error: '保護によりスキップされた行はありません。' }, { status: 404 })
 
-  const importedAt = importRow.uploaded_at ? new Date(importRow.uploaded_at).toLocaleString('ja-JP') : ''
+  // 2026-08-05：日付表記統一によりtoLocaleString('ja-JP')のスラッシュ表記を廃止し漢字表記へ
+  const importedAt = formatDateTimeJp(importRow.uploaded_at, '')
   const sheetRows = details.map(d => ({
     'システム名': d.systemName,
     '所属部門名': d.deptName || '',

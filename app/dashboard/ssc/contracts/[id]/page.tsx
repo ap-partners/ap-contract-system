@@ -10,6 +10,8 @@ import { useToast } from '@/app/_shared/ui/ToastProvider'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import { useDeptNameMap, getApplicantLabel } from '@/app/dashboard/_shared/useDeptNameMap'
+// 2026-08-05：日付表記統一によりローカル定義（スラッシュ表記）を廃止し共通ヘルパーへ移行
+import { formatDateTimeJp as formatDateTime } from '@/lib/dateFormat'
 
 // ===== 型定義 =====
 
@@ -72,12 +74,6 @@ type ContractDetail = {
 const parseAmount = (str: any): number => {
   if (str === null || str === undefined || str === '') return 0
   return parseInt(String(str).replace(/[^0-9]/g, ''), 10) || 0
-}
-
-const formatDateTime = (iso: string | null) => {
-  if (!iso) return '―'
-  const d = new Date(iso)
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 const CLOSING_PATTERNS = [

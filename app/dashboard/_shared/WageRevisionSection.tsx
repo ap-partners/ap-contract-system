@@ -10,6 +10,8 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { WageRevisionCandidate } from './useWageRevisionCandidates'
+// 2026-08-05：日付表記統一によりハイフン生値表示（2026-05-01）を廃止し漢字表記へ
+import { formatDateJp } from '@/lib/dateFormat'
 
 type Props = {
   rows: WageRevisionCandidate[]
@@ -20,9 +22,9 @@ type Props = {
 
 function formatPeriod(row: WageRevisionCandidate): string {
   if (row.employStart || row.employEnd) {
-    return `${row.employStart || '未定'} 〜 ${row.employEnd || '未定'}`
+    return `${row.employStart ? formatDateJp(row.employStart) : '未定'} 〜 ${row.employEnd ? formatDateJp(row.employEnd) : '未定'}`
   }
-  if (row.contractStartDate) return `${row.contractStartDate} 〜（適用開始）`
+  if (row.contractStartDate) return `${formatDateJp(row.contractStartDate)} 〜（適用開始）`
   return '期間不明'
 }
 

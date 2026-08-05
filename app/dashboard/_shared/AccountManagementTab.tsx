@@ -13,6 +13,8 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { getAuthHeader } from '@/lib/supabase'
+// 2026-08-05：日付表記統一によりtoLocaleString('ja-JP')のスラッシュ表記を廃止し漢字表記へ
+import { formatDateTimeJp } from '@/lib/dateFormat'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
@@ -208,7 +210,7 @@ export default function AccountManagementTab() {
                     <div key={a.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E8EDF5] p-4">
                       <div>
                         <p className="text-sm font-semibold text-[#1F2937]">{a.name || '(氏名未設定)'} <span className="ml-2 text-xs font-medium text-[#6B7280]">{a.email}</span></p>
-                        <p className="mt-1 text-xs text-[#6B7280]">{a.role}・{a.deptLabel}・凍結日時 {a.frozenAt ? new Date(a.frozenAt).toLocaleString('ja-JP') : '-'}</p>
+                        <p className="mt-1 text-xs text-[#6B7280]">{a.role}・{a.deptLabel}・凍結日時 {a.frozenAt ? formatDateTimeJp(a.frozenAt) : '-'}</p>
                       </div>
                       <button onClick={() => handleUnfreeze(a)} className={secondaryBtn}>凍結解除</button>
                     </div>

@@ -8,6 +8,7 @@ import Image from 'next/image'
 import {
   ContractForDisplay,
   formatDateTime,
+  formatDate,
   getDocumentLabel,
   ContractTypeBadge,
   WorkPlaceBadge,
@@ -127,13 +128,6 @@ const accentButton = 'inline-flex h-[52px] shrink-0 items-center justify-center 
 // 2026-07-24同日：headerPrimaryButton/headerAccentButtonは新規発行ボタン統合（NewDocumentMenu）に
 // より不要になったため削除。headerSecondaryButton（ログアウトボタン）のみ引き続き使用。
 const headerSecondaryButton = 'flex h-12 items-center gap-2 rounded-2xl border border-[#E8EDF5] bg-white px-4 text-sm font-semibold text-[#1F2937] shadow-[0_10px_30px_rgba(15,23,42,.04)] transition hover:-translate-y-0.5 hover:border-[#2F5FD0] hover:text-[#2F5FD0] hover:shadow-[0_15px_40px_rgba(15,23,42,.08)]'
-
-function formatDate(str: string | null) {
-  if (!str) return ''
-  const d = new Date(str)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`
-}
 
 const Icon = ({ name, className = '' }: { name: IconName; className?: string }) => {
   const paths: Record<IconName, ReactNode> = {

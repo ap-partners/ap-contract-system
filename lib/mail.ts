@@ -4,6 +4,7 @@
 // ただし宛名の氏名（「〇〇様」）のみ、2026-07-16に伊藤さんの判断で例外的に許可（詳細は
 // sendSignRequestMail関数内のコメント・docs/SYSTEM_DESIGN.md 10章2026-07-16参照）。
 import nodemailer from 'nodemailer'
+import { formatDateJp, formatDateTimeJp } from '@/lib/dateFormat'
 
 // 2026-07-23：デフォルトのquoted-printableエンコーディングだと、本文中の "=" が
 // 行折り返し位置と衝突した場合にHTML内のリンクURLが破損する不具合が判明
@@ -25,11 +26,11 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://ap-contract-system.v
 // 2026-07-31追加：日付（'YYYY-MM-DD'）を「YYYY年MM月DD日」表記に変換する共通ヘルパー。
 // 従来sendCsvModifiedNotifyMail内にのみ同じロジックがローカルで存在していたが、
 // 依頼系メール（新規・完了・取消）でも同じ表記を使うため共通化した。
+// 2026-08-05：実体をlib/dateFormat.tsの共通ヘルパーへ委譲（日付表記統一。
+// docs/SYSTEM_DESIGN.md 10章2026-08-05参照）。未入力時の表示文言（'（未入力）'）は
+// メール文面としてこのファイル固有の要件のためそのまま維持。
 function formatJaDate(dateStr: string | null): string {
-  if (!dateStr) return '（未入力）'
-  const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (!m) return dateStr
-  return `${m[1]}年${m[2]}月${m[3]}日`
+  return formatDateJp(dateStr, '（未入力）')
 }
 
 // 2026-07-31追加：依頼（スタッフマスタ登録・CSVインポート）メール3種
@@ -603,7 +604,10 @@ export async function sendRenewalDigestMail(
 ): Promise<void> {
   if (toEmails.length === 0) return
 
-  const todayLabel = new Date().toLocaleDateString('ja-JP')
+  // 2026-08-05：日付表記統一により、toLocaleDateString('ja-JP')のスラッシュ表記（2026/8/5・
+  // ゼロ埋めなし）を廃止し、他のメール・画面と同じ漢字表記（ゼロ埋めあり）に統一。
+  // formatDateTimeJp自体がAsia/Tokyo基準で計算するため、サーバー（UTC）実行でも日付がずれない。
+  const todayLabel = formatDateTimeJp(new Date().toISOString()).split(' ')[0]
   const sorted = [...items].sort((a, b) => (a.remainingDays ?? 9999) - (b.remainingDays ?? 9999))
   const overdueCount = items.filter(i => (i.remainingDays ?? 0) < 0).length
   const upcomingCount = items.length - overdueCount
@@ -1161,14 +1165,12 @@ export async function sendCsvModifiedNotifyMail(
   // ②宛名の「様」表記は本メールでは不要なため削除（件名・本文とも）。
   // ③CSVデータ上の派遣期間の日付表記を「YYYY-MM-DD」から「YYYY年MM月DD日」に変更。
   const normalizedStaffName = staffName.replace(/　/g, ' ')
-  // 2026-07-31：日付フォーマットは共通ヘルパー(formatJaDate)に統合。ただしこの関数では
+  // 2026-07-31：日付フォーマットは共通ヘルパー(formatDateJp)に統合。ただしこの関数では
   // 未入力時にnullを返す挙動に依存している箇所（dispatchPeriodLabelの「―」表示）があるため、
-  // 共通ヘルパー（未入力時は'（未入力）'を返す）をそのまま使わず、この関数専用の薄いラッパーとする。
+  // 共通ヘルパー（未入力時は既定で'―'を返す）をそのまま使わず、この関数専用の薄いラッパーとする。
   const formatJapaneseDate = (dateStr: string | null): string | null => {
     if (!dateStr) return null
-    const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
-    if (!m) return dateStr
-    return `${m[1]}年${m[2]}月${m[3]}日`
+    return formatDateJp(dateStr)
   }
   const subject = `【要確認】CSV反映項目の修正あり（${normalizedStaffName}・${documentLabel}）`
   const detailUrl = `${APP_URL}/dashboard/ssc/contracts/${contractId}`
@@ -1264,7 +1266,9 @@ export async function sendNewRequestMail(
 
   const { requestType, staffName, requestedByName, requestedByDept, requestedAt } = info
   const typeLabel = requestType === 'staff_register' ? 'スタッフマスタ登録依頼' : 'CSVインポート依頼'
-  const requestedAtLabel = new Date(requestedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
+  // 2026-08-05：日付表記統一によりtoLocaleString('ja-JP')のスラッシュ表記を廃止し漢字表記へ
+  // （formatDateTimeJp自体がAsia/Tokyo基準のため、個別のtimeZone指定は不要になった）
+  const requestedAtLabel = formatDateTimeJp(requestedAt)
   const subject = `【APパートナーズ】新しい依頼が届きました（${typeLabel}・${staffName || '対象スタッフ'}様）`
   const detailLines = buildRequestDetailLines(info)
 

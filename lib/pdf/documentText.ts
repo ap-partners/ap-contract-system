@@ -6,12 +6,12 @@
 // page.tsxは'use client'のクライアント専用コンポーネントのため、帳票生成（サーバー側API route）からは
 // 独立してこちらに実装している。page.tsx側のロジックを変更した場合、内容が一致するかここも確認すること。
 
-export const toJpDate = (dateStr: string | null | undefined): string => {
-  if (!dateStr) return ''
-  const d = new Date(dateStr)
-  if (Number.isNaN(d.getTime())) return ''
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
-}
+import { formatDateJp } from '@/lib/dateFormat'
+
+// 2026-08-05：日付表記統一（docs/SYSTEM_DESIGN.md 10章2026-08-05参照）に伴い、実体を
+// lib/dateFormat.tsの共通ヘルパーへ委譲。月・日がゼロ埋め2桁になる（従来「2026年8月5日」
+// →「2026年08月05日」）以外の出力・呼び出し方は変更なし（空文字フォールバックのみ従来通り''を維持）。
+export const toJpDate = (dateStr: string | null | undefined): string => formatDateJp(dateStr, '')
 
 // ===== 退職・解雇（2026-07-07確定。SYSTEM_DESIGN.md 7-1章参照）=====
 // アルバイトはこの項目自体を表示しない（呼び出し側でnullチェックすること）

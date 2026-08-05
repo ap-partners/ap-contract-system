@@ -9,6 +9,8 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
+// 2026-08-05：日付表記統一によりゼロ埋めなし（2026年8月5日）を廃止し共通ヘルパー（ゼロ埋めあり）へ
+import { formatDateJp } from '@/lib/dateFormat'
 
 type PendingDocument = { id: string; documentLabel: string; signAction: string; remainingDays: number | null }
 type SignedDocument = { id: string; documentLabel: string; signAction: string; signedAt: string }
@@ -85,8 +87,7 @@ export default function StaffMyPage() {
   }
 
   const formatSignedAt = (iso: string, signAction: string): string => {
-    const d = new Date(iso)
-    const label = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+    const label = formatDateJp(iso)
     return signAction === 'signature' ? `${label}に署名済み` : `${label}に確認済み`
   }
 

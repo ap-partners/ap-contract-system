@@ -5,6 +5,14 @@
 // バグが3ファイルに同じ根本原因が重複していたために起きた（docs/SYSTEM_DESIGN.md 10章
 // 2026-07-13参照）のと同じ構造の不具合を防ぐため、共通化した（伊藤さんの了承・2026-07-14決定）。
 // 各ダッシュボードはこのファイルの関数・コンポーネントを import して使う。
+//
+// 2026-08-05：日付表記統一（docs/SYSTEM_DESIGN.md 10章2026-08-03「日付表記の不統一に関する
+// 調査結果」・2026-08-05対応記録参照）に伴い、formatDateTime/formatDateの出力をスラッシュ
+// （2026/08/05）から漢字（2026年08月05日）へ変更。実体はlib/dateFormat.tsの共通ヘルパーに
+// 委譲し、この2つの名前はこのファイルを既にimportしている既存の全呼び出し元との互換のため
+// 残している（新規に使う場合はlib/dateFormat.tsを直接importしてよい）。
+
+import { formatDateJp, formatDateTimeJp, formatPeriodJp } from '@/lib/dateFormat'
 
 export type ContractStatus = '申請中' | 'SSC承認済み' | '差し戻し中' | '署名待ち' | '署名済み' | '完了' | '取り下げ'
 export type WarningLevel = 'none' | 'yellow' | 'red'
@@ -50,19 +58,11 @@ export type ContractForDisplay = {
   }
 }
 
-// 日時を「YYYY/MM/DD HH:mm」形式に変換
-export const formatDateTime = (iso: string | null | undefined) => {
-  if (!iso) return '―'
-  const d = new Date(iso)
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
+// 日時を「YYYY年MM月DD日 HH:mm」形式に変換（実体はlib/dateFormat.ts）
+export const formatDateTime = (iso: string | null | undefined) => formatDateTimeJp(iso)
 
-// 日付のみ「YYYY/MM/DD」形式に変換
-export const formatDate = (iso: string | null | undefined) => {
-  if (!iso) return '―'
-  const d = new Date(iso)
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
-}
+// 日付のみ「YYYY年MM月DD日」形式に変換（実体はlib/dateFormat.ts）
+export const formatDate = (iso: string | null | undefined) => formatDateJp(iso)
 
 // 帳票種別の省略表示
 export const getDocumentLabel = (documentType: string, pattern: string) => {
@@ -173,8 +173,8 @@ export const getEmployPeriodLabel = (contract: ContractForDisplay): string => {
   const isSeishain = contractType === '正社員'
   const isMusei = contractType === '無期契約' || f.period === '無期'
   if (isSeishain || isMusei) {
-    return f.contractStartDate ? `${f.contractStartDate} 〜 期間の定めなし` : '―'
+    return f.contractStartDate ? `${formatDateJp(f.contractStartDate)} 〜 期間の定めなし` : '―'
   }
-  if (f.employStart && f.employEnd) return `${f.employStart} 〜 ${f.employEnd}`
+  if (f.employStart && f.employEnd) return formatPeriodJp(f.employStart, f.employEnd)
   return '―'
 }

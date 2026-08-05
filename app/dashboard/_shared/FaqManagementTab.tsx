@@ -12,17 +12,13 @@ import { supabase, getAuthHeader } from '@/lib/supabase'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import { FaqEntry, FaqInquiry } from '@/lib/faq'
+// 2026-08-05：日付表記統一によりローカル定義（スラッシュ表記）を廃止し共通ヘルパーへ移行
+import { formatDateTimeJp as formatDateTime } from '@/lib/dateFormat'
 
 const card = 'rounded-2xl border border-[#E8EDF5] bg-white'
 const inputCls = 'w-full rounded-xl border border-[#E8EDF5] bg-white px-3 py-2 text-sm text-[#1F2937] focus:border-[#2F5FD0] focus:outline-none'
 const primaryBtn = 'inline-flex items-center gap-2 rounded-2xl bg-[#2F5FD0] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#274CB0] disabled:cursor-not-allowed disabled:opacity-60'
 const secondaryBtn = 'inline-flex items-center gap-2 rounded-xl border border-[#E8EDF5] bg-white px-4 py-2 text-sm font-semibold text-[#1F2937] transition hover:border-[#2F5FD0] hover:text-[#2F5FD0]'
-
-const formatDateTime = (iso: string | null) => {
-  if (!iso) return '―'
-  const d = new Date(iso)
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
 
 // 2026-07-29：伊藤さんの指摘（回答者にカテゴリ・キーワード・エスカレーション条件まで
 // その場で判断させるのは負担が大きく、誤ったカテゴリに割り振られるリスクもある）を受けて、

@@ -97,6 +97,22 @@ function ApplyPageInner() {
       })
     return () => { cancelled = true }
   }, [isNewApplicationFlow, selectedStaff?.employee_number])
+
+  // 2026-08-05追加（更新期限管理タブ④：更新時に書類種別を変更できない問題への対応）：
+  // 更新期限管理タブ「期間以外も修正する」経由の個別更新申請（renewalCandidateId）では、
+  // STEP1の「修正する」リンクから既存の仕組みでSTEP1に戻り書類種別を選び直せる（STEP2以降は
+  // pattern変更に応じてgetStepType()が自動的に必要なSTEPへ誘導するため、派遣関連の新規追加項目
+  // 〔派遣先担当者・派遣元担当者等〕は空欄のまま通常のSTEP入力で埋めさせる形で自然に対応できる。
+  // ここで追加対応が必要なのは「派遣の側面を落とす」変更のみ：更新元の契約が派遣の側面（就業条件
+  // 明示書または兼用）をカバーしていたのに、書類種別を雇用契約書単体に変更した場合、③で新規申請
+  // フロー向けに作った派遣終了確認モーダルと全く同じ確認を挟む（伊藤さん承認済み・そのまま流用）。
+  // hasActiveDispatchAspect（グローバルなスタッフの現在状態）をそのまま使うと、この更新候補とは
+  // 別に存在する「未着手の派遣の側面の契約」の有無まで拾ってしまい誤検知するため使わない。
+  // 判定は「この更新候補の元となった契約（source_contract_id）自体が派遣の側面をカバーしていたか」
+  // だけを見る（renewalOriginalDocumentType）。docs/SYSTEM_DESIGN.md 10章 2026-08-05参照。
+  const [renewalOriginalDocumentType, setRenewalOriginalDocumentType] = useState<string | null>(null)
+  const renewalOriginalCoveredDispatch = !!renewalCandidateId
+    && (getPattern(renewalOriginalDocumentType || '') === 'B' || getPattern(renewalOriginalDocumentType || '') === 'C')
   // STEP8「申請する」の直前に挟む「派遣契約を終了扱いにしますか？」確認モーダル関連の状態。
   // 理由入力は必須（伊藤さん確定・「更新しない」ボタンと同じ思想）。
   const [showDispatchTerminationModal, setShowDispatchTerminationModal] = useState(false)
@@ -114,7 +130,15 @@ function ApplyPageInner() {
   // 新規申請フローで、雇用契約書単体を選んでいて、かつ対象スタッフに現在有効な派遣の側面がある場合のみ
   // 派遣終了確認が必要（社内選択でdocumentTypeが自動的に雇用契約書へ固定される既存ロジックも、
   // 結果的にこの条件に自然に合致するため、社内異動用の特別分岐は不要）。
-  const needsDispatchTerminationConfirm = isNewApplicationFlow && documentType === '雇用契約書' && hasActiveDispatchAspect === true
+  // 2026-08-05追加：更新期限管理タブ経由の個別更新申請（renewalCandidateId）で、更新元の契約が
+  // 派遣の側面をカバーしていたのに書類種別を雇用契約書単体に変更した場合も同じ確認を挟む（④対応）。
+  const needsDispatchTerminationConfirm = documentType === '雇用契約書' && (
+    (isNewApplicationFlow && hasActiveDispatchAspect === true) ||
+    renewalOriginalCoveredDispatch
+  )
+  // STEP1の事前ヒントバナー用。新規申請フローはグローバルなhasActiveDispatchAspectをそのまま、
+  // 更新申請フローはrenewalOriginalCoveredDispatchを使う（④対応）。
+  const dispatchAspectHintVisible = isNewApplicationFlow ? hasActiveDispatchAspect === true : renewalOriginalCoveredDispatch
 
   const pattern = getPattern(documentType)
   // アルバイトは雇用期間・試用期間まわりのバリデーションを有期契約と同じ扱いにする（表示用の帳票名ラベルは別途getFullDocumentName側で「アルバイト」と表示する）
@@ -764,6 +788,10 @@ function ApplyPageInner() {
         .eq('id', candidate.source_contract_id)
         .maybeSingle()
       if (prevError || !prevContract) { setRenewalNotFound(true); setRenewalLoading(false); return }
+
+      // ④対応：派遣終了確認の要否判定に使う「更新元の契約が派遣の側面をカバーしていたか」の基準値。
+      // STEP1で書類種別を変更してもこの値自体は変わらない（あくまで更新元＝変更前の基準として保持）。
+      setRenewalOriginalDocumentType(prevContract.document_type || null)
 
       const prevFields = (prevContract.input_data as any)?.fields || {}
 
@@ -2202,7 +2230,7 @@ function ApplyPageInner() {
               documentType={documentType} setDocumentType={setDocumentType}
               fullDocumentName={fullDocumentName} pattern={pattern}
               deptWageMasterMissing={deptWageMasterMissing}
-              hasActiveDispatchAspect={hasActiveDispatchAspect}
+              hasActiveDispatchAspect={dispatchAspectHintVisible}
               dispatchTerminationDeclined={dispatchTerminationDeclined}
               handleNext={handleNext}
             />

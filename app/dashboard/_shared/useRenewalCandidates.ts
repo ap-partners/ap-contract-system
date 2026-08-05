@@ -467,7 +467,7 @@ export function useRenewalCandidates() {
     if (error) {
       console.error('更新候補の保存エラー:', error)
       if (prevSnapshot) setCandidates(prev => prev.map(c => c.id === id ? prevSnapshot : c))
-      showError('保存に失敗しました。入力内容（特に日付の形式）をご確認の上、もう一度お試しください。')
+      showError('保存に失敗しました。入力内容（特に日付の形式）をご確認のうえ、もう一度お試しください。')
     }
   }, [candidates, showError])
 

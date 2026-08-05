@@ -26,6 +26,7 @@ import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import { SubTabBar } from './SubTabBar'
 // 2026-08-05：日付表記統一によりローカル定義（スラッシュ表記）を廃止し共通ヘルパーへ移行
 import { formatDateTimeJp as formatDateTime } from '@/lib/dateFormat'
+import { WITHDRAWN_APPLICATION_DELETE_CONFIRM } from '@/lib/confirmMessages'
 
 type PledgeRow = {
   id: string
@@ -228,12 +229,7 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
   // 取り下げ済み申請の削除（2026-07-27追加）：status='取り下げ'の行のみDELETE可能なようRLSで制限済み。
   const [deletingWithdrawnId, setDeletingWithdrawnId] = useState<string | null>(null)
   const handleDeleteWithdrawn = async (pledgeId: string) => {
-    const ok = await confirmDialog({
-      title: '取り下げ申請の削除',
-      message: 'この取り下げ済み申請を完全に削除します。この操作は取り消せません。削除しますか？',
-      tone: 'danger',
-      confirmLabel: '削除する',
-    })
+    const ok = await confirmDialog(WITHDRAWN_APPLICATION_DELETE_CONFIRM)
     if (!ok) return
     setDeletingWithdrawnId(pledgeId)
     const { error } = await supabase.from('pledges').delete().eq('id', pledgeId).eq('status', '取り下げ')

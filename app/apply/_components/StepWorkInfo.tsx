@@ -98,8 +98,7 @@ export default function StepWorkInfo({
           <p className="text-sm leading-relaxed" style={{ color: '#5A6A8A' }}>
             インポートが完了するとメール通知が届きます。<br />
             お手数ですが、その後に再度申請してください。<br /><br />
-            急ぎで雇用契約書のみの発行へ切り替えたい場合は、<br />
-            前のSTEPへ戻りお手続きをお願いします。
+            急ぎで雇用契約書のみの発行へ切り替えたい場合は、前のSTEPへ戻りお手続きをお願いします。
           </p>
           <button onClick={e => { e.preventDefault(); setCsvRequestSent(false) }}
             className="text-sm px-5 py-2.5 rounded-lg border"
@@ -199,7 +198,7 @@ export default function StepWorkInfo({
                           style={{ background: '#FFFBEB', borderColor: '#FDE68A' }}>
                           <p className="text-xs" style={{ color: '#92400E' }}>
                             この方はSBクルーコードがまだスタッフマスタに反映されていないため、氏名・生年月日で照合した候補です。
-                            内容をよくご確認の上、選択してください。
+                            内容をよくご確認のうえ、選択してください。
                           </p>
                         </div>
                       )}

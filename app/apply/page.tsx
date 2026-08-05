@@ -254,7 +254,7 @@ function ApplyPageInner() {
   const [csvModWarningChecked, setCsvModWarningChecked] = useState(false)
   const [isRejected, setIsRejected] = useState(false)
   const [originalFieldsSnapshot, setOriginalFieldsSnapshot] = useState<string | null>(null) // 差し戻し時点の内容（変更有無チェック用）
-  const [rejectionReason, setRejectionReason] = useState('業務内容の記載が個別契約書の内容と一致していません。STEP2の業務内容をご確認の上、修正してください。')
+  const [rejectionReason, setRejectionReason] = useState('業務内容の記載が個別契約書の内容と一致していません。STEP2の業務内容をご確認のうえ、修正してください。')
   const [rejectedAt, setRejectedAt] = useState('2026年06月18日 14:32')
   const [rejectedBy, setRejectedBy] = useState('SSC 高橋')
 

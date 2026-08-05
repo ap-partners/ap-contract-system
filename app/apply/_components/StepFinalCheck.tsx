@@ -8,7 +8,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { CLOSING_PATTERNS, parseAmount } from '../_lib/helpers'
+import { CLOSING_PATTERNS, parseAmount, getTrialOver6WarningMessage, NO_TRIAL_PERIOD_WARNING_MESSAGE } from '../_lib/helpers'
 import { FinalSection, FinalRow, FinalGroupHeader, CriticalWarning, AutoBadge } from './FormParts'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 // 2026-08-05：日付表記統一によりハイフン生値表示（2026-05-01）を廃止し漢字表記へ
@@ -285,7 +285,7 @@ export default function StepFinalCheck({
             <div className="border-r" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }} />
             <div className="px-5 py-3.5">
               <CriticalWarning
-                message={`就業規則第13条では試用期間は原則6ヶ月以内と定められています。\n入力された試用期間（${trialCalc.months}ヶ月${trialCalc.days > 0 ? trialCalc.days + '日' : ''}）は6ヶ月を超えています。\n延長が必要な場合は就業規則第13条第2項に基づき、本人への2週間前通知が必要です。\n本当にこのまま申請してよろしいですか？`}
+                message={getTrialOver6WarningMessage(trialCalc.months, trialCalc.days)}
                 checked={trialWarningChecked}
                 onCheck={setTrialWarningChecked}
               />
@@ -297,7 +297,7 @@ export default function StepFinalCheck({
             <div className="border-r" style={{ background: '#EEF2FA', borderColor: '#D0DAF0' }} />
             <div className="px-5 py-3.5">
               <CriticalWarning
-                message={`正社員の雇用では原則として試用期間（6ヶ月）が設けられます（就業規則第13条）。\n試用期間「無し」で申請する場合は、会社が適当と認めた特別なケースに限られます。\n本当にこのまま申請してよろしいですか？`}
+                message={NO_TRIAL_PERIOD_WARNING_MESSAGE}
                 checked={noTrialWarningChecked}
                 onCheck={setNoTrialWarningChecked}
               />
@@ -514,7 +514,7 @@ export default function StepFinalCheck({
             {isRejected && originalFieldsSnapshot !== null && JSON.stringify(buildCurrentFields()) === originalFieldsSnapshot && (
               <div className="rounded-lg px-4 py-3 mb-4 border-2" style={{ background: '#FEF2F2', borderColor: '#DC2626' }}>
                 <p className="text-xs leading-relaxed" style={{ color: '#B91C1C' }}>
-                  ⚠️ 差し戻し前の内容から変更されていません。<br />内容に問題がないか今一度ご確認の上、申請してください。
+                  ⚠️ 差し戻し前の内容から変更されていません。<br />内容に問題がないか今一度ご確認のうえ、申請してください。
                 </p>
               </div>
             )}

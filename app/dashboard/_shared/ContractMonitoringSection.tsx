@@ -111,7 +111,7 @@ export default function ContractMonitoringSection({
     if (!requestFollowUp) return
     const ok = await confirmDialog({
       title: '担当営業への確認依頼',
-      message: `${row.staffName || '対象スタッフ'}様（${row.deptName || '所属部署不明'}）の契約状況について、担当営業へ確認依頼メールを送信します。よろしいですか？`,
+      message: `${row.staffName || '対象スタッフ'}様（${row.deptName || '所属部署不明'}）の契約状況について、担当営業へ確認依頼メールを送信します。\nよろしいですか？`,
       confirmLabel: '送信する',
     })
     if (!ok) return

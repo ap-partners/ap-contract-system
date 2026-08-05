@@ -682,13 +682,17 @@ export default function PledgeApplyPage() {
       }])
 
       if (error) {
-        setSubmitError('申請の保存に失敗しました：' + error.message)
+        // Postgresの生エラーをそのまま画面に出さず、詳細はコンソールにのみ残す
+        // （app/apply/page.tsxの総合レビュー指摘27対応と同じ方式に統一。2026-08-06）。
+        console.error('誓約書申請の保存エラー:', error)
+        setSubmitError('申請の保存に失敗しました。お手数ですが、もう一度お試しください。改善しない場合はシステム担当者にご連絡ください。')
         setIsSubmitting(false)
         return
       }
       setIsSubmitted(true)
     } catch (e: any) {
-      setSubmitError('申請の保存中にエラーが発生しました：' + (e?.message || ''))
+      console.error('誓約書申請の保存エラー:', e)
+      setSubmitError('申請の保存中にエラーが発生しました。お手数ですが、もう一度お試しください。改善しない場合はシステム担当者にご連絡ください。')
     } finally {
       setIsSubmitting(false)
     }

@@ -18,6 +18,7 @@ import {
 } from '../_shared/contractDisplay'
 // 2026-08-05：日付表記統一によりハイフン生値表示（2026-05-01）を廃止し漢字表記へ
 import { formatPeriodJp } from '@/lib/dateFormat'
+import { WITHDRAWN_APPLICATION_DELETE_CONFIRM } from '@/lib/confirmMessages'
 import { useContractListToolbar, buildDateSortOptions } from '../_shared/useContractListToolbar'
 import { useApprovedAccumulator, APPROVED_WINDOW_DAYS } from '../_shared/useApprovedAccumulator'
 import RenewalManagementTab from '../_shared/RenewalManagementTab'
@@ -533,12 +534,7 @@ export default function SalesDashboard() {
   )
 
   const handleDeleteWithdrawn = async (contractId: string) => {
-    const ok = await confirmDialog({
-      title: '取り下げ申請の削除',
-      message: 'この取り下げ済み申請を完全に削除します。この操作は取り消せません。削除しますか？',
-      tone: 'danger',
-      confirmLabel: '削除する',
-    })
+    const ok = await confirmDialog(WITHDRAWN_APPLICATION_DELETE_CONFIRM)
     if (!ok) return
     setDeletingWithdrawnId(contractId)
     const { error } = await supabase.from('contracts').delete().eq('id', contractId).eq('status', '取り下げ')

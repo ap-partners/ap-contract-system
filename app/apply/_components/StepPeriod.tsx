@@ -5,7 +5,7 @@
 // ロジック・表示は変更なし。状態は親（ApplyPageInner）に残したまま、値とsetter・派生値をpropsで受け取る。
 
 import { useState, type ReactNode } from 'react'
-import { inp, inpDate, TOOLTIPS, isDateBefore, calcTrialMonths, clampDateYear } from '../_lib/helpers'
+import { inp, inpDate, TOOLTIPS, isDateBefore, calcTrialMonths, clampDateYear, getTrialOver6WarningMessage, NO_TRIAL_PERIOD_WARNING_MESSAGE } from '../_lib/helpers'
 import { FormRow, SectionHeader, EmptyHintBubble, RadioGroup, CriticalWarning, Tooltip } from './FormParts'
 
 type TrialCalc = ReturnType<typeof calcTrialMonths>
@@ -256,7 +256,7 @@ export default function StepPeriod({
                 )}
                 {trialCalc?.over6 && (
                   <CriticalWarning
-                    message={`就業規則第13条では試用期間は原則6ヶ月以内と定められています。\n入力された試用期間（${trialCalc.months}ヶ月${trialCalc.days > 0 ? trialCalc.days + '日' : ''}）は6ヶ月を超えています。\n延長が必要な場合は就業規則第13条第2項に基づき、本人への2週間前通知が必要です。\n本当にこのまま申請してよろしいですか？`}
+                    message={getTrialOver6WarningMessage(trialCalc.months, trialCalc.days)}
                     checked={trialWarningChecked}
                     onCheck={setTrialWarningChecked}
                   />
@@ -265,7 +265,7 @@ export default function StepPeriod({
             )}
             {trialPeriod === '無' && contractType === '正社員' && isProbableNewHire && (
               <CriticalWarning
-                message={`正社員の雇用では原則として試用期間（6ヶ月）が設けられます（就業規則第13条）。\n試用期間「無し」で申請する場合は、会社が適当と認めた特別なケースに限られます。\n本当にこのまま申請してよろしいですか？`}
+                message={NO_TRIAL_PERIOD_WARNING_MESSAGE}
                 checked={noTrialWarningChecked}
                 onCheck={setNoTrialWarningChecked}
               />

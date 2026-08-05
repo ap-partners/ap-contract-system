@@ -117,7 +117,7 @@ export default function AccountManagementTab() {
   const handleFreeze = async (a: Account) => {
     const ok = await confirmDialog({
       title: 'アカウントを凍結しますか',
-      message: `${a.name || a.email}さんはログインできなくなります。\n過去の申請データ等の記録は残ります。誤って凍結した場合は、凍結済み一覧からいつでも解除できます。`,
+      message: `${a.name || a.email}さんはログインできなくなります。\n過去の申請データ等の記録は残ります。\n誤って凍結した場合は、凍結済み一覧からいつでも解除できます。`,
       tone: 'danger',
       confirmLabel: '凍結する',
     })

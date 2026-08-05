@@ -655,8 +655,8 @@ export async function sendRenewalDigestMail(
   if (isUnassignedFallback) {
     lines.push(
       '',
-      '※この部門は担当営業アカウントが特定できなかったため、本来の宛先の代わりに管理部宛に送信しています。'
-      + '対象スタッフの部門設定・担当営業アカウントの登録をご確認ください。'
+      '※この部門は担当営業アカウントが特定できなかったため、本来の宛先の代わりに管理部宛に送信しています。',
+      '対象スタッフの部門設定・担当営業アカウントの登録をご確認ください。'
     )
   }
   if (overrideNotice) {
@@ -680,7 +680,7 @@ export async function sendRenewalDigestMail(
   }).join('')
 
   const fallbackNoticeHtml = isUnassignedFallback
-    ? `<tr><td style="padding:16px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">※この部門は担当営業アカウントが特定できなかったため、本来の宛先の代わりに管理部宛に送信しています。対象スタッフの部門設定・担当営業アカウントの登録をご確認ください。</td></tr>`
+    ? `<tr><td style="padding:16px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">※この部門は担当営業アカウントが特定できなかったため、本来の宛先の代わりに管理部宛に送信しています。<br>対象スタッフの部門設定・担当営業アカウントの登録をご確認ください。</td></tr>`
     : ''
   const overrideNoticeHtml = overrideNotice
     ? `<tr><td style="padding:16px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;white-space:pre-line;">${overrideNotice}</td></tr>`
@@ -1068,8 +1068,8 @@ export async function sendContractMonitoringFollowupMail(
   if (isUnassignedFallback) {
     lines.push(
       '',
-      '※この部門は担当営業アカウントが特定できなかったため、本来の宛先の代わりに管理部宛に送信しています。'
-      + '対象スタッフの部門設定・担当営業アカウントの登録をご確認ください。'
+      '※この部門は担当営業アカウントが特定できなかったため、本来の宛先の代わりに管理部宛に送信しています。',
+      '対象スタッフの部門設定・担当営業アカウントの登録をご確認ください。'
     )
   }
   if (overrideNotice) {
@@ -1081,7 +1081,7 @@ export async function sendContractMonitoringFollowupMail(
   ).join('')
 
   const fallbackNoticeHtml = isUnassignedFallback
-    ? `<tr><td style="padding:16px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">※この部門は担当営業アカウントが特定できなかったため、本来の宛先の代わりに管理部宛に送信しています。対象スタッフの部門設定・担当営業アカウントの登録をご確認ください。</td></tr>`
+    ? `<tr><td style="padding:16px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">※この部門は担当営業アカウントが特定できなかったため、本来の宛先の代わりに管理部宛に送信しています。<br>対象スタッフの部門設定・担当営業アカウントの登録をご確認ください。</td></tr>`
     : ''
   const overrideNoticeHtml = overrideNotice
     ? `<tr><td style="padding:16px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;white-space:pre-line;">${overrideNotice}</td></tr>`

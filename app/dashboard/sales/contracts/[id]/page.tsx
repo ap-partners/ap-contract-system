@@ -10,6 +10,7 @@ import { useToast } from '@/app/_shared/ui/ToastProvider'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 // 2026-08-05：日付表記統一によりローカル定義（スラッシュ表記）を廃止し共通ヘルパーへ移行
 import { formatDateTimeJp as formatDateTime, formatDateJp, formatPeriodJp } from '@/lib/dateFormat'
+import { WITHDRAW_STALE_STATUS_ERROR } from '@/lib/confirmMessages'
 
 // ===== 型定義 =====
 
@@ -293,7 +294,7 @@ export default function SalesContractDetail() {
     if (error) { showError('取り下げの保存に失敗しました: ' + error.message); return }
     if (!data) {
       // すでにSSC/管理部が承認・差し戻し等の操作を行い、対象ステータスから外れていた場合
-      showError('この申請はすでに状況が変わっているため、取り下げできませんでした。画面を更新してご確認ください。')
+      showError(WITHDRAW_STALE_STATUS_ERROR)
       return
     }
     setContract(data as ContractDetail)

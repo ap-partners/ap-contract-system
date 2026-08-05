@@ -434,9 +434,7 @@ export default function StepBasic({
             <div className="max-w-2xl rounded-lg px-4 py-3 border-2" style={{ background: '#FEF2F2', borderColor: '#DC2626' }}>
               <p className="text-sm font-bold" style={{ color: '#DC2626' }}>🔴 この部門は申請できません</p>
               <p className="text-xs mt-1.5 leading-relaxed" style={{ color: '#1A2340' }}>
-                {selectedStaff?.department || 'この部門'}は、最低賃金マスタが未登録のため、
-                <br />
-                現場配属での申請ができません。
+                {selectedStaff?.department || 'この部門'}は最低賃金マスタが未登録のため、現場配属での申請ができません。
                 <br />
                 管理部にマスタ登録を依頼してください。
               </p>

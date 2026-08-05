@@ -15,6 +15,7 @@ import PdfPreviewButton from '@/app/_shared/ui/PdfPreviewButton'
 import { useDeptNameMap, getApplicantLabel } from '@/app/dashboard/_shared/useDeptNameMap'
 // 2026-08-05：日付表記統一によりローカル定義（スラッシュ表記）を廃止し共通ヘルパーへ移行
 import { formatDateTimeJp as formatDateTime } from '@/lib/dateFormat'
+import { WITHDRAW_STALE_STATUS_ERROR } from '@/lib/confirmMessages'
 
 type ScheduleRow = { label: string; start: string; end: string; breakMinutes: string; contractHours: string }
 
@@ -139,7 +140,7 @@ export default function SSCPledgeDetail() {
     setWithdrawing(false)
     if (error) { showError('取り下げの保存に失敗しました: ' + error.message); return }
     if (!data) {
-      showError('この申請はすでに状況が変わっているため、取り下げできませんでした。画面を更新してご確認ください。')
+      showError(WITHDRAW_STALE_STATUS_ERROR)
       await refetch()
       return
     }

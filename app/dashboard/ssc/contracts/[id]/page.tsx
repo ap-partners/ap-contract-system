@@ -12,6 +12,7 @@ import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import { useDeptNameMap, getApplicantLabel } from '@/app/dashboard/_shared/useDeptNameMap'
 // 2026-08-05：日付表記統一によりローカル定義（スラッシュ表記）を廃止し共通ヘルパーへ移行
 import { formatDateTimeJp as formatDateTime, formatDateJp, formatPeriodJp } from '@/lib/dateFormat'
+import { WITHDRAW_STALE_STATUS_ERROR } from '@/lib/confirmMessages'
 
 // ===== 型定義 =====
 
@@ -416,7 +417,7 @@ export default function SSCContractDetail() {
     setWithdrawing(false)
     if (error) { showError('取り下げの保存に失敗しました: ' + error.message); return }
     if (!data) {
-      showError('この申請はすでに状況が変わっているため、取り下げできませんでした。画面を更新してご確認ください。')
+      showError(WITHDRAW_STALE_STATUS_ERROR)
       await refetchContract()
       return
     }

@@ -74,6 +74,7 @@ export default function StepSalary({
           <p className="text-sm font-bold mb-1" style={{ color: '#8A6D1D' }}>最低賃金改定対応：金額の見直しが必要です</p>
           <p className="text-sm leading-relaxed" style={{ color: '#1A2340' }}>
             {formatDateJp(wageAmendBanner.effectiveFrom)}時点の最低賃金は約時給{wageAmendBanner.requiredWage.toLocaleString()}円です。
+            <br />
             現在の入力内容を時給換算すると約{wageAmendBanner.hourlyEquivalent.toLocaleString()}円のため、
             {wageAmendBanner.gap > 0
               ? `約${wageAmendBanner.gap.toLocaleString()}円の不足が見込まれます。`

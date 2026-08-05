@@ -54,7 +54,7 @@ export default function SignPage() {
       setErrorReason('')
       setAuthCode('')
     } catch {
-      setError('通信エラーが発生しました。\n電波状況をご確認の上、再度お試しください。')
+      setError('通信エラーが発生しました。\n電波状況をご確認のうえ、再度お試しください。')
     } finally {
       setReissuing(false)
     }
@@ -112,7 +112,7 @@ export default function SignPage() {
       setPdfToken(data.pdfToken || '')
       setStage('action')
     } catch {
-      setError('通信エラーが発生しました。\n電波状況をご確認の上、再度お試しください。')
+      setError('通信エラーが発生しました。\n電波状況をご確認のうえ、再度お試しください。')
     } finally {
       setVerifying(false)
     }
@@ -142,7 +142,7 @@ export default function SignPage() {
       }
       setStage('done')
     } catch {
-      setError('通信エラーが発生しました。\n電波状況をご確認の上、再度お試しください。')
+      setError('通信エラーが発生しました。\n電波状況をご確認のうえ、再度お試しください。')
     } finally {
       setSubmitting(false)
     }

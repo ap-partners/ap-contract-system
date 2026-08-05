@@ -102,7 +102,7 @@ export default function WageRevisionSection({ rows, loading, error, onRefresh }:
                   <p className="text-xs font-semibold" style={{ color: '#C0392B' }}>
                     {formatWageComparison(row)}
                   </p>
-                  <p className="text-xs text-[#8B98B1] mt-0.5">{row.effectiveFrom}時点の最低賃金基準（時給約{row.requiredWage.toLocaleString()}円）</p>
+                  <p className="text-xs text-[#8B98B1] mt-0.5">{formatDateJp(row.effectiveFrom)}時点の最低賃金基準（時給約{row.requiredWage.toLocaleString()}円）</p>
                 </div>
               </div>
               <div className="mt-3 pt-3 flex justify-end" style={{ borderTop: '1px solid #F3F5F8' }}>

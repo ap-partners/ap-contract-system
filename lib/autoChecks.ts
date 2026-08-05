@@ -3,6 +3,8 @@
 // contracts.auto_check_results（詳細）・contracts.warning_level（none/yellow/red）に保存する。
 // 2026-07-06 実装。
 
+import { formatDateJp } from '@/lib/dateFormat'
+
 export type WarningLevel = 'none' | 'yellow' | 'red'
 
 export interface AutoCheckResult {
@@ -156,7 +158,7 @@ function checkMinimumWage(input: AutoCheckInput): AutoCheckResult[] {
     results.push({
       type: 'minimum_wage_violation',
       level: 'red',
-      message: `${targetRow.effective_from}時点の最低賃金（時給${targetRow.hourly_wage.toLocaleString()}円）に対して、入力内容の時給換算額（約${Math.floor(hourlyEquivalent).toLocaleString()}円）が下回っています。`,
+      message: `${formatDateJp(targetRow.effective_from)}時点の最低賃金（時給${targetRow.hourly_wage.toLocaleString()}円）に対して、入力内容の時給換算額（約${Math.floor(hourlyEquivalent).toLocaleString()}円）が下回っています。`,
     })
   }
 
@@ -296,7 +298,7 @@ export function runPledgeAutoChecks(input: PledgeAutoCheckInput): { results: Aut
         results.push({
           type: 'minimum_wage_violation',
           level: 'red',
-          message: `${targetRow.effective_from}時点の最低賃金（時給${targetRow.hourly_wage.toLocaleString()}円）に対して、入力内容の時給換算額（約${Math.floor(hourlyEquivalent).toLocaleString()}円）が下回っています。`,
+          message: `${formatDateJp(targetRow.effective_from)}時点の最低賃金（時給${targetRow.hourly_wage.toLocaleString()}円）に対して、入力内容の時給換算額（約${Math.floor(hourlyEquivalent).toLocaleString()}円）が下回っています。`,
         })
       }
     }

@@ -7,6 +7,8 @@
 import { useState } from 'react'
 import { TRANSPORT_TYPES, toHalfWidthDigits, TOOLTIPS } from '../_lib/helpers'
 import { FormRow, SectionHeader, CriticalWarning, Tooltip } from './FormParts'
+// 2026-08-05：日付表記統一によりハイフン生値表示（2026-05-01）を廃止し漢字表記へ
+import { formatDateJp } from '@/lib/dateFormat'
 
 type TransportType = (typeof TRANSPORT_TYPES)[number]
 
@@ -71,7 +73,7 @@ export default function StepSalary({
         <div className="rounded-lg p-4 border mb-4" style={{ background: '#FFF8E1', borderColor: '#E8C547' }}>
           <p className="text-sm font-bold mb-1" style={{ color: '#8A6D1D' }}>最低賃金改定対応：金額の見直しが必要です</p>
           <p className="text-sm leading-relaxed" style={{ color: '#1A2340' }}>
-            {wageAmendBanner.effectiveFrom}時点の最低賃金は約時給{wageAmendBanner.requiredWage.toLocaleString()}円です。
+            {formatDateJp(wageAmendBanner.effectiveFrom)}時点の最低賃金は約時給{wageAmendBanner.requiredWage.toLocaleString()}円です。
             現在の入力内容を時給換算すると約{wageAmendBanner.hourlyEquivalent.toLocaleString()}円のため、
             {wageAmendBanner.gap > 0
               ? `約${wageAmendBanner.gap.toLocaleString()}円の不足が見込まれます。`

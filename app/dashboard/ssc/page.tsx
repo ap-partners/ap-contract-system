@@ -19,6 +19,8 @@ import {
   hasAutoCheckWarning,
   getEmployPeriodLabel,
 } from '../_shared/contractDisplay'
+// 2026-08-05：日付表記統一によりハイフン生値表示（2026-05-01）を廃止し漢字表記へ
+import { formatPeriodJp } from '@/lib/dateFormat'
 import { useDeptNameMap, getApplicantLabel } from '../_shared/useDeptNameMap'
 import { useContractListToolbar, buildDateSortOptions } from '../_shared/useContractListToolbar'
 import { useApprovedAccumulator, APPROVED_WINDOW_DAYS, CONTRACT_COLUMNS } from '../_shared/useApprovedAccumulator'
@@ -773,7 +775,7 @@ export default function SSCDashboard() {
                       <p className="mb-2 text-xs font-semibold text-[#6B7280]">契約期間</p>
                       <p className="break-words text-xs font-medium leading-5 text-[#1F2937]">{getEmployPeriodLabel(contract)}</p>
                       {(contract.pattern === 'B' || contract.pattern === 'C') && f.dispatchStart && f.dispatchEnd && (
-                        <p className="mt-1 break-words text-xs font-medium leading-5 text-[#6B7280]">{f.dispatchStart} 〜 {f.dispatchEnd}</p>
+                        <p className="mt-1 break-words text-xs font-medium leading-5 text-[#6B7280]">{formatPeriodJp(f.dispatchStart, f.dispatchEnd)}</p>
                       )}
                     </div>
 

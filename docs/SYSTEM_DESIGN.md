@@ -2824,4 +2824,17 @@ CSV自動反映タブの行だけは、`handleMoveToTab()`とは別の専用関�
 
 #### 4. 検証状況
 
-構文チェック（`ts.transpileModule`）：新設・変更した20ファイルすべてで診断0件を確認済み。Claude in Chromeでの実機確認は未実施（デプロイ完了報告を受けてから実施予定）。確認予定内容：①契約一覧・契約詳細・誓約書一覧の申請日時等が漢字表記（ゼロ埋めあり）で表示されること、②契約一覧の雇用期間・派遣期間が漢字表記になっていること、③申請最終確認画面（STEP8）の派遣期間・雇用期間・抵触日・試用期間が漢字表記になり、CSV差分（抵触日の変更表示）が正しく動作すること（誤検知が無いこと）、④契約書PDFを実際に1件取得し日付表記（ゼロ埋め）を目視確認すること（帳票＝法的文書のため）、⑤マイページの署名済み・確認済み書類一覧の日付表記、⑥最低賃金改定対応タブの期間表示、⑦アカウント管理の凍結日時・契約状況モニタリングの確認依頼日時・マスタ管理の更新日、⑧更新期限ダイジェストメール・依頼受付メールを実際に受信し日時表記とJSTのずれが無いことを確認、⑨コンソールエラーが無いこと。
+構文チェック（`ts.transpileModule`）：新設・変更した20ファイルすべてで診断0件を確認済み。
+
+#### 5. デプロイ後のClaude in Chrome実機確認で発見・その場で修正した追加漏れ（2026-08-05）
+
+伊藤さんの「デプロイ完了」報告を受けて実機確認したところ、契約一覧・契約詳細画面の一部・最低賃金改定対応タブに、当初の調査（1〜4節）では見つけられなかったハイフン生値表示が残っていることを発見し、その場で追加修正した（ルール13準拠）。原因は、当初の調査が`formatDateTime`/`formatDate`という「関数名」を手がかりにしたgrepと、STEP8最終確認画面のような「STEP系画面」を対象にした確認が中心で、①関数を経由しない直書きのテンプレートリテラル、②`app/dashboard/sales/contracts/[id]・ssc/contracts/[id]`という契約詳細画面が持つ独自のSTEP5複製ブロック（`StepFinalCheck.tsx`とは別に、詳細画面用に丸ごとコピーされた実装）、③`effective_from`という日付表記に限らない別の変数名で保持されている最低賃金の基準日、の3種類を見落としていたため。
+
+- **契約一覧カードの「派遣期間」がハイフン生値のまま**：`app/dashboard/admin/page.tsx`・`app/dashboard/sales/page.tsx`・`app/dashboard/ssc/page.tsx`の3ダッシュボードの契約カードに、`getEmployPeriodLabel()`（雇用期間用。修正済みだった）とは別に「派遣期間 {f.dispatchStart} 〜 {f.dispatchEnd}」という直書きのハイフン生値表示が各ファイルに重複して存在していた（3ダッシュボード共通の不具合パターン）。`formatPeriodJp()`で置き換え。
+- **契約詳細画面（担当営業・SSC/管理部共有）のSTEP5表示がハイフン生値のまま**：`app/dashboard/sales/contracts/[id]/page.tsx`・`app/dashboard/ssc/contracts/[id]/page.tsx`の2ファイルに、`StepFinalCheck.tsx`とほぼ同一だが独立してコピーされた「STEP5：期間・労働条件」ブロックが存在し、派遣期間・抵触日（事業所単位／組織単位）・雇用期間・試用期間のすべてがハイフン生値のままだった（`StepFinalCheck.tsx`側は本節1〜4で既に修正済みだったが、詳細画面側の重複コピーへの反映が漏れていた）。`formatDateJp`/`formatPeriodJp`で置き換え。抵触日のCSV差分表示（`oldValue`との比較）は、比較対象の`csvSnapshot`側も同じ関数で変換しないと「表記が違うだけで実質同じ日付」を誤って差分ありと表示してしまうため、両方を変換する形で対応（`StepFinalCheck.tsx`と同じ考慮）。
+- **最低賃金改定対応の基準日がハイフン生値のまま（3箇所）**：`lib/autoChecks.ts`の自動チェック警告メッセージ（`${targetRow.effective_from}時点の最低賃金...`。SSC/管理部の承認画面・STEP8確認画面に警告文として表示される）、`app/apply/_components/StepSalary.tsx`の最低賃金改定対応バナー（`/apply?wageAmend=`使用時のみ表示）、`app/dashboard/_shared/WageRevisionSection.tsx`の一覧表示（最低賃金改定対応タブ）。いずれも`formatDateJp()`で置き換え。
+- **`app/dashboard/_shared/MasterManagementTab.tsx`のマスタ管理「最低賃金マスタ」タブの現在値・履歴表示がハイフン生値のまま**：`{latest.hourly_wage}円　{latest.effective_from}〜`という表示（本節1〜4で修正した`updated_at`＝更新日とは別の列`effective_from`＝適用開始日）。`formatDateJp()`で置き換え。
+
+構文チェック（`ts.transpileModule`）：追加修正した9ファイル（`app/dashboard/ssc/page.tsx`・`admin/page.tsx`・`sales/page.tsx`・`sales/contracts/[id]/page.tsx`・`ssc/contracts/[id]/page.tsx`・`MasterManagementTab.tsx`・`lib/autoChecks.ts`・`StepSalary.tsx`・`WageRevisionSection.tsx`）すべて診断0件を確認済み。Claude in Chromeで最低賃金改定対応タブ（6件）・契約一覧（派遣期間表示）・契約詳細（STEP5表示）が、いずれも修正前の状態（ハイフン生値）のまま現在デプロイされていることを`get_page_text`で直接確認し、修正が必要な実害であることを裏付けた上で対応した。コンソールエラーはブラウザ拡張機能由来のもの（"A listener indicated an asynchronous response..."）のみでアプリ起因のエラーは無し。
+
+**要再デプロイ。確認予定内容（本節5の追加修正分）**：①3ダッシュボードの契約一覧カードで派遣期間（パターンB・C）が漢字表記になること、②契約詳細画面のSTEP5（派遣期間・抵触日・雇用期間・試用期間）が漢字表記になり抵触日のCSV差分に誤検知が無いこと、③最低賃金改定対応タブの基準日・SSC/管理部承認画面の自動チェック警告文・`/apply?wageAmend=`のバナーが漢字表記になること、④マスタ管理「最低賃金マスタ」タブの現在値・履歴表示が漢字表記になること。あわせて本節1〜4の確認予定内容（①〜⑨）も未実施のためあわせて実施する。

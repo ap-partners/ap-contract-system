@@ -9,7 +9,7 @@ import Image from 'next/image'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 // 2026-08-05：日付表記統一によりローカル定義（スラッシュ表記）を廃止し共通ヘルパーへ移行
-import { formatDateTimeJp as formatDateTime } from '@/lib/dateFormat'
+import { formatDateTimeJp as formatDateTime, formatDateJp, formatPeriodJp } from '@/lib/dateFormat'
 
 // ===== 型定義 =====
 
@@ -788,16 +788,16 @@ export default function SalesContractDetail() {
         <FinalSection title="STEP5：期間・労働条件" sub="雇用期間・派遣期間・残業の有無">
           {(pattern === 'B' || pattern === 'C') && (
             <>
-              <FinalRow label="派遣期間" value={(f.dispatchStart && f.dispatchEnd) ? `${f.dispatchStart} 〜 ${f.dispatchEnd}` : '―'} />
+              <FinalRow label="派遣期間" value={(f.dispatchStart && f.dispatchEnd) ? formatPeriodJp(f.dispatchStart, f.dispatchEnd) : '―'} />
               {!isConflictDateExempt && (
-                <FinalRow label="抵触日（事業所単位）" value={f.conflictDate || '―'}
+                <FinalRow label="抵触日（事業所単位）" value={f.conflictDate ? formatDateJp(f.conflictDate) : '―'}
                   badge={csvSnapshot.conflict ? <CsvBadge snapshotValue={csvSnapshot.conflict} currentValue={f.conflictDate} /> : undefined}
-                  oldValue={csvSnapshot.conflict} />
+                  oldValue={csvSnapshot.conflict ? formatDateJp(csvSnapshot.conflict) : csvSnapshot.conflict} />
               )}
               {!isConflictDateExempt && (
-                <FinalRow label="抵触日（組織単位）" value={f.conflictDateOrg || '―'}
+                <FinalRow label="抵触日（組織単位）" value={f.conflictDateOrg ? formatDateJp(f.conflictDateOrg) : '―'}
                   badge={csvSnapshot.conflictOrg ? <CsvBadge snapshotValue={csvSnapshot.conflictOrg} currentValue={f.conflictDateOrg} /> : undefined}
-                  oldValue={csvSnapshot.conflictOrg} />
+                  oldValue={csvSnapshot.conflictOrg ? formatDateJp(csvSnapshot.conflictOrg) : csvSnapshot.conflictOrg} />
               )}
               <FinalRow label="組織単位" value={f.organizationUnit || '―'}
                 badge={csvSnapshot.org ? <CsvBadge snapshotValue={csvSnapshot.org} currentValue={f.organizationUnit} /> : undefined}
@@ -806,11 +806,11 @@ export default function SalesContractDetail() {
           )}
           <FinalRow label="雇用期間" value={
             (f.period === '無期' || contractType === '正社員')
-              ? (f.contractStartDate ? `${f.contractStartDate} 〜 期間の定めなし` : '―')
-              : (f.employStart ? `${f.employStart} 〜 ${f.employEnd || '―'}` : '―')
+              ? (f.contractStartDate ? `${formatDateJp(f.contractStartDate)} 〜 期間の定めなし` : '―')
+              : (f.employStart ? formatPeriodJp(f.employStart, f.employEnd) : '―')
           } />
           <FinalRow label="試用期間" value={
-            f.trialPeriod === '有' ? `有　${f.trialStart || '―'} 〜 ${f.trialEnd || '―'}` : f.trialPeriod === '無' ? '無' : '―'
+            f.trialPeriod === '有' ? `有　${f.trialStart ? formatDateJp(f.trialStart) : '―'} 〜 ${f.trialEnd ? formatDateJp(f.trialEnd) : '―'}` : f.trialPeriod === '無' ? '無' : '―'
           } />
           {f.trialPeriod === '有' && trialCalc?.over6 && (
             <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] border-b" style={{ borderColor: '#D0DAF0' }}>

@@ -342,7 +342,7 @@ function MinimumWageSection({ data, reload }: { data: MasterData; reload: () => 
                       </div>
                     ) : (
                       <div>
-                        <p>{latest.hourly_wage.toLocaleString()}円　{latest.effective_from}〜</p>
+                        <p>{latest.hourly_wage.toLocaleString()}円　{formatDateJp(latest.effective_from)}〜</p>
                         <div className="mt-1 flex gap-3">
                           <button onClick={() => startEdit(latest)} className="text-[#2F5FD0] hover:underline">直近の登録を修正</button>
                           {history.length > 0 && (
@@ -354,7 +354,7 @@ function MinimumWageSection({ data, reload }: { data: MasterData; reload: () => 
                         {isExpanded && (
                           <div className="mt-2 space-y-1 border-t border-[#F1F4F9] pt-2">
                             {history.map(h => (
-                              <p key={h.id}>{h.hourly_wage.toLocaleString()}円　{h.effective_from}〜（履歴・編集不可）</p>
+                              <p key={h.id}>{h.hourly_wage.toLocaleString()}円　{formatDateJp(h.effective_from)}〜（履歴・編集不可）</p>
                             ))}
                           </div>
                         )}

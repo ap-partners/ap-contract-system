@@ -16,6 +16,8 @@ import {
   getDeadlineAlert,
   getEmployPeriodLabel,
 } from '../_shared/contractDisplay'
+// 2026-08-05：日付表記統一によりハイフン生値表示（2026-05-01）を廃止し漢字表記へ
+import { formatPeriodJp } from '@/lib/dateFormat'
 import { useContractListToolbar, buildDateSortOptions } from '../_shared/useContractListToolbar'
 import { useApprovedAccumulator, APPROVED_WINDOW_DAYS } from '../_shared/useApprovedAccumulator'
 import RenewalManagementTab from '../_shared/RenewalManagementTab'
@@ -635,7 +637,7 @@ export default function SalesDashboard() {
             <p className="mb-2 text-xs font-semibold text-[#6B7280]">雇用期間</p>
             <p className="break-words text-xs font-medium leading-5 text-[#1F2937]">{getEmployPeriodLabel(contract)}</p>
             {(contract.pattern === 'B' || contract.pattern === 'C') && f.dispatchStart && f.dispatchEnd && (
-              <p className="mt-1 break-words text-xs font-medium leading-5 text-[#6B7280]">派遣期間 {f.dispatchStart} 〜 {f.dispatchEnd}</p>
+              <p className="mt-1 break-words text-xs font-medium leading-5 text-[#6B7280]">派遣期間 {formatPeriodJp(f.dispatchStart, f.dispatchEnd)}</p>
             )}
             {isExplain && f.closingPattern && (
               <p className="mt-1 break-words text-xs font-medium leading-5 text-[#6B7280]">締結パターン {CLOSING_PATTERN_LABEL[f.closingPattern] || f.closingPattern}</p>

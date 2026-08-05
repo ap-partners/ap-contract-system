@@ -1207,9 +1207,15 @@ function ApplyPageInner() {
     }
   }, [workPlace])
 
-  // 書類種別を変更したら、STEP2以降の入力内容をリセットする（前のパターンのデータが残らないように）
+  // 書類種別を変更したら、STEP2以降の入力内容をリセットする（前のパターンのデータが残らないように）。
+  // 2026-08-05追加（④対応）：更新申請フロー（renewalCandidateId）では発動しない。前回契約から
+  // プリフィルされた「派遣の側面と無関係な項目」（就業場所名・業務内容・給与等）まで巻き添えで
+  // 消えてしまうため（狭める場合はパターンA等で該当STEP自体が非表示・未送信になるだけで実害なし、
+  // 広げる場合は元々空欄だった派遣関連項目がそのまま空欄で残り、STEP側の必須項目チェックで
+  // 通常通り入力を求められるため、リセットしなくても③で承認された「不足STEPを通常入力」は成立する）。
   const prevDocumentTypeRef = useRef(documentType)
   useEffect(() => {
+    if (renewalCandidateId) { prevDocumentTypeRef.current = documentType; return }
     if (prevDocumentTypeRef.current && prevDocumentTypeRef.current !== documentType) {
       // STEP2：就業先情報
       setCsvMode('manual'); setCsvSystem('e-staffing'); setCsvDispatchStart('')

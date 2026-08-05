@@ -514,6 +514,9 @@ export default function RenewalManagementTab({
   // かつnew_csv_raw_data_idが設定済み（＝次契約のCSVが実際に見つかっている状態）の場合にのみ、
   // 緑の丸バッジ「CSV反映あり」を氏名の右隣（既存の「社内」バッジと同じ位置・同じ形）に表示する。
   // renderRowHeadは5タブすべてで共用のため、この1箇所の修正で全タブに反映される。
+  // 2026-08-06：伊藤さんの実機レビュー指摘「もっとフォントサイズを大きくしたい」を受け、複数サイズ案
+  // （17px＝氏名と同一／14px／12px）をモックアップで提示し伊藤さんが12pxを選択。「社内」バッジは
+  // 現状維持（CSV反映ありバッジのみサイズ変更）と確認済み。
   const renderRowHead = (c: RenewalCandidate, cornerSlot: ReactNode, checkboxSlot?: ReactNode) => {
     const days = remainingDays(c)
     const metaParts = [c.current_dept_name, c.current_contract_type].filter(Boolean)
@@ -540,8 +543,8 @@ export default function RenewalManagementTab({
               <span className="text-[10px] font-semibold rounded-full px-2 py-0.5" style={{ background: '#F1EFE8', color: '#5F5E5A' }}>社内</span>
             )}
             {hasCsvMatched && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-0.5" style={{ background: '#E7F7EE', color: '#1E9E5A' }}>
-                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: '#1E9E5A' }} />
+              <span className="inline-flex items-center gap-1 text-[12px] font-semibold rounded-full px-2.5 py-0.5" style={{ background: '#E7F7EE', color: '#1E9E5A' }}>
+                <span className="inline-block w-[7px] h-[7px] rounded-full" style={{ background: '#1E9E5A' }} />
                 CSV反映あり
               </span>
             )}

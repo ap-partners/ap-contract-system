@@ -405,9 +405,16 @@ export default function RenewalManagementTab({
   // 2026-08-03修正：移動先が「CSVインポートを依頼する」の場合は、どのタブから移動する場合でも
   // 必ず`requestCsvImport()`（確認ダイアログ→依頼の実送信→タブ移動、を一体で行う）を通す。
   // これにより「他のタブへ移動」経由でも確実に依頼が送信される（従来はここだけ`setRenewalTab()`
-  // を直接呼んでおり、タブは変わるのに依頼が送信されないバグがあった）。それ以外の移動先は
-  // 従来通り軽量な仕分け直しとして確認なしで即時移動（onMoveOverrideがあればそちらを優先）。
-  const handleMoveToTab = async (c: RenewalCandidate, tab: RenewalTab, opts?: { onMoveOverride?: (tab: RenewalTab) => void }) => {
+  // を直接呼んでおり、タブは変わるのに依頼が送信されないバグがあった）。
+  // 2026-08-05追加（伊藤さん指示：「全部の他のタブへ移動に確認を必須にする」）：それ以外の
+  // 移動先も、内容に関わらず必ず確認ダイアログを挟むよう変更（従来は確認なしで即時移動していた）。
+  // onMoveOverrideがtrueを返した場合（＝CSV自動反映タブから期間のみ更新への移動。既存の
+  // 理由入力ボックス＋確定/キャンセルで別途保護されているため、ここでの二重確認は行わない）は
+  // そちらに処理を譲る。falseを返した場合（＝onMoveOverrideが無い、または期間のみ更新以外の
+  // 移動）は必ずこの関数側で確認する。これにより、従来onMoveOverride経由でimport_waitへの
+  // 移動が`setRenewalTab()`直呼びになり依頼が送信されなかった不具合（CSV自動反映タブのみ発生。
+  // 8/3の修正時に見落とされていた）も、この一本化で自動的に解消される。
+  const handleMoveToTab = async (c: RenewalCandidate, tab: RenewalTab, opts?: { onMoveOverride?: (tab: RenewalTab) => boolean }) => {
     if (tab === 'import_wait') {
       const ok = await confirmDialog({
         title: 'CSVインポートを依頼',
@@ -418,14 +425,20 @@ export default function RenewalManagementTab({
       await requestCsvImport(c, currentUserId, currentUserDeptName)
       return
     }
-    if (opts?.onMoveOverride) opts.onMoveOverride(tab)
-    else await setRenewalTab(c.id, tab)
+    if (opts?.onMoveOverride && opts.onMoveOverride(tab)) return
+    const ok = await confirmDialog({
+      title: 'タブを移動しますか？',
+      message: `${c.staff_name || '対象スタッフ'}様を「${TAB_LABEL[tab]}」へ移動します。よろしいですか？`,
+      confirmLabel: '移動する',
+    })
+    if (!ok) return
+    await setRenewalTab(c.id, tab)
   }
 
   // 2026-07-31追加：CSV自動反映タブから「期間のみ更新」へ移動する場合のみ、派遣先変更等の
   // 手動切替であることの理由入力を挟む（旧「派遣先変更のため手入力に切替」ボタンの役割を
   // 「他のタブへ移動」に統合したもの。onMoveOverrideを渡さない呼び出し元は従来通り即時移動）。
-  const renderCommonFooter = (c: RenewalCandidate, opts?: { onMoveOverride?: (tab: RenewalTab) => void }) => (
+  const renderCommonFooter = (c: RenewalCandidate, opts?: { onMoveOverride?: (tab: RenewalTab) => boolean }) => (
     <div className="flex shrink-0 items-center gap-3">
       {canFinalize && (
         <MoveToOtherTabMenu
@@ -663,10 +676,15 @@ export default function RenewalManagementTab({
     // 2026-07-31変更（伊藤さんレビュー：「派遣先変更のため手入力に切替」は独立ボタンとして
     // 分かりづらく「他のタブへ移動」で代替可能、との指摘）：専用ボタンは廃止し、「他のタブへ移動」で
     // 「期間のみ更新」を選んだ場合だけ理由入力を挟む形に統合する（監査ログ用のmanual_override_reason
-    // は維持）。それ以外の移動先は従来通り即時移動。
-    const handleMoveOverride = (tab: RenewalTab) => {
-      if (tab === 'period_only') { setOverrideReasonId(c.id); setOverrideReasonText('') }
-      else setRenewalTab(c.id, tab)
+    // は維持）。
+    // 2026-08-05修正：それ以外の移動先は従来`setRenewalTab()`を直接呼んで確認なしで即時移動して
+    // いたが、これだと「CSVインポートを依頼する」を選んだ場合も依頼が送信されないまま（8/3に
+    // handleMoveToTab側で直したのと同じ不具合がこの関数だけ残っていた）タブだけ動いてしまう。
+    // 「期間のみ更新」以外はfalseを返してhandleMoveToTab側の処理（import_waitなら実際の依頼送信、
+    // それ以外は確認ダイアログ＋移動）に一本化する。
+    const handleMoveOverride = (tab: RenewalTab): boolean => {
+      if (tab === 'period_only') { setOverrideReasonId(c.id); setOverrideReasonText(''); return true }
+      return false
     }
     const checkboxSlot = c.status !== 'not_renewing' && (
       <label className={`flex items-center gap-1.5 text-[13px] font-semibold whitespace-nowrap ${ready ? 'text-[#1F2937]' : 'text-[#8B98B1]'}`}>

@@ -5,6 +5,10 @@
 // 無条件で「SSC承認済み→署名待ち」へ遷移させ、従業員へマイページ案内メールを送る。
 // フローは雇用契約書と同じ（申請→SSC承認→スタッフ署名）と過去のトーク履歴で確定済み
 // （docs/SYSTEM_DESIGN.md 10章2026-06-18参照）のため、sign_action_typeは常に'signature'とする。
+//
+// 2026-08-06追加（C-06対応）：trigger=resendで「署名依頼を再送する」ボタンからの呼び出しを
+// 受け付ける。contracts側と同じ設計（署名待ちならステータス遷移せず再送のみ、SSC承認済みの
+// ままなら通常の承認直後フローと同じコードパスで再試行）。
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendStaffLoginCodeMail, sendStaffDocumentReadyMail } from '@/lib/mail'
@@ -18,6 +22,23 @@ const supabaseAdmin = createClient(
 
 const PLEDGE_DOCUMENT_LABEL = 'アルバイト誓約書'
 
+const sendSignNotificationMail = async (
+  staffRow: { id: string; email: string; name: string; employee_number: string; is_initial_login: boolean },
+  documentLabel: string
+) => {
+  if (staffRow.is_initial_login) {
+    const authCode = generateSignAuthCode()
+    const authCodeExpiresAt = computeSignAuthCodeExpiry()
+    await supabaseAdmin
+      .from('staff')
+      .update({ login_auth_code: authCode, login_auth_code_expires_at: authCodeExpiresAt, login_auth_attempts: 0 })
+      .eq('id', staffRow.id)
+    await sendStaffLoginCodeMail(staffRow.email, staffRow.employee_number, authCode, staffRow.name, 'initial', documentLabel)
+  } else {
+    await sendStaffDocumentReadyMail(staffRow.email, staffRow.name, documentLabel)
+  }
+}
+
 export async function POST(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
@@ -28,6 +49,7 @@ export async function POST(
   }
 
   const { id } = await context.params
+  const trigger = req.nextUrl.searchParams.get('trigger') || 'auto_approve'
 
   const { data: pledge, error } = await supabaseAdmin
     .from('pledges')
@@ -37,6 +59,29 @@ export async function POST(
 
   if (error || !pledge) {
     return NextResponse.json({ error: '申請データが見つかりませんでした。' }, { status: 404 })
+  }
+
+  if (trigger === 'resend' && pledge.status === '署名待ち') {
+    // 再送専用パス：ステータス遷移・sign_requested_atの更新は行わず、既に送信済みの
+    // メールと同じ内容を再送するだけ。
+    const { data: staffRow } = await supabaseAdmin
+      .from('staff')
+      .select('id, email, name, employee_number, is_initial_login')
+      .eq('id', pledge.staff_id)
+      .maybeSingle()
+    const toEmail = staffRow?.email
+    if (!staffRow || !toEmail) {
+      return NextResponse.json(
+        { error: '送信先メールアドレスが取得できませんでした。スタッフのメールアドレス登録をご確認ください。' },
+        { status: 400 }
+      )
+    }
+    try {
+      await sendSignNotificationMail({ ...staffRow, email: toEmail }, PLEDGE_DOCUMENT_LABEL)
+    } catch (e: any) {
+      return NextResponse.json({ error: 'メール送信に失敗しました：' + (e?.message || '') }, { status: 500 })
+    }
+    return NextResponse.json({ sent: true })
   }
 
   if (pledge.status !== 'SSC承認済み') {
@@ -93,17 +138,7 @@ export async function POST(
   }
 
   try {
-    if (staffRow.is_initial_login) {
-      const authCode = generateSignAuthCode()
-      const authCodeExpiresAt = computeSignAuthCodeExpiry()
-      await supabaseAdmin
-        .from('staff')
-        .update({ login_auth_code: authCode, login_auth_code_expires_at: authCodeExpiresAt, login_auth_attempts: 0 })
-        .eq('id', staffRow.id)
-      await sendStaffLoginCodeMail(toEmail, staffRow.employee_number, authCode, staffRow.name, 'initial', PLEDGE_DOCUMENT_LABEL)
-    } else {
-      await sendStaffDocumentReadyMail(toEmail, staffRow.name, PLEDGE_DOCUMENT_LABEL)
-    }
+    await sendSignNotificationMail({ ...staffRow, email: toEmail }, PLEDGE_DOCUMENT_LABEL)
   } catch (e: any) {
     await rollbackToApproved()
     return NextResponse.json(

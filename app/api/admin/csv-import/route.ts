@@ -95,6 +95,13 @@ async function processSingleFile(
   // ステータス・申請者名・対象スタッフ（staff_id）まで保持するMapに変更。
   const existingIds = Array.from(new Set(existingByKey.values()))
   const protectedByRawId = new Map<string, { status: string | null; createdByName: string | null; staffId: string | null }>()
+  // C-04対応（2026-08-06）：以前は保護判定クエリが失敗した場合`continue`するだけで、
+  // 該当existingIdをprotectedByRawIdへ登録し損ねていた。コメントは「安全側（保護しない＝
+  // 上書き）に倒さない」と書いていたが、実装は後続の「保護対象でなければ上書き」という
+  // 判定にそのまま素通りしてしまい、実際には上書きされていた（コメントと実装の食い違い）。
+  // 正しい安全側の挙動として、判定に失敗したexistingIdを別途記録し、該当するCSV行は
+  // 「保護対象かどうか判定できなかったため今回は上書きしない」としてスキップする。
+  const protectionCheckFailedIds = new Set<string>()
   for (let i = 0; i < existingIds.length; i += CHUNK) {
     const chunk = existingIds.slice(i, i + CHUNK)
     const { data: refRows, error } = await supabaseAdmin
@@ -103,7 +110,10 @@ async function processSingleFile(
       .in('csv_raw_data_id', chunk)
       .neq('status', '差し戻し中')
       .neq('status', '取り下げ')
-    if (error) continue // 保護判定に失敗した場合は安全側（保護しない＝上書き）に倒さず、対象から一旦除外する
+    if (error) {
+      for (const rawId of chunk) protectionCheckFailedIds.add(rawId)
+      continue
+    }
     for (const r of refRows || []) {
       if (r.csv_raw_data_id && !protectedByRawId.has(r.csv_raw_data_id)) {
         protectedByRawId.set(r.csv_raw_data_id, { status: r.status, createdByName: r.created_by_name, staffId: r.staff_id })
@@ -134,6 +144,16 @@ async function processSingleFile(
   const upsertBatch: (typeof parsedRows[number]['record'] & { unique_key: string; import_id: string; is_overwrite_pending: boolean })[] = []
   for (const { uniqueKey, record } of parsedRows) {
     const existingId = existingByKey.get(uniqueKey)
+    // C-04対応（2026-08-06）：既存契約からの参照有無（＝上書き保護が必要か）を判定できなかった行は、
+    // 安全側に倒して今回は上書きしない（スキップしてエラー扱いにする）。判定できたが保護対象でない
+    // 場合とは区別する。
+    if (existingId && protectionCheckFailedIds.has(existingId)) {
+      counts.errorCount++
+      counts.errorDetails.push(
+        `${record.client_name || record.work_location || '（就業場所不明）'}：既存申請からの参照有無（上書き保護の要否）を確認できなかったため、安全のため今回は上書きしませんでした。再度インポートをお試しください。`
+      )
+      continue
+    }
     const protectedInfo = existingId ? protectedByRawId.get(existingId) : undefined
     if (existingId && protectedInfo) {
       counts.pendingProtectedCount++

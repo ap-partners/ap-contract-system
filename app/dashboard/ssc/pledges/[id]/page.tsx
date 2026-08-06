@@ -10,6 +10,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { supabase, getAuthHeader } from '@/lib/supabase'
 import { useSessionCollisionGuard } from '@/lib/useSessionCollisionGuard'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
+import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 import PdfPreviewButton from '@/app/_shared/ui/PdfPreviewButton'
 import { useDeptNameMap, getApplicantLabel } from '@/app/dashboard/_shared/useDeptNameMap'
@@ -86,6 +87,11 @@ export default function SSCPledgeDetail() {
   const [rejectReason, setRejectReason] = useState('')
   const [showApproveConfirm, setShowApproveConfirm] = useState(false)
   const [actionDone, setActionDone] = useState<'approved' | 'rejected' | null>(null)
+  // C-07対応（2026-08-06）：契約詳細画面と同様、署名依頼メール送信APIの失敗を可視化する
+  const [notifySignFailed, setNotifySignFailed] = useState(false)
+  // C-06対応（2026-08-06）：署名依頼の再送ボタン用UI状態
+  const [resendLoading, setResendLoading] = useState(false)
+  const confirmDialog = useConfirm()
 
   // 自己取り下げ機能（2026-07-24新設。contracts側と同じ設計）
   const [showWithdrawForm, setShowWithdrawForm] = useState(false)
@@ -173,13 +179,43 @@ export default function SSCPledgeDetail() {
       return
     }
     try {
-      await fetch(`/api/pledges/${pledge.id}/notify-sign-request`, { method: 'POST', headers: await getAuthHeader() })
+      const res = await fetch(`/api/pledges/${pledge.id}/notify-sign-request`, { method: 'POST', headers: await getAuthHeader() })
+      if (!res.ok) setNotifySignFailed(true)
     } catch {
-      // 通知の失敗は承認をブロックしない
+      setNotifySignFailed(true)
     }
     setActionDone('approved')
     setActionLoading(false)
     setShowApproveConfirm(false)
+  }
+
+  // C-06対応（2026-08-06）：署名依頼メールの再送処理（契約書側と同じ設計。詳細は
+  // app/dashboard/ssc/contracts/[id]/page.tsxのhandleResendSignRequestのコメント参照）
+  const handleResendSignRequest = async () => {
+    if (!pledge || resendLoading) return
+    const ok = await confirmDialog({
+      title: '署名依頼を再送する',
+      message: `${staffSnap.name || '対象スタッフ'}様へ、署名依頼メールを再送します。よろしいですか？`,
+      confirmLabel: '再送する',
+    })
+    if (!ok) return
+    setResendLoading(true)
+    try {
+      const res = await fetch(`/api/pledges/${pledge.id}/notify-sign-request?trigger=resend`, { method: 'POST', headers: await getAuthHeader() })
+      const body = await res.json().catch(() => ({} as any))
+      if (!res.ok) {
+        showError(body?.error || '署名依頼の再送に失敗しました。')
+      } else if (body?.sent === false) {
+        showError('この申請は現在、再送できる状態ではありませんでした。画面を更新してもう一度お試しください。')
+      } else {
+        showSuccess('署名依頼メールを再送しました。')
+        await refetch()
+      }
+    } catch (e: any) {
+      showError('署名依頼の再送に失敗しました：' + (e?.message || ''))
+    } finally {
+      setResendLoading(false)
+    }
   }
 
   const handleReject = async () => {
@@ -350,6 +386,21 @@ export default function SSCPledgeDetail() {
             <div className="rounded-xl p-5 border-2" style={{ background: '#ECFDF5', borderColor: '#34D399' }}>
               <p className="text-base font-bold mb-1" style={{ color: '#065F46' }}>✅ 承認しました</p>
               <p className="text-sm" style={{ color: '#065F46' }}>スタッフへ署名依頼を自動送信しました。</p>
+              {notifySignFailed && (
+                <>
+                  <p className="mt-2 text-sm font-medium leading-6" style={{ color: '#B91C1C' }}>
+                    承認は完了しましたが、送信依頼メールの送信に失敗しました。
+                    <br />このアルバイト誓約書は「SSC承認済み」のまま止まっています。下のボタンから再送をお試しいただくか、管理部にご連絡ください。
+                  </p>
+                  <button
+                    onClick={handleResendSignRequest}
+                    disabled={resendLoading}
+                    className="mt-2 text-sm px-4 py-2 rounded-lg border-2 font-bold transition-all disabled:opacity-60"
+                    style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: 'white' }}>
+                    {resendLoading ? '送信中...' : '📩 署名依頼を再送する'}
+                  </button>
+                </>
+              )}
               <button onClick={() => router.push(backPath)} className="mt-3 text-sm px-4 py-2 rounded-lg text-white" style={{ background: '#1B3A8C' }}>一覧に戻る</button>
             </div>
           ) : actionDone === 'rejected' ? (
@@ -404,7 +455,20 @@ export default function SSCPledgeDetail() {
               )}
             </>
           ) : isAlreadyProcessed ? (
-            <p className="text-sm text-center" style={{ color: '#9CA3AF' }}>この申請は処理済みです（ステータス：{pledge.status}）</p>
+            <div className="text-center">
+              <p className="text-sm" style={{ color: '#9CA3AF' }}>この申請は処理済みです（ステータス：{pledge.status}）</p>
+              {/* C-06対応（2026-08-06）：署名待ち＝リマインド、SSC承認済み＝承認直後の
+                  自動送信に失敗し止まっている疑いがある場合の復旧手段（契約書側と同じ設計） */}
+              {(pledge.status === '署名待ち' || pledge.status === 'SSC承認済み') && (
+                <button
+                  onClick={handleResendSignRequest}
+                  disabled={resendLoading}
+                  className="mt-3 text-sm px-4 py-2 rounded-lg border-2 font-bold transition-all disabled:opacity-60"
+                  style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: 'white' }}>
+                  {resendLoading ? '送信中...' : '📩 署名依頼を再送する'}
+                </button>
+              )}
+            </div>
           ) : (
             <>
               <p className="text-sm font-bold mb-4 text-center" style={{ color: '#1A2340' }}>内容をご確認のうえ、どちらかを選んでください。</p>

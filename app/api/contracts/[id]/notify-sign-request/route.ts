@@ -9,6 +9,16 @@
 //   ② trigger=explain：担当営業の「説明完了」ボタン押下時
 //      （app/dashboard/sales/page.tsx）。対面・印刷パターン専用で、現在ステータスが
 //      「SSC承認済み」であれば無条件で「署名待ち」へ遷移してメール送信する。
+//   ③ trigger=resend（2026-08-06・C-06対応）：SSC/管理部の契約詳細画面の
+//      「署名依頼を再送する」ボタン押下時。以下の2ケースを1つのtriggerで扱う。
+//      ・ステータスが既に「署名待ち」＝一度は送信できているが従業員に届いていない／
+//        紛失した等のリマインド目的。ステータス遷移・sign_requested_atの更新は行わず、
+//        同じ内容のメールを再送するだけ（in_initial_loginの場合は認証コードを新規発行し
+//        直す＝古いコードを失効させて再送する）。
+//      ・ステータスがまだ「SSC承認済み」＝C-07で判明した「メール送信に一度失敗し
+//        SSC承認済みへロールバックされたまま誰も気づかず止まっていた」ケースの復旧。
+//        この場合は通常のauto_approveと全く同じ判定・処理（下記shouldTransition以降）を
+//        そのまま辿らせることで、承認直後の自動送信と同じコードパスで再試行する。
 // どちらの分岐も「SSC承認済み→署名待ち」という一方向の遷移が前提のため、
 // 二重クリック等で既に「署名待ち」になっている場合は対象外（何もしない＝二重送信防止）。
 //
@@ -31,6 +41,26 @@ const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
+
+// C-06対応（2026-08-06）：通常フローの送信処理と再送（resend）専用パスの両方から
+// 共通で呼び出すため、実際のメール送信部分だけを切り出したヘルパー。
+// is_initial_login＝trueの場合は認証コードを新規発行し直す（再送のたびに古いコードは失効する）。
+const sendSignNotificationMail = async (
+  staffRow: { id: string; email: string; name: string; employee_number: string; is_initial_login: boolean },
+  documentLabel: string
+) => {
+  if (staffRow.is_initial_login) {
+    const authCode = generateSignAuthCode()
+    const authCodeExpiresAt = computeSignAuthCodeExpiry()
+    await supabaseAdmin
+      .from('staff')
+      .update({ login_auth_code: authCode, login_auth_code_expires_at: authCodeExpiresAt, login_auth_attempts: 0 })
+      .eq('id', staffRow.id)
+    await sendStaffLoginCodeMail(staffRow.email, staffRow.employee_number, authCode, staffRow.name, 'initial', documentLabel)
+  } else {
+    await sendStaffDocumentReadyMail(staffRow.email, staffRow.name, documentLabel)
+  }
+}
 
 export async function POST(
   req: NextRequest,
@@ -57,8 +87,31 @@ export async function POST(
     return NextResponse.json({ error: '契約データが見つかりませんでした。' }, { status: 404 })
   }
 
+  if (trigger === 'resend' && contract.status === '署名待ち') {
+    // 再送専用パス：ステータス遷移・sign_requested_atの更新は行わず、
+    // 既に送信済みのメールと同じ内容を再送するだけ。
+    const { data: staffRow } = await supabaseAdmin
+      .from('staff')
+      .select('id, email, name, employee_number, is_initial_login')
+      .eq('id', contract.staff_id)
+      .maybeSingle()
+    const toEmail = staffRow?.email
+    if (!staffRow || !toEmail) {
+      return NextResponse.json(
+        { error: '送信先メールアドレスが取得できませんでした。スタッフのメールアドレス登録をご確認ください。' },
+        { status: 400 }
+      )
+    }
+    try {
+      await sendSignNotificationMail({ ...staffRow, email: toEmail }, getDocumentLabel(contract.document_type, contract.contract_type))
+    } catch (e: any) {
+      return NextResponse.json({ error: 'メール送信に失敗しました：' + (e?.message || '') }, { status: 500 })
+    }
+    return NextResponse.json({ sent: true })
+  }
+
   if (contract.status !== 'SSC承認済み') {
-    // 対象外（既に署名待ちに進んでいる／差し戻し中等）。二重送信防止のため何もしない。
+    // 対象外（差し戻し中等）。二重送信防止のため何もしない。
     return NextResponse.json({ sent: false })
   }
 
@@ -158,19 +211,7 @@ export async function POST(
   const documentLabel = getDocumentLabel(contract.document_type, contract.contract_type)
 
   try {
-    if (staffRow.is_initial_login) {
-      // マイページ未利用（パスワード未設定）の従業員：初回ログイン用の認証コードを発行して送る
-      const authCode = generateSignAuthCode()
-      const authCodeExpiresAt = computeSignAuthCodeExpiry()
-      await supabaseAdmin
-        .from('staff')
-        .update({ login_auth_code: authCode, login_auth_code_expires_at: authCodeExpiresAt, login_auth_attempts: 0 })
-        .eq('id', staffRow.id)
-      await sendStaffLoginCodeMail(toEmail, staffRow.employee_number, authCode, staffRow.name, 'initial', documentLabel)
-    } else {
-      // 既にパスワード設定済みの従業員：コードは送らず、マイページへのログイン案内のみ送る
-      await sendStaffDocumentReadyMail(toEmail, staffRow.name, documentLabel)
-    }
+    await sendSignNotificationMail({ ...staffRow, email: toEmail }, documentLabel)
   } catch (e: any) {
     await rollbackToApproved()
     return NextResponse.json(

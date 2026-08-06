@@ -329,6 +329,16 @@ export default function SSCContractDetail() {
   // 伴うため、共通ConfirmDialogでは表現できず、引き続き専用の展開式フォームのままとする。
   const confirmDialog = useConfirm()
   const [actionDone, setActionDone] = useState<'approved' | 'rejected' | null>(null)
+  // C-07対応（2026-08-06）：個別承認（handleApprove/handleForceApprove）で署名依頼メール
+  // 送信APIの呼び出し自体が失敗（レスポンスがres.ok=false、または例外）した場合に、
+  // 承認は完了しているが署名依頼が送れていないことを承認者に可視化するためのフラグ。
+  // 従来はcatchで握りつぶすだけで承認完了バナーには何も出ず、担当営業にも伝わらないまま
+  // 「SSC承認済み」に止まっていることに誰も気づけない状態だった。
+  const [notifySignFailed, setNotifySignFailed] = useState(false)
+  // C-06対応（2026-08-06）：署名依頼メールが（今回のセッションでの承認直後に限らず、後から
+  // 見返した時にも）送れていない／届いているか分からない場合に、この画面から手動で
+  // 再送できるようにするためのUI状態。
+  const [resendLoading, setResendLoading] = useState(false)
 
   // 強制承認のUI状態（2026-07-02追加：7-5章の骨格実装。warning_level='red'の時のみ使用）
   const [showForceApproveForm, setShowForceApproveForm] = useState(false)
@@ -457,10 +467,13 @@ export default function SSCContractDetail() {
     // 締結パターンが「指定しない（自動送信）」の場合、ここで署名待ちへの自動遷移＋
     // 従業員への署名依頼メール送信を行う（対面・印刷パターンは担当営業の「説明完了」時に送信）。
     // メール送信に失敗しても承認自体は完了しているので、承認フロー自体は止めない。
+    // C-07対応（2026-08-06）：res.okを見ずcatchのみだったため、APIが400/500を返しても
+    // 承認完了バナーには何も表示されず気づけなかった。res.okを確認しnotifySignFailedへ反映する。
     try {
-      await fetch(`/api/contracts/${contract.id}/notify-sign-request`, { method: 'POST', headers: await getAuthHeader() })
+      const res = await fetch(`/api/contracts/${contract.id}/notify-sign-request`, { method: 'POST', headers: await getAuthHeader() })
+      if (!res.ok) setNotifySignFailed(true)
     } catch {
-      // 通知の失敗は承認をブロックしない（ログのみ・UIには表示しない）
+      setNotifySignFailed(true)
     }
     // 2026-07-30追加（タスク⑥）：CSV反映項目が修正された状態で申請された案件の場合、
     // 承認直後に管理部（app_labor@appart.co.jp）へ通知する。失敗しても承認フロー自体は止めない。
@@ -504,9 +517,10 @@ export default function SSCContractDetail() {
       return
     }
     try {
-      await fetch(`/api/contracts/${contract.id}/notify-sign-request`, { method: 'POST', headers: await getAuthHeader() })
+      const res = await fetch(`/api/contracts/${contract.id}/notify-sign-request`, { method: 'POST', headers: await getAuthHeader() })
+      if (!res.ok) setNotifySignFailed(true)
     } catch {
-      // 通知の失敗は承認をブロックしない
+      setNotifySignFailed(true)
     }
     // 2026-07-30追加（タスク⑥）：強制承認の場合も同様にCSV修正の管理部通知を発火する
     try {
@@ -517,6 +531,38 @@ export default function SSCContractDetail() {
     setActionDone('approved')
     setActionLoading(false)
     setShowForceApproveForm(false)
+  }
+
+  // C-06対応（2026-08-06）：署名依頼メールの再送処理。
+  // ・ステータスが「SSC承認済み」のまま止まっている（＝承認直後の自動送信に失敗した）場合は、
+  //   通常の承認直後フローと同じ判定・処理を再実行し、正常なら「署名待ち」へ遷移する。
+  // ・ステータスが既に「署名待ち」の場合は、ステータスを変えずに同じ内容のメールを再送する
+  //   （従業員が届いたメールを見失った・認証コードが失効した等のリマインド目的）。
+  const handleResendSignRequest = async () => {
+    if (!contract || resendLoading) return
+    const ok = await confirmDialog({
+      title: '署名依頼を再送する',
+      message: `${staffSnap.name || '対象スタッフ'}様へ、署名依頼メールを再送します。よろしいですか？`,
+      confirmLabel: '再送する',
+    })
+    if (!ok) return
+    setResendLoading(true)
+    try {
+      const res = await fetch(`/api/contracts/${contract.id}/notify-sign-request?trigger=resend`, { method: 'POST', headers: await getAuthHeader() })
+      const body = await res.json().catch(() => ({} as any))
+      if (!res.ok) {
+        showError(body?.error || '署名依頼の再送に失敗しました。')
+      } else if (body?.sent === false) {
+        showError('この契約は現在、再送できる状態ではありませんでした。画面を更新してもう一度お試しください。')
+      } else {
+        showSuccess('署名依頼メールを再送しました。')
+        await refetchContract()
+      }
+    } catch (e: any) {
+      showError('署名依頼の再送に失敗しました：' + (e?.message || ''))
+    } finally {
+      setResendLoading(false)
+    }
   }
 
   // 差し戻し処理
@@ -726,6 +772,22 @@ export default function SSCContractDetail() {
             {/* 強制承認理由の表示（2026-07-02追加：監査・振り返り用） */}
             {contract.status === 'SSC承認済み' && contract.force_approve_reason && (
               <p className="text-sm mt-1 leading-relaxed" style={{ color: '#1A2340' }}>強制承認理由：{contract.force_approve_reason}</p>
+            )}
+            {/* C-06対応（2026-08-06）：署名依頼を再送するボタン。
+                ・署名待ち＝一度は送信できているがリマインドしたい場合。
+                ・SSC承認済み（対面・印刷パターンを除く）＝承認直後の自動送信に失敗し
+                  「SSC承認済み」のまま止まっている疑いがある場合の復旧手段。
+                対面・印刷パターンのSSC承認済みは「担当営業の説明完了待ち」という正常な状態
+                なので対象外（このボタンで従業員へ直接メールを送ってしまうと二重案内になる）。 */}
+            {(contract.status === '署名待ち' ||
+              (contract.status === 'SSC承認済み' && f.closingPattern !== 'face' && f.closingPattern !== 'print')) && (
+              <button
+                onClick={handleResendSignRequest}
+                disabled={resendLoading}
+                className="mt-3 text-sm px-4 py-2 rounded-lg border-2 font-bold transition-all disabled:opacity-60"
+                style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: 'white' }}>
+                {resendLoading ? '送信中...' : '📩 署名依頼を再送する'}
+              </button>
             )}
           </div>
         )}
@@ -1041,6 +1103,21 @@ export default function SSCContractDetail() {
                   ? 'スタッフへ確認依頼を自動送信しました。'
                   : 'スタッフへ署名依頼を自動送信しました。'}
               </p>
+              {notifySignFailed && (f.closingPattern !== 'face' && f.closingPattern !== 'print') && (
+                <>
+                  <p className="mt-2 text-sm font-medium leading-6" style={{ color: '#B91C1C' }}>
+                    承認は完了しましたが、送信依頼メールの送信に失敗しました。
+                    <br />この契約は「SSC承認済み」のまま止まっています。下のボタンから再送をお試しいただくか、管理部にご連絡ください。
+                  </p>
+                  <button
+                    onClick={handleResendSignRequest}
+                    disabled={resendLoading}
+                    className="mt-2 text-sm px-4 py-2 rounded-lg border-2 font-bold transition-all disabled:opacity-60"
+                    style={{ color: '#1B3A8C', borderColor: '#1B3A8C', background: 'white' }}>
+                    {resendLoading ? '送信中...' : '📩 署名依頼を再送する'}
+                  </button>
+                </>
+              )}
               <button onClick={() => router.push(backPath)}
                 className="mt-3 text-sm px-4 py-2 rounded-lg text-white" style={{ background: '#1B3A8C' }}>
                 一覧に戻る

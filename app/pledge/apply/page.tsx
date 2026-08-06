@@ -535,6 +535,13 @@ export default function PledgeApplyPage() {
   // 「期間1行＋単日10件＝11行」がPDF出力時にサイレントに切り捨てられる事態を入力段階で防ぐ
   // （期間指定なし＝単日のみ利用時は従来通り10件のまま）。
   const singleEntryLimit = hasPeriod ? MAX_SINGLE_ENTRIES - 1 : MAX_SINGLE_ENTRIES
+  // C-05追加対応（2026-08-06・実機確認時に発見）：期間登録モーダルの「登録する」ボタンのガード
+  // （上記singleEntryLimit・下記モーダル側のブロック）だけでは、期間の日付・時間欄は入力するたびに
+  // 即座にhasPeriodへ反映される作り（登録するボタンを押していなくても、モーダルを閉じても
+  // 期間情報自体は残る）のため、単日を10件登録済みの状態で期間欄に日付だけ入力してモーダルを閉じる、
+  // という操作をすると「単日10件＋期間1件＝11件」の状態がSTEP3の先（提出まで）に素通りしてしまう。
+  // 入力経路によらず必ず検知できるよう、実際の合計行数で最終判定する安全網をここに置く。
+  const scheduleRowOverflow = (hasPeriod ? 1 : 0) + singleEntries.length > MAX_SINGLE_ENTRIES
   // periodPattern：既存の保存形式（DB `period_pattern`列・buildScheduleRows等）をそのまま使うための
   // 導出値。ユーザーが直接選ぶものではなく、期間・単日の登録状況から自動的に決まる。
   const periodPattern: 'single_multi' | 'range' | 'mix' | '' =
@@ -577,7 +584,7 @@ export default function PledgeApplyPage() {
   const removeSingleEntry = (date: string) => setSingleEntries(prev => prev.filter(e => e.date !== date))
   const clearPeriod = () => { setRangeStart(''); setRangeEnd(''); setPeriodShift(emptyShiftRow()) }
 
-  const step3Valid = hasPeriod || singleEntries.length > 0
+  const step3Valid = (hasPeriod || singleEntries.length > 0) && !scheduleRowOverflow
 
   const step4Valid = !!workDescription.trim()
 
@@ -611,6 +618,13 @@ export default function PledgeApplyPage() {
     // 総合レビュー指摘20対応（2026-07-27）：/apply側のhandleSubmitContractと同様、
     // disabled属性のみに頼らずボタン連打を確実に防ぐ明示ガードを追加
     if (isSubmitting) return
+    // C-05追加対応（2026-08-06）：STEP3の入力ガード・次へ進むボタンのブロックをすり抜けて
+    // ここまで来た場合でも、実際にPDFへ出力される行数を最終確認してから保存する最後の安全網。
+    if (scheduleRowOverflow) {
+      setSubmitError(`期間1件＋単日${singleEntries.length}件で、帳票の上限（合計${MAX_SINGLE_ENTRIES}件）を超えています。STEP3に戻り、単日を1件以上削除するか、期間の登録を削除してください。`)
+      setCurrentStep(3)
+      return
+    }
     setSubmitError('')
     setIsSubmitting(true)
     try {
@@ -1123,6 +1137,12 @@ export default function PledgeApplyPage() {
                   <PledgeIcon name="calendarMulti" className="w-3.5 h-3.5 shrink-0" style={{ color: '#1B3A8C' }} />
                   <p className="text-xs font-bold" style={{ color: '#1A2340' }}>発行される書類は、上記すべての日程をまとめた1枚になります。</p>
                 </div>
+
+                {scheduleRowOverflow && (
+                  <div className="mt-3">
+                    <ValidationBanner message={`期間1件＋単日${singleEntries.length}件で、帳票の上限（合計${MAX_SINGLE_ENTRIES}件）を超えています。単日を1件以上削除するか、期間の登録を削除してください。`} />
+                  </div>
+                )}
               </FormRow>
 
               {stepError && (
@@ -1133,7 +1153,12 @@ export default function PledgeApplyPage() {
               <div className="border-t px-5 py-4 flex justify-between" style={{ background: '#F5F7FC', borderColor: '#D0DAF0' }}>
                 <button onClick={e => { e.preventDefault(); setStepError(null); setCurrentStep(2) }}
                   className="bg-white border px-5 py-2.5 rounded-lg text-sm transition-all" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>← 前へ</button>
-                <button onClick={e => { e.preventDefault(); if (!step3Valid) { setStepError('期間または単日のいずれかを登録してください'); return }; setStepError(null); setDateAddError(null); setCurrentStep(4) }}
+                <button onClick={e => {
+                  e.preventDefault()
+                  if (scheduleRowOverflow) { setStepError(`期間1件＋単日${singleEntries.length}件で、帳票の上限（合計${MAX_SINGLE_ENTRIES}件）を超えています。単日を1件以上削除するか、期間の登録を削除してください。`); return }
+                  if (!step3Valid) { setStepError('期間または単日のいずれかを登録してください'); return }
+                  setStepError(null); setDateAddError(null); setCurrentStep(4)
+                }}
                   className="text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-all" style={{ background: '#1B3A8C' }}>次へ進む →</button>
               </div>
 

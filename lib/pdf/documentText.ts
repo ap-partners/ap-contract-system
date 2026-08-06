@@ -243,7 +243,11 @@ export const getAgreementLaborText = (dispatchEnd: string | null | undefined): s
   const d = new Date(dispatchEnd)
   if (Number.isNaN(d.getTime())) return base
   const endYear = d.getMonth() + 1 <= 3 ? d.getFullYear() : d.getFullYear() + 1
-  return `${base}\n労使協定の有効期間の終了日　　【　${endYear}年3月31日　】`
+  // 2026-08-06修正：日付表記統一ルール（CLAUDE.mdルール18）漏れ。この欄は「3月31日」固定の
+  // 業務ルールで年だけを計算する特殊な組み立て方をしており、formatDateJp/toJpDateを経由しない
+  // 直書きテンプレートだったため、2026-08-05の一括統一時に見落とされていた（「年○月○日」の正規表現
+  // 検索では拾えるが、関数名ベースgrepでは見つからないパターン）。ゼロ埋め「03月31日」に修正。
+  return `${base}\n労使協定の有効期間の終了日　　【　${endYear}年03月31日　】`
 }
 
 // ===== 契約更新の有無・基準・無期転換（パターンA・C共通・テンプレートJ58〜J62固定文言）=====

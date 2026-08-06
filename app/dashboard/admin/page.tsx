@@ -2043,6 +2043,31 @@ export default function AdminDashboard() {
                         <ResultStat label="スキップ（対象外）" value={csvUploadResult.staffExpressResult.staff.skippedCount ?? 0} />
                         <ResultStat label="エラー" value={csvUploadResult.staffExpressResult.staff.errorCount ?? 0} />
                       </div>
+                      {/* C-08対応（2026-08-06）：社員番号の再利用（退職者番号を別人へ再割当）を検知した場合の表示。
+                          自動的に旧データを退避して新規登録した件数（reassignedCount）と、氏名が一致せず
+                          現役スタッフのため自動処理せず保留にした件数（needsReviewCount）を分けて表示する。 */}
+                      {(csvUploadResult.staffExpressResult.staff.reassignedCount ?? 0) > 0 && (
+                        <p className="mt-3 text-xs font-medium leading-5 text-[#2F5FD0]">
+                          このうち{csvUploadResult.staffExpressResult.staff.reassignedCount}件は、氏名が一致しない社員番号の再利用（退職者の番号を新入社員へ再割当）と判断し、
+                          旧データを退避したうえで新規スタッフとして登録しました。旧データ（前任者の契約・誓約書等の履歴）は削除されず、新入社員のマイページには一切表示されません。
+                        </p>
+                      )}
+                      {(csvUploadResult.staffExpressResult.staff.needsReviewCount ?? 0) > 0 && (
+                        <div className="mt-3 rounded-xl border border-[#FBE3B0] bg-[#FFF8EC] p-4">
+                          <p className="text-xs font-semibold text-[#8A5A00]">
+                            要確認：{csvUploadResult.staffExpressResult.staff.needsReviewCount}件は自動反映されていません
+                          </p>
+                          <p className="mt-1 text-xs font-medium leading-5 text-[#8A5A00]">
+                            同じ社員番号で氏名が一致しないのに、既存データが退職済みではありませんでした（在籍中の社員の氏名が急に変わったように見える状態）。
+                            誤ったCSVデータの可能性があるため自動更新せず保留にしています。内容をご確認のうえ、正しいデータで再アップロードしてください。
+                          </p>
+                          <ul className="mt-2 space-y-1 text-xs font-medium leading-5 text-[#8A5A00]">
+                            {csvUploadResult.staffExpressResult.staff.needsReviewDetails?.map((d: any, i: number) => (
+                              <li key={i}>社員番号 {d.employeeNumber}：登録済みの氏名「{d.oldName}」→ 今回のCSVの氏名「{d.newName}」</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                     </div>
                   )}
                   {csvUploadResult.staffExpressResult?.department && (
@@ -2143,6 +2168,8 @@ export default function AdminDashboard() {
                         <Pill tone="blue">新規 {h.new_rows ?? 0}</Pill>
                         <Pill tone="green">更新 {h.updated_rows ?? 0}</Pill>
                         <Pill tone="orange">スキップ {h.skipped_rows ?? 0}</Pill>
+                        {(h.reassigned_rows ?? 0) > 0 && <Pill tone="blue">再割当 {h.reassigned_rows}</Pill>}
+                        {(h.needs_review_rows ?? 0) > 0 && <Pill tone="orange">要確認 {h.needs_review_rows}</Pill>}
                         {(h.error_rows ?? 0) > 0 && <Pill tone="red">エラー {h.error_rows}</Pill>}
                       </>
                     ),

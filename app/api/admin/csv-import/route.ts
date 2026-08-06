@@ -25,7 +25,7 @@ import {
   resolveCsvSearchStaffCode,
   ProtectedRowDetail,
 } from '@/lib/csvImportShared'
-import { readExcelBuffer, buildStaffRecord } from '@/lib/staffMasterImportShared'
+import { readExcelBuffer, buildStaffRecord, normalizeStaffNameForCompare, buildArchivedEmployeeNumber } from '@/lib/staffMasterImportShared'
 import { friendlyDbReason } from '@/lib/friendlyError'
 
 const supabaseAdmin = createClient(
@@ -182,11 +182,25 @@ async function processSingleFile(
 // Excelの内容で該当行を毎回まるごと上書きする（退職・異動等の最新状態をそのまま反映するため）。
 // 部門マスタは staff.dept_no の外部キー参照元のため、必ず部門マスタを先に処理する
 // （呼び出し側で順序を保証）。
-type MasterImportCounts = { total: number; newCount: number; updatedCount: number; skippedCount: number; errorCount: number; errorDetails: string[] }
+// C-08対応：氏名不一致で「別人への再割当」と判定しアーカイブ処理した件数（reassignedCount）、
+// 氏名不一致だが既存が現役のため自動処理せずスキップした件数・詳細（needsReview系）を追加。
+// reassignedCountはnewCountにも重複計上する（新規UUID行が実際に1件増えるため）が、
+// 区別して見せることで伊藤さん・管理部が「本当に新規なのか、再割当なのか」を判別できるようにする。
+type MasterImportCounts = {
+  total: number
+  newCount: number
+  updatedCount: number
+  skippedCount: number
+  errorCount: number
+  errorDetails: string[]
+  reassignedCount: number
+  needsReviewCount: number
+  needsReviewDetails: { employeeNumber: string; oldName: string; newName: string }[]
+}
 
 async function processDepartmentMasterFile(buffer: Buffer, uploadedBy: string): Promise<MasterImportCounts> {
   const rows = readExcelBuffer(buffer)
-  const counts: MasterImportCounts = { total: rows.length, newCount: 0, updatedCount: 0, skippedCount: 0, errorCount: 0, errorDetails: [] }
+  const counts: MasterImportCounts = { total: rows.length, newCount: 0, updatedCount: 0, skippedCount: 0, errorCount: 0, errorDetails: [], reassignedCount: 0, needsReviewCount: 0, needsReviewDetails: [] }
 
   const { data: importRecord, error: importError } = await supabaseAdmin
     .from('master_imports')
@@ -226,7 +240,7 @@ async function processDepartmentMasterFile(buffer: Buffer, uploadedBy: string): 
 // 値が入っている場合のみ上書きする（既存157件のcrew_codeを消さないための必須対応）。
 async function processStaffMasterFile(buffer: Buffer, uploadedBy: string): Promise<MasterImportCounts> {
   const rows = readExcelBuffer(buffer)
-  const counts: MasterImportCounts = { total: rows.length, newCount: 0, updatedCount: 0, skippedCount: 0, errorCount: 0, errorDetails: [] }
+  const counts: MasterImportCounts = { total: rows.length, newCount: 0, updatedCount: 0, skippedCount: 0, errorCount: 0, errorDetails: [], reassignedCount: 0, needsReviewCount: 0, needsReviewDetails: [] }
 
   const { data: importRecord, error: importError } = await supabaseAdmin
     .from('master_imports')
@@ -244,37 +258,100 @@ async function processStaffMasterFile(buffer: Buffer, uploadedBy: string): Promi
 
   const CHUNK = 300
 
-  // 既存データ（id・crew_code）をまとめて取得
-  const existingMap = new Map<string, { id: string; crew_code: string | null }>()
+  // 既存データ（id・crew_code・氏名・退職年月日）をまとめて取得。
+  // 氏名・退職年月日はC-08対応（社員番号の再利用検知）に必要。
+  const existingMap = new Map<string, { id: string; crew_code: string | null; name: string; retired_at: string | null }>()
   const allEmployeeNumbers = parsedRecords.map(r => r.employee_number)
   for (let i = 0; i < allEmployeeNumbers.length; i += CHUNK) {
     const chunk = allEmployeeNumbers.slice(i, i + CHUNK)
     const { data: existingRows, error } = await supabaseAdmin
       .from('staff')
-      .select('id, employee_number, crew_code')
+      .select('id, employee_number, crew_code, name, retired_at')
       .in('employee_number', chunk)
     if (error) {
       counts.errorCount += chunk.length
       counts.errorDetails.push(`既存データ確認エラー（${chunk.length}件分）：${friendlyDbReason(error)}`)
       continue
     }
-    for (const r of existingRows || []) existingMap.set(r.employee_number, { id: r.id, crew_code: r.crew_code })
+    for (const r of existingRows || []) existingMap.set(r.employee_number, { id: r.id, crew_code: r.crew_code, name: r.name, retired_at: r.retired_at })
+  }
+
+  // ===== C-08対応：社員番号の再利用（退職者番号を新入社員へ再割当）検知 =====
+  // 同じemployee_numberの既存行が見つかっても、氏名が一致しなければ「同一人物の更新」とは
+  // 見なさない。その場合：
+  //  ・既存行が退職済み（retired_at設定済み）→ 正当な再割当とみなし、既存行のemployee_numberを
+  //    リネームして退避（archived_at記録）。前任者の契約・誓約書はarchivedになった旧staff.idの
+  //    ままなので履歴は保全され、今回のCSV行は新規UUIDの行として登録される
+  //    （＝マイページは新入社員について完全に空の状態からスタートする）。
+  //  ・既存行が現役（retired_atがNULL）→ データ異常の疑いがあるため自動処理せずスキップし、
+  //    「要確認」として管理部に報告する（人手での判断に委ねる）。
+  const now = new Date().toISOString()
+  const reassignTargets: { employeeNumber: string; existingId: string }[] = []
+  const skippedRecords = new Set<number>() // parsedRecords内のインデックス
+
+  for (let idx = 0; idx < parsedRecords.length; idx++) {
+    const record = parsedRecords[idx]
+    const existing = existingMap.get(record.employee_number)
+    if (!existing) continue // 新規登録：問題なし
+
+    const sameName = normalizeStaffNameForCompare(existing.name) === normalizeStaffNameForCompare(record.name)
+    if (sameName) continue // 同一人物の更新：問題なし
+
+    if (existing.retired_at) {
+      reassignTargets.push({ employeeNumber: record.employee_number, existingId: existing.id })
+    } else {
+      skippedRecords.add(idx)
+      counts.needsReviewCount++
+      counts.needsReviewDetails.push({ employeeNumber: record.employee_number, oldName: existing.name, newName: record.name || '' })
+    }
+  }
+
+  // 再割当対象の旧行をリネームして退避（employee_numberのUNIQUE制約に抵触しないよう、
+  // 通常のupsertより前に個別UPDATEで処理する）
+  for (const target of reassignTargets) {
+    const { error } = await supabaseAdmin
+      .from('staff')
+      .update({
+        employee_number: buildArchivedEmployeeNumber(target.employeeNumber),
+        archived_at: now,
+        archived_original_employee_number: target.employeeNumber,
+      })
+      .eq('id', target.existingId)
+    if (error) {
+      // 退避に失敗した場合、このemployee_numberはまだ旧行が握ったままのため、
+      // 今回のCSV行は upsert に回さず「要確認」に落として安全側に倒す
+      const record = parsedRecords.find(r => r.employee_number === target.employeeNumber)
+      counts.errorCount++
+      counts.errorDetails.push(`社員番号${target.employeeNumber}の再割当（旧データの退避）に失敗：${friendlyDbReason(error)}`)
+      counts.needsReviewCount++
+      counts.needsReviewDetails.push({ employeeNumber: target.employeeNumber, oldName: existingMap.get(target.employeeNumber)?.name || '', newName: record?.name || '' })
+      existingMap.delete(target.employeeNumber) // 下のupsert対象外にするため、既存フラグ判定から外す
+      const idx = parsedRecords.findIndex(r => r.employee_number === target.employeeNumber)
+      if (idx >= 0) skippedRecords.add(idx)
+    } else {
+      // 退避成功：existingMapから外すことで、以降このemployee_numberは「新規」として扱われる
+      existingMap.delete(target.employeeNumber)
+    }
   }
 
   const upsertBatch: (NonNullable<ReturnType<typeof buildStaffRecord>> & { updated_at: string })[] = []
   const isExistingFlags: boolean[] = []
-  const now = new Date().toISOString()
-  for (const record of parsedRecords) {
+  const isReassignedFlags: boolean[] = []
+  for (let idx = 0; idx < parsedRecords.length; idx++) {
+    if (skippedRecords.has(idx)) continue // 要確認としてスキップした行は取込しない
+    const record = parsedRecords[idx]
     const existing = existingMap.get(record.employee_number)
     // SBクルーコードが今回のファイルで空欄の場合、既存値があればそれを保持する（伊藤さん指示・2026-07-21）
     const crewCode = record.crew_code || existing?.crew_code || null
     upsertBatch.push({ ...record, crew_code: crewCode, updated_at: now })
     isExistingFlags.push(!!existing)
+    isReassignedFlags.push(reassignTargets.some(t => t.employeeNumber === record.employee_number))
   }
 
   for (let i = 0; i < upsertBatch.length; i += CHUNK) {
     const chunk = upsertBatch.slice(i, i + CHUNK)
     const flags = isExistingFlags.slice(i, i + CHUNK)
+    const reassignFlags = isReassignedFlags.slice(i, i + CHUNK)
     const { error } = await supabaseAdmin
       .from('staff')
       .upsert(chunk, { onConflict: 'employee_number' })
@@ -282,13 +359,22 @@ async function processStaffMasterFile(buffer: Buffer, uploadedBy: string): Promi
       counts.errorCount += chunk.length
       counts.errorDetails.push(`保存エラー（${chunk.length}件分）：${friendlyDbReason(error)}`)
     } else {
-      for (const isExisting of flags) { if (isExisting) counts.updatedCount++; else counts.newCount++ }
+      for (let j = 0; j < flags.length; j++) {
+        if (flags[j]) counts.updatedCount++
+        else {
+          counts.newCount++
+          if (reassignFlags[j]) counts.reassignedCount++
+        }
+      }
     }
   }
 
   await supabaseAdmin.from('master_imports').update({
     new_rows: counts.newCount, updated_rows: counts.updatedCount, skipped_rows: counts.skippedCount, error_rows: counts.errorCount,
     error_detail: buildErrorDetailText(counts.errorDetails),
+    reassigned_rows: counts.reassignedCount,
+    needs_review_rows: counts.needsReviewCount,
+    needs_review_detail: counts.needsReviewDetails.length > 0 ? counts.needsReviewDetails : null,
   }).eq('id', importRecord.id)
 
   return counts

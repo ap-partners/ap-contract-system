@@ -88,6 +88,22 @@ export type StaffImportRecord = {
   crew_code: string | null
 }
 
+// ===== C-08対応：社員番号の再利用（退職者番号を新入社員へ再割当）検知用 =====
+// 全角/半角スペース・前後の空白の違いだけで「別人」と誤判定しないよう、
+// 比較前に空白文字をすべて除去して正規化する（表記ゆれの吸収。厳密な同一性チェックは
+// 目的が「別人か同一人物か」の大雑把な仕分けのため、これで十分。旧字体・外国人表記等の
+// 揺れは伊藤さん・管理部が「要確認」一覧を見て目視判断する前提）。
+export function normalizeStaffNameForCompare(name: string | null | undefined): string {
+  if (!name) return ''
+  return name.replace(/[\s　]+/g, '')
+}
+
+// 退避（アーカイブ）した旧行に付け直す、衝突しない新しいemployee_number値を生成する。
+// employee_numberはUNIQUE制約のみ（桁数・書式のCHECK制約は無い）ため、この形式でも問題ない。
+export function buildArchivedEmployeeNumber(originalEmployeeNumber: string): string {
+  return `${originalEmployeeNumber}__ARCHIVED__${Date.now()}`
+}
+
 // 1行分のスタッフマスタ行を変換する。スキップ対象（社員番号なし・8/9始まり・外注/役員/ログイン専用）は
 // nullを返す。
 // 【テスト運用中の暫定対応】メールアドレスは誤送信防止のため ito@appart.co.jp に固定している。

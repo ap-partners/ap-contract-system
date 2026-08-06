@@ -2970,3 +2970,22 @@ CSV自動反映タブの行だけは、`handleMoveToTab()`とは別の専用関�
 **今回のスコープ外**：★3（中）26件・★2（軽微）21件、および★4の残り13件は伊藤さんの指示で今回は未検証のまま。次回以降、優先順位を確認した上で着手するかどうか判断する。
 
 **対応方針**：確認できた項目はいずれもルール16（実装着手前に方針提案・伊藤さんの明示的なOKが必要）の対象であり、今回は「バグとして実在することの確認」のみを行い実装には着手していない。CLAUDE.md「🔴残タスク一覧」に新設セクションとして全項目を転記済み。着手順・修正方針の提案は次回以降、伊藤さんの指示を受けてから行う。
+
+### 2026-08-06：外部総合品質監査レポート由来・優先度1（C-08・C-05）の修正方針提案・実装
+
+優先順位（伊藤さん指定）に従い、実データ破損・法的書類欠落に直結するC-08・C-05から着手。ルール16に基づき、着手前にプロの業務改善責任者／PdM／セキュリティ担当者目線で各2案を提案し、伊藤さんの明示的なOK（C-08＝案A「自動アーカイブ方式」、C-05＝案A「入力側で上限制御」、いずれも推奨案）を得てから実装。
+
+**C-08（社員番号の再利用）の実装内容**：
+- 提案段階では「`employee_number`のUNIQUE制約をarchived_at IS NULLの部分ユニークインデックスに変更」という設計で説明していたが、実装に入って`app/api/staff/login`・`request-code`・`verify-code`・`set-password`など`employee_number`で`.maybeSingle()`検索する箇所が最低4つ存在し、部分ユニークインデックス方式だと「退避後も同じ`employee_number`文字列の行が2件存在し得る」ため、これらのAPIが`.maybeSingle()`のエラー（複数件ヒット）で軒並み壊れることが判明。設計を「アーカイブ時に旧行の`employee_number`自体を一意な値へリネームする」方式に変更（`buildArchivedEmployeeNumber()`＝`元の社員番号__ARCHIVED__タイムスタンプ`形式）。この方式なら`employee_number`のUNIQUE制約はそのまま維持でき、リネーム後は旧行が既存の`.eq('employee_number', X)`系クエリに一切ヒットしなくなるため、ログイン・STEP1検索・更新期限管理等、影響し得る15箇所超のクエリを個別に修正する必要が無くなった（コード変更ゼロで安全）。実装前にSupabase MCPで`staff`テーブルの実DDL・制約・インデックスを確認し、`employee_number`にCHECK制約（桁数・書式）が無くUNIQUE制約のみであることを確認した上でこの設計に決定。
+- DBマイグレーション（`add_staff_archive_columns_and_master_import_review`・Supabase MCPで適用済み）：`staff`に`archived_at timestamptz`・`archived_original_employee_number text`を追加。`master_imports`に`reassigned_rows`・`needs_review_rows`（いずれも`integer NOT NULL DEFAULT 0`）・`needs_review_detail jsonb`を追加。
+- `lib/staffMasterImportShared.ts`：氏名比較用の正規化ヘルパー`normalizeStaffNameForCompare()`（全角/半角スペースをすべて除去してから比較。旧字体等の揺れは対象外＝目的はあくまで「別人か同一人物かの大雑把な仕分け」で、微妙なケースは後述の「要確認」で人手判断に委ねる設計）と、`buildArchivedEmployeeNumber()`を新設。
+- `app/api/admin/csv-import/route.ts`の`processStaffMasterFile()`：既存データ取得クエリに`name`・`retired_at`を追加。CSV行ごとに、同じ`employee_number`の既存行があり氏名が一致しない場合：①既存行の`retired_at`が設定済み→正当な再割当と判断し、旧行を個別UPDATEでリネーム・退避（`archived_at`記録）した上で、後続の通常upsert処理に回す（リネームによりemployee_numberが空いているため自然に新規INSERTになる。新規UUID採番）。②既存行が現役（`retired_at`がNULL）→自動処理せずそのCSV行をスキップし「要確認」として`needsReviewDetails`に記録。`MasterImportCounts`型に`reassignedCount`・`needsReviewCount`・`needsReviewDetails`を追加し、`master_imports`テーブルへ保存。
+- `app/dashboard/admin/page.tsx`：管理部ダッシュボード「CSVインポート」タブのアップロード結果表示に、再割当件数（青文字の説明文）と要確認件数（黄色警告ボックス＋社員番号・旧氏名・新氏名の一覧）を追加。あわせて取込履歴タイムラインのピルにも「再割当」「要確認」を追加。
+- **残存リスク（要伊藤さん認識）**：ローカルCLI用の手動フォールバックスクリプト`scripts/import-master.js`は今回の氏名照合・自動アーカイブロジックを一切含んでいない（`onConflict:'employee_number'`の単純upsertのまま）。伊藤さんはプログラミング知識が無いため実際に手動実行する可能性は低いが、将来Claudeが「手動でインポートして」と依頼された際にこのスクリプトを使うとC-08の修正がバイパスされる。実際のインポートは必ずWeb画面（管理部ダッシュボード「CSVインポート」タブ）経由で行うこと。このスクリプト自体への同等ロジックの追加は今回のスコープ外（未実装）。
+
+**C-05（誓約書PDFの勤務日欠落）の実装内容**：
+- `app/pledge/apply/page.tsx`：`hasPeriod`（期間指定が登録済みか）の直後に、`singleEntryLimit = hasPeriod ? MAX_SINGLE_ENTRIES - 1 : MAX_SINGLE_ENTRIES`（9 or 10）を新設。単日追加時のバリデーション（`addSingleEntry`）・単日追加ボタン横のバッジ・単日登録モーダルのsubtitleの3箇所を、固定値`MAX_SINGLE_ENTRIES`からこの動的な`singleEntryLimit`に置き換え。
+- 発生条件の再検証で「単日を10件（期間指定なし時の上限）まで登録した“後”に期間を追加登録する」経路が、上記の入力時チェックだけでは防げないことに気づき（`singleEntryLimit`は期間の有無を見て事後的に変わるため、既に10件登録済みの状態で期間だけが後から確定すると合計11件になり得る）、期間登録モーダルの「登録する」ボタンに追加ガードを実装：単日が10件（`MAX_SINGLE_ENTRIES`）を超えて登録済みの状態で期間を確定しようとした場合はブロックし、「単日を1件以上削除してから期間を登録してください」という趣旨のエラー（`periodConfirmError`・`ValidationBanner`表示）を出す。
+- PDFレイアウト（`lib/pdf/PledgePdf.tsx`のMAX_SCHEDULE_ROWS=10）は変更していない（案Aの前提通り）。
+
+**検証**：構文チェック（`ts.transpileModule`）を変更した4ファイル（`lib/staffMasterImportShared.ts`・`app/api/admin/csv-import/route.ts`・`app/dashboard/admin/page.tsx`・`app/pledge/apply/page.tsx`）すべてで実施し診断0件を確認済み。DBマイグレーションはSupabase MCPで本番DBに適用済み（既存コードは新規列を参照していないため、コードのデプロイ前でも後方互換）。コード側（Vercel）は伊藤さんのgit push・デプロイ後、Claude in Chromeでの実機確認（ルール13）が必要（未実施）。

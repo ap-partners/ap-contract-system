@@ -207,6 +207,9 @@ export default function PledgeApplyPage() {
   // STEP3の就業日重複チェック（addSingleEntry内）のみ、日付追加ボタンの近くに表示したいため別state（dateAddError）を用いる。
   const [stepError, setStepError] = useState<string | null>(null)
   const [dateAddError, setDateAddError] = useState<string | null>(null)
+  // C-05対応（2026-08-06）：期間登録モーダルの「登録する」を押した際、既に単日を上限まで
+  // 登録済みでMIXパターンの上限（9件）を超えてしまう場合に表示するエラー。
+  const [periodConfirmError, setPeriodConfirmError] = useState<string | null>(null)
 
   // ===== STEP1：スタッフ検索・帳票種別選択 =====
   const [searched, setSearched] = useState(false)
@@ -527,6 +530,11 @@ export default function PledgeApplyPage() {
   const periodShiftValid = !!(periodShift.start && periodShift.end && periodShift.breakMinutes && periodShift.contractHours)
   // 期間が「登録済み」とみなせるかどうか（開始日・終了日の前後関係・就業時間一式が揃っている）
   const hasPeriod = !!(rangeStart && rangeEnd && rangeStart <= rangeEnd && periodShiftValid)
+  // C-05対応（2026-08-06）：帳票PDF（lib/pdf/PledgePdf.tsx）の表は最大10行までしか収容できない。
+  // 期間指定（1行）と単日を併用するMIXパターンのときだけ、単日の登録上限を1件減らして9件にし、
+  // 「期間1行＋単日10件＝11行」がPDF出力時にサイレントに切り捨てられる事態を入力段階で防ぐ
+  // （期間指定なし＝単日のみ利用時は従来通り10件のまま）。
+  const singleEntryLimit = hasPeriod ? MAX_SINGLE_ENTRIES - 1 : MAX_SINGLE_ENTRIES
   // periodPattern：既存の保存形式（DB `period_pattern`列・buildScheduleRows等）をそのまま使うための
   // 導出値。ユーザーが直接選ぶものではなく、期間・単日の登録状況から自動的に決まる。
   const periodPattern: 'single_multi' | 'range' | 'mix' | '' =
@@ -542,8 +550,12 @@ export default function PledgeApplyPage() {
       setDateAddError('日付・始業時間・終業時間・休憩時間をすべて入力してから追加してください。')
       return
     }
-    if (singleEntries.length >= MAX_SINGLE_ENTRIES) {
-      setDateAddError(`単日の登録は最大${MAX_SINGLE_ENTRIES}件までです。`)
+    if (singleEntries.length >= singleEntryLimit) {
+      setDateAddError(
+        hasPeriod
+          ? `単日の登録は最大${singleEntryLimit}件までです（期間指定と併用しているため、通常の${MAX_SINGLE_ENTRIES}件より1件少なくなっています）。`
+          : `単日の登録は最大${singleEntryLimit}件までです。`
+      )
       return
     }
     if (singleEntries.some(e => e.date === singleDateInput)) {
@@ -1081,7 +1093,7 @@ export default function PledgeApplyPage() {
                     <p className="text-sm font-bold" style={{ color: '#1A2340' }}>単日を追加する</p>
                     <p className="text-xs mt-0.5" style={{ color: '#5A6A8A' }}>日によって時間帯が異なる場合</p>
                   </div>
-                  <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>{singleEntries.length} / {MAX_SINGLE_ENTRIES}件</span>
+                  <span className="text-xs shrink-0" style={{ color: '#5A6A8A' }}>{singleEntries.length} / {singleEntryLimit}件</span>
                 </button>
 
                 {singleEntries.length > 0 && (
@@ -1162,17 +1174,33 @@ export default function PledgeApplyPage() {
                     <span className="text-base font-bold" style={{ color: '#1B3A8C' }}>{periodShift.contractHours ? `${periodShift.contractHours}時間` : '－'}</span>
                   </div>
                 </div>
+                {periodConfirmError && (
+                  <div className="px-6 pb-2">
+                    <ValidationBanner message={periodConfirmError} />
+                  </div>
+                )}
                 <div className="flex justify-end gap-2 px-6 py-4 border-t" style={{ borderColor: '#D0DAF0' }}>
-                  <button onClick={e => { e.preventDefault(); setPeriodModalOpen(false) }}
+                  <button onClick={e => { e.preventDefault(); setPeriodConfirmError(null); setPeriodModalOpen(false) }}
                     className="bg-white border px-4 py-2.5 rounded-lg text-sm transition-all" style={{ color: '#5A6A8A', borderColor: '#D0DAF0' }}>キャンセル</button>
-                  <button onClick={e => { e.preventDefault(); if (!hasPeriod) { return }; setPeriodModalOpen(false) }}
+                  <button onClick={e => {
+                    e.preventDefault()
+                    if (!hasPeriod) { return }
+                    // C-05対応：期間登録前に、既に単日を上限（MAX_SINGLE_ENTRIES=10）まで登録済みだと
+                    // MIXパターンの上限（9件）を超えてしまうため、その場合は登録をブロックする。
+                    if (singleEntries.length > MAX_SINGLE_ENTRIES - 1) {
+                      setPeriodConfirmError(`単日を${singleEntries.length}件登録済みのため、このまま期間を登録すると帳票の上限を超えてしまいます。単日を1件以上削除してから、期間を登録してください。`)
+                      return
+                    }
+                    setPeriodConfirmError(null)
+                    setPeriodModalOpen(false)
+                  }}
                     className="text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-all" style={{ background: '#1B3A8C' }}>登録する</button>
                 </div>
               </PledgeModal>
 
               {/* ===== 単日の日程を登録するモーダル（登録済み一覧＋新規行を1つの表で扱う） ===== */}
               <PledgeModal open={singleModalOpen} onClose={() => setSingleModalOpen(false)} title="単日の日程を登録"
-                subtitle={`${singleEntries.length} / ${MAX_SINGLE_ENTRIES}件登録済み`} maxWidthClass="max-w-2xl">
+                subtitle={`${singleEntries.length} / ${singleEntryLimit}件登録済み${hasPeriod ? '（期間指定と併用のため上限9件）' : ''}`} maxWidthClass="max-w-2xl">
                 <div className="px-6 pt-5 pb-1">
                   {singleEntries.length > 0 && (
                     <div className="grid gap-y-1 mb-2" style={{ gridTemplateColumns: '1.1fr 1.6fr 0.8fr 0.6fr 32px' }}>

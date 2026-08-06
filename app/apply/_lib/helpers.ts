@@ -3,6 +3,19 @@
 // ここにあるのはJSXを一切含まない計算・変換ロジックのみ。画面表示用の小さな部品コンポーネントは
 // ./_components/FormParts.tsx 側にある（DiffTextなどJSXを返すものはこちら側ではなくそちら）。
 
+// C-01対応（2026-08-06）：staffテーブルのSELECT列権限を、機密5列
+// （password_hash・login_auth_code・login_auth_code_expires_at・login_auth_attempts・
+// login_password_attempts）を除いたアローリスト方式に変更したため、クライアント側の
+// `select('*')`はPostgresの仕様上「権限の無い列が1つでもあるとSELECT *自体がエラーになる」
+// という理由でそのままでは使えなくなった。STEP1検索（app/apply/page.tsx・
+// app/pledge/apply/page.tsx）が使う「機密5列を除いた全列」を1箇所にまとめておく
+// （DB側の許可列リストと必ず一致させること。列を追加する際は両方を更新する）。
+export const STAFF_SEARCH_SAFE_COLUMNS =
+  'id, employee_number, name, name_kana, dept_no, contract_type, hired_at, birthday, ' +
+  'retired_at, retirement_scheduled_at, email, crew_code, is_initial_login, work_place, ' +
+  'created_at, updated_at, address, mypage_bookmark_reminder_dismissed, archived_at, ' +
+  'archived_original_employee_number'
+
 export const getDocumentTypes = (workPlace: string) => {
   if (workPlace === '社内') return [{ value: '雇用契約書', pattern: 'A', step: '6STEP' }]
   return [

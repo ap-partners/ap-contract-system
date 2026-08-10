@@ -6,6 +6,10 @@
 //    本人確認のうえパスワードを再設定するために使う。
 // どちらも従業員単位（staffテーブル）でコードを発行する点が、契約単位だった旧方式
 // （lib/signAuthCode.ts・contracts.sign_auth_code）との違い。
+//
+// 2026-08-10（B-05・B-06対応）：IP単位のレート制限を追加。退職者・退職予定日を過ぎた
+// スタッフには実際にはコードを発行・送信しない（存在しない社員番号と同じ応答にして
+// 在籍状況が外部から推測できないようにする）。
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendStaffLoginCodeMail } from '@/lib/mail'
@@ -15,6 +19,8 @@ import {
   SIGN_AUTH_CODE_EXPIRY_DAYS,
   SIGN_AUTH_REISSUE_COOLDOWN_MINUTES,
 } from '@/lib/signAuthCode'
+import { checkRateLimit } from '@/lib/rateLimit'
+import { getClientIp } from '@/lib/getClientIp'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,6 +28,12 @@ const supabaseAdmin = createClient(
 )
 
 export async function POST(req: NextRequest) {
+  const ip = getClientIp(req)
+  const withinLimit = await checkRateLimit(supabaseAdmin, `staff-request-code:${ip}`, 30, 300)
+  if (!withinLimit) {
+    return NextResponse.json({ error: 'しばらく時間をおいてから、もう一度お試しください。' }, { status: 429 })
+  }
+
   const body = await req.json().catch(() => null)
   const employeeNumber = (body?.employeeNumber || '').trim()
 
@@ -31,13 +43,19 @@ export async function POST(req: NextRequest) {
 
   const { data: staff, error } = await supabaseAdmin
     .from('staff')
-    .select('id, name, email, employee_number, is_initial_login, login_auth_code_expires_at, login_auth_attempts')
+    .select('id, name, email, employee_number, is_initial_login, login_auth_code_expires_at, login_auth_attempts, retired_at, retirement_scheduled_at')
     .eq('employee_number', employeeNumber)
     .maybeSingle()
 
   // セキュリティ上の理由から、社員番号が存在しない場合も存在する場合と同じ応答を返す
   // （社員番号の在籍有無を外部から推測できないようにするため）。
   if (error || !staff) {
+    return NextResponse.json({ sent: true })
+  }
+
+  const today = new Date().toISOString().slice(0, 10)
+  const isRetired = (staff.retired_at && staff.retired_at < today) || (staff.retirement_scheduled_at && staff.retirement_scheduled_at < today)
+  if (isRetired) {
     return NextResponse.json({ sent: true })
   }
 

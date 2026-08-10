@@ -3082,3 +3082,35 @@ UI側：SSC/管理部の契約・誓約書詳細画面それぞれに「📩署�
 **B-08（PDFアクセストークン・パスワード再設定トークンの種別タグ）**：三國駿（105026・元々`is_initial_login=true`）のアカウントでマイページ初回ログインフローを実際に通し、①`/api/staff/request-code`→`/api/staff/verify-code`（`staffreset.`種別タグ付きトークンを新規発行）→`/api/staff/set-password`（同トークンを検証してパスワード設定）まで成功することを確認、②マイページの書類詳細画面（`/staff/mypage/documents/955f8001-...`）から「書類の内容を確認する」を押し、`/api/staff/documents/[id]`が`pdf.`種別タグ付きの`pdfAccessToken`を発行→`/api/contracts/[id]/pdf?t=...`にそのトークンを渡すと200・`Content-Type: application/pdf`で実際にPDFが取得できることを確認（ブラウザの内蔵PDFビューアで実際に開かれたことも確認）。検証のためにこのアカウントへ設定したテストパスワード・発行された認証コード等は、確認後にSupabase MCPで`is_initial_login=true`・`password_hash=null`・`login_auth_code`等の関連列をすべて初期状態へ復元済み。
 
 以上でB-01・B-09・B-08はすべてデプロイ後・実機確認まで完了。コンソールエラーは確認した範囲で見られなかった。
+
+### 2026-08-10：B-05・B-06・B-07の実装（コード修正完了・要デプロイ＋実機確認）
+
+外部総合品質監査レポート（84件）の★4残り13件のうち、①認証・セッション（B-05・B-06・B-07）②権限チェック漏れ（B-10・B-11）③メール悪用経路（B-03・B-04）④CSV取込の堅牢性（B-12〜B-16）⑤更新期限アラートの同期漏れ（B-17）という優先順位を業務改善責任者／PdM／セキュリティ担当者目線で提案し、伊藤さんのOKを得て①から着手（ルール16準拠）。
+
+**事前確認事項と伊藤さんの判断**：
+- ロック中（B-05）・退職者（B-06）のエラー文言は同じ汎用文言で統一する（在籍状況・ロック状況が外部から推測できないようにするため）。
+- 退職者が過去の契約書控えを必要とする場合（確定申告・失業給付等）は、既存の問い合わせルートで個別対応し、システム上の開示請求フローは今回追加しない。
+- B-05のレート制限（総当たり対策）は、報告書が提案していた外部Redisサービス（Upstash等）ではなく、既存の`increment_attempt_counter`と同じ考え方のDB関数方式を採用（伊藤さんに新しい外部サービスの契約・環境変数追加という作業を発生させないため。Supabase単独構成を保つという既存方針とも合致）。
+- B-07のセッション世代番号の仕組みができるのに合わせ、「従業員から端末紛失・盗難の連絡があった際にその場でログイン状態を無効化できる強制ログアウトボタン」を追加スコープとして実装する。
+
+**B-05：ログイン試行の応答統一＋時間窓ロック＋レート制限**
+- `staff.login_locked_until`列を新設。従来の「10回失敗でパスワード再設定必須」という恒久ロックを廃止し、15分間の時間窓ロック（`LOCK_DURATION_MINUTES=15`）に変更。ロック解除と同時に試行回数カウンタもリセットする設計（解除直後に即再ロックする不具合を防止）。
+- ロック中の応答は他の失敗（パスワード誤り・社員番号不存在）と全く同じ汎用エラー文言・401ステータスに統一（`app/api/staff/login/route.ts`）。旧実装にあった`reason:'locked'`（423ステータス）は廃止。
+- IP単位のレート制限を`login`・`request-code`・`verify-code`の3APIに追加（30リクエスト/5分）。DB関数`check_rate_limit(p_key text, p_max_count integer, p_window_seconds integer) returns boolean`＋テーブル`rate_limit_buckets(bucket_key text primary key, count integer, window_start timestamptz)`を新設。1つのUPSERT文（`on conflict do update`）でPostgresが行ロックするため、並列リクエストでも正しくカウントされるアトミックな実装（`increment_attempt_counter`と同じ設計思想）。関数は`anon`・`authenticated`からのEXECUTEを明示的にREVOKE（監査指摘6-2でincrement_attempt_counterが anon から呼べてしまうと指摘されていた教訓を踏まえた予防的対応）。判定自体がエラーになった場合はログイン機能全体を止めないよう「許可」側に倒す設計（`lib/rateLimit.ts`）。IPアドレスは`x-forwarded-for`／`x-real-ip`ヘッダーから取得（`lib/getClientIp.ts`）。
+
+**B-06：退職者のマイページアクセス遮断**
+- `login`・`request-code`・`verify-code`の3APIに、`retired_at`／`retirement_scheduled_at`が今日より前かどうかのチェックを追加。退職済み・退職予定日超過のスタッフは「存在しない社員番号」と全く同じ応答を返す（`login`は汎用エラー文言・401、`request-code`は`{sent:true}`のみでメール送信・コード発行は行わない、`verify-code`は`reason:'invalid'`・401）。
+- 既にログイン中のセッション（退職前に発行されたもの）についても、B-07で追加したDB照会ガードにより、次のAPI呼び出し時に遮断される（後述）。
+
+**B-07：セッション失効機能の新設＋強制ログアウトボタン**
+- `staff.session_token_version`列（integer, not null default 1）を新設。DB関数`revoke_staff_sessions(p_staff_id uuid) returns integer`（世代番号をインクリメントして返す。`anon`・`authenticated`からのEXECUTEはREVOKE済み）を、①パスワード設定・再設定完了時（`app/api/staff/set-password/route.ts`）、②管理部・SSCによる強制ログアウト操作時、に呼び出す。
+- `lib/staffSession.ts`のセッションCookie payloadに世代番号を追加（`{staffId}.{tokenVersion}.{expiresAt}.{sig}`の4パート構成に変更。旧3パート構成との後方互換は持たせない＝デプロイの瞬間をまたぐ極めて短い間に発行された旧形式のCookieのみ、初回だけ弾かれて再ログインが必要になる）。有効期限は30日間→7日間に短縮。
+- `middleware.ts`（Edge runtime）はセッションの署名・有効期限の検証のみを行い、ページ遷移のたびに有効期限を延長するスライディングセッションを実装（DB照会は行わない。Edge runtimeを軽量に保つ設計を維持）。
+- `lib/staffAuth.ts`の`getStaffIdFromRequest`（Node runtimeのAPIルートから呼ばれる）に、DB照会による失効チェックを追加：①Cookie内の世代番号と`staff.session_token_version`が一致しない、②退職日を過ぎている、のいずれかに該当すれば無効として扱う。これにより「署名は正しいが古い世代のセッション」「退職前に発行され生きたままのセッション」の両方を、次にAPIを呼んだ瞬間に遮断できる。呼び出し元（`staff/documents/[id]`・`staff/me`・`staff/dismiss-bookmark-reminder`・`pledges/[id]/complete`・`sign/[id]/complete`の計5箇所）はいずれも`Promise<string|null>`という既存の戻り値の型のまま変更不要だったため、この5ファイル自体は無修正で対応完了。
+- 追加機能として、SSC/管理部の契約詳細画面（`app/dashboard/ssc/contracts/[id]/page.tsx`。管理部にも共有されている画面）に「🔒 ログイン状態を強制的に解除する」ボタンを新設。新規API`app/api/contracts/[id]/force-logout-staff/route.ts`は、C-06/B-01で実装済みの部門スコープ判定（管理部は常に可、SSCは社内案件を除き可、担当営業は`created_by_dept_no`が自部門と一致する場合のみ可）をそのまま流用し、対象契約に紐づくスタッフの`session_token_version`を繰り上げる。ステータスを問わず常時表示（マイページに一度でもログインしたことがある従業員であれば、いつでも起こりうる操作のため）。担当営業側の契約詳細画面（`sales/contracts/[id]/page.tsx`）・アルバイト誓約書側（`pledges/[id]`系）は、1チャットの範囲を抑えるため今回のスコープ外とした（必要になれば追加実装）。
+
+**構文チェック・DB反映**
+- 構文チェック（`ts.transpileModule`）は新設・変更した全11ファイルで診断0件を確認済み：`lib/getClientIp.ts`（新設）・`lib/rateLimit.ts`（新設）・`lib/staffSession.ts`・`lib/staffAuth.ts`・`middleware.ts`・`app/api/staff/login/route.ts`・`app/api/staff/request-code/route.ts`・`app/api/staff/verify-code/route.ts`・`app/api/staff/set-password/route.ts`・`app/api/contracts/[id]/force-logout-staff/route.ts`（新設）・`app/dashboard/ssc/contracts/[id]/page.tsx`。
+- DBマイグレーション（`add_login_lockout_session_version_ratelimit`）はSupabase MCPで本番DBに適用済み：`staff.login_locked_until`列追加、`staff.session_token_version`列追加（default 1）、`rate_limit_buckets`テーブル新設（RLS有効・グラント全REVOKE）、`check_rate_limit`関数新設、`revoke_staff_sessions`関数新設（いずれも`anon`・`authenticated`からのEXECUTEをREVOKE）。
+
+**次回セッションでの実機確認予定**：①ログイン10回失敗→15分ロック→時間経過後の自動解除、②退職者アカウントでの3API（login/request-code/verify-code）遮断確認、③強制ログアウトボタンの実際の動作（対象アカウントでログイン中の別セッションが、ボタン押下後の次のAPI呼び出しで401になること）、④通常ログイン・パスワード再設定・7日間セッション延長（スライディングセッション）に回帰がないこと、をClaude in Chrome＋Supabase MCPで確認する。

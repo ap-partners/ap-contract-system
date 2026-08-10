@@ -339,6 +339,9 @@ export default function SSCContractDetail() {
   // 見返した時にも）送れていない／届いているか分からない場合に、この画面から手動で
   // 再送できるようにするためのUI状態。
   const [resendLoading, setResendLoading] = useState(false)
+  // B-07対応（2026-08-10）：従業員から「スマホを紛失した／盗まれた」等の連絡があった際、
+  // マイページのログイン状態をその場で強制的に無効化するためのUI状態。
+  const [forceLogoutLoading, setForceLogoutLoading] = useState(false)
 
   // 強制承認のUI状態（2026-07-02追加：7-5章の骨格実装。warning_level='red'の時のみ使用）
   const [showForceApproveForm, setShowForceApproveForm] = useState(false)
@@ -562,6 +565,34 @@ export default function SSCContractDetail() {
       showError('署名依頼の再送に失敗しました：' + (e?.message || ''))
     } finally {
       setResendLoading(false)
+    }
+  }
+
+  // B-07対応（2026-08-10）：従業員のマイページログイン状態を強制的に無効化する。
+  // 端末紛失・盗難の連絡があった場合に、7日間のセッション有効期限を待たずその場で
+  // ログイン状態を切るための操作。実行してもデータが消えるわけではなく、対象の従業員は
+  // 次にログインし直せば通常どおり利用できる。
+  const handleForceLogoutStaff = async () => {
+    if (!contract || forceLogoutLoading) return
+    const ok = await confirmDialog({
+      title: 'ログイン状態を強制的に解除する',
+      message: `${staffSnap.name || '対象スタッフ'}様のマイページのログイン状態を、その場で強制的に解除します。次回ログイン時は改めてパスワードの入力が必要になります。よろしいですか？`,
+      confirmLabel: '強制ログアウトする',
+    })
+    if (!ok) return
+    setForceLogoutLoading(true)
+    try {
+      const res = await fetch(`/api/contracts/${contract.id}/force-logout-staff`, { method: 'POST', headers: await getAuthHeader() })
+      const body = await res.json().catch(() => ({} as any))
+      if (!res.ok) {
+        showError(body?.error || '強制ログアウトに失敗しました。')
+      } else {
+        showSuccess('ログイン状態を強制的に解除しました。')
+      }
+    } catch (e: any) {
+      showError('強制ログアウトに失敗しました：' + (e?.message || ''))
+    } finally {
+      setForceLogoutLoading(false)
     }
   }
 
@@ -789,6 +820,17 @@ export default function SSCContractDetail() {
                 {resendLoading ? '送信中...' : '📩 署名依頼を再送する'}
               </button>
             )}
+            {/* B-07対応（2026-08-10）：従業員から「スマホを紛失した／盗まれた」等の連絡が
+                あった際に、マイページのログイン状態をその場で強制的に解除するボタン。
+                署名依頼の再送とは異なり、ステータスを問わず常に表示する（マイページに
+                一度でもログインしたことがある従業員であれば、いつでも起こりうる操作のため）。 */}
+            <button
+              onClick={handleForceLogoutStaff}
+              disabled={forceLogoutLoading}
+              className="mt-3 ml-0 md:ml-2 text-sm px-4 py-2 rounded-lg border-2 font-bold transition-all disabled:opacity-60"
+              style={{ color: '#B45309', borderColor: '#B45309', background: 'white' }}>
+              {forceLogoutLoading ? '処理中...' : '🔒 ログイン状態を強制的に解除する'}
+            </button>
           </div>
         )}
 

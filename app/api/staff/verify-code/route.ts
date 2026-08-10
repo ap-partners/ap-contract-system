@@ -9,13 +9,25 @@ import { SIGN_AUTH_MAX_ATTEMPTS } from '@/lib/signAuthCode'
 import { createStaffResetToken } from '@/lib/staffResetToken'
 import { incrementAttemptCounter } from '@/lib/attemptCounter'
 import { timingSafeEqualStrings } from '@/lib/timingSafeEqual'
+import { checkRateLimit } from '@/lib/rateLimit'
+import { getClientIp } from '@/lib/getClientIp'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// 社員番号が存在しない場合と共通で使うエラー応答（B-06対応：退職者も同じ応答にする）
+const invalidResponse = () =>
+  NextResponse.json({ error: '確認できませんでした。入力内容をご確認ください。', reason: 'invalid' }, { status: 401 })
+
 export async function POST(req: NextRequest) {
+  const ip = getClientIp(req)
+  const withinLimit = await checkRateLimit(supabaseAdmin, `staff-verify-code:${ip}`, 30, 300)
+  if (!withinLimit) {
+    return NextResponse.json({ error: 'しばらく時間をおいてから、もう一度お試しください。' }, { status: 429 })
+  }
+
   const body = await req.json().catch(() => null)
   const employeeNumber = (body?.employeeNumber || '').trim()
   const authCode = (body?.authCode || '').trim()
@@ -26,12 +38,19 @@ export async function POST(req: NextRequest) {
 
   const { data: staff, error } = await supabaseAdmin
     .from('staff')
-    .select('id, employee_number, login_auth_code, login_auth_code_expires_at, login_auth_attempts')
+    .select('id, employee_number, login_auth_code, login_auth_code_expires_at, login_auth_attempts, retired_at, retirement_scheduled_at')
     .eq('employee_number', employeeNumber)
     .maybeSingle()
 
   if (error || !staff) {
-    return NextResponse.json({ error: '確認できませんでした。入力内容をご確認ください。', reason: 'invalid' }, { status: 401 })
+    return invalidResponse()
+  }
+
+  // 2026-08-10（B-06対応）：退職者は存在しない場合と同じ応答にする
+  const today = new Date().toISOString().slice(0, 10)
+  const isRetired = (staff.retired_at && staff.retired_at < today) || (staff.retirement_scheduled_at && staff.retirement_scheduled_at < today)
+  if (isRetired) {
+    return invalidResponse()
   }
 
   if ((staff.login_auth_attempts || 0) >= SIGN_AUTH_MAX_ATTEMPTS) {

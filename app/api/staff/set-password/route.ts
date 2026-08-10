@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
       login_auth_code_expires_at: null,
       login_auth_attempts: 0,
       login_password_attempts: 0,
+      login_locked_until: null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', staff.id)
@@ -56,7 +57,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'パスワードの保存に失敗しました。' }, { status: 500 })
   }
 
+  // 2026-08-10（B-07対応）：パスワードを変更した際、他の端末に残っている既存セッションを
+  // 無効化するため、世代番号を繰り上げる。今回発行するセッションCookieは新しい世代番号を使う。
+  const { data: newVersion, error: versionError } = await supabaseAdmin.rpc('revoke_staff_sessions', { p_staff_id: staff.id })
+  if (versionError || typeof newVersion !== 'number') {
+    return NextResponse.json(
+      { error: 'パスワードは保存されましたが、ログイン処理に失敗しました。お手数ですが、ログイン画面から改めてログインしてください。' },
+      { status: 500 }
+    )
+  }
+
   const res = NextResponse.json({ success: true, staffName: staff.name })
-  await setStaffSessionCookie(res, staff.id)
+  await setStaffSessionCookie(res, staff.id, newVersion)
   return res
 }

@@ -3,7 +3,7 @@
 // 「HMAC署名付きトークンをCookieに入れる」方式を踏襲する（新規の環境変数・依存関係を
 // 追加しない。SUPABASE_SERVICE_ROLE_KEYをサーバー専用の署名鍵として流用）。
 // PDFトークン（30分・契約1件専用）と異なり、こちらは「ログインセッション」なので
-// 有効期間を30日間に設定し、staffIdのみを積む。
+// 有効期間を設定し、staffIdを積む。
 //
 // 2026-07-17実機確認で発見・修正：このモジュールはNext.jsのmiddleware（既定でEdge
 // Runtime）からも呼ばれるが、Edge RuntimeはNode標準のcryptoモジュール
@@ -11,11 +11,23 @@
 // middleware内で常に検証に失敗し、有効なセッションでも/staff/loginへ強制的に
 // 戻されてしまっていた。Edge・Node.js両方のランタイムで動作するWeb Crypto API
 // （globalThis.crypto.subtle）に書き換えることで解消した。
+//
+// 2026-08-10（B-07対応）：以下2点を変更。
+// ①有効期限を30日間→7日間に短縮。middleware.ts側でページ遷移のたびに有効期限を
+//   延長する「スライディングセッション」にするため、日常的に使っていれば体感の不便は
+//   増えない（無操作のまま7日を超えて初めて再ログインが必要になる）。
+// ②payloadに世代番号（tokenVersion）を追加。パスワード変更・強制ログアウト時に
+//   staff.session_token_versionをDB側で繰り上げることで、署名・有効期限が正しい
+//   Cookieであっても「古い世代のセッション」として無効化できるようにする
+//   （このモジュール自体はDBを見ないため、世代番号の照合はNode runtimeのAPIルート側
+//   ＝lib/staffAuth.tsのgetStaffIdFromRequestで行う。middlewareは軽量に保つ）。
 
 import { getRequiredServiceRoleKey } from './requiredEnv'
 
-const SESSION_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000 // 30日間
+const SESSION_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000 // 7日間（2026-08-10：30日間から短縮）
 export const STAFF_SESSION_COOKIE = 'staff_session'
+
+export type StaffSessionPayload = { staffId: string; tokenVersion: number }
 
 async function importKey(): Promise<CryptoKey> {
   const keyData = new TextEncoder().encode(getRequiredServiceRoleKey())
@@ -32,24 +44,27 @@ async function sign(payload: string): Promise<string> {
   return toHex(sigBuffer)
 }
 
-export async function createStaffSessionToken(staffId: string): Promise<string> {
+export async function createStaffSessionToken(staffId: string, tokenVersion: number): Promise<string> {
   const expiresAt = Date.now() + SESSION_EXPIRY_MS
-  const payload = `${staffId}.${expiresAt}`
+  const payload = `${staffId}.${tokenVersion}.${expiresAt}`
   const sig = await sign(payload)
   return Buffer.from(`${payload}.${sig}`).toString('base64url')
 }
 
-// 検証に成功した場合はstaffIdを返す。失敗時はnull。
-export async function verifyStaffSessionToken(token: string | undefined | null): Promise<string | null> {
+// 検証に成功した場合はstaffId・tokenVersionを返す。失敗時はnull。
+// 2026-08-10：戻り値をstaffId単体からStaffSessionPayloadに変更（世代番号を追加したため）。
+export async function verifyStaffSessionToken(token: string | undefined | null): Promise<StaffSessionPayload | null> {
   if (!token) return null
   try {
     const decoded = Buffer.from(token, 'base64url').toString('utf8')
     const parts = decoded.split('.')
-    if (parts.length !== 3) return null
-    const [staffId, expiresAtStr, sig] = parts
+    if (parts.length !== 4) return null
+    const [staffId, tokenVersionStr, expiresAtStr, sig] = parts
     const expiresAt = Number(expiresAtStr)
+    const tokenVersion = Number(tokenVersionStr)
     if (!Number.isFinite(expiresAt) || expiresAt < Date.now()) return null
-    const expectedSig = await sign(`${staffId}.${expiresAtStr}`)
+    if (!Number.isFinite(tokenVersion)) return null
+    const expectedSig = await sign(`${staffId}.${tokenVersionStr}.${expiresAtStr}`)
     // 長さが異なる場合は明らかに不一致（timingSafeEqual相当のWeb Crypto APIが無いため、
     // 文字列比較で十分な長さのハッシュ値同士の比較として扱う。値自体は毎回のHMAC計算
     // 結果でありランダムではないため、厳密なタイミング攻撃対策は他の防御層に委ねる）。
@@ -59,7 +74,7 @@ export async function verifyStaffSessionToken(token: string | undefined | null):
       mismatch |= sig.charCodeAt(i) ^ expectedSig.charCodeAt(i)
     }
     if (mismatch !== 0) return null
-    return staffId
+    return { staffId, tokenVersion }
   } catch {
     return null
   }

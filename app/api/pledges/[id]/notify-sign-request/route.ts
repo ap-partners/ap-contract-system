@@ -61,6 +61,16 @@ export async function POST(
     return NextResponse.json({ error: '申請データが見つかりませんでした。' }, { status: 404 })
   }
 
+  // B-01対応（2026-08-06）：契約側と同じ理由。app/api/pledges/[id]/pdf/route.tsと同じ
+  // 部門スコープ判定をここにも適用する。
+  const canOperate =
+    staffAuth.role === '管理部' ||
+    staffAuth.role === 'SSC' ||
+    (staffAuth.role === '担当営業' && pledge.created_by_dept_no != null && pledge.created_by_dept_no === staffAuth.deptNo)
+  if (!canOperate) {
+    return NextResponse.json({ error: 'この操作を行う権限がありません。' }, { status: 403 })
+  }
+
   if (trigger === 'resend' && pledge.status === '署名待ち') {
     // 再送専用パス：ステータス遷移・sign_requested_atの更新は行わず、既に送信済みの
     // メールと同じ内容を再送するだけ。

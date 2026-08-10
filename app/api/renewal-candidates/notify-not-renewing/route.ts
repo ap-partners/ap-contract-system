@@ -36,7 +36,11 @@ export async function POST(req: NextRequest) {
     deptNo != null
       ? supabaseAdmin.from('department_master').select('dept_name').eq('dept_no', deptNo).maybeSingle()
       : Promise.resolve({ data: null }),
-    supabaseAdmin.from('staff_roles').select('role, dept_no').eq('id', staffAuth.userId).maybeSingle(),
+    // B-09対応（2026-08-06）：確定者の氏名も、以前は別途staff.emailで検索していたが
+    // C-03によりほぼ機能していなかった（フォールバックでログインメールが表示されていた）。
+    // このAPIは元々確定者の部門・ロール判定にstaff_rolesを使っていたため、nameも
+    // 同じ1回のクエリで取得する形に統合する。
+    supabaseAdmin.from('staff_roles').select('role, dept_no, name').eq('id', staffAuth.userId).maybeSingle(),
   ])
   const deptName = deptRow?.data?.dept_name || null
 
@@ -50,10 +54,12 @@ export async function POST(req: NextRequest) {
     confirmedByDept = confirmedByRow.data.role
   }
 
-  const { data: userData } = await supabaseAdmin.auth.admin.getUserById(staffAuth.userId)
-  const { data: confirmedByStaffRow } = await supabaseAdmin
-    .from('staff').select('name').eq('email', userData?.user?.email || '').maybeSingle()
-  const confirmedByName = confirmedByStaffRow?.name || userData?.user?.email || null
+  let confirmedByName = confirmedByRow?.data?.name || null
+  if (!confirmedByName) {
+    // staff_rolesにも氏名が無い場合の最終フォールバックとしてログインメールを表示する
+    const { data: userData } = await supabaseAdmin.auth.admin.getUserById(staffAuth.userId)
+    confirmedByName = userData?.user?.email || null
+  }
 
   const { data: roleRows } = await supabaseAdmin.from('staff_roles').select('id, role')
   const { data: usersList } = await supabaseAdmin.auth.admin.listUsers({ perPage: 200 })

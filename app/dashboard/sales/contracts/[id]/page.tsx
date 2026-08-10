@@ -331,11 +331,12 @@ export default function SalesContractDetail() {
       if (!id) { setNotFound(true); setLoading(false); return }
 
       // ログインユーザーの所属部門NOを取得
+      // B-09対応（2026-08-06）：staff.email検索はC-03によりほぼ機能しないため、staff_rolesを
+      // uid（data.user.id）で引く形に統一する。
       const { data: staffRow } = await supabase
-        .from('staff')
+        .from('staff_roles')
         .select('dept_no')
-        .eq('email', data.user.email)
-        .limit(1)
+        .eq('id', data.user.id)
         .maybeSingle()
 
       // 申請データ取得

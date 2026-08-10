@@ -440,11 +440,12 @@ export default function PledgeApplyPage() {
     setReqSubmitting(true)
     setReqError('')
     try {
+      // B-09対応（2026-08-06）：staff.email検索はC-03によりほぼ機能しないため、staff_rolesを
+      // uid（user.id）で引く形に統一する。
       const { data: submitterStaffRow } = await supabase
-        .from('staff')
+        .from('staff_roles')
         .select('name, department_master(dept_name)')
-        .eq('email', user.email)
-        .limit(1)
+        .eq('id', user.id)
         .maybeSingle()
 
       const { error } = await supabase.from('requests').insert([{
@@ -628,11 +629,12 @@ export default function PledgeApplyPage() {
     setSubmitError('')
     setIsSubmitting(true)
     try {
+      // B-09対応（2026-08-06）：staff_rolesをuid（user.id）で引く形に統一（created_by_dept_no
+      // の保存に使われるため、以前はここが常にnullになり部門スコープが壊れていた）
       const { data: submitterStaffRow } = await supabase
-        .from('staff')
+        .from('staff_roles')
         .select('dept_no, name')
-        .eq('email', user.email)
-        .limit(1)
+        .eq('id', user.id)
         .maybeSingle()
 
       const scheduleRows = buildScheduleRows()

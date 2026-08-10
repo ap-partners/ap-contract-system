@@ -611,11 +611,13 @@ function ApplyPageInner() {
     if (!user) return
     const loadForEdit = async () => {
       // ログインユーザーの所属部門NOを取得（自部門以外の申請は編集不可）
+      // B-09対応（2026-08-06）：staff.emailはStaffExpress取込により全件ito@appart.co.jp
+      // 固定（C-03）のため、ログインユーザー自身のemailとの一致は伊藤さん以外では
+      // 事実上一致しない。氏名・部署の正であるstaff_rolesをuid（user.id）で引く形に統一する。
       const { data: staffRow } = await supabase
-        .from('staff')
+        .from('staff_roles')
         .select('dept_no')
-        .eq('email', user.email)
-        .limit(1)
+        .eq('id', user.id)
         .maybeSingle()
 
       const { data: row, error } = await supabase
@@ -1694,11 +1696,12 @@ function ApplyPageInner() {
     setReqError('')
     try {
       // 申請者（担当営業）自身の氏名・部門名を取得
+      // B-09対応（2026-08-06）：staff.email検索はC-03によりほぼ機能しないため、staff_rolesを
+      // uid（user.id）で引く形に統一する。
       const { data: submitterStaffRow } = await supabase
-        .from('staff')
+        .from('staff_roles')
         .select('name, department_master(dept_name)')
-        .eq('email', user.email)
-        .limit(1)
+        .eq('id', user.id)
         .maybeSingle()
 
       const { data: inserted, error } = await supabase.from('requests').insert([{
@@ -1760,11 +1763,11 @@ function ApplyPageInner() {
     setCsvRequestSubmitting(true)
     setCsvRequestError('')
     try {
+      // B-09対応（2026-08-06）：staff_rolesをuid（user.id）で引く形に統一
       const { data: submitterStaffRow } = await supabase
-        .from('staff')
+        .from('staff_roles')
         .select('name, department_master(dept_name)')
-        .eq('email', user.email)
-        .limit(1)
+        .eq('id', user.id)
         .maybeSingle()
 
       const { data: inserted, error } = await supabase.from('requests').insert([{

@@ -636,9 +636,11 @@ export default function AdminDashboard() {
   // ログイン中の管理部ユーザーの氏名をstaffテーブルから解決しておく。
   const [adminStaffName, setAdminStaffName] = useState<string | null>(null)
   useEffect(() => {
-    if (!user?.email) return
+    if (!user?.id) return
+    // B-09対応（2026-08-06）：staff.email検索はC-03によりほぼ機能しないため、staff_rolesを
+    // uid（user.id）で引く形に統一する。
     (async () => {
-      const { data } = await supabase.from('staff').select('name').eq('email', user.email).limit(1).maybeSingle()
+      const { data } = await supabase.from('staff_roles').select('name').eq('id', user.id).maybeSingle()
       setAdminStaffName(data?.name || null)
     })()
   }, [user])

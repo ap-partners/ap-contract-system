@@ -9,6 +9,14 @@ import { getRequiredServiceRoleKey } from './requiredEnv'
 
 const EXPIRY_MS = 30 * 60 * 1000 // 30分（プレビューを開いて確認する分には十分な長さ）
 
+// B-08対応（2026-08-06）：このトークンとlib/staffResetToken.tsのトークンが、同じ秘密鍵
+// （service roleキー）・同じペイロード形式（id.expiresAt.署名）を使い回しており、種別を
+// 区別する仕組みが無かった（監査指摘）。現状はcontracts.idとstaff.idが独立したランダム
+// UUIDのため直ちに悪用できるわけではないが、ペイロード先頭に種別タグを付けることで、
+// 万一verify関数の呼び出し側を取り違えた場合でも別種別のトークンとして確実に弾かれる
+// ようにする（トークン自体は30分の短命・都度発行のため後方互換は不要）。
+const TOKEN_KIND = 'pdf'
+
 function sign(payload: string): string {
   // 専用の環境変数を新設せず、サーバー側にしか存在しないservice roleキーを鍵として流用する
   // （Vercelへの環境変数追加という追加のデプロイ手順を増やさないための判断）。
@@ -18,7 +26,7 @@ function sign(payload: string): string {
 // 本人確認直後に発行する。契約IDと有効期限をpayloadに入れ、HMACで署名する。
 export function createPdfAccessToken(contractId: string): string {
   const expiresAt = Date.now() + EXPIRY_MS
-  const payload = `${contractId}.${expiresAt}`
+  const payload = `${TOKEN_KIND}.${contractId}.${expiresAt}`
   const sig = sign(payload)
   return Buffer.from(`${payload}.${sig}`).toString('base64url')
 }
@@ -28,12 +36,13 @@ export function verifyPdfAccessToken(token: string, contractId: string): boolean
   try {
     const decoded = Buffer.from(token, 'base64url').toString('utf8')
     const parts = decoded.split('.')
-    if (parts.length !== 3) return false
-    const [tokenContractId, expiresAtStr, sig] = parts
+    if (parts.length !== 4) return false
+    const [kind, tokenContractId, expiresAtStr, sig] = parts
+    if (kind !== TOKEN_KIND) return false
     if (tokenContractId !== contractId) return false
     const expiresAt = Number(expiresAtStr)
     if (!Number.isFinite(expiresAt) || expiresAt < Date.now()) return false
-    const expectedSig = sign(`${tokenContractId}.${expiresAtStr}`)
+    const expectedSig = sign(`${kind}.${tokenContractId}.${expiresAtStr}`)
     // タイミング攻撃対策：長さが違うとtimingSafeEqualが例外を投げるため先にlengthを揃えて比較
     const a = Buffer.from(sig)
     const b = Buffer.from(expectedSig)

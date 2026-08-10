@@ -87,6 +87,17 @@ export async function POST(
     return NextResponse.json({ error: '契約データが見つかりませんでした。' }, { status: 404 })
   }
 
+  // B-01対応（2026-08-06）：これまでログイン済み（どのロール・どの部門でも可）であれば
+  // 任意の契約IDに対してステータス遷移・メール送信を発火できてしまっていた。PDF取得API
+  // （app/api/contracts/[id]/pdf/route.ts）と同じ部門スコープ判定をここにも適用する。
+  const canOperate =
+    staffAuth.role === '管理部' ||
+    (staffAuth.role === 'SSC' && contract.work_place !== '社内') ||
+    (staffAuth.role === '担当営業' && contract.created_by_dept_no != null && contract.created_by_dept_no === staffAuth.deptNo)
+  if (!canOperate) {
+    return NextResponse.json({ error: 'この操作を行う権限がありません。' }, { status: 403 })
+  }
+
   if (trigger === 'resend' && contract.status === '署名待ち') {
     // 再送専用パス：ステータス遷移・sign_requested_atの更新は行わず、
     // 既に送信済みのメールと同じ内容を再送するだけ。

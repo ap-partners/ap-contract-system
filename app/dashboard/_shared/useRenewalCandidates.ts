@@ -674,11 +674,14 @@ export function useRenewalCandidates() {
     const successIds: string[] = []
     const failed: { employeeNumber: string; staffName: string | null; reason: string }[] = []
 
+    // B-09対応（2026-08-06）：staff.email検索はC-03によりほぼ機能しないため（実データの
+    // staff.emailは全件ito@appart.co.jp固定）、staff_rolesをuid（submitterUserId）で引く
+    // 形に統一する。これにより新規作成される契約のcreated_by_dept_noが常にnullになり
+    // 部門スコープが壊れていた不具合も解消する。
     const { data: submitterStaffRow } = await supabase
-      .from('staff')
+      .from('staff_roles')
       .select('dept_no, name')
-      .eq('email', submitterEmail)
-      .limit(1)
+      .eq('id', submitterUserId)
       .maybeSingle()
 
     const { data: minimumWageRows } = await supabase

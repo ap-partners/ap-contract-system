@@ -7,13 +7,17 @@ import { getRequiredServiceRoleKey } from './requiredEnv'
 
 const EXPIRY_MS = 15 * 60 * 1000 // 15分（コード確認からパスワード設定までの猶予として十分）
 
+// B-08対応（2026-08-06）：lib/pdfAccessToken.tsと同じ秘密鍵・同じペイロード形式を使い回して
+// いたため、種別タグを付けて区別する（詳細はpdfAccessToken.tsのコメント参照）。
+const TOKEN_KIND = 'staffreset'
+
 function sign(payload: string): string {
   return crypto.createHmac('sha256', getRequiredServiceRoleKey()).update(payload).digest('hex')
 }
 
 export function createStaffResetToken(staffId: string): string {
   const expiresAt = Date.now() + EXPIRY_MS
-  const payload = `${staffId}.${expiresAt}`
+  const payload = `${TOKEN_KIND}.${staffId}.${expiresAt}`
   const sig = sign(payload)
   return Buffer.from(`${payload}.${sig}`).toString('base64url')
 }
@@ -22,12 +26,13 @@ export function verifyStaffResetToken(token: string, staffId: string): boolean {
   try {
     const decoded = Buffer.from(token, 'base64url').toString('utf8')
     const parts = decoded.split('.')
-    if (parts.length !== 3) return false
-    const [tokenStaffId, expiresAtStr, sig] = parts
+    if (parts.length !== 4) return false
+    const [kind, tokenStaffId, expiresAtStr, sig] = parts
+    if (kind !== TOKEN_KIND) return false
     if (tokenStaffId !== staffId) return false
     const expiresAt = Number(expiresAtStr)
     if (!Number.isFinite(expiresAt) || expiresAt < Date.now()) return false
-    const expectedSig = sign(`${tokenStaffId}.${expiresAtStr}`)
+    const expectedSig = sign(`${kind}.${tokenStaffId}.${expiresAtStr}`)
     const a = Buffer.from(sig)
     const b = Buffer.from(expectedSig)
     if (a.length !== b.length) return false

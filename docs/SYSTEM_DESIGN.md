@@ -3143,3 +3143,11 @@ UI側：SSC/管理部の契約・誓約書詳細画面それぞれに「📩署�
 構文チェック（`ts.transpileModule`）は変更した全4ファイル（`useLoggedInUser.ts`・`admin/page.tsx`・`contracts/[id]/pdf/route.ts`・`ssc/contracts/[id]/page.tsx`）で診断0件を確認済み。DB側の変更は無し（RLS・DB関数とも既存のままで正しく機能していたことを確認済みのため）。
 
 **次回セッションでの実機確認予定**：①社内案件のPDFを、`is_internal_approver`を持たない管理部アカウントで直接APIを叩いて403になること（B-10の核心）、②同じ組み合わせで契約詳細画面が「見つかりません」になること、③`is_internal_approver`を持つ管理部アカウントでは従来通り閲覧・PDF取得・承認ができること（回帰確認）、④Supabase MCPで`staff_roles.is_internal_approver`を一時的に付与→対象アカウントでページを再読み込みしただけで（再ログインなしで）社内承認タブが表示されるようになること（B-11の効果確認）、を行う。
+
+### 2026-08-12：B-10・B-11の実機確認（デプロイ後・完了）
+
+伊藤さんの「デプロイ完了」報告を受け、Claude in Chrome＋Supabase MCPで実機確認を実施。管理部テストアカウント（admin-test）と実在の社内案件契約（id: 73c51a45-6eea-4971-9e7c-d6fab50408d8）を使用。
+
+**手順・結果**：①`is_internal_approver=true`（既存の状態）のまま、PDF取得APIが200、`/dashboard/admin`のサマリーに「社内承認待ち」カードが表示されることを確認（正常系のベースライン）。②Supabase MCPで`staff_roles.is_internal_approver`を`false`へ一時変更（**ログアウトはせず、同じアクセストークンのまま**）。③その状態で同じアクセストークンを使いPDF取得APIを直接叩くと403「この書類を閲覧する権限がありません。」が返ることを確認（B-10の核心：service role接続のAPIがJWTの新旧に関わらずstaff_rolesの最新値で判定していることの証明）。④契約詳細画面（`/dashboard/ssc/contracts/73c51a45-...`）へページ遷移すると「申請が見つかりませんでした」に変わること、⑤`/dashboard/admin`へ遷移すると「社内承認待ち」カード自体が消えること、をそれぞれ**再ログインなしで（ページ遷移・再読み込みのみで）**確認（B-11の核心：以前はJWTの再発行＝再ログインまで画面表示が古いままだった問題が解消されたことの証明）。⑥Supabase MCPで`is_internal_approver`を`true`へ戻し、再度`/dashboard/admin`へ遷移すると「社内承認待ち」カードが復活し、PDF取得APIも200に戻ることを確認（同じくログアウトなしで復旧）。⑦社内以外の契約（id: f5f9583d-d0bf-4006-aad4-043868ff0981）のPDF取得が引き続き200であることを確認し、通常契約への回帰がないことも確認済み。コンソールエラーは無し。テストで変更した`staff_roles.is_internal_approver`は最終的に元の値（true）に復元済み（`is_account_admin`は変更していない）。
+
+これでB-10・B-11は完了。

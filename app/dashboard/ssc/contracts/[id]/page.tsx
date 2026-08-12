@@ -392,9 +392,21 @@ export default function SSCContractDetail() {
       if (error || !row) { setNotFound(true); setLoading(false); return }
       // 社内案件は原則SSC・管理部の閲覧対象外（一覧画面と同じ制限。URL直打ちでの閲覧を防ぐ）。
       // 存在しない申請と同じ表示にすることで、社内案件が存在すること自体も分からないようにする。
-      // 例外（2026-07-13追加・フェーズ3）：管理部の中でも「社内承認者」フラグ
-      // （user_metadata.is_internal_approver === true）を持つ人だけは、社内案件も閲覧・承認できる。
-      const isInternalApprover = role === '管理部' && data.user.user_metadata?.is_internal_approver === true
+      // 例外（2026-07-13追加・フェーズ3）：管理部の中でも「社内承認者」フラグを持つ人だけは、
+      // 社内案件も閲覧・承認できる。
+      // B-11対応（2026-08-12）：以前はuser_metadata（ログイン時点のJWTスナップショット）を
+      // 見ていたため、権限を後から付与・剥奪しても再ログインするまで画面判定がズレたままに
+      // なっていた。既にこの画面のデータ取得と同じタイミングでstaff_rolesを直接参照する形に
+      // 変更（PDF取得API等のRLSは元々staff_rolesを直接見ており、常に正しい状態だった）。
+      let isInternalApprover = false
+      if (role === '管理部') {
+        const { data: roleRow } = await supabase
+          .from('staff_roles')
+          .select('is_internal_approver')
+          .eq('id', data.user.id)
+          .maybeSingle()
+        isInternalApprover = roleRow?.is_internal_approver === true
+      }
       if ((row as any).work_place === '社内' && !isInternalApprover) { setNotFound(true); setLoading(false); return }
       setContract(row as ContractDetail)
       setLoading(false)

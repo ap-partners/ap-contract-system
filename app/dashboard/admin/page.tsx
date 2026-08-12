@@ -40,6 +40,7 @@ import { STAFF_EXPRESS_COLUMNS } from '@/lib/staffExpressColumns'
 import { CSV_SAMPLE_FILES, CSV_REQUIRED_COLUMNS_LABEL } from '@/lib/csvSystemColumns'
 import { clampDateYear } from '@/app/apply/_lib/helpers'
 import LoggedInUserChip from '../_shared/LoggedInUserChip'
+import { useLoggedInUser } from '../_shared/useLoggedInUser'
 import NewDocumentMenu from '../_shared/NewDocumentMenu'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
@@ -419,6 +420,13 @@ export default function AdminDashboard() {
   const { showError, showSuccess } = useToast()
   const confirmDialog = useConfirm()
   const [user, setUser] = useState<any>(null)
+  // B-11対応（2026-08-12）：is_internal_approver・is_account_adminは、以前はSupabase Authの
+  // user_metadata（ログイン時点のJWTのスナップショット）から読んでいたため、アカウント管理で
+  // 権限を後から付与・剥奪しても対象者が再ログインするまで画面表示が実際の権限とズレたままに
+  // なっていた。staff_rolesを毎回サーバーへ問い合わせるuseLoggedInUserに統一する
+  // （RLS側は元々staff_rolesを直接見ており常に正しかったため、データが見えてしまう・
+  // 書き換えられてしまうという意味での欠陥ではなく、UI表示精度の是正）。
+  const loggedInUser = useLoggedInUser(user?.id)
   // 総合レビュー（QA監査2026-07-22）指摘C1対応：別タブで別アカウントにログインされ
   // 認証情報が裏で切り替わったことを検知したら、安全のため強制ログアウトする
   useSessionCollisionGuard(user?.id)
@@ -758,7 +766,10 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (!user) return
-    if (user.user_metadata?.is_internal_approver !== true) { setInternalContractsLoading(false); return }
+    // B-11対応：loggedInUserがstaff_rolesの取得中はまだ権限が確定していないため、
+    // 確定するまで待つ（安全側＝取得できるまでは「無い」ものとして扱い、確定後に表示する）。
+    if (loggedInUser.loading) return
+    if (!loggedInUser.isInternalApprover) { setInternalContractsLoading(false); return }
     const loadInternalContracts = async () => {
       setInternalContractsLoading(true)
       setInternalContractsError('')
@@ -775,7 +786,7 @@ export default function AdminDashboard() {
     }
     loadInternalContracts()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user])
+  }, [user, loggedInUser.loading, loggedInUser.isInternalApprover])
 
   const toggleSelectInternal = (id: string) => {
     setInternalSelectedIds(prev => {
@@ -1112,8 +1123,10 @@ export default function AdminDashboard() {
     </div>
   )
 
-  const isInternalApprover = user.user_metadata?.is_internal_approver === true
-  const isAccountAdmin = user.user_metadata?.is_account_admin === true
+  // B-11対応（2026-08-12）：user_metadata（ログイン時点のJWTスナップショット）ではなく、
+  // 上部のuseLoggedInUserが毎回staff_rolesから取り直す値を使う（loading中は安全側でfalse扱い）。
+  const isInternalApprover = !loggedInUser.loading && loggedInUser.isInternalApprover
+  const isAccountAdmin = !loggedInUser.loading && loggedInUser.isAccountAdmin
 
   // 2026-07-29：タブ横長化対策として「承認業務／データ登録／運用管理」の3グループ＋独立の
   // 「サマリー」の計4グループへ再編（伊藤さんと合意した案A）。各グループの中身は従来のタブをそのまま

@@ -47,10 +47,16 @@ export async function GET(
 
   if (!hasValidToken) {
     const staffAuth = await getAuthenticatedStaff(req)
+    // B-10対応（2026-08-12）：契約詳細画面（app/dashboard/ssc/contracts/[id]/page.tsx）は
+    // 社内案件（work_place==='社内'）を「is_internal_approverを持つ管理部のみ」に絞り込んで
+    // いるが、このPDF取得APIはservice role（RLSを経由しない全権限）でDBへアクセスするため、
+    // role==='管理部'というだけでは画面側の制限をすり抜けて社内社員の給与等が記載された
+    // PDFを取得できてしまっていた。詳細画面・notify-sign-request（B-01）・
+    // force-logout-staff（B-07）と同じ判定に統一する。
     const allowed =
       !!staffAuth &&
       (
-        staffAuth.role === '管理部' ||
+        (staffAuth.role === '管理部' && (contract.work_place !== '社内' || staffAuth.isInternalApprover)) ||
         (staffAuth.role === 'SSC' && contract.work_place !== '社内') ||
         (staffAuth.role === '担当営業' && contract.created_by_dept_no != null && contract.created_by_dept_no === staffAuth.deptNo)
       )

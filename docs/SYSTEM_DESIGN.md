@@ -3126,3 +3126,20 @@ UI側：SSC/管理部の契約・誓約書詳細画面それぞれに「📩署�
 **B-07（セッション失効・強制ログアウトボタン）**：105026でパスワード設定→ログインしセッションCookieを確立（`session_token_version`は2）。別タブで管理部アカウント（admin-test）にログインし、当該スタッフの契約詳細画面（`/dashboard/ssc/contracts/955f8001-...`）で実際に「🔒 ログイン状態を強制的に解除する」ボタンをクリック（確認ダイアログ→実行）し、DBの`session_token_version`が3→4（1回目はAPI直接呼び出しでのテストで2→3、2回目が実際の画面操作で3→4）に更新されることを確認。105026側のタブで直後に`/api/staff/me`を呼ぶと401「ログインが必要です。」が返り、①旧セッションが即座に無効化されること、②`/staff/mypage`へ直接アクセスした場合もmiddleware自体はDB照会をしないため一旦ページの「殻」は表示されるが、`/api/staff/me`の401を受けてフロント側が正しく`/staff/login`へ自動遷移すること、を確認。その後105026で同じパスワードにより再ログインすると正常に成功し（新しい`session_token_version`を使った新しいセッションが発行される）、通常ログインへの回帰がないことも確認済み。ボタン操作時のブラウザコンソールにアプリ起因のエラーは無し。
 
 これでB-05・B-06・B-07は実装・デプロイ・実機確認まで完了。
+
+### 2026-08-12：B-10・B-11の実装（コード修正完了・要デプロイ＋実機確認）
+
+外部総合品質監査レポートの★4残り10件のうち、優先度②「権限チェック漏れ（B-10・B-11）」に着手。実コード・実DB（RLSポリシー・DB関数定義）を調査したうえで、業務改善責任者／PdM／UI-UXデザイナー目線で方針を提示し、伊藤さんのOKを得てから実装（ルール16準拠）。
+
+**調査で判明した重要な事実**：B-11について、本番DBの`contracts`テーブルのRLSポリシー（SELECT・UPDATE）を`pg_policies`で直接確認したところ、`current_is_internal_approver()`（`staff_roles`をauth.uid()で毎回サーバー側から直接参照するSECURITY DEFINER関数。JWTのuser_metadataは一切見ない）により、社内案件（`work_place='社内'`）は既に正しく制限されていた。つまりB-11は「データが実際に見えてしまう・書き換えられてしまう」というB-01やC-01と同種の欠陥ではなく、社内承認タブ・ボタンの表示/非表示を判定するUI側3箇所＋発見・追加した4箇所目（下記）が、ログイン時点のJWTのスナップショット（`user.user_metadata`）を見ているため、権限を後から付与・剥奪しても対象者が再ログインするまで画面表示が実際の権限とズレたままになる、というUI表示精度の問題と判明。この事実を伊藤さんに正直に共有した上で、修正の実施についてOKを得た。
+
+**B-10（PDF APIの社内案件開放）**：`app/api/contracts/[id]/pdf/route.ts`の社内ログイン済みユーザー向け認可判定（48〜60行目）に、管理部の場合は`contract.work_place !== '社内' || staffAuth.isInternalApprover`という条件を追加。このAPIはservice role（RLSを経由しない全権限接続）でDBへアクセスするため、画面側の制限をこのAPI自身が独立して再現する必要があった（notify-sign-request・force-logout-staffと同じ設計）。
+
+**B-11（社内承認の権限判定をuser_metadataからstaff_rolesへ）**：報告書が指摘した`app/dashboard/admin/page.tsx`の2箇所（社内案件データ取得のガード・タブ表示判定）に加え、調査で同一パターンの4箇所目（`app/dashboard/ssc/contracts/[id]/page.tsx`397行目。社内案件の契約詳細画面自体を表示するかどうかの判定で、実質的に最も影響が大きい箇所）を発見し、あわせて対応。
+- `app/dashboard/_shared/useLoggedInUser.ts`（氏名・部門名をstaff_rolesから取得する既存の共通フック）を拡張し、`is_internal_approver`・`is_account_admin`も返すようにした（`LoggedInUserChip`等の既存呼び出し元は返り値が増えるだけで非破壊）。
+- `app/dashboard/admin/page.tsx`：`useLoggedInUser(user?.id)`を呼び出し、社内案件データ取得のuseEffect・`isInternalApprover`/`isAccountAdmin`の2つの定数をこの値に差し替え。取得中（`loading`）は権限なし扱い（安全側）にし、確定してから表示する設計（UI/UXレビューで合意：数百ミリ秒のちらつきより「一瞬でも過剰に見える状態」を避けることを優先）。あわせて`is_account_admin`（アカウント管理タブの表示判定）もB-11と全く同じ理由・パターンで劣化していたため、伊藤さんへの提案時点で自主的にスコープへ含めて対応。
+- `app/dashboard/ssc/contracts/[id]/page.tsx`：既存の`init()`（契約データ取得と同じ非同期処理内）で、社内案件かどうかを判定する直前に`staff_rolesからis_internal_approverを取得するSELECTを追加。この画面は元々ローディング完了までコンテンツを出さない設計のため、admin/page.tsxのような「一瞬ちらつく」懸念は発生しない。
+
+構文チェック（`ts.transpileModule`）は変更した全4ファイル（`useLoggedInUser.ts`・`admin/page.tsx`・`contracts/[id]/pdf/route.ts`・`ssc/contracts/[id]/page.tsx`）で診断0件を確認済み。DB側の変更は無し（RLS・DB関数とも既存のままで正しく機能していたことを確認済みのため）。
+
+**次回セッションでの実機確認予定**：①社内案件のPDFを、`is_internal_approver`を持たない管理部アカウントで直接APIを叩いて403になること（B-10の核心）、②同じ組み合わせで契約詳細画面が「見つかりません」になること、③`is_internal_approver`を持つ管理部アカウントでは従来通り閲覧・PDF取得・承認ができること（回帰確認）、④Supabase MCPで`staff_roles.is_internal_approver`を一時的に付与→対象アカウントでページを再読み込みしただけで（再ログインなしで）社内承認タブが表示されるようになること（B-11の効果確認）、を行う。

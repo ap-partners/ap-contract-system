@@ -96,11 +96,7 @@ function AnswerForm({ inquiry, onDone }: { inquiry: FaqInquiry; onDone: () => vo
       const res = await fetch('/api/faq/notify-answer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader },
-        body: JSON.stringify({
-          toEmail: inquiry.submitted_by_email,
-          questionText: title.trim() || inquiry.question_text,
-          answerText: answer.trim(),
-        }),
+        body: JSON.stringify({ inquiryId: inquiry.id }),
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {

@@ -33,6 +33,22 @@ function formatJaDate(dateStr: string | null): string {
   return formatDateJp(dateStr, '（未入力）')
 }
 
+// 2026-08-12追加（B-03対応）：HTML版メール本文に埋め込む値を無害化する共通ヘルパー。
+// 外部監査の指摘により、氏名・部署名・就業先名（CSV/Excel取込由来）・FAQ質問文/回答文・
+// 依頼理由等の自由記述が、HTMLタグを含む文字列のまま埋め込まれてもそのまま実リンク・
+// 装飾として描画されてしまう（自社ドメイン=agency@appart.co.jpを踏み台にしたフィッシング
+// リスク）ことが判明した。個々の値のリスクの高低を都度判断せず、HTML本文に埋め込む変数は
+// 原則すべてこの関数を通す方針とする（判断基準を単純にし、将来の実装ミスを防ぐため）。
+// プレーンテキスト版（text）にはHTMLタグの概念が無いため対象外。
+function escapeHtml(value: string | number | null | undefined): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 // 2026-07-31追加：依頼（スタッフマスタ登録・CSVインポート）メール3種
 // （新規依頼・完了・取消）で共通して使う項目一式。伊藤さんの指摘（項目の網羅・
 // 申請者の所属部署名/氏名を全メール必須化）を受け、フォームの入力項目と1対1で
@@ -117,7 +133,7 @@ export async function sendSignRequestMail(
   // 一斉送信メールに見えてしまいフィッシングと誤解されるリスクを下げ、開封率・信頼感を
   // 優先する（誤送信時の情報漏洩リスクは、氏名以外に既に会社名・書類種別・認証コードが
   // 含まれているため、氏名を加える増分は小さいと判断）。
-  const greetingHtml = staffName ? `<tr><td style="padding:32px 32px 0 32px;font-family:sans-serif;font-size:14px;color:#1A2340;font-weight:bold;">${staffName}　様</td></tr>` : ''
+  const greetingHtml = staffName ? `<tr><td style="padding:32px 32px 0 32px;font-family:sans-serif;font-size:14px;color:#1A2340;font-weight:bold;">${escapeHtml(staffName)}　様</td></tr>` : ''
   // document_type には改行込みの「雇用契約書 兼\n就業条件明示書」（パターンC）が
   // 入ることがあるため、メール表示用に改行をスペースへ変換する。
   const docTypeLabel = (documentType || '').replace(/\n/g, ' ').trim()
@@ -163,7 +179,7 @@ export async function sendSignRequestMail(
       <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;">
         書類の${actionLabel}をお願いいたします。
       </td></tr>
-      ${docTypeLabel ? `<tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#5A6A8A;">対象書類：${docTypeLabel}</td></tr>` : ''}
+      ${docTypeLabel ? `<tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#5A6A8A;">対象書類：${escapeHtml(docTypeLabel)}</td></tr>` : ''}
       <tr><td align="center" style="padding:24px 32px 28px 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0">
           <tr><td align="center" bgcolor="#1B3A8C" style="border-radius:6px;">
@@ -231,7 +247,7 @@ export async function sendStaffLoginCodeMail(
   // 再発行クールダウン（3分）に引っかかって詰まっていた問題への対応。認証コード自体は別途必須
   // なため、社員番号だけがURLに含まれてもログインは完了しない。
   const url = `${APP_URL}/staff/login?emp=${encodeURIComponent(employeeNumber)}`
-  const greetingHtml = staffName ? `<tr><td style="padding:32px 32px 0 32px;font-family:sans-serif;font-size:14px;color:#1A2340;font-weight:bold;">${staffName}　様</td></tr>` : ''
+  const greetingHtml = staffName ? `<tr><td style="padding:32px 32px 0 32px;font-family:sans-serif;font-size:14px;color:#1A2340;font-weight:bold;">${escapeHtml(staffName)}　様</td></tr>` : ''
 
   const subject = purpose === 'initial'
     ? '【APパートナーズ】マイページのご利用開始について'
@@ -239,6 +255,10 @@ export async function sendStaffLoginCodeMail(
 
   const introLine = purpose === 'initial'
     ? (pendingDocumentLabel ? `確認・署名が必要な書類（${pendingDocumentLabel}）が届いています。マイページからご確認ください。` : '確認・署名が必要な書類が届いています。マイページからご確認ください。')
+    : 'パスワード再設定のお手続きです。'
+  // B-03対応：pendingDocumentLabelはHTML本文にも埋め込むため、html版だけエスケープ済みの別文言を用意する
+  const introLineHtml = purpose === 'initial'
+    ? (pendingDocumentLabel ? `確認・署名が必要な書類（${escapeHtml(pendingDocumentLabel)}）が届いています。マイページからご確認ください。` : '確認・署名が必要な書類が届いています。マイページからご確認ください。')
     : 'パスワード再設定のお手続きです。'
 
   const text = [
@@ -272,7 +292,7 @@ export async function sendStaffLoginCodeMail(
         お疲れ様です。<br>APパートナーズ 契約書管理システムです。
       </td></tr>
       <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
-        ${introLine}
+        ${introLineHtml}
       </td></tr>
       <tr><td align="center" style="padding:24px 32px 20px 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0">
@@ -284,7 +304,7 @@ export async function sendStaffLoginCodeMail(
         </table>
       </td></tr>
       <tr><td style="padding:0 32px 20px 32px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.7;">
-        社員番号「${employeeNumber}」と、下記の認証コードを入力してください。
+        社員番号「${escapeHtml(employeeNumber)}」と、下記の認証コードを入力してください。
       </td></tr>
       <tr><td align="center" style="padding:0 32px 0 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
@@ -326,7 +346,7 @@ export async function sendAccountSetupMail(
   purpose: 'initial' | 'reset'
 ): Promise<void> {
   const url = `${APP_URL}/account-setup?email=${encodeURIComponent(toEmail)}`
-  const greetingHtml = name ? `<tr><td style="padding:32px 32px 0 32px;font-family:sans-serif;font-size:14px;color:#1A2340;font-weight:bold;">${name}　様</td></tr>` : ''
+  const greetingHtml = name ? `<tr><td style="padding:32px 32px 0 32px;font-family:sans-serif;font-size:14px;color:#1A2340;font-weight:bold;">${escapeHtml(name)}　様</td></tr>` : ''
 
   const subject = purpose === 'initial'
     ? '【APパートナーズ】契約書管理システムのアカウントが発行されました'
@@ -334,6 +354,10 @@ export async function sendAccountSetupMail(
 
   const introLine = purpose === 'initial'
     ? `契約書管理システムのアカウント（${role}）が発行されました。下記の手順でパスワードを設定してください。`
+    : 'パスワード再設定のお手続きです。'
+  // B-03対応：roleはHTML本文にも埋め込むため、html版だけエスケープ済みの別文言を用意する
+  const introLineHtml = purpose === 'initial'
+    ? `契約書管理システムのアカウント（${escapeHtml(role)}）が発行されました。下記の手順でパスワードを設定してください。`
     : 'パスワード再設定のお手続きです。'
 
   const text = [
@@ -366,7 +390,7 @@ export async function sendAccountSetupMail(
         お疲れ様です。<br>APパートナーズ 契約書管理システムです。
       </td></tr>
       <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
-        ${introLine}
+        ${introLineHtml}
       </td></tr>
       <tr><td align="center" style="padding:24px 32px 20px 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0">
@@ -415,7 +439,7 @@ export async function sendStaffDocumentReadyMail(
   documentLabel: string
 ): Promise<void> {
   const url = `${APP_URL}/staff/login`
-  const greetingHtml = staffName ? `<tr><td style="padding:32px 32px 0 32px;font-family:sans-serif;font-size:14px;color:#1A2340;font-weight:bold;">${staffName}　様</td></tr>` : ''
+  const greetingHtml = staffName ? `<tr><td style="padding:32px 32px 0 32px;font-family:sans-serif;font-size:14px;color:#1A2340;font-weight:bold;">${escapeHtml(staffName)}　様</td></tr>` : ''
   const subject = `【APパートナーズ】確認・署名が必要な書類があります（${documentLabel}）`
 
   const text = [
@@ -440,7 +464,7 @@ export async function sendStaffDocumentReadyMail(
         お疲れ様です。<br>APパートナーズ 契約書管理システムです。
       </td></tr>
       <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#1A2340;font-weight:bold;line-height:1.6;">
-        確認・署名が必要な書類（${documentLabel}）が届いています。<br>マイページにログインしてご確認ください。
+        確認・署名が必要な書類（${escapeHtml(documentLabel)}）が届いています。<br>マイページにログインしてご確認ください。
       </td></tr>
       <tr><td align="center" style="padding:24px 32px 28px 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0">
@@ -487,7 +511,7 @@ export async function sendExplainNeededMail(
   contractId: string
 ): Promise<void> {
   const url = `${APP_URL}/dashboard/sales/contracts/${contractId}`
-  const greetingHtml = submitterName ? `<tr><td style="padding:32px 32px 0 32px;font-family:sans-serif;font-size:14px;color:#1A2340;font-weight:bold;">${submitterName}　様</td></tr>` : ''
+  const greetingHtml = submitterName ? `<tr><td style="padding:32px 32px 0 32px;font-family:sans-serif;font-size:14px;color:#1A2340;font-weight:bold;">${escapeHtml(submitterName)}　様</td></tr>` : ''
   const subject = '【APパートナーズ】承認された契約書の説明対応をお願いします'
 
   const text = [
@@ -674,7 +698,7 @@ export async function sendRenewalDigestMail(
     const endDateLabel = formatEndDateLabel(item.employEndDate, item.dispatchEndDate)
     const borderStyle = idx === sorted.length - 1 ? '' : 'border-bottom:1px solid #F0F2F7;'
     return `<tr><td style="padding:14px 32px;${borderStyle}">
-        <p style="margin:0 0 4px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#1B3A8C;">${item.staffName || '(氏名未登録)'}（${item.workLocationName || '就業先不明'}）</p>
+        <p style="margin:0 0 4px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#1B3A8C;">${escapeHtml(item.staffName || '(氏名未登録)')}（${escapeHtml(item.workLocationName || '就業先不明')}）</p>
         <p style="margin:0;font-family:sans-serif;font-size:13px;"><span style="color:${daysColor};font-weight:bold;">${daysLabel}</span><span style="color:#8A94AA;"> ／ ${endDateLabel}</span></p>
       </td></tr>`
   }).join('')
@@ -694,7 +718,7 @@ export async function sendRenewalDigestMail(
         お疲れ様です。<br>APパートナーズ 契約書管理システムです。
       </td></tr>
       <tr><td style="padding:20px 32px 4px 32px;font-family:sans-serif;font-size:14px;font-weight:bold;color:#1A2340;">
-        ${deptName}で、更新期限管理の確認・対応が必要な契約が${items.length}件あります。
+        ${escapeHtml(deptName)}で、更新期限管理の確認・対応が必要な契約が${items.length}件あります。
       </td></tr>
       <tr><td style="padding:0 32px 20px 32px;font-family:sans-serif;font-size:13px;color:#5A6A8A;">
         （${todayLabel}時点／期限超過${overdueCount}件・期限内${upcomingCount}件）
@@ -802,21 +826,21 @@ export async function sendCsvImportMatchedMail(
         <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#F5F7FC;border-radius:6px;">
           <tr><td style="padding:14px 16px 4px 16px;font-family:sans-serif;font-size:12px;color:#5A6A8A;font-weight:bold;">対象スタッフ</td></tr>
           <tr><td style="padding:0 16px 12px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.8;">
-            社員番号：${staffCode || '（未入力）'}<br>
-            スタッフ氏名：${staffName || '（未入力）'}<br>
-            所属部門：${staffDept || '（未入力）'}
+            社員番号：${escapeHtml(staffCode || '（未入力）')}<br>
+            スタッフ氏名：${escapeHtml(staffName || '（未入力）')}<br>
+            所属部門：${escapeHtml(staffDept || '（未入力）')}
           </td></tr>
           <tr><td style="padding:0 16px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
           <tr><td style="padding:12px 16px 4px 16px;font-family:sans-serif;font-size:12px;color:#5A6A8A;font-weight:bold;">依頼内容</td></tr>
           <tr><td style="padding:0 16px 12px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.8;">
-            使用システム：${systemType || '（未入力）'}<br>
+            使用システム：${escapeHtml(systemType || '（未入力）')}<br>
             派遣開始日：${formatJaDate(dispatchStartDate)}<br>
-            就業場所名：${workLocationName || '（未入力）'}
+            就業場所名：${escapeHtml(workLocationName || '（未入力）')}
           </td></tr>
           <tr><td style="padding:0 16px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
           <tr><td style="padding:12px 16px 4px 16px;font-family:sans-serif;font-size:12px;color:#5A6A8A;font-weight:bold;">申請者</td></tr>
           <tr><td style="padding:0 16px 14px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;">
-            ${requestedByDept || '（部門不明）'}　${requestedByName || '（氏名不明）'}
+            ${escapeHtml(requestedByDept || '（部門不明）')}　${escapeHtml(requestedByName || '（氏名不明）')}
           </td></tr>
         </table>
       </td></tr>
@@ -892,10 +916,10 @@ export async function sendFaqAnswerMail(
       <tr><td style="padding:16px 32px 0 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#F5F7FC;border-radius:6px;">
           <tr><td style="padding:14px 16px 4px 16px;font-family:sans-serif;font-size:12px;color:#5A6A8A;font-weight:bold;">ご質問</td></tr>
-          <tr><td style="padding:0 16px 12px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;white-space:pre-line;">${questionText}</td></tr>
+          <tr><td style="padding:0 16px 12px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;white-space:pre-line;">${escapeHtml(questionText)}</td></tr>
           <tr><td style="padding:0 16px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
           <tr><td style="padding:12px 16px 4px 16px;font-family:sans-serif;font-size:12px;color:#5A6A8A;font-weight:bold;">回答</td></tr>
-          <tr><td style="padding:0 16px 14px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;white-space:pre-line;line-height:1.7;">${answerText}</td></tr>
+          <tr><td style="padding:0 16px 14px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;white-space:pre-line;line-height:1.7;">${escapeHtml(answerText)}</td></tr>
         </table>
       </td></tr>
       <tr><td style="padding:16px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
@@ -975,15 +999,15 @@ export async function sendStaffRegisterMatchedMail(
         <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#F5F7FC;border-radius:6px;">
           <tr><td style="padding:14px 16px 4px 16px;font-family:sans-serif;font-size:12px;color:#5A6A8A;font-weight:bold;">対象スタッフ</td></tr>
           <tr><td style="padding:0 16px 12px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.8;">
-            社員番号：${staffCode || '（未入力）'}<br>
-            スタッフ氏名：${staffName || '（未入力）'}<br>
-            部門名：${staffDept || '（未入力）'}<br>
+            社員番号：${escapeHtml(staffCode || '（未入力）')}<br>
+            スタッフ氏名：${escapeHtml(staffName || '（未入力）')}<br>
+            部門名：${escapeHtml(staffDept || '（未入力）')}<br>
             入社日：${formatJaDate(staffHireDate)}
           </td></tr>
           <tr><td style="padding:0 16px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
           <tr><td style="padding:12px 16px 4px 16px;font-family:sans-serif;font-size:12px;color:#5A6A8A;font-weight:bold;">申請者</td></tr>
           <tr><td style="padding:0 16px 14px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;">
-            ${requestedByDept || '（部門不明）'}　${requestedByName || '（氏名不明）'}
+            ${escapeHtml(requestedByDept || '（部門不明）')}　${escapeHtml(requestedByName || '（氏名不明）')}
           </td></tr>
         </table>
       </td></tr>
@@ -1077,7 +1101,7 @@ export async function sendContractMonitoringFollowupMail(
   }
 
   const issuesHtml = issues.map(issue =>
-    `<tr><td style="padding:6px 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">・${issue.detail}</td></tr>`
+    `<tr><td style="padding:6px 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">・${escapeHtml(issue.detail)}</td></tr>`
   ).join('')
 
   const fallbackNoticeHtml = isUnassignedFallback
@@ -1099,7 +1123,7 @@ export async function sendContractMonitoringFollowupMail(
       </td></tr>
       <tr><td style="padding:0 32px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
       <tr><td style="padding:16px 32px 4px 32px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#1B3A8C;">
-        ${staffName || '(氏名不明)'}（社員番号 ${employeeNumber}／${deptName}）
+        ${escapeHtml(staffName || '(氏名不明)')}（社員番号 ${escapeHtml(employeeNumber)}／${escapeHtml(deptName)}）
       </td></tr>
       ${issuesHtml}
       <tr><td style="padding:16px 32px 0 32px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0 0 16px;"></td></tr>
@@ -1108,7 +1132,7 @@ export async function sendContractMonitoringFollowupMail(
       </td></tr>
       <tr><td style="padding:0 32px 4px 32px;"><a href="${APP_URL}/dashboard/sales" style="display:inline-block;background:#1B3A8C;color:#fff;text-decoration:none;font-family:sans-serif;font-size:13px;font-weight:bold;padding:10px 20px;border-radius:6px;">担当営業ダッシュボードを開く</a></td></tr>
       <tr><td style="padding:20px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
-        ${requestedByName ? `依頼者：管理部 ${requestedByName}` : '依頼者：管理部'}
+        ${requestedByName ? `依頼者：管理部 ${escapeHtml(requestedByName)}` : '依頼者：管理部'}
       </td></tr>
       <tr><td style="padding:12px 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
         ※本メールは自動送信です。このアドレスへの返信には対応しておりません。ご不明点は管理部までご連絡ください。
@@ -1207,9 +1231,9 @@ export async function sendCsvModifiedNotifyMail(
   )
 
   const itemsHtml = modifiedFields.map(f => `
-    <tr><td style="padding:10px 32px 0 32px;font-family:sans-serif;font-size:13px;font-weight:bold;color:#1A2340;">・${f.label}</td></tr>
-    <tr><td style="padding:2px 32px 0 44px;font-family:sans-serif;font-size:12px;color:#D97706;">CSVの情報：${f.csvValue}</td></tr>
-    <tr><td style="padding:2px 32px 0 44px;font-family:sans-serif;font-size:12px;color:#1B3A8C;">変更後の情報：${f.newValue}</td></tr>
+    <tr><td style="padding:10px 32px 0 32px;font-family:sans-serif;font-size:13px;font-weight:bold;color:#1A2340;">・${escapeHtml(f.label)}</td></tr>
+    <tr><td style="padding:2px 32px 0 44px;font-family:sans-serif;font-size:12px;color:#D97706;">CSVの情報：${escapeHtml(f.csvValue)}</td></tr>
+    <tr><td style="padding:2px 32px 0 44px;font-family:sans-serif;font-size:12px;color:#1B3A8C;">変更後の情報：${escapeHtml(f.newValue)}</td></tr>
   `).join('')
 
   const html = `
@@ -1220,16 +1244,16 @@ export async function sendCsvModifiedNotifyMail(
         お疲れ様です。<br>APパートナーズ 契約書管理システムです。
       </td></tr>
       <tr><td style="padding:16px 32px 8px 32px;font-family:sans-serif;font-size:14px;font-weight:bold;color:#1A2340;">
-        担当営業がCSV自動反映項目を修正した状態で申請し、<br>${approverRoleLabel}が承認しましたのでお知らせします。
+        担当営業がCSV自動反映項目を修正した状態で申請し、<br>${escapeHtml(approverRoleLabel)}が承認しましたのでお知らせします。
       </td></tr>
       <tr><td style="padding:0 32px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
-      <tr><td style="padding:14px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">対象システム：${systemType}</td></tr>
-      <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">契約番号：${contractNo || '―'}</td></tr>
-      <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">就業場所名：${workLocationName || '―'}</td></tr>
+      <tr><td style="padding:14px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">対象システム：${escapeHtml(systemType)}</td></tr>
+      <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">契約番号：${escapeHtml(contractNo || '―')}</td></tr>
+      <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">就業場所名：${escapeHtml(workLocationName || '―')}</td></tr>
       <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">派遣期間（CSVデータ上）：${dispatchPeriodLabel}</td></tr>
-      <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">申請者：${applicantDeptName}　${applicantName}</td></tr>
-      <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#1B3A8C;">対象スタッフ：${normalizedStaffName}（社員番号 ${employeeNumber}）</td></tr>
-      <tr><td style="padding:4px 32px 12px 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">書類種別：${documentLabel}</td></tr>
+      <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">申請者：${escapeHtml(applicantDeptName)}　${escapeHtml(applicantName)}</td></tr>
+      <tr><td style="padding:4px 32px 0 32px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#1B3A8C;">対象スタッフ：${escapeHtml(normalizedStaffName)}（社員番号 ${escapeHtml(employeeNumber)}）</td></tr>
+      <tr><td style="padding:4px 32px 12px 32px;font-family:sans-serif;font-size:13px;color:#1A2340;">書類種別：${escapeHtml(documentLabel)}</td></tr>
       <tr><td style="padding:0 32px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
       <tr><td style="padding:12px 32px 0 32px;font-family:sans-serif;font-size:13px;font-weight:bold;color:#1A2340;">【修正項目一覧】</td></tr>
       ${itemsHtml}
@@ -1296,7 +1320,7 @@ export async function sendNewRequestMail(
   ].join('\n')
 
   const detailHtml = detailLines
-    .map(l => (l === '' ? '<br>' : l.startsWith('【') ? `<strong>${l}</strong>` : l))
+    .map(l => (l === '' ? '<br>' : l.startsWith('【') ? `<strong>${escapeHtml(l)}</strong>` : escapeHtml(l)))
     .join('<br>')
 
   const html = `
@@ -1318,7 +1342,7 @@ export async function sendNewRequestMail(
           <tr><td style="padding:0 16px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
           <tr><td style="padding:12px 16px 4px 16px;font-family:sans-serif;font-size:12px;color:#5A6A8A;font-weight:bold;">申請者</td></tr>
           <tr><td style="padding:0 16px 14px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.8;">
-            ${requestedByDept || '（部門不明）'}　${requestedByName || '（氏名不明）'}<br>
+            ${escapeHtml(requestedByDept || '（部門不明）')}　${escapeHtml(requestedByName || '（氏名不明）')}<br>
             依頼日時：${requestedAtLabel}
           </td></tr>
         </table>
@@ -1390,7 +1414,7 @@ export async function sendRequestCancelledMail(
   ].join('\n')
 
   const detailHtml = detailLines
-    .map(l => (l === '' ? '<br>' : l.startsWith('【') ? `<strong>${l}</strong>` : l))
+    .map(l => (l === '' ? '<br>' : l.startsWith('【') ? `<strong>${escapeHtml(l)}</strong>` : escapeHtml(l)))
     .join('<br>')
 
   const html = `
@@ -1412,14 +1436,14 @@ export async function sendRequestCancelledMail(
           <tr><td style="padding:0 16px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
           <tr><td style="padding:12px 16px 4px 16px;font-family:sans-serif;font-size:12px;color:#5A6A8A;font-weight:bold;">申請者</td></tr>
           <tr><td style="padding:0 16px 12px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;">
-            ${requestedByDept || '（部門不明）'}　${requestedByName || '（氏名不明）'}
+            ${escapeHtml(requestedByDept || '（部門不明）')}　${escapeHtml(requestedByName || '（氏名不明）')}
           </td></tr>
         </table>
       </td></tr>
       <tr><td style="padding:16px 32px 0 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#FDECEC;border-radius:6px;">
           <tr><td style="padding:14px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.8;">
-            取消理由：${reason}
+            取消理由：${escapeHtml(reason)}
           </td></tr>
         </table>
       </td></tr>
@@ -1504,15 +1528,15 @@ export async function sendRenewalNotRenewingNotifyMail(
       <tr><td style="padding:16px 32px 0 32px;">
         <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#F5F7FC;border-radius:6px;">
           <tr><td style="padding:14px 16px 4px 16px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#1B3A8C;">
-            ${staffName || '(氏名不明)'}（社員番号 ${employeeNumber}／${deptName || '所属部署不明'}）
+            ${escapeHtml(staffName || '(氏名不明)')}（社員番号 ${escapeHtml(employeeNumber)}／${escapeHtml(deptName || '所属部署不明')}）
           </td></tr>
           <tr><td style="padding:0 16px 12px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.8;">
-            就業先：${workLocationName || '―'}<br>
-            理由：${reason}
+            就業先：${escapeHtml(workLocationName || '―')}<br>
+            理由：${escapeHtml(reason)}
           </td></tr>
           <tr><td style="padding:0 16px;"><hr style="border:none;border-top:1px solid #E3E7F0;margin:0;"></td></tr>
           <tr><td style="padding:12px 16px 14px 16px;font-family:sans-serif;font-size:13px;color:#1A2340;">
-            確定した人：${confirmedByDept || '（部門不明）'}　${confirmedByName || '（氏名不明）'}
+            確定した人：${escapeHtml(confirmedByDept || '（部門不明）')}　${escapeHtml(confirmedByName || '（氏名不明）')}
           </td></tr>
         </table>
       </td></tr>

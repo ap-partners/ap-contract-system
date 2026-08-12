@@ -3114,3 +3114,15 @@ UI側：SSC/管理部の契約・誓約書詳細画面それぞれに「📩署�
 - DBマイグレーション（`add_login_lockout_session_version_ratelimit`）はSupabase MCPで本番DBに適用済み：`staff.login_locked_until`列追加、`staff.session_token_version`列追加（default 1）、`rate_limit_buckets`テーブル新設（RLS有効・グラント全REVOKE）、`check_rate_limit`関数新設、`revoke_staff_sessions`関数新設（いずれも`anon`・`authenticated`からのEXECUTEをREVOKE）。
 
 **次回セッションでの実機確認予定**：①ログイン10回失敗→15分ロック→時間経過後の自動解除、②退職者アカウントでの3API（login/request-code/verify-code）遮断確認、③強制ログアウトボタンの実際の動作（対象アカウントでログイン中の別セッションが、ボタン押下後の次のAPI呼び出しで401になること）、④通常ログイン・パスワード再設定・7日間セッション延長（スライディングセッション）に回帰がないこと、をClaude in Chrome＋Supabase MCPで確認する。
+
+### 2026-08-10：B-05・B-06・B-07の実機確認（デプロイ後・完了）
+
+伊藤さんの「デプロイ完了」報告を受け、Claude in Chrome＋Supabase MCPで実機確認を実施。実在スタッフ（三國駿・105026／岩城蒼太・104018）を使用。テスト後、両者ともDBを開始前の状態（`is_initial_login=true`・`password_hash=null`・`login_locked_until=null`・`session_token_version=1`・`retired_at=null`等）へ完全に復元済み。
+
+**B-05（ログイン試行のロック・レート制限）**：105026でパスワードを新規設定した上で、誤ったパスワードで`/api/staff/login`を10回連続実行し、①10回とも同じ汎用エラー文言・401ステータスであること（`reason`フィールドが返らないこと）、②10回目の失敗で`staff.login_locked_until`が約15分後の時刻に設定され`login_password_attempts`が0にリセットされること、③ロック中は正しいパスワードで試みても同じ汎用エラー文言・401で拒否されること、④`login_locked_until`をSupabase MCPで過去時刻に書き換えて時間経過を模擬したところ、正しいパスワードでのログインが成功し`login_password_attempts`・`login_locked_until`とも正常にリセットされること、を確認済み。
+
+**B-06（退職者のアクセス遮断）**：104018の`retired_at`を前日付に一時変更した状態で、①`/api/staff/login`が（本来`is_initial_login=true`のため400`initial_login_required`を返すはずのところ）退職チェックが先に働き通常の汎用エラー文言・401を返すこと（退職チェックの実行順序が正しいことの確認を兼ねる）、②`/api/staff/request-code`が`{sent:true}`を返しつつ実際には`login_auth_code`が発行されない（nullのまま）こと、③`/api/staff/verify-code`が「確認できませんでした」・`reason:'invalid'`・401を返すこと、を確認済み。
+
+**B-07（セッション失効・強制ログアウトボタン）**：105026でパスワード設定→ログインしセッションCookieを確立（`session_token_version`は2）。別タブで管理部アカウント（admin-test）にログインし、当該スタッフの契約詳細画面（`/dashboard/ssc/contracts/955f8001-...`）で実際に「🔒 ログイン状態を強制的に解除する」ボタンをクリック（確認ダイアログ→実行）し、DBの`session_token_version`が3→4（1回目はAPI直接呼び出しでのテストで2→3、2回目が実際の画面操作で3→4）に更新されることを確認。105026側のタブで直後に`/api/staff/me`を呼ぶと401「ログインが必要です。」が返り、①旧セッションが即座に無効化されること、②`/staff/mypage`へ直接アクセスした場合もmiddleware自体はDB照会をしないため一旦ページの「殻」は表示されるが、`/api/staff/me`の401を受けてフロント側が正しく`/staff/login`へ自動遷移すること、を確認。その後105026で同じパスワードにより再ログインすると正常に成功し（新しい`session_token_version`を使った新しいセッションが発行される）、通常ログインへの回帰がないことも確認済み。ボタン操作時のブラウザコンソールにアプリ起因のエラーは無し。
+
+これでB-05・B-06・B-07は実装・デプロイ・実機確認まで完了。

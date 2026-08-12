@@ -14,6 +14,7 @@
 //   ①の申請済みデータ保護のみで足りるとされたため、別途のダッシュボード・通知は作らない）。
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import type Papa from 'papaparse'
 import { getAuthenticatedStaff } from '@/lib/apiAuth'
 import { sendCsvImportMatchedMail, sendStaffRegisterMatchedMail } from '@/lib/mail'
 import { resolveRequesterNotifyEmail } from '@/lib/mailingList'
@@ -25,7 +26,8 @@ import {
   resolveCsvSearchStaffCode,
   ProtectedRowDetail,
 } from '@/lib/csvImportShared'
-import { readExcelBuffer, buildStaffRecord, normalizeStaffNameForCompare, buildArchivedEmployeeNumber } from '@/lib/staffMasterImportShared'
+import { readExcelBuffer, readExcelHeaders, buildStaffRecord, normalizeStaffNameForCompare, buildArchivedEmployeeNumber } from '@/lib/staffMasterImportShared'
+import { STAFF_EXPRESS_COLUMNS } from '@/lib/staffExpressColumns'
 import { friendlyDbReason } from '@/lib/friendlyError'
 
 const supabaseAdmin = createClient(
@@ -57,6 +59,19 @@ function buildErrorDetailText(details: string[]): string | null {
   return shown.join('\n') + (rest > 0 ? `\n…ほか${rest}件のエラー` : '')
 }
 
+// B-14対応（2026-08-12）：Papaparseのパース警告コードを、行番号付きの分かりやすい日本語に変換する。
+// scripts/import-csv.js（ローカルCLI版）には元々この警告表示があったが、Web版に移植する際に
+// 落ちていた（parsed.errorsを完全に破棄していた）ため、そちらの考え方を踏襲して再実装する。
+function friendlyCsvParseError(err: Papa.ParseError): string {
+  const rowLabel = typeof err.row === 'number' ? `${err.row + 2}行目` : '該当行' // +2 = ヘッダー行 + 0始まりの補正
+  switch (err.code) {
+    case 'TooFewFields': return `${rowLabel}：列の数が見出し行より少ないため、この行はスキップしました（フィールド内の改行やカンマの混入が原因の可能性があります）。`
+    case 'TooManyFields': return `${rowLabel}：列の数が見出し行より多いため、この行はスキップしました（フィールド内のカンマの混入が原因の可能性があります）。`
+    case 'InvalidQuotes': return `${rowLabel}：ダブルクォーテーションの対応が崩れているため、この行はスキップしました（住所やビル名の注記に含まれる「"」が原因の可能性があります）。`
+    default: return `${rowLabel}：形式エラーのため、この行はスキップしました（${err.message}）。`
+  }
+}
+
 // 1ファイル分のCSVを処理し、csv_raw_dataへ反映する（csv_importsの作成・更新は呼び出し元で行う）
 async function processSingleFile(
   buffer: Buffer,
@@ -64,19 +79,53 @@ async function processSingleFile(
   dbSystemType: DbSystemType,
   importId: string
 ): Promise<FileCounts> {
-  const rows = parseCsvBuffer(buffer)
+  const { rows, errors: parseErrors } = parseCsvBuffer(buffer)
   const counts: FileCounts = { total: rows.length, newCount: 0, updatedCount: 0, pendingProtectedCount: 0, skippedNoKeyCount: 0, errorCount: 0, errorDetails: [], protectedDetails: [] }
 
+  // B-14対応：引用符・列数不整合で列がずれた行は、間違った契約番号で別契約のデータを
+  // 上書きしうるため、通常のスキップ（キー無し）とは別に明示的な行番号付きエラーとして報告し、
+  // その行自体をparsedRowsから除外する（＝upsert対象にしない）。
+  const errorRowIndexes = new Set(parseErrors.map(e => e.row).filter((r): r is number => typeof r === 'number'))
+  for (const err of parseErrors) counts.errorDetails.push(friendlyCsvParseError(err))
+  counts.errorCount += errorRowIndexes.size
+
   const parsedRows: { uniqueKey: string; record: NonNullable<ReturnType<typeof buildRecordForUpsert>['record']> }[] = []
-  for (const row of rows) {
+  rows.forEach((row, idx) => {
+    if (errorRowIndexes.has(idx)) return
     const { uniqueKey, record } = buildRecordForUpsert(row, importSystemKey)
-    if (!uniqueKey || !record) { counts.skippedNoKeyCount++; continue }
+    if (!uniqueKey || !record) { counts.skippedNoKeyCount++; return }
     parsedRows.push({ uniqueKey, record })
+  })
+
+  // B-13対応：文字コードの誤判定・全く違う形式のファイルが投入された場合、有効なキーが
+  // 1件も取れないまま「total件中0件処理」という実質失敗の状態でもsuccess:trueが返っていた。
+  // 対象行が1件以上あるのに有効なキーが1件も取れなかった場合は、成功扱いにせず明示エラーにする。
+  if (rows.length > 0 && parsedRows.length === 0 && errorRowIndexes.size < rows.length) {
+    throw new Error('有効なデータを1件も読み取れませんでした。文字コード（UTF-8／Shift-JIS）や列名がエクスポート時と変わっていないかをご確認ください。')
   }
   if (parsedRows.length === 0) return counts
 
+  // B-15対応（2026-08-12）：同一ファイル内に同じユニークキーが2回以上出現すると、後段の
+  // upsert（1回のSQL文で同じ行を2回更新しようとする）がPostgresの21000エラーで失敗し、
+  // 300件のチャンクごと保存されない（かつ「予期しないエラー」としか表示されず原因不明だった）。
+  // ここで後勝ち（ファイル内で後に出てきた行を採用）でデデュープしてから後続処理に渡す。
+  // 実運用では重複は基本的に発生しない想定（伊藤さん確認済み）だが、万が一発生した場合に
+  // ファイル全体が失敗する事態を避けるための安全網として入れる。
+  const dedupedByKey = new Map<string, { uniqueKey: string; record: typeof parsedRows[number]['record'] }>()
+  const duplicateKeys = new Set<string>()
+  for (const row of parsedRows) {
+    if (dedupedByKey.has(row.uniqueKey)) duplicateKeys.add(row.uniqueKey)
+    dedupedByKey.set(row.uniqueKey, row) // 後勝ち：同じキーが再度出てきたら上書きする
+  }
+  if (duplicateKeys.size > 0) {
+    counts.errorDetails.push(
+      `[重複] 同一ファイル内で${duplicateKeys.size}件のユニークキーが重複していたため、ファイル内で後に出てきた行を採用しました（対象：${Array.from(duplicateKeys).slice(0, 10).join('、')}${duplicateKeys.size > 10 ? ' 他' : ''}）。`
+    )
+  }
+  const dedupedParsedRows = Array.from(dedupedByKey.values())
+
   // 既存データの有無をまとめて確認（system_type + unique_key）
-  const allKeys = parsedRows.map(r => r.uniqueKey)
+  const allKeys = dedupedParsedRows.map(r => r.uniqueKey)
   const existingByKey = new Map<string, string>() // unique_key -> id
   const CHUNK = 300
   for (let i = 0; i < allKeys.length; i += CHUNK) {
@@ -121,6 +170,57 @@ async function processSingleFile(
     }
   }
 
+  // ===== B-16対応（2026-08-12）：Staffiaの103行（就業場所名・住所等）が保護対象から漏れる問題 =====
+  // 契約はStaffiaの104行（スタッフ個人・派遣期間）のIDしかcontracts.csv_raw_data_idに保存しない。
+  // 103行（就業場所名・住所・業務内容などの契約全体の詳細）は104行のraw_data['個別契約書番号']経由で
+  // 検索時にのみ動的に合成されるため、上の保護チェック（existingIds＝103行のID基準）では
+  // 103行が契約から直接参照されることが無く、常に無防備＝再取込のたびに無条件で上書きされていた。
+  // 103ファイルを処理する時だけ、今回アップロードされた103行（＝個別契約書番号）に対応する
+  // 104行を検索し、その104行が保護されている契約から参照されていれば、対応する103行も
+  // 保護対象に追加する（103行自体・104行自体のスキーマ変更、STEP2画面側の変更は不要）。
+  if (importSystemKey === 'Staffia103') {
+    const uploaded103Keys = dedupedParsedRows.map(r => r.uniqueKey)
+    const contractNoTo104Ids = new Map<string, string[]>()
+    for (let i = 0; i < uploaded103Keys.length; i += CHUNK) {
+      const chunk = uploaded103Keys.slice(i, i + CHUNK)
+      const { data: rows104 } = await supabaseAdmin
+        .from('csv_raw_data')
+        .select('id, raw_data')
+        .eq('system_type', 'Staffia')
+        .in('raw_data->>個別契約書番号', chunk)
+      for (const r of rows104 || []) {
+        const contractNo = (r.raw_data as any)?.['個別契約書番号']
+        if (!contractNo) continue
+        if (!contractNoTo104Ids.has(contractNo)) contractNoTo104Ids.set(contractNo, [])
+        contractNoTo104Ids.get(contractNo)!.push(r.id)
+      }
+    }
+    const all104Ids = Array.from(new Set(Array.from(contractNoTo104Ids.values()).flat()))
+    if (all104Ids.length > 0) {
+      const protected104Info = new Map<string, { status: string | null; createdByName: string | null; staffId: string | null }>()
+      for (let i = 0; i < all104Ids.length; i += CHUNK) {
+        const chunk = all104Ids.slice(i, i + CHUNK)
+        const { data: refRows104 } = await supabaseAdmin
+          .from('contracts')
+          .select('csv_raw_data_id, status, created_by_name, staff_id')
+          .in('csv_raw_data_id', chunk)
+          .neq('status', '差し戻し中')
+          .neq('status', '取り下げ')
+        for (const r of refRows104 || []) {
+          if (r.csv_raw_data_id) protected104Info.set(r.csv_raw_data_id, { status: r.status, createdByName: r.created_by_name, staffId: r.staff_id })
+        }
+      }
+      for (const [contractNo, ids104] of contractNoTo104Ids) {
+        const protectedInfoFrom104 = ids104.map(id => protected104Info.get(id)).find((v): v is NonNullable<typeof v> => !!v)
+        if (!protectedInfoFrom104) continue
+        const existing103Id = existingByKey.get(contractNo)
+        if (existing103Id && !protectedByRawId.has(existing103Id)) {
+          protectedByRawId.set(existing103Id, protectedInfoFrom104)
+        }
+      }
+    }
+  }
+
   // 保護対象スタッフの氏名・所属部門名をまとめて解決（詳細レポート用）
   const protectedStaffIds = Array.from(new Set(Array.from(protectedByRawId.values()).map(v => v.staffId).filter((v): v is string => !!v)))
   const staffById = new Map<string, { employeeNumber: string; name: string; deptNo: number | null }>()
@@ -141,8 +241,8 @@ async function processSingleFile(
     for (const d of deptRows || []) deptNameByNo.set(d.dept_no, d.dept_name)
   }
 
-  const upsertBatch: (typeof parsedRows[number]['record'] & { unique_key: string; import_id: string; is_overwrite_pending: boolean })[] = []
-  for (const { uniqueKey, record } of parsedRows) {
+  const upsertBatch: (typeof dedupedParsedRows[number]['record'] & { unique_key: string; import_id: string; is_overwrite_pending: boolean })[] = []
+  for (const { uniqueKey, record } of dedupedParsedRows) {
     const existingId = existingByKey.get(uniqueKey)
     // C-04対応（2026-08-06）：既存契約からの参照有無（＝上書き保護が必要か）を判定できなかった行は、
     // 安全側に倒して今回は上書きしない（スキップしてエラー扱いにする）。判定できたが保護対象でない
@@ -354,18 +454,43 @@ async function processStaffMasterFile(buffer: Buffer, uploadedBy: string): Promi
     }
   }
 
-  const upsertBatch: (NonNullable<ReturnType<typeof buildStaffRecord>> & { updated_at: string })[] = []
-  const isExistingFlags: boolean[] = []
-  const isReassignedFlags: boolean[] = []
+  const rawUpsertBatch: (NonNullable<ReturnType<typeof buildStaffRecord>> & { updated_at: string; _isExisting: boolean; _isReassigned: boolean })[] = []
   for (let idx = 0; idx < parsedRecords.length; idx++) {
     if (skippedRecords.has(idx)) continue // 要確認としてスキップした行は取込しない
     const record = parsedRecords[idx]
     const existing = existingMap.get(record.employee_number)
     // SBクルーコードが今回のファイルで空欄の場合、既存値があればそれを保持する（伊藤さん指示・2026-07-21）
     const crewCode = record.crew_code || existing?.crew_code || null
-    upsertBatch.push({ ...record, crew_code: crewCode, updated_at: now })
-    isExistingFlags.push(!!existing)
-    isReassignedFlags.push(reassignTargets.some(t => t.employeeNumber === record.employee_number))
+    rawUpsertBatch.push({
+      ...record, crew_code: crewCode, updated_at: now,
+      _isExisting: !!existing,
+      _isReassigned: reassignTargets.some(t => t.employeeNumber === record.employee_number),
+    })
+  }
+
+  // B-15対応（2026-08-12）：同じ社員番号がファイル内で2回以上出現すると、契約CSV取込と同じ
+  // 理由でPostgresの21000エラーとなりチャンク丸ごと保存に失敗する。後勝ちでデデュープする
+  // （B-12の必須列検証によりスタッフNO自体は必ず存在するが、同一人物が誤って2行エクスポート
+  // される可能性は残るため、安全網として同じ考え方を適用する）。
+  const dedupedByEmpNo = new Map<string, typeof rawUpsertBatch[number]>()
+  const duplicateEmpNos = new Set<string>()
+  for (const row of rawUpsertBatch) {
+    if (dedupedByEmpNo.has(row.employee_number)) duplicateEmpNos.add(row.employee_number)
+    dedupedByEmpNo.set(row.employee_number, row)
+  }
+  if (duplicateEmpNos.size > 0) {
+    counts.errorDetails.push(
+      `[重複] 同一ファイル内で${duplicateEmpNos.size}件の社員番号が重複していたため、ファイル内で後に出てきた行を採用しました（対象：${Array.from(duplicateEmpNos).slice(0, 10).join('、')}${duplicateEmpNos.size > 10 ? ' 他' : ''}）。`
+    )
+  }
+
+  const upsertBatch: (NonNullable<ReturnType<typeof buildStaffRecord>> & { updated_at: string })[] = []
+  const isExistingFlags: boolean[] = []
+  const isReassignedFlags: boolean[] = []
+  for (const { _isExisting, _isReassigned, ...record } of dedupedByEmpNo.values()) {
+    upsertBatch.push(record)
+    isExistingFlags.push(_isExisting)
+    isReassignedFlags.push(_isReassigned)
   }
 
   for (let i = 0; i < upsertBatch.length; i += CHUNK) {
@@ -575,6 +700,24 @@ export async function POST(req: NextRequest) {
     if (!fileDept && !fileStaff) {
       return NextResponse.json({ error: '部門マスタ・スタッフマスタのうち、少なくとも一方のファイルを選択してください。' }, { status: 400 })
     }
+    // B-12対応（2026-08-12）：スタッフマスタファイルは、列が1つでも欠けていると
+    // buildStaffRecordがその列を全スタッフ分NULLとしてupsertしてしまう（退職年月日列の欠落で
+    // 退職者が一斉復活する等、ロールバック手段のない実害）。処理を始める前に、実際のヘッダー行が
+    // STAFF_EXPRESS_COLUMNS（画面のアコーディオンで案内している15列）をすべて含んでいるかを検証し、
+    // 1つでも欠けていれば何も処理せず400で中断する（部門マスタ側が同時に指定されていても、
+    // 1回のアップロード操作の中で「部門だけ成功・スタッフは失敗」という分かりにくい半端な状態に
+    // しないよう、検証はどちらのファイルも処理する前に行う）。
+    if (fileStaff) {
+      const staffBuf = Buffer.from(await fileStaff.arrayBuffer())
+      const headers = readExcelHeaders(staffBuf)
+      const missingColumns = STAFF_EXPRESS_COLUMNS.map(c => c.label).filter(label => !headers.includes(label))
+      if (missingColumns.length > 0) {
+        return NextResponse.json({
+          error: `スタッフマスタのファイルに必要な列が見つかりませんでした（${missingColumns.join('・')}）。StaffExpressのエクスポート設定・列の並び順をご確認のうえ、再度アップロードしてください。`,
+        }, { status: 400 })
+      }
+    }
+
     try {
       const fileNames: string[] = []
       let deptResult: MasterImportCounts | null = null

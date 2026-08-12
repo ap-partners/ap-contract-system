@@ -754,6 +754,58 @@ export async function sendRenewalDigestMail(
   })
 }
 
+// ===== 更新期限管理：自動同期の失敗単独通知（2026-08-12追加・B-17対応） =====
+// cronが毎日「一覧を最新化する処理（同期）」を実行するようになった際、同期が失敗しても
+// その日の通知対象が0件の場合はダイジェストメール自体が送られないため、失敗の事実が
+// 完全に無言のまま終わってしまう。対象が0件の日だけ、この単独メールで事実を伝える
+// （技術的なエラー文は載せず、状況と見通しだけを伝える。伊藤さんとの確認・2026-08-12）。
+export async function sendRenewalSyncFailureNoticeMail(
+  toEmails: string[],
+  ccEmails: string[]
+): Promise<void> {
+  if (toEmails.length === 0) return
+  const subject = '【更新期限管理】本日の自動更新が完了しませんでした'
+  const text = [
+    'お疲れ様です。',
+    'APパートナーズ 契約書管理システムです。',
+    '',
+    '本日の更新期限一覧の自動更新（同期）が完了しませんでした（2回試行）。',
+    '本日は通知対象がありませんでしたが、これは一覧が最新化されなかったことによる可能性があります。',
+    '通常は翌日以降の自動処理で自然に復旧します。',
+    '',
+    '※本メールは自動送信です。このアドレスへの返信には対応しておりません。',
+  ].join('\n')
+
+  const html = `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F7FC;padding:24px 0;">
+  <tr><td align="center">
+    <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:8px;max-width:480px;width:100%;">
+      <tr><td style="padding:32px 32px 8px 32px;font-family:sans-serif;font-size:14px;color:#1A2340;">
+        お疲れ様です。<br>APパートナーズ 契約書管理システムです。
+      </td></tr>
+      <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:14px;color:#1A2340;line-height:1.7;">
+        本日の更新期限一覧の自動更新（同期）が完了しませんでした（2回試行）。
+      </td></tr>
+      <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.7;">
+        本日は通知対象がありませんでしたが、これは一覧が最新化されなかったことによる可能性があります。通常は翌日以降の自動処理で自然に復旧します。
+      </td></tr>
+      <tr><td style="padding:20px 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
+        ※本メールは自動送信です。このアドレスへの返信には対応しておりません。
+      </td></tr>
+    </table>
+  </td></tr>
+</table>`.trim()
+
+  await transporter.sendMail({
+    from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
+    to: toEmails.join(','),
+    cc: ccEmails.length > 0 ? ccEmails.join(',') : undefined,
+    subject,
+    text,
+    html,
+  })
+}
+
 // ===== CSVインポート自動化：依頼の自動マッチ完了通知（2026-07-15追加） =====
 // 担当営業が「CSVインポート依頼」を出した後、管理部が新しいCSVを取り込んだ結果
 // 自動マッチが成立し依頼が自動完了した際、依頼元の担当営業へ通知する。社内向けメールのため

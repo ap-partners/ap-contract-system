@@ -73,6 +73,22 @@ export function readExcelBuffer(buffer: Buffer): Record<string, any>[] {
   return XLSX.utils.sheet_to_json(sheet, { defval: null })
 }
 
+// ===== B-12対応（2026-08-12）：StaffExpress取込の必須列検証 =====
+// sheet_to_json({defval:null})で行オブジェクトに変換すると、シートに列が丸ごと存在しない場合と
+// 列は存在するが該当行が空欄な場合の区別がつかなくなる（どちらもrow[列名]がnull/undefinedになる）。
+// buildStaffRecordはこの区別なくnullをそのままupsertするため、列が丸ごと欠けたファイルを
+// 取り込むと該当列が全スタッフ分NULLで上書きされる実害があった（退職年月日列の削除で
+// 退職者が一斉復活する等）。取込処理を始める前に、実際のヘッダー行（1行目）を独立して読み取り、
+// 必須列がすべて揃っているかを検証できるようにする。
+export function readExcelHeaders(buffer: Buffer): string[] {
+  const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true })
+  const sheetName = workbook.SheetNames[0]
+  const sheet = workbook.Sheets[sheetName]
+  const rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1 })
+  const headerRow = rows[0] || []
+  return headerRow.map(h => String(h ?? '').trim()).filter(h => h.length > 0)
+}
+
 export type StaffImportRecord = {
   employee_number: string
   name: string | null

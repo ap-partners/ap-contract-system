@@ -20,7 +20,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import * as JapaneseHolidays from 'japanese-holidays'
-import { sendRenewalDigestMail, type RenewalDigestItem } from '@/lib/mail'
+import { sendRenewalDigestMail, sendRenewalSyncFailureNoticeMail, type RenewalDigestItem } from '@/lib/mail'
+import { runRenewalCandidatesSync } from '@/lib/renewalCandidatesSync'
+import { excludeRetiredStaffOr } from '@/lib/staffFilters'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -70,7 +72,22 @@ export async function GET(req: NextRequest) {
 
   const overrideEmail = process.env.RENEWAL_NOTIFY_OVERRIDE_EMAIL || null
 
-  const { data: candidates, error: candidatesError } = await supabaseAdmin
+  // ===== B-17対応（2026-08-12）：ダッシュボードを誰も開かなくても一覧が最新化されるようにする =====
+  // 従来、renewal_candidates行を作る「同期」処理は3ダッシュボードのクライアント側initからしか
+  // 呼ばれておらず、連休等で誰も開かない期間が続くと候補行自体が作られず、しきい値通知が
+  // まとめて飛ばされる問題があった（外部総合品質監査レポートB-17）。cronが判定前に必ず同期を
+  // 実行するようにし、ダッシュボードを開く行為に依存しない設計にする。一時的な失敗（通信の
+  // 瞬間的な不調等）はcronの実行内で1回だけ自動的にやり直し、それでも失敗した場合は今日の
+  // 通知自体は止めず既存データで続行する（同期の失敗で通知そのものを止めると、今回直そうと
+  // している「通知が飛ばされる」問題を別の形で再発させるため）。
+  let syncFailureMessage: string | null = null
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const result = await runRenewalCandidatesSync(supabaseAdmin)
+    if (result.ok) { syncFailureMessage = null; break }
+    syncFailureMessage = result.error
+  }
+
+  const { data: candidatesRaw, error: candidatesError } = await supabaseAdmin
     .from('renewal_candidates')
     .select('*')
     .in('status', ['pending', 'csv_pending'])
@@ -79,11 +96,28 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: '更新候補の取得に失敗しました: ' + candidatesError.message }, { status: 500 })
   }
 
+  // B-17対応：画面（fetchCandidates）は表示直前に「現在退職済み・退職予定のスタッフ」を
+  // 再チェックして除外しているが、cronのこの判定処理には同様のチェックが無かったため、
+  // 画面のどこにも表示されない案件について通知メールだけ毎営業日届き続けるという食い違いが
+  // あった。画面と同じ考え方（DBクエリ側での絞り込み）をここにも適用する。
+  const empNosForRetiredCheck = Array.from(new Set((candidatesRaw || []).map((c: any) => c.employee_number)))
+  let activeEmpNoSet = new Set<string>()
+  if (empNosForRetiredCheck.length > 0) {
+    const [retiredAtOk, retirementScheduledOk] = excludeRetiredStaffOr()
+    const { data: activeStaffRows } = await supabaseAdmin
+      .from('staff')
+      .select('employee_number')
+      .in('employee_number', empNosForRetiredCheck)
+      .or(retiredAtOk).or(retirementScheduledOk)
+    activeEmpNoSet = new Set((activeStaffRows || []).map((s: any) => s.employee_number))
+  }
+  const candidates = (candidatesRaw || []).filter((c: any) => activeEmpNoSet.has(c.employee_number))
+
   // しきい値到達判定。newlyCrossedのどれかがあれば今日のダイジェストに含める。
   type Targeted = { candidate: any; item: RenewalDigestItem; newlyCrossed: number[] }
   const targeted: Targeted[] = []
 
-  for (const c of (candidates || [])) {
+  for (const c of candidates) {
     const days = remainingDays(c.employ_end_date, c.dispatch_end_date)
     if (days === null) continue
     const notified: number[] = c.notified_thresholds || []
@@ -107,19 +141,8 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  if (targeted.length === 0) {
-    return NextResponse.json({ sent: 0, message: '本日対象の更新候補はありませんでした。' })
-  }
-
-  // 部門ごとにグルーピング
-  const byDept = new Map<number | null, Targeted[]>()
-  for (const t of targeted) {
-    const key = t.candidate.dept_no ?? null
-    if (!byDept.has(key)) byDept.set(key, [])
-    byDept.get(key)!.push(t)
-  }
-
   // 部門マスタ・宛先（staff_roles＋auth.usersのメール）をまとめて取得
+  // （targeted.length===0でも、同期失敗時の単独通知の宛先解決に必要なため早めに計算する）
   const { data: deptRows } = await supabaseAdmin.from('department_master').select('dept_no, dept_name')
   const deptNameByNo = new Map<number, string>((deptRows || []).map((d: any) => [d.dept_no, d.dept_name]))
 
@@ -140,6 +163,30 @@ export async function GET(req: NextRequest) {
       .filter((e): e is string => !!e)
   ))
   const ccEmails = Array.from(new Set([...sscEmails, ...mgmtEmails]))
+
+  if (targeted.length === 0) {
+    // B-17対応：本日通知対象が無い場合、通常はダイジェストメール自体が送られないため、
+    // 同期の失敗が完全に無言のまま終わってしまう。この場合だけ、失敗の事実を伝える
+    // 単独メールを管理部宛に送る（技術的なエラー文は載せず、状況と見通しのみ伝える）。
+    if (syncFailureMessage) {
+      const failureTo = overrideEmail ? [overrideEmail] : mgmtEmails
+      const failureCc = overrideEmail ? [] : sscEmails
+      try {
+        await sendRenewalSyncFailureNoticeMail(failureTo, failureCc)
+      } catch (e: any) {
+        console.error('更新期限：同期失敗の単独通知メール送信エラー:', e?.message || e)
+      }
+    }
+    return NextResponse.json({ sent: 0, message: '本日対象の更新候補はありませんでした。', syncFailed: !!syncFailureMessage })
+  }
+
+  // 部門ごとにグルーピング
+  const byDept = new Map<number | null, Targeted[]>()
+  for (const t of targeted) {
+    const key = t.candidate.dept_no ?? null
+    if (!byDept.has(key)) byDept.set(key, [])
+    byDept.get(key)!.push(t)
+  }
 
   let sentCount = 0
   const results: any[] = []
@@ -173,6 +220,14 @@ export async function GET(req: NextRequest) {
       finalTo = [overrideEmail]
       finalCc = []
       overrideNotice = `※現在テスト運用中のため、本来の宛先ではなくこのアドレスに届いています。\n　本来のTO：${realTo.join(', ') || '(該当する担当営業・管理部アカウントなし)'}\n　本来のCC：${realCc.join(', ') || '(なし)'}`
+    }
+
+    // B-17対応：同期が2回とも失敗した日は、通常どおり管理部がCCに入っているこのダイジェスト
+    // メールの文末に一言添えて伝える（新しい通知先・監視の仕組みを作らず、既にCCで日常的に
+    // 目にしているメールに乗せることで確実に気づける形にする。伊藤さんとの合意事項）。
+    if (syncFailureMessage) {
+      const syncNotice = '本日の自動更新は完了しませんでした。前回正常に更新された時点のデータに基づいて通知しています。通常は翌日以降の処理で自然に復旧します。'
+      overrideNotice = overrideNotice ? `${overrideNotice}\n\n${syncNotice}` : syncNotice
     }
 
     if (finalTo.length === 0) {

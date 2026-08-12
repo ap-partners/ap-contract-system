@@ -123,11 +123,51 @@ export function buildUniqueKey(row: Record<string, any>, systemKey: ImportSystem
   return parts.join('___')
 }
 
-// CSVバッファ（cp932エンコード）をパースして行の配列を返す
-export function parseCsvBuffer(buffer: Buffer): Record<string, any>[] {
-  const text = iconv.decode(buffer, 'cp932')
-  const parsed = Papa.parse(text, { header: true, skipEmptyLines: true })
-  return parsed.data as Record<string, any>[]
+// ===== B-13対応（2026-08-12）：文字コードのcp932決め打ちを解消 =====
+// バイト列がUTF-8として妥当かどうかを判定する。cp932エンコードされた日本語CSVは、複数バイト文字の
+// 並びがUTF-8のバイトパターン規則にほぼ確実に違反するため、この判定だけでcp932/UTF-8を
+// 十分な精度で見分けられる（実務上のCSV・xlsx-exportされたCSVで誤判定になるケースは想定しにくい）。
+function isValidUtf8(buffer: Buffer): boolean {
+  let i = 0
+  while (i < buffer.length) {
+    const byte = buffer[i]
+    let seqLen: number
+    if (byte <= 0x7f) seqLen = 1
+    else if ((byte & 0xe0) === 0xc0) seqLen = 2
+    else if ((byte & 0xf0) === 0xe0) seqLen = 3
+    else if ((byte & 0xf8) === 0xf0) seqLen = 4
+    else return false
+    if (i + seqLen > buffer.length) return false
+    for (let j = 1; j < seqLen; j++) {
+      if ((buffer[i + j] & 0xc0) !== 0x80) return false
+    }
+    i += seqLen
+  }
+  return true
+}
+
+// CSVバッファをパースして行の配列を返す。
+// 【B-13対応】従来はcp932決め打ちでデコードしていたため、Excelで「CSV UTF-8」形式で保存し
+// 直したファイルをアップロードすると全ヘッダーが文字化けし、ユニークキーが1件も引けず
+// 全行が無言でスキップされるのに画面には成功したように表示される、という問題があった。
+// UTF-8 BOMの有無・バイト列の妥当性からエンコーディングを自動判定する。
+// 【B-14対応】Papaparseのパース警告（引用符不整合・列数不一致等）は従来完全に破棄していたため、
+// フィールド内の「"」や改行混入で列がずれた行が無音でそのまま取り込まれ、間違った契約番号で
+// 別契約のデータを上書きしうる状態だった。parsed.errorsを戻り値に含め、呼び出し元で
+// 該当行をスキップ・報告できるようにする。
+export function parseCsvBuffer(buffer: Buffer): { rows: Record<string, any>[]; errors: Papa.ParseError[] } {
+  const hasUtf8Bom = buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf
+  const text = hasUtf8Bom
+    ? buffer.subarray(3).toString('utf8')
+    : isValidUtf8(buffer)
+      ? buffer.toString('utf8')
+      : iconv.decode(buffer, 'cp932')
+  const parsed = Papa.parse(text.replace(/^﻿/, ''), {
+    header: true,
+    skipEmptyLines: true,
+    transformHeader: h => h.trim(),
+  })
+  return { rows: parsed.data as Record<string, any>[], errors: parsed.errors }
 }
 
 // 2026-07-29デモ指摘②：「保護によりスキップ」された行の詳細（管理画面からのExcelダウンロード用）

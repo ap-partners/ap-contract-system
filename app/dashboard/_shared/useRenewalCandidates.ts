@@ -27,6 +27,13 @@ import { buildMergedFields } from './renewalFieldMap'
 import { runAutoChecks, MinimumWageRow } from '@/lib/autoChecks'
 import { excludeRetiredStaffOr } from '@/lib/staffFilters'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
+// B-17対応（2026-08-12）：同期ロジック本体（runRenewalCandidatesSync）・RENEWAL_ALERT_WINDOW_DAYS・
+// getDocumentPeriodFlags・isIndefiniteEmployTypeは、cronからも同じロジックを呼べるよう
+// lib/renewalCandidatesSync.ts（React非依存の純粋関数）へ移設した。RenewalManagementTab.tsx・
+// RenewalContractConfirmModal.tsxが従来 './useRenewalCandidates' からこれらをimportしていた
+// ため、ここで re-export して呼び出し元の変更を不要にしている。
+import { runRenewalCandidatesSync, RENEWAL_ALERT_WINDOW_DAYS, getDocumentPeriodFlags, isIndefiniteEmployType } from '@/lib/renewalCandidatesSync'
+export { RENEWAL_ALERT_WINDOW_DAYS, getDocumentPeriodFlags, isIndefiniteEmployType }
 
 // 2026-07-31追加（更新期限管理タブの情報設計見直し・5タブ化）：
 // unassigned=仕分け待ち、csv_auto=CSV自動反映、period_only=期間のみ更新、
@@ -35,8 +42,6 @@ import { useToast } from '@/app/_shared/ui/ToastProvider'
 // それ以外はユーザーの振り分け操作（setRenewalTab）で確定する。
 // docs/SYSTEM_DESIGN.md 10章 2026-07-31「更新期限管理タブの情報設計見直し」参照。
 export type RenewalTab = 'unassigned' | 'csv_auto' | 'period_only' | 'edit' | 'import_wait'
-
-export const RENEWAL_ALERT_WINDOW_DAYS = 45
 
 // 2026-07-16追加（チャットB・④差異確認の表示範囲拡大）：指揮命令者・派遣先責任者・
 // 苦情処理申出先の3グループ×(部署/役職/氏名/TEL)＝12項目。前回契約の値（previous）と
@@ -131,26 +136,6 @@ export const addDays = (dateStr: string, days: number) => {
   const d = new Date(dateStr)
   d.setDate(d.getDate() + days)
   return d.toISOString().split('T')[0]
-}
-
-// 2026-08-03追加：書類種別（document_type）を正として「雇用期間／派遣期間のどちらが
-// 必要か」を判定する共通関数。RenewalManagementTab.tsxのrenderSecondaryGridが2026-07-31から
-// 使っている`docType.includes('雇用契約書')`/`includes('就業条件明示書')`と同じ基準を、
-// periodReady()・renderPeriodOnlyRowの入力欄出し分けでも共用する（判定基準が3箇所でズレる
-// ことを防ぐ）。document_typeが空（欠落データ等）の場合はresolved=falseを返し、呼び出し側で
-// 旧来の「フィールドの有無」による判定にフォールバックできるようにする。
-export function getDocumentPeriodFlags(documentType: string | null): { needsEmploy: boolean; needsDispatch: boolean; resolved: boolean } {
-  const docType = (documentType || '').replace(/\n/g, ' ').trim()
-  if (!docType) return { needsEmploy: false, needsDispatch: false, resolved: false }
-  return { needsEmploy: docType.includes('雇用契約書'), needsDispatch: docType.includes('就業条件明示書'), resolved: true }
-}
-
-// 2026-08-04追加（①正社員の雇用期間バグ修正）：正社員・無期契約は雇用期間が
-// 「期間の定めなし」（契約条件適用開始日のみ）であり、有期契約・アルバイトのような
-// 開始日〜終了日の日付レンジという概念を持たない（app/apply/_components/StepPeriod.tsx
-// の`period === '無期' || contractType === '正社員'`判定と同じ基準）。
-export function isIndefiniteEmployType(contractType: string | null | undefined): boolean {
-  return contractType === '正社員' || contractType === '無期契約'
 }
 
 // 2026-08-03追加（伊藤さんレビュー：日付は「年月日」表記でないと分かりづらい、との指摘対応）。
@@ -250,145 +235,13 @@ export function useRenewalCandidates() {
   // 1〜2行を返すようになったため、こちら側も「社員番号ごとに1件」の前提を廃止し、
   // 返された行をそのまま対象として扱う（2つの側面が同じ契約に収束すれば結果的に1行、
   // 異なれば2行のまま処理される）。
+  // B-17対応（2026-08-12）：同期ロジック本体はlib/renewalCandidatesSync.tsのrunRenewalCandidatesSync()に
+  // 移設した（cronからも同じロジックを呼べるようにするため。ロジック自体は変更していない）。
   const syncCandidates = useCallback(async () => {
     setSyncing(true)
     try {
-      // 総合レビュー指摘31対応（2026-07-15）：以前はcontractsのinput_data（業務内容・住所等の
-      // 長文フィールドを含む肥大化したJSON）を全件・全履歴分そのまま取得した上でJS側で
-      // 「スタッフごとの最新1件」を絞り込んでいた。件数が増えるほど重くなる作り（3ダッシュボード
-      // すべての初期化のたびに全ユーザーが実行）だったため、DB関数
-      // `get_latest_genba_contracts_for_renewal()`にDISTINCT ONでの絞り込みを移し、
-      // 必要な列だけをテキストとして受け取るように変更。RLSは呼び出しロールのものがそのまま
-      // 適用される（関数はSECURITY INVOKERのデフォルトのまま）。
-      // 2026-07-31：対象範囲を「現場」のみから「現場」＋「社内」に拡張したことに伴い、
-      // RPC関数名も実態に合わせて改称（get_latest_genba_contracts_for_renewal→
-      // get_latest_contracts_for_renewal）。社内の閲覧制限はrenewal_candidatesのRLSで担保。
-      // 2026-08-04：関数本体をアスペクト単位（雇用の側面／派遣の側面）の探索に全面書き換え
-      // 済み（docs/SYSTEM_DESIGN.md 10章参照）。戻り値の形（列構成）自体は変わっていない。
-      const { data: contracts, error: contractsError } = await supabase
-        .rpc('get_latest_contracts_for_renewal')
-
-      if (contractsError) { console.error('更新候補の同期エラー（contracts取得）:', contractsError); return }
-      if (!contracts) return
-
-      // 2026-08-04変更：DB関数が既にアスペクト単位（雇用の側面・派遣の側面）で1〜2行/人を
-      // 返すため、ここで社員番号キーのMapに詰め直して1件に潰すことはしない
-      // （潰すと従来と同じ「片方の書類種別が消える」バグに逆戻りするため）。
-      const latestRows: any[] = contracts.filter((c: any) => c.employee_number)
-
-      // 総合レビュー指摘17対応（2026-07-15）：契約が更新されると、同じスタッフでも新しい
-      // contract_idで別行がupsertされる（upsertのonConflictがsource_contract_id単位のため）。
-      // 旧契約に紐づく行は削除されずに残り、同じスタッフのカードが2枚並んでしまっていた。
-      // 2026-08-04変更：以前は「社員番号ごとの最新1件」とだけ比較していたが、アスペクト単位化に
-      // 伴い、1人が最大2件（雇用の側面・派遣の側面）の有効な契約を持ちうるようになったため、
-      // 単純な社員番号比較では正しい行まで誤って「旧契約」と判定して消してしまう。ここでは
-      // 「その行のsource_contract_idが、今回DB関数が返した“どちらかの側面の最新契約”の
-      // 契約ID集合に含まれているか」で判定する（含まれていなければ、その書類種別はもう
-      // どちらの側面の最新契約でもなくなった＝古い契約として削除して良い）。
-      const empNosAll = Array.from(new Set(latestRows.map(r => r.employee_number)))
-      if (empNosAll.length > 0) {
-        const validContractIds = new Set(latestRows.map(r => r.id))
-        const { data: existingRows, error: existingError } = await supabase
-          .from('renewal_candidates')
-          .select('id, employee_number, source_contract_id')
-          .in('employee_number', empNosAll)
-        if (existingError) {
-          console.error('更新候補の同期エラー（既存行取得）:', existingError)
-        } else if (existingRows && existingRows.length > 0) {
-          const staleIds = existingRows
-            .filter(r => !validContractIds.has(r.source_contract_id))
-            .map(r => r.id)
-          if (staleIds.length > 0) {
-            const { error: deleteError } = await supabase
-              .from('renewal_candidates')
-              .delete()
-              .in('id', staleIds)
-            if (deleteError) console.error('更新候補の同期エラー（旧契約分の削除）:', deleteError)
-          }
-        }
-      }
-
-      // 2026-08-04追加（①正社員の雇用期間バグ）：正社員・無期契約は雇用期間が「期間の定めなし」
-      // （契約条件適用開始日のみ）であり、employ_end自体が残骸データで非nullになっているケースも
-      // 実データで確認された（関谷綺菜様・104747＝雇用契約書のみで、employ_end_date・
-      // dispatch_end_dateの両方に残骸が残っていた）。登録判定でも雇用形態を見て除外できるよう、
-      // 対象社員番号の雇用形態をあらかじめ取得しておく。
-      const { data: contractTypeRows } = empNosAll.length > 0
-        ? await supabase.from('staff').select('employee_number, contract_type').in('employee_number', empNosAll)
-        : { data: [] as { employee_number: string; contract_type: string | null }[] }
-      const contractTypeByEmpNo = new Map((contractTypeRows || []).map(r => [r.employee_number, r.contract_type]))
-
-      const today = new Date(); today.setHours(0, 0, 0, 0)
-      const rows: any[] = []
-      for (const c of latestRows) {
-        // 2026-08-04修正（①正社員の雇用期間バグ）：書類種別を見ずに`c.employ_end || c.dispatch_end`
-        // で判定していたため、「雇用契約書のみ」の契約でもSTEP2のCSV連携時に残った派遣期間の
-        // 残骸（dispatchEnd）だけで誤って「更新期限が近い」と登録されてしまう不具合があった
-        // （永井優大様・104010＝正社員・雇用契約書のみで発覚。正社員の雇用期間は「期間の定めなし」
-        // で本来この一覧に上がる理由が無い）。書類種別が実際に必要とする方の終了日だけを見る。
-        // さらに、正社員・無期契約はemploy_end自体が残骸データで非nullなことがあるため
-        // （関谷綺菜様・104747で確認）、雇用形態でも重ねてガードする。
-        const docFlags = getDocumentPeriodFlags(c.document_type)
-        const isIndefiniteEmployee = isIndefiniteEmployType(contractTypeByEmpNo.get(c.employee_number))
-        const relevantEmployEnd = ((!docFlags.resolved || docFlags.needsEmploy) && !isIndefiniteEmployee) ? c.employ_end : null
-        const relevantDispatchEnd = (!docFlags.resolved || docFlags.needsDispatch) ? c.dispatch_end : null
-        const endDate = relevantEmployEnd || relevantDispatchEnd
-        if (!endDate) continue
-        const end = new Date(endDate); end.setHours(0, 0, 0, 0)
-        const diffDays = Math.floor((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-        if (diffDays > RENEWAL_ALERT_WINDOW_DAYS) continue
-
-        rows.push({
-          source_contract_id: c.id,
-          employee_number: c.employee_number,
-          staff_name: c.staff_name || null,
-          dept_no: c.created_by_dept_no,
-          work_location_name: c.work_location_name || null,
-          work_location_address: c.work_location_address || null,
-          // 開始日（自）も前回値として保存する（伊藤さんご指摘・2026-07-15：自と至は必ずセットで
-          // 変わるため、差異表示で至だけでなく自も分かるようにしたい、への対応）
-          employ_start_date: c.employ_start || null,
-          employ_end_date: c.employ_end || null,
-          // 2026-08-03追加：正社員・無期契約の「契約条件適用開始日」スナップショット。
-          contract_start_date: c.contract_start_date || null,
-          dispatch_start_date: c.dispatch_start || null,
-          dispatch_end_date: c.dispatch_end || null,
-          data_source: c.csv_mode === 'csv' ? 'csv' : 'manual',
-          csv_system: c.csv_system || null,
-          // 2026-07-31追加：新規行のみwork_placeを設定する（既存行は上書きしない方針を踏襲）。
-          work_place: c.work_place || '現場',
-          // 2026-07-16追加：前回契約の書類種別（一覧カード表示用）
-          document_type: c.document_type || null,
-          // 2026-07-16追加（チャットB）：前回契約の指揮命令者・派遣先責任者・苦情処理申出先
-          previous_contact_fields: {
-            cmd: { dept: c.cmd_dept || null, role: c.cmd_role || null, name: c.cmd_name || null, tel: c.cmd_tel || null },
-            resp: { dept: c.resp_dept || null, role: c.resp_role || null, name: c.resp_name || null, tel: c.resp_tel || null },
-            comp: { dept: c.comp_dept || null, role: c.comp_role || null, name: c.comp_name || null, tel: c.comp_tel || null },
-          },
-        })
-      }
-
-      if (rows.length === 0) return
-
-      // 退職済み・退職予定のスタッフを除外する（2026-07-21・タスク④：DBクエリ側の条件で
-      // 絞り込む形に変更。staffクエリの時点で現役スタッフのみが返るため、rowsのうち
-      // employee_numberがstaffRowsに存在しないものが「退職済み・退職予定で除外対象」となる）
-      const empNos = rows.map(r => r.employee_number)
-      const [retiredAtOk, retirementScheduledOk] = excludeRetiredStaffOr()
-      const { data: staffRows } = await supabase
-        .from('staff')
-        .select('employee_number')
-        .in('employee_number', empNos)
-        .or(retiredAtOk).or(retirementScheduledOk)
-      const activeEmpNoSet = new Set((staffRows || []).map(s => s.employee_number))
-      const targetRows = rows.filter(r => activeEmpNoSet.has(r.employee_number))
-      if (targetRows.length === 0) return
-
-      // 既存行（スタッフ入力済みの値）は上書きしないよう、スナップショット項目のみ更新
-      const { error: upsertError } = await supabase
-        .from('renewal_candidates')
-        .upsert(targetRows, { onConflict: 'source_contract_id', ignoreDuplicates: false })
-      if (upsertError) console.error('更新候補の同期エラー（upsert）:', upsertError)
+      const result = await runRenewalCandidatesSync(supabase)
+      if (!result.ok) console.error(result.error)
     } finally {
       setSyncing(false)
     }

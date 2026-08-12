@@ -14,7 +14,7 @@
 //   ①の申請済みデータ保護のみで足りるとされたため、別途のダッシュボード・通知は作らない）。
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import type Papa from 'papaparse'
+import type { ParseError } from 'papaparse'
 import { getAuthenticatedStaff } from '@/lib/apiAuth'
 import { sendCsvImportMatchedMail, sendStaffRegisterMatchedMail } from '@/lib/mail'
 import { resolveRequesterNotifyEmail } from '@/lib/mailingList'
@@ -62,7 +62,7 @@ function buildErrorDetailText(details: string[]): string | null {
 // B-14対応（2026-08-12）：Papaparseのパース警告コードを、行番号付きの分かりやすい日本語に変換する。
 // scripts/import-csv.js（ローカルCLI版）には元々この警告表示があったが、Web版に移植する際に
 // 落ちていた（parsed.errorsを完全に破棄していた）ため、そちらの考え方を踏襲して再実装する。
-function friendlyCsvParseError(err: Papa.ParseError): string {
+function friendlyCsvParseError(err: ParseError): string {
   const rowLabel = typeof err.row === 'number' ? `${err.row + 2}行目` : '該当行' // +2 = ヘッダー行 + 0始まりの補正
   switch (err.code) {
     case 'TooFewFields': return `${rowLabel}：列の数が見出し行より少ないため、この行はスキップしました（フィールド内の改行やカンマの混入が原因の可能性があります）。`

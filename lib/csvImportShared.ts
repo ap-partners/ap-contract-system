@@ -7,6 +7,7 @@
 // 切り出したもの。scripts/import-csv.js自体は手動フォールバック用にそのまま残してある
 // （定義が2箇所に重複する点は将来的な整理課題として残す）。
 import Papa from 'papaparse'
+import type { ParseError } from 'papaparse'
 import iconv from 'iconv-lite'
 
 export type ImportSystemKey = 'e-staffing' | 'HRstation' | 'winworks' | 'Staffia103' | 'Staffia104'
@@ -155,7 +156,7 @@ function isValidUtf8(buffer: Buffer): boolean {
 // フィールド内の「"」や改行混入で列がずれた行が無音でそのまま取り込まれ、間違った契約番号で
 // 別契約のデータを上書きしうる状態だった。parsed.errorsを戻り値に含め、呼び出し元で
 // 該当行をスキップ・報告できるようにする。
-export function parseCsvBuffer(buffer: Buffer): { rows: Record<string, any>[]; errors: Papa.ParseError[] } {
+export function parseCsvBuffer(buffer: Buffer): { rows: Record<string, any>[]; errors: ParseError[] } {
   const hasUtf8Bom = buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf
   const text = hasUtf8Bom
     ? buffer.subarray(3).toString('utf8')

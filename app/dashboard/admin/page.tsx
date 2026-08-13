@@ -504,7 +504,7 @@ export default function AdminDashboard() {
 
   // 契約状況モニタリング（フェーズ1・2026-07-23実装。管理部専用）
   const {
-    rows: monitoringRows, loading: monitoringLoading, fetchMonitoring,
+    rows: monitoringRows, loading: monitoringLoading, error: monitoringError, fetchMonitoring,
     requestFollowUp: requestMonitoringFollowUp, updateActionStatus: updateMonitoringActionStatus,
   } = useContractMonitoring()
 
@@ -2218,6 +2218,7 @@ export default function AdminDashboard() {
               <ContractMonitoringSection
                 rows={monitoringRows}
                 loading={monitoringLoading}
+                error={monitoringError}
                 onRefresh={fetchMonitoring}
                 currentUserName={adminStaffName}
                 requestFollowUp={requestMonitoringFollowUp}

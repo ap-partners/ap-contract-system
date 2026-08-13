@@ -883,12 +883,24 @@ export default function RenewalManagementTab({
                 <div className="grid grid-cols-3 gap-2 items-end">
                   <div>
                     <div className="text-[11px] text-[#6B7280] mb-1">派遣期間の開始日</div>
-                    <input type="date" value={draft.start} onChange={e => setManualDraft(prev => ({ ...prev, [c.id]: { start: clampDateYear(e.target.value), end: prev[c.id]?.end || draft.end } }))}
+                    <input type="date" value={draft.start} onChange={e => {
+                      const start = clampDateYear(e.target.value)
+                      setManualDraft(prev => ({ ...prev, [c.id]: { start, end: prev[c.id]?.end || draft.end } }))
+                      // M-03対応（2026-08-12）：以前はここでローカルの下書きstateにしか書いておらず、
+                      // 就業条件明示書のみ／兼用×正社員・無期契約の組み合わせでは派遣期間を保存する
+                      // 経路（コピー系ボタン）が存在しなかったため、入力しても一括更新に永久に
+                      // 含められない不具合があった。入力するたびにDBへも直接保存する。
+                      updateCandidate(c.id, { new_dispatch_start: start })
+                    }}
                       className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" />
                   </div>
                   <div>
                     <div className="text-[11px] text-[#6B7280] mb-1">派遣期間の終了日</div>
-                    <input type="date" value={draft.end} onChange={e => setManualDraft(prev => ({ ...prev, [c.id]: { start: prev[c.id]?.start || draft.start, end: clampDateYear(e.target.value) } }))}
+                    <input type="date" value={draft.end} onChange={e => {
+                      const end = clampDateYear(e.target.value)
+                      setManualDraft(prev => ({ ...prev, [c.id]: { start: prev[c.id]?.start || draft.start, end } }))
+                      updateCandidate(c.id, { new_dispatch_end: end })
+                    }}
                       className="w-full text-xs rounded-lg border border-[#E8EDF5] px-2 py-1.5" />
                   </div>
                   {hasEmploy && (

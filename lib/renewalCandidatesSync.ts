@@ -76,10 +76,19 @@ export async function runRenewalCandidatesSync(supabase: SupabaseClient): Promis
 
     // 正社員・無期契約は雇用期間が「期間の定めなし」であり、employ_end自体が残骸データで
     // 非nullになっているケースもあるため、対象社員番号の雇用形態をあらかじめ取得しておく。
+    // 2026-08-12追加（M-01対応）：dept_noも同時に取得する。従来は`created_by_dept_no`
+    // （前回契約を申請した時点の担当営業の部門）をそのままスナップショットとして使っていたが、
+    // その後スタッフが異動すると、新しい担当者の画面にも古い担当者の画面にも出てこなくなる
+    // 問題があった（renewal_candidatesのRLS自体がこのdept_no列で部門スコープ判定しているため、
+    // 画面側だけの修正では直せない）。スタッフの「今の」所属部門（staff.dept_no）を優先し、
+    // 取得できない場合のみ従来の申請時スナップショットにフォールバックする。この関数は
+    // ダッシュボード表示のたびに加え毎日のcronでも呼ばれるため、異動後は最短で当日中に
+    // dept_noが実態に追随する（自己修復する）。
     const { data: contractTypeRows } = empNosAll.length > 0
-      ? await supabase.from('staff').select('employee_number, contract_type').in('employee_number', empNosAll)
-      : { data: [] as { employee_number: string; contract_type: string | null }[] }
+      ? await supabase.from('staff').select('employee_number, contract_type, dept_no').in('employee_number', empNosAll)
+      : { data: [] as { employee_number: string; contract_type: string | null; dept_no: number | null }[] }
     const contractTypeByEmpNo = new Map((contractTypeRows || []).map((r: any) => [r.employee_number, r.contract_type]))
+    const currentDeptNoByEmpNo = new Map((contractTypeRows || []).map((r: any) => [r.employee_number, r.dept_no]))
 
     const today = new Date(); today.setHours(0, 0, 0, 0)
     const rows: any[] = []
@@ -98,7 +107,7 @@ export async function runRenewalCandidatesSync(supabase: SupabaseClient): Promis
         source_contract_id: c.id,
         employee_number: c.employee_number,
         staff_name: c.staff_name || null,
-        dept_no: c.created_by_dept_no,
+        dept_no: currentDeptNoByEmpNo.get(c.employee_number) ?? c.created_by_dept_no,
         work_location_name: c.work_location_name || null,
         work_location_address: c.work_location_address || null,
         employ_start_date: c.employ_start || null,

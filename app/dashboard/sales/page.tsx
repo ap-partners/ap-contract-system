@@ -282,7 +282,7 @@ export default function SalesDashboard() {
   // 契約状況モニタリング（2026-08-03追加。担当営業は閲覧のみ・自部門のみ。DB関数
   // get_contract_monitoring_status()側で担当営業ロールの場合のみ自部門グループに絞り込み済み）
   const {
-    rows: monitoringRows, loading: monitoringLoading, fetchMonitoring,
+    rows: monitoringRows, loading: monitoringLoading, error: monitoringError, fetchMonitoring,
   } = useContractMonitoring()
 
   useEffect(() => {
@@ -857,6 +857,7 @@ export default function SalesDashboard() {
               <ContractMonitoringSection
                 rows={monitoringRows}
                 loading={monitoringLoading}
+                error={monitoringError}
                 onRefresh={fetchMonitoring}
                 currentUserName={deptNameRef.current}
                 readOnly

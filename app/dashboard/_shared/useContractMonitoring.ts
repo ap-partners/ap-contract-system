@@ -124,12 +124,22 @@ function evaluateDoc(
 export function useContractMonitoring() {
   const [rows, setRows] = useState<MonitoringRow[]>([])
   const [loading, setLoading] = useState(false)
+  // M-05対応（2026-08-12）：取得失敗時、従来はconsole.errorのみでrowsが更新されず、
+  // 初回読み込み時は空配列のまま＝「要対応の案件はありません」という正常時と見分けの
+  // つかない表示になっていた（コンプライアンス目的の画面が障害時に「異常なし」と嘘をつく
+  // 状態）。再読み込み失敗時は直前の表示を残しつつ、失敗の事実は必ず画面に出す。
+  const [error, setError] = useState<string | null>(null)
 
   const fetchMonitoring = useCallback(async () => {
     setLoading(true)
+    setError(null)
     try {
-      const { data, error } = await supabase.rpc('get_contract_monitoring_status')
-      if (error) { console.error('契約状況モニタリング取得エラー:', error); return }
+      const { data, error: rpcError } = await supabase.rpc('get_contract_monitoring_status')
+      if (rpcError) {
+        console.error('契約状況モニタリング取得エラー:', rpcError)
+        setError('データの取得に失敗しました。時間をおいて再読み込みしてください。')
+        return
+      }
       const raw = (data || []) as RawRow[]
 
       const deptNos = Array.from(new Set(raw.map(r => r.dept_no).filter((n): n is number => n != null)))
@@ -329,5 +339,5 @@ export function useContractMonitoring() {
     }
   }, [])
 
-  return { rows, loading, fetchMonitoring, updateActionStatus, requestFollowUp }
+  return { rows, loading, error, fetchMonitoring, updateActionStatus, requestFollowUp }
 }

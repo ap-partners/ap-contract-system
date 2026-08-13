@@ -23,6 +23,7 @@ import { formatDateTimeJp } from '@/lib/dateFormat'
 type Props = {
   rows: MonitoringRow[]
   loading: boolean
+  error?: string | null
   onRefresh: () => void
   currentUserName: string | null
   requestFollowUp?: (
@@ -87,7 +88,7 @@ function ActionStatusSegmented({
 }
 
 export default function ContractMonitoringSection({
-  rows, loading, onRefresh, currentUserName, requestFollowUp, updateActionStatus, readOnly = false,
+  rows, loading, error, onRefresh, currentUserName, requestFollowUp, updateActionStatus, readOnly = false,
 }: Props) {
   const [showLedgerless, setShowLedgerless] = useState(false)
   const [showResolved, setShowResolved] = useState(false)
@@ -158,12 +159,28 @@ export default function ContractMonitoringSection({
         <SeverityBadge level={4} /><span className="text-xs text-[#6B7280]">{counts[4]}件</span>
       </div>
 
+      {/* M-05対応（2026-08-12）：取得に失敗した場合、以前は何も表示せず「要対応の案件は
+          ありません」という正常時と同じ見た目になっており、コンプライアンス目的のこの画面が
+          障害時に「異常なし」と誤解させる作りだった。エラーの事実と再読み込み手段を必ず示す。 */}
+      {error && !loading && (
+        <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-[#F5C6C6] bg-[#FDECEC] px-4 py-3">
+          <p className="text-sm font-semibold text-[#C0392B]">{error}</p>
+          <button onClick={onRefresh} className="shrink-0 rounded-full border border-[#C0392B] px-3 py-1 text-xs font-semibold text-[#C0392B] hover:bg-white">
+            再読み込み
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className="text-sm text-[#8B98B1] py-6 text-center">読み込み中…</div>
       ) : visibleRows.length === 0 ? (
-        <div className="text-sm text-[#8B98B1] py-6 text-center bg-white rounded-2xl border border-[#EDF0F5]">
-          {showLedgerless ? '該当する案件はありません。' : '要対応の案件はありません（台帳なしを含めて確認する場合は上のチェックをオンにしてください）。'}
-        </div>
+        // エラー時は「要対応の案件はありません」という正常時と同じ文言を出さない
+        // （上のエラーバナーと矛盾して見えるため）。
+        error ? null : (
+          <div className="text-sm text-[#8B98B1] py-6 text-center bg-white rounded-2xl border border-[#EDF0F5]">
+            {showLedgerless ? '該当する案件はありません。' : '要対応の案件はありません（台帳なしを含めて確認する場合は上のチェックをオンにしてください）。'}
+          </div>
+        )
       ) : (
         <div className="space-y-2">
           {visibleRows.map(row => (

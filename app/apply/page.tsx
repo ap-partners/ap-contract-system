@@ -1531,12 +1531,20 @@ function ApplyPageInner() {
       // 2026-07-17追加（チャットD・⑤個別申請）：更新期限管理の「個別に申請する」経由で開いた場合、
       // 送信成功後にrenewal_candidates側を「申請済み」にする（一括申請と同じ扱い。失敗しても
       // 契約自体は正常に保存済みなので、ここのエラーは申請完了自体をブロックしない）。
+      // 2026-08-12修正（M-19対応）：従来はcatch{}で例外を握りつぶすだけで、失敗してもコンソールにすら
+      // 記録が残らなかった（supabase-jsはネットワーク例外以外＝DBエラー等は基本的にthrowせず
+      // { error }として返すため、実際にはcatchブロック自体もほぼ実行されず、戻り値のerrorを
+      // 見ていないことで静かに失敗を見逃していた）。契約自体は保存済みのため申請完了自体は
+      // 引き続きブロックしないが、失敗した場合は必ずconsole.errorに残すよう修正。
       if (renewalCandidateId) {
         try {
-          await supabase.from('renewal_candidates')
+          const { error: renewalUpdateError } = await supabase.from('renewal_candidates')
             .update({ status: 'applied', triage_mode: 'undecided' })
             .eq('id', renewalCandidateId)
-        } catch { /* 契約自体は保存済みのため、ここの失敗で申請完了をブロックしない */ }
+          if (renewalUpdateError) console.error('renewal_candidates更新エラー（申請完了はブロックしない）:', renewalUpdateError)
+        } catch (e) {
+          console.error('renewal_candidates更新で例外発生（申請完了はブロックしない）:', e)
+        }
       }
       // 契約状況モニタリング フェーズ3（2026-07-29）：申請保存のたびに、対象スタッフの
       // staff.work_placeを申請内容のworkPlaceで同期する。契約状況モニタリング機能（フェーズ1）は
@@ -1545,8 +1553,11 @@ function ApplyPageInner() {
       // 失敗しても契約自体は保存済みのため、renewalCandidateIdの更新と同様に申請完了をブロックしない。
       if (selectedStaff?.id) {
         try {
-          await supabase.from('staff').update({ work_place: workPlace }).eq('id', selectedStaff.id)
-        } catch { /* 契約自体は保存済みのため、ここの失敗で申請完了をブロックしない */ }
+          const { error: workPlaceUpdateError } = await supabase.from('staff').update({ work_place: workPlace }).eq('id', selectedStaff.id)
+          if (workPlaceUpdateError) console.error('staff.work_place更新エラー（申請完了はブロックしない）:', workPlaceUpdateError)
+        } catch (e) {
+          console.error('staff.work_place更新で例外発生（申請完了はブロックしない）:', e)
+        }
       }
       setIsSubmitted(true)
     } catch (e: any) {

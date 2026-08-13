@@ -126,8 +126,22 @@ export function computeWageCheckDetail(input: Pick<AutoCheckInput,
   if (hourlyEquivalent === null) return null // 換算できない場合は判定不能
 
   // 無期契約・正社員は雇用期間（employStart/employEnd）を使わず、契約条件適用開始日（contractStartDate）を使う仕様のため、
-  // こちらが空の場合のフォールバックとして必ず含める（2026-07-07修正：この考慮漏れで正社員の最低賃金チェックが常にスキップされていた）
-  const periodEnd = input.employEnd || input.employStart || input.contractStartDate || null
+  // こちらが空の場合のフォールバックとして必ず含める（2026-07-07修正：この考慮漏れで正社員の最低賃金チェックが常にスキップされていた）。
+  //
+  // 2026-08-12修正（M-15対応）：上記2026-07-07修正はcontractStartDateを「判定基準日」に
+  // そのまま使っていたが、これは「雇用期間の終了日」ではなく「契約が始まった日」であるため、
+  // 契約開始後に最低賃金が改定されると、改定日がcontractStartDateより後になり
+  // applicableRowsの絞り込み条件（effective_from <= periodEnd）に一切ヒットせず、
+  // 無期契約・正社員は新しい改定を永久に検知できない不具合があった（有期契約は
+  // employEnd＝実際の雇用終了日が入るため、この問題は発生しない）。
+  // 無期契約・正社員は「今も雇用が続いている＝今日時点で有効な最低賃金と比較すべき」ため、
+  // employStart/employEndが共に空でcontractStartDateのみがある場合は、
+  // contractStartDateの代わりに今日の日付（JST基準）を判定基準日として使う。
+  let periodEnd = input.employEnd || input.employStart || null
+  if (!periodEnd && input.contractStartDate) {
+    const jstTodayFormat = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }) // 'YYYY-MM-DD'形式
+    periodEnd = jstTodayFormat.format(new Date())
+  }
   if (!periodEnd) return null
 
   // 雇用期間の終了日までに適用開始済みの行の中から、最も新しい（＝適用開始日が最も遅い）行を採用する。

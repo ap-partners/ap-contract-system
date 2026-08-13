@@ -93,5 +93,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '本人確認用のリンク発行に失敗しました。時間をおいて再度お試しください。' }, { status: 500 })
   }
 
+  // 外部総合品質監査レポートM-25対応（2026-08-13）：従来はこのAPI自体では認証コードを
+  // 消込まず、実際の消込は本人のパスワード設定成功後に呼ばれる/api/account-setup/finalizeで
+  // 行っていた。この設計だと、同じ認証コードを使って何度でもこのAPIを呼び直せてしまい、
+  // その都度「パスワードを設定できる完全な認可トークン」を再発行できてしまう問題があった
+  // （finalize側は既に「setup_codeがnullなら成功扱いで即returnする」という冪等な作りに
+  // なっているため、ここで消込んでも finalize 側の変更は不要）。トークン発行に成功した
+  // 時点で直ちに消込むことで、同じコードでの再発行を1回限りに制限する。
+  // トレードオフ（伊藤さんへ共有・2026-08-13合意）：この後の本人確認（verifyOtp）・
+  // パスワード設定（updateUser）はいずれもクライアント側で自動リトライ済みのため通信の
+  // 瞬断は吸収されるが、それでも稀にここから先で画面を離脱してしまった場合は、同じコードでの
+  // やり直しができなくなり、管理部への新しいコードの再発行依頼が必要になる。
+  await supabaseAdmin.from('staff_roles').update({
+    setup_code: null,
+    setup_code_expires_at: null,
+    setup_code_issued_at: null,
+    setup_code_attempts: 0,
+  }).eq('id', userId)
+
   return NextResponse.json({ ok: true, tokenHash: linkData.properties.hashed_token })
 }

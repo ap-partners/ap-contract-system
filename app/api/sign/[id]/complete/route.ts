@@ -35,6 +35,14 @@ const supabaseAdmin = createClient(
 // スタッフマスタ上の氏名が一致することの検証、の2点を追加する。
 const MAX_SIGNATURE_IMAGE_BYTES = 500 * 1024 // 500KB（丸印鑑1枚として十分な上限）
 
+// PNGファイルの先頭8バイトは仕様上常に固定（マジックバイト）。data URL形式・サイズ上限の
+// チェックだけでは「PNGと自称しているだけの任意バイナリ」を弾けなかったため、外部総合品質監査
+// レポートM-09対応（2026-08-13）として、実際にPNGとして妥当か（マジックバイト＋IHDRチャンクから
+// 読み取れる画像サイズが常識的な範囲か）を追加でチェックする。サーバー側での印影生成への
+// 全面移行は工数が大きいため見送り、あくまで「壊れた・PNGでないデータを弾く」簡易チェックに留める。
+const PNG_MAGIC_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+const MAX_SIGNATURE_IMAGE_DIMENSION = 4000 // px（丸印鑑1枚として常識的な上限。Canvas生成物は数百px程度）
+
 const validateSignatureImageDataUrl = (dataUrl: string): string | null => {
   const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl)
   if (!match) return '署名画像の形式が正しくありません。お手数ですが、最初からやり直してください。'
@@ -42,6 +50,22 @@ const validateSignatureImageDataUrl = (dataUrl: string): string | null => {
   const approxBytes = Math.floor((base64.length * 3) / 4)
   if (approxBytes === 0) return '署名画像が空です。お手数ですが、最初からやり直してください。'
   if (approxBytes > MAX_SIGNATURE_IMAGE_BYTES) return '署名画像のサイズが大きすぎます。お手数ですが、最初からやり直してください。'
+
+  let buffer: Buffer
+  try {
+    buffer = Buffer.from(base64, 'base64')
+  } catch {
+    return '署名画像を読み取れませんでした。お手数ですが、最初からやり直してください。'
+  }
+  if (buffer.length < 24 || !buffer.subarray(0, 8).equals(PNG_MAGIC_BYTES)) {
+    return '署名画像が正しいPNG形式ではありません。お手数ですが、最初からやり直してください。'
+  }
+  // IHDRチャンク（PNG先頭から16〜23バイト目）に幅・高さが4バイトずつビッグエンディアンで入っている。
+  const width = buffer.readUInt32BE(16)
+  const height = buffer.readUInt32BE(20)
+  if (width === 0 || height === 0 || width > MAX_SIGNATURE_IMAGE_DIMENSION || height > MAX_SIGNATURE_IMAGE_DIMENSION) {
+    return '署名画像のサイズが不正です。お手数ですが、最初からやり直してください。'
+  }
   return null
 }
 
@@ -255,6 +279,10 @@ export async function POST(
       sign_action_type: signAction,
       sign_confirmed_ip: getClientIp(req),
       sign_confirmed_user_agent: req.headers.get('user-agent'),
+      // 外部総合品質監査レポートM-09対応（2026-08-13）：署名画面で入力されたフルネームを
+      // 証跡として保存する（従来はどこにも保存されず、空文字チェックのみで捨てられていた）。
+      // 「内容を確認しました」（confirmation）の場合はフルネーム入力自体が無いためnullのまま。
+      ...(signAction === 'signature' ? { sign_seal_name: sealName } : {}),
       ...(csvMetaBackupFileId ? { csvmeta_backup_file_id: csvMetaBackupFileId } : {}),
       updated_at: now,
     })

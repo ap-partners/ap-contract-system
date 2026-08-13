@@ -12,7 +12,6 @@ import { sendSignRequestMail } from '@/lib/mail'
 import {
   generateSignAuthCode,
   computeSignAuthCodeExpiry,
-  SIGN_AUTH_CODE_EXPIRY_DAYS,
   SIGN_AUTH_MAX_ATTEMPTS,
   SIGN_AUTH_REISSUE_COOLDOWN_MINUTES,
 } from '@/lib/signAuthCode'
@@ -36,7 +35,7 @@ export async function POST(
 
   const { data: contract, error } = await supabaseAdmin
     .from('contracts')
-    .select('id, staff_id, status, document_type, sign_auth_code_expires_at, sign_auth_attempts')
+    .select('id, staff_id, status, document_type, sign_auth_code_expires_at, sign_auth_attempts, sign_auth_last_issued_at')
     .eq('id', id)
     .maybeSingle()
 
@@ -69,9 +68,16 @@ export async function POST(
   // 総合レビュー指摘8対応（2026-07-15）：
   // ①レート制限：直近発行から一定時間内は再発行を拒否し、社員番号さえ分かれば
   //   何度でも呼べて従業員へメールを連投できてしまう問題に対処する。
-  //   sign_auth_code_expires_atから発行時刻を逆算し、クールダウン中かどうか判定する。
+  //
+  // 外部総合品質監査レポートM-14対応（2026-08-13）：従来はsign_auth_code_expires_atから
+  // 発行時刻を逆算していたが、2026-07-17のマイページ導入以降notify-sign-requestが
+  // この契約単位コード方式自体を発行しなくなり（reissue自身しかsign_auth_code系の列を
+  // 書き込まなくなった）、初回reissue呼び出し時点ではprevExpiresAtが必ずnullになるため、
+  // 逆算に頼るこの判定方式は不安定だった。発行時刻そのものを直接記録するsign_auth_last_issued_at
+  // 列を新設し、そちらを直接比較する方式に変更する。
   const prevAttempts = contract.sign_auth_attempts ?? 0
   const prevExpiresAt = contract.sign_auth_code_expires_at ? new Date(contract.sign_auth_code_expires_at) : null
+  const prevIssuedAt = contract.sign_auth_last_issued_at ? new Date(contract.sign_auth_last_issued_at) : null
   const now = new Date()
   const wasExpired = !prevExpiresAt || prevExpiresAt.getTime() <= now.getTime()
   const wasLocked = prevAttempts >= SIGN_AUTH_MAX_ATTEMPTS
@@ -80,9 +86,8 @@ export async function POST(
   // 5回失敗してロック中の状態ではこのクールダウン判定自体が丸ごとスキップされ、
   // 「失効→即再発行→試行回数リセット→再度失効」を無制限に繰り返せる穴になっていた。
   // ロック中かどうかに関わらず、直近の発行からの経過時間は必ずチェックする。
-  if (!wasExpired && prevExpiresAt) {
-    const issuedAt = new Date(prevExpiresAt.getTime() - SIGN_AUTH_CODE_EXPIRY_DAYS * 24 * 60 * 60 * 1000)
-    const minutesSinceIssued = (now.getTime() - issuedAt.getTime()) / (60 * 1000)
+  if (!wasExpired && prevIssuedAt) {
+    const minutesSinceIssued = (now.getTime() - prevIssuedAt.getTime()) / (60 * 1000)
     if (minutesSinceIssued < SIGN_AUTH_REISSUE_COOLDOWN_MINUTES) {
       return NextResponse.json(
         { error: `再発行は少し時間をおいてからお試しください（発行済みのメールもご確認ください）。` },
@@ -104,6 +109,7 @@ export async function POST(
     .update({
       sign_auth_code: authCode,
       sign_auth_code_expires_at: authCodeExpiresAt,
+      sign_auth_last_issued_at: now.toISOString(),
       sign_auth_attempts: nextAttempts,
       updated_at: new Date().toISOString(),
     })

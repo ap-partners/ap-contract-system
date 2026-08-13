@@ -3276,3 +3276,23 @@ B-17のcron自動実行待ち（次回2026-08-13 10:00 JST）の間、伊藤さ�
 **M-19（申請完了後処理のエラーが黙殺される）**：`/apply`の実際の申請フローでDBエラーを安全に誘発する手段が無いため、本番デプロイ済みのJSバンドルを直接フェッチして検証する方式を採用（2026-08-05のB-17実機確認等でも使った手法）。`/apply`ページで読み込まれるチャンクの中から`renewal_candidates更新エラー`・`work_place更新エラー`という新しいログ文言を含むファイルを特定し、両文字列の直前60文字以内に`console.error`の呼び出しが実在することを確認（コード上、修正した2箇所の`try{}catch{}`が実際にビルド・デプロイされていることの裏付け）。
 
 以上でバッチ1（M-01・M-03・M-05・M-15・M-19）はすべて実機確認まで完了。M-01のみ、cronが呼ぶ経路（`runRenewalCandidatesSync`のサービスロール実行）での確認が残っており、次回2026-08-14 10:00 JSTの自動実行後に別途確認する（CLAUDE.md 残タスク一覧に記載済み）。
+
+### 2026-08-13：外部総合品質監査レポート★3「①データ破損・実害系」9件のうちバッチ2（M-09・M-14・M-25・M-26）の実装
+
+伊藤さんへプロの業務改善責任者／PdM／UI-UXデザイナー目線で4件それぞれの現状課題・修正方針をプロース（AskUserQuestionツールは伊藤さんの明示的な希望により今回不使用）で提示し、①「氏名保存＋画像チェック」②④は修正案の通り、③（M-25）はさらに「本当にこれがベストか」の再評価依頼を受けたため`app/account-setup/page.tsx`のクライアント側実装（`retrySupabaseCall`による自動リトライの存在）を再確認した上で最終推奨を提示し、伊藤さんのOKを得てから実装（ルール16準拠）。
+
+**M-09（署名画像が実質未検証・入力氏名が保存されない）**：`app/api/sign/[id]/complete/route.ts`の`validateSignatureImageDataUrl()`にPNGマジックバイト（先頭8バイト）とIHDRチャンク（16〜23バイト目＝幅・高さのbig-endian uint32）を読み取る検証を追加し、data URL形式・500KB上限だけだった既存チェックを強化（最大寸法4000pxの上限チェックも追加）。あわせて、画面で入力されたフルネーム（`sealName`。丸印鑑生成の元になった文字列）を、実際の署名時（`signAction==='signature'`。パターンB確認のみのフローは対象外）のみ`contracts.sign_seal_name`へ保存するよう修正（従来は空文字チェックのみでどこにも保存されていなかった）。
+
+**M-14（認証コード再発行のクールダウンが機能しない）**：2026-07-17のマイページ導入以降、`notify-sign-request`がこの契約単位認証コード方式自体を発行しなくなり`sign_auth_code`系列の書き込みは`reissue`自身だけが行うようになっていたため、`sign_auth_code_expires_at`から発行時刻を逆算するクールダウン判定方式では初回呼び出し時に`prevExpiresAt`が必ずnullになり実質機能していなかった。発行時刻そのものを直接記録する`contracts.sign_auth_last_issued_at`列を新設し、`app/api/sign/[id]/reissue/route.ts`のクールダウン判定・発行処理をこの列を直接参照・更新する方式に変更。
+
+**M-25（アカウント設定のsetup_codeが消費されず何度でもrecoveryトークンを発行できる）**：伊藤さんからの再評価依頼を受け`app/account-setup/page.tsx`を確認した結果、`verifyOtp()`・`updateUser()`双方が既に`retrySupabaseCall()`でラップされ通信の瞬断は自動吸収される設計になっていることを確認。この事実を踏まえ、当初案（`complete`成功＝トークン発行成功の時点でコードを即座に消込む）を維持するのが最善と最終判断し、その通り実装。`app/api/account-setup/complete/route.ts`で`generateLink()`成功直後に`staff_roles`の`setup_code`系列をnull・attemptsを0にリセット。`finalize/route.ts`は元々`!setup_code`時に成功扱いで早期returnする冪等設計だったため無変更（コードレビューで確認済み）。トレードオフ（token発行成功後、ごく稀にverifyOtp/updateUserへ進む前に画面を離脱した場合のみ同じコードでのやり直し不可・管理部への再発行依頼が必要になる）は伊藤さんへ共有済み。
+
+**M-26（resend_codeがパスワード設定済みアカウントにも新コードを発行できる）**：`app/api/admin/accounts/route.ts`の`case 'resend_code':`冒頭に、対象アカウントが凍結済みまたは`needs_password_setup===true`のいずれでもない場合（＝既にパスワード設定済みの現役アカウント）は400エラーで拒否するガードを追加。`app/dashboard/_shared/AccountManagementTab.tsx`の「コード再送」ボタンが元々`needsPasswordSetup===true`の場合のみ表示される設計であることをコードレビューで確認済みのため、正規のUI操作への影響は無い。
+
+**DBマイグレーション**（Supabase MCP `apply_migration`・名前`add_sign_seal_name_and_last_issued_at`）：
+```sql
+alter table contracts add column if not exists sign_seal_name text;
+alter table contracts add column if not exists sign_auth_last_issued_at timestamp with time zone;
+```
+
+構文チェック（`ts.transpileModule`、変更した全4ファイル）に加え、プロジェクト全体の`npx tsc --noEmit -p tsconfig.json`も実行し、いずれも診断0件を確認済み。Supabase Advisor（security）も確認し、今回の変更に起因する新規の警告は無いことを確認済み。要デプロイ＋実機確認。これで外部総合品質監査レポート★3「①データ破損・実害系」9件（M-01・M-03・M-05・M-09・M-14・M-15・M-19・M-25・M-26）はバッチ1・バッチ2とも実装完了（実機確認はバッチ1のみ完了・バッチ2はこれから）。

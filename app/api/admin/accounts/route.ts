@@ -311,6 +311,16 @@ export async function POST(req: NextRequest) {
         const { data: target } = await supabaseAdmin.from('staff_roles').select('*').eq('id', id).maybeSingle()
         if (!target) return NextResponse.json({ error: '対象のアカウントが見つかりませんでした。' }, { status: 404 })
 
+        // 外部総合品質監査レポートM-26対応（2026-08-13）：画面（AccountManagementTab.tsx）は
+        // 「コード再送」ボタン自体をneedsPasswordSetupがtrueのアカウントにしか表示しないよう
+        // 既に配慮していたが、このAPI自体には対応する制限が無く、画面を経由しない直接呼び出しでは
+        // 既にパスワードを設定して普段通りログインできている現役アカウントに対しても新しい認証
+        // コードを発行できてしまっていた（アカウント管理権限を持つ人が他の管理者のパスワードを
+        // 乗っ取る経路になり得る）。画面の見た目通りの制限をAPI側にも明示的にかける。
+        if (target.is_active !== false && target.needs_password_setup !== true) {
+          return NextResponse.json({ error: 'このアカウントは既にパスワードを設定済みのため、認証コードを再送できません。' }, { status: 400 })
+        }
+
         if (target.setup_code_issued_at) {
           const issuedAt = new Date(target.setup_code_issued_at).getTime()
           const cooldownMs = ACCOUNT_SETUP_REISSUE_COOLDOWN_MINUTES * 60 * 1000

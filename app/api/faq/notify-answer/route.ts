@@ -26,7 +26,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '管理部ロールでのログインが必要です。' }, { status: 401 })
   }
 
-  const body = await req.json()
+  // 外部総合品質監査レポートM-24対応（2026-08-14）：req.json()を`.catch(() => null)`で
+  // 保護し、他のAPIルートと同じ400エラーに統一する。
+  const body = await req.json().catch(() => null)
+  if (!body) {
+    return NextResponse.json({ error: 'リクエスト内容を読み取れませんでした。' }, { status: 400 })
+  }
   const { inquiryId } = body as { inquiryId: string }
 
   if (!inquiryId) {

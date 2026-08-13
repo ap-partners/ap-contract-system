@@ -32,7 +32,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const { id: requestId } = await params
-  const body = await req.json()
+  // 外部総合品質監査レポートM-24対応（2026-08-14）：req.json()を`.catch(() => null)`で
+  // 保護し、他のAPIルートと同じ400エラーに統一する。
+  const body = await req.json().catch(() => null)
+  if (!body) {
+    return NextResponse.json({ error: 'リクエスト内容を読み取れませんでした。' }, { status: 400 })
+  }
   const { statusField, action, reason } = body as {
     statusField: StatusField
     action: 'complete' | 'cancel'

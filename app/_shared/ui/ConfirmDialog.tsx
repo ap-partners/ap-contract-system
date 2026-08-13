@@ -54,10 +54,18 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const dialogRef = useRef<HTMLDivElement>(null)
   const cancelBtnRef = useRef<HTMLButtonElement>(null)
 
+  // 外部総合品質監査レポートM-06対応（2026-08-14）：確認ダイアログが二重に呼ばれた場合
+  // （例：連打・非同期処理の重複実行）、従来は単純にsetPending()で上書きしていたため、
+  // 前の呼び出しが返したPromiseの`resolve`が二度と呼ばれず、その呼び出し元が
+  // 「振り分け中…」等の待ち状態のまま永久に固まっていた。setPendingを関数形式にし、
+  // 上書きする直前に必ず前のPromiseを「いいえ（false）」で解決しておく。
   const confirmFn = useCallback<ConfirmFn>((options: ConfirmOptions | string) => {
     const normalized: ConfirmOptions = typeof options === 'string' ? { message: options } : options
     return new Promise<boolean>((resolve) => {
-      setPending({ options: normalized, resolve })
+      setPending(prev => {
+        prev?.resolve(false)
+        return { options: normalized, resolve }
+      })
     })
   }, [])
 

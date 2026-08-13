@@ -11,7 +11,7 @@
 // ④権限（社内承認・アカウント管理）は役割が管理部の場合のみ設定可能。
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { getAuthHeader } from '@/lib/supabase'
 // 2026-08-05：日付表記統一によりtoLocaleString('ja-JP')のスラッシュ表記を廃止し漢字表記へ
 import { formatDateTimeJp } from '@/lib/dateFormat'
@@ -297,6 +297,7 @@ function AccountFormModal({
   onSaved: () => void
 }) {
   const { showSuccess, showError } = useToast()
+  const confirmDialog = useConfirm()
   const [name, setName] = useState(account?.name || '')
   const [email, setEmail] = useState(account?.email || '')
   const [role, setRole] = useState<Role>(account?.role || '担当営業')
@@ -306,9 +307,72 @@ function AccountFormModal({
   const [validationError, setValidationError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
+  // 外部総合品質監査レポートM-23対応（2026-08-14）：このモーダルだけEsc・フォーカストラップ・
+  // 入力破棄確認が無く、オーバーレイの誤クリックだけで入力内容が消えてしまっていた。
+  // 確認ダイアログ（ConfirmDialog.tsx）と同じ考え方のキーボード操作を追加し、入力済みの
+  // 内容がある状態で閉じようとした場合のみ「破棄しますか？」の確認を挟む。
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const FOCUSABLE_SELECTOR = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+  const isDirty = (): boolean => {
+    if (mode === 'create') {
+      return !!(name.trim() || email.trim() || role !== '担当営業' || deptNo || isInternalApprover || isAccountAdmin)
+    }
+    return (
+      name.trim() !== (account?.name || '') ||
+      role !== (account?.role || '担当営業') ||
+      deptNo !== (account?.deptNo != null ? String(account.deptNo) : '') ||
+      isInternalApprover !== (account?.isInternalApprover || false) ||
+      isAccountAdmin !== (account?.isAccountAdmin || false)
+    )
+  }
+
+  const requestClose = useCallback(async () => {
+    if (saving) return
+    if (isDirty()) {
+      const ok = await confirmDialog({
+        title: '入力内容を破棄しますか？',
+        message: 'このまま閉じると、入力した内容は保存されません。',
+        tone: 'danger',
+        confirmLabel: '破棄する',
+      })
+      if (!ok) return
+    }
+    onClose()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saving, name, email, role, deptNo, isInternalApprover, isAccountAdmin])
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        requestClose()
+        return
+      }
+      if (e.key === 'Tab') {
+        const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+        if (!focusable || focusable.length === 0) return
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [requestClose])
+
+  const EMAIL_FORMAT_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
   const handleSave = async () => {
     if (!name.trim()) { setValidationError('氏名を入力してください。'); return }
     if (mode === 'create' && !email.trim()) { setValidationError('メールアドレスを入力してください。'); return }
+    if (mode === 'create' && !EMAIL_FORMAT_REGEX.test(email.trim())) { setValidationError('メールアドレスの形式が正しくありません。'); return }
     if (role === '担当営業' && !deptNo) { setValidationError('担当営業には部門を選択してください。'); return }
     setValidationError(null)
     setSaving(true)
@@ -329,8 +393,8 @@ function AccountFormModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 px-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 px-4" onClick={requestClose}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
         <p className="text-base font-bold text-[#1F2937]">{mode === 'create' ? 'アカウントを新規追加' : 'アカウントを編集'}</p>
         {mode === 'edit' && <p className="mt-1 text-xs text-[#6B7280]">{account?.name || account?.email}さんの設定を変更します。</p>}
 
@@ -397,7 +461,7 @@ function AccountFormModal({
         </div>
 
         <div className="mt-6 flex justify-end gap-2">
-          <button onClick={onClose} className={secondaryBtn}>キャンセル</button>
+          <button onClick={requestClose} className={secondaryBtn}>キャンセル</button>
           <button onClick={handleSave} disabled={saving} className={primaryBtn}>{saving ? '保存中…' : '保存'}</button>
         </div>
       </div>

@@ -3296,3 +3296,39 @@ alter table contracts add column if not exists sign_auth_last_issued_at timestam
 ```
 
 構文チェック（`ts.transpileModule`、変更した全4ファイル）に加え、プロジェクト全体の`npx tsc --noEmit -p tsconfig.json`も実行し、いずれも診断0件を確認済み。Supabase Advisor（security）も確認し、今回の変更に起因する新規の警告は無いことを確認済み。要デプロイ＋実機確認。これで外部総合品質監査レポート★3「①データ破損・実害系」9件（M-01・M-03・M-05・M-09・M-14・M-15・M-19・M-25・M-26）はバッチ1・バッチ2とも実装完了（実機確認はバッチ1のみ完了・バッチ2はこれから）。
+
+### 2026-08-13：バッチ2（M-09・M-14・M-25・M-26）のデプロイ後実機確認
+
+伊藤さんの「デプロイ完了」報告を受け、Claude in Chrome（管理部admin-testでログイン後のブラウザコンソールからのfetch呼び出し）＋Supabase MCPで実機確認を実施。実際のAPIエンドポイントに対して本番同様のリクエストを送り、DB上の結果まで突合した。すべて安全に復元可能な方法（既存のテスト専用アカウント・テスト契約の一時的な状態変更）で検証し、確認後は元の状態に戻した。
+
+**M-26（resend_codeの対象制限）**：①ブロック側＝ssc-test（既にパスワード設定済み・現役）へ`resend_code`を呼ぶと、期待通り400「このアカウントは既にパスワードを設定済みのため、認証コードを再送できません。」を確認。②許可側＝凍結済みのテスト専用アカウント（JWTテスト太郎・is_active=false）へ同じ呼び出しを行うと200 okで正常に新しいコードが発行されることを確認（凍結済みアカウントは対象外にしない設計通り）。
+
+**M-25（setup_codeのconsume-at-complete化）**：上記で発行されたコード（JWTテスト太郎宛）を使い、`/api/account-setup/complete`を検証。対象アカウントがis_active=falseのままだと別のガード（「このアカウントは現在ご利用いただけません」）に先に引っかかるため、一時的にis_active=trueへ変更した上で実行。1回目の呼び出しは200 ok・tokenHash発行を確認、直後の2回目（同じコード）は400「認証コードが発行されていません。管理部に再発行を依頼してください。」で拒否されることを確認（consume-at-complete化の核心）。確認後、対象アカウントは`is_active=false`・`needs_password_setup=false`・`setup_code`系列すべてnullへ復元。
+
+**M-14（sign_auth_last_issued_at列によるクールダウン）**：実データ契約（伊藤大介様・100047・雇用契約書・73c51a45-6eea-4971-9e7c-d6fab50408d8。署名待ち）に対し`/api/sign/[id]/reissue`を連続2回呼び出し、1回目200 sent:true、2回目は即座に429「再発行は少し時間をおいてからお試しください」を確認。Supabase MCPで`contracts.sign_auth_last_issued_at`に実際の発行時刻が記録されていることも確認。
+
+**M-09（署名画像PNG検証・sign_seal_name保存）**：同じ契約に対し、①PNGを自称するだけの偽データ（プレーンテキストをbase64化したもの）で`/api/sign/[id]/complete`を呼ぶと、期待通り400「署名画像が正しいPNG形式ではありません。」で拒否されることを確認（ステータスは署名待ちのまま変化せず）。②ブラウザのCanvasで実際に生成した正当なPNG（丸印鑑相当・200×200px）とフルネーム「伊藤 大介」で同APIを呼ぶと200 successとなり、Supabase MCPで`contracts.sign_seal_name`に「伊藤 大介」が正しく保存され、`status`が署名済み・`drive_file_id`も記録されていることを確認。
+
+**復元作業**：M-09・M-14のテストで実際に署名完了状態になった契約（73c51a45...）は、`status`を署名待ちへ、`signed_at`・`sign_action_type`・`sign_seal_name`・`drive_file_id`・`sign_confirmed_ip`・`sign_confirmed_user_agent`・`sign_auth_code`系列をすべて元のnull状態へSupabase MCPで復元済み。M-25・M-26で使用したJWTテスト太郎（befbf6df-...）も凍結済み・未設定状態へ復元済み。唯一、署名完了テスト時にGoogle Driveへアップロードされた署名済みPDF（孤児ファイル1件）のみ、削除用ツールが利用可能な範囲に無いため残存（実害なし。過去の同種ケースと同じ扱い）。
+
+これで外部総合品質監査レポート★3「①データ破損・実害系」9件（M-01・M-03・M-05・M-09・M-14・M-15・M-19・M-25・M-26）はバッチ1・バッチ2とも実装・実機確認まですべて完了。M-01のみ、cronが呼ぶ経路（`runRenewalCandidatesSync`のサービスロール実行）での確認が2026-08-14 10:00 JST以降の次回自動実行後に残っている（CLAUDE.md残タスク一覧に記載済み）。
+
+### 2026-08-14：外部総合品質監査レポート★3「②表示崩れ・使い勝手・パフォーマンス・通知の取りこぼし」26件のうち残り17件・Aグループ（M-02・M-06・M-07・M-16・M-23・M-24。6件。M-17は対応不要と判断）の実装
+
+伊藤さんへ、9件（バッチ1・2）が完了した区切りで残り17件を3グループ（DB変更不要・低リスクなAグループ7件／表示・パフォーマンス系のBグループ5件／設計判断・DB変更を伴うCグループ5件）に分けて提示し、Aグループから着手する承認を得た。実装前にプロの業務改善責任者／PdM／UI-UXデザイナー目線で各項目の修正方針を提示（ルール16準拠）。
+
+**M-17（対応不要と判断）**：レポートは「所定労働時間マスタにも最低賃金マスタと同じ『最新レコードのみ修正可』ガードを付けるべき」としていたが、実コード調査の結果、このマスタには最低賃金マスタのような時系列の履歴（`effective_from`等の日付列）が存在せず、各行は独立して並存する複数パターン（work_place×contract_type×pattern_name）であり「最新」という概念自体が本来当てはまらないことが判明。加えて、選択した時点の`monthly_hours`は`app/apply/page.tsx`で申請データ（`input_data.fields.monthlyStandardHours`）へ即座にスナップショットされ、PDF生成（`lib/pdf/`配下）はこのマスタを一切再参照しないため、後からマスタ値を編集しても過去のPDF内容が変わることはない。レポートが懸念していた実害が構造的に発生し得ないため、ガード追加は見送り、伊藤さんにも共有・合意済み。
+
+**M-02**：`app/page.tsx`がNext.jsの初期テンプレート（"To get started, edit the page.tsx file."）のまま本番公開されていた問題。`redirect('/login')`のみのシンプルな実装に置換。
+
+**M-06**：確認ダイアログ（`ConfirmDialog.tsx`のuseConfirm）が二重に呼ばれた場合、前の呼び出しのPromiseが永久に解決されずUIが固まる不具合。`setPending`を関数形式にし、上書きする直前に必ず前の`resolve(false)`を呼ぶよう修正。
+
+**M-07**：`PdfPreviewButton.tsx`の3点を修正。①fetch自体の失敗（通信断等）を捕捉するcatchを追加、②`window.open()`をawaitの後に呼んでいたためブラウザのポップアップブロックに遭いうる問題を、クリック直後（同期処理内）に空タブを先に開いておき取得後にlocationを差し替える方式に変更、③`URL.createObjectURL()`を一度も解放していなかったメモリリークに対し、直前のblob URLをrefで保持し新規生成時・アンマウント時に`revokeObjectURL`する処理を追加。
+
+**M-16**：マスタ管理「メーリングリスト」欄がメール形式の検証なしで保存でき、カンマ区切りで外部ドメインのアドレスを混入させると通知メールの`to`にそのまま渡り複製配送されうる問題。`app/api/admin/master-data/route.ts`の`upsert_mailing_list`に、カンマ・セミコロン・空白を含まない単一の`@appart.co.jp`アドレスのみを許可するバリデーション（`isValidAppartMailingListAddress()`）を追加。画面側が元々「部署ごとに1件のアドレス」という単一アドレス前提の作りだったため、複数アドレス対応は行わずシンプルさを優先。
+
+**M-23**：アカウント作成/編集モーダル（`AccountManagementTab.tsx`の`AccountFormModal`）だけEsc・フォーカストラップ・入力破棄確認が無かった問題。`ConfirmDialog.tsx`と同じキーボード操作（Escで閉じる・Tabがモーダル外へ抜けないフォーカストラップ）を追加し、入力済みの内容がある状態（`isDirty()`で判定）でオーバーレイクリック／Esc／キャンセルボタンのいずれで閉じようとした場合のみ、`useConfirm()`で「入力内容を破棄しますか？」の確認を挟むよう変更。あわせて新規作成時のメールアドレス欄に簡易な形式チェック（`EMAIL_FORMAT_REGEX`）を追加。
+
+**M-24**：`await req.json()`をtryで囲っていない5ルート（`contract-monitoring/notify`・`faq/notify-answer`・`requests/notify-created`・`requests/[id]/resolve`・`renewal-candidates/notify-not-renewing`）を、既存の12箇所以上で使われている`.catch(() => null)`＋400エラーのパターンに統一。
+
+構文チェック（`ts.transpileModule`）＋プロジェクト全体`npx tsc --noEmit -p tsconfig.json`とも変更7ファイルすべて診断0件を確認済み（ESLintの`no-explicit-any`等の警告は、いずれも今回変更していない既存箇所のみで、追加コードには含まれていないことを確認済み）。DB変更は無し。要デプロイ＋実機確認。残り10件（Bグループ5件・Cグループ5件）は次回以降に着手予定。

@@ -24,7 +24,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '管理部ロールでのログインが必要です。' }, { status: 401 })
   }
 
-  const body = await req.json()
+  // 外部総合品質監査レポートM-24対応（2026-08-14）：Content-Type不正・空ボディ等でreq.json()が
+  // 例外を投げると未捕捉のまま500になっていたため、他のAPIルートと同じ`.catch(() => null)`＋
+  // 400エラーのパターンに統一する。
+  const body = await req.json().catch(() => null)
+  if (!body) {
+    return NextResponse.json({ error: 'リクエスト内容を読み取れませんでした。' }, { status: 400 })
+  }
   const { employeeNumber, staffName, deptNo, issues, requestedByName } = body as {
     employeeNumber: string
     staffName: string | null

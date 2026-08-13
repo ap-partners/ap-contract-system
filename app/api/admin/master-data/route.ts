@@ -26,6 +26,16 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// 外部総合品質監査レポートM-16対応（2026-08-14）：メーリングリストのメールアドレス欄が
+// 空欄チェックのみで、カンマ区切りで外部ドメインのアドレスを紛れ込ませても（例：
+// "a@appart.co.jp, attacker@evil.com"）そのまま保存でき、通知メール送信時に
+// `to: メールアドレス`へそのまま渡されるため外部へ複製配送されてしまう問題があった。
+// 画面側も「部署ごとに1件のメーリングリストアドレスを登録する」という単一アドレス前提の
+// UIのため、複数アドレス対応は行わず、①カンマ・セミコロン・空白を含まない単一の値であること、
+// ②@appart.co.jpドメインで終わる形式であること、の2点のみをシンプルに検証する。
+const isValidAppartMailingListAddress = (value: string): boolean =>
+  /^[^\s,;@]+@appart\.co\.jp$/i.test(value)
+
 // ===== GET：4マスタの一覧＋派遣料金額マスタ用の営業所候補をまとめて返す =====
 export async function GET(req: NextRequest) {
   const auth = await getAuthenticatedStaff(req)
@@ -270,6 +280,9 @@ export async function POST(req: NextRequest) {
         }
         if (!email) {
           return NextResponse.json({ error: 'メールアドレスを入力してください。' }, { status: 400 })
+        }
+        if (!isValidAppartMailingListAddress(email)) {
+          return NextResponse.json({ error: '@appart.co.jp のメールアドレスを1件のみ入力してください（カンマ区切りでの複数登録はできません）。' }, { status: 400 })
         }
         if (scopeType === 'dept') {
           const deptNo = Number(payload?.deptNo)

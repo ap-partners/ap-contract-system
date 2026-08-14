@@ -128,7 +128,7 @@ export default function StepPeriod({
             <input className={`${inp} max-w-lg`} style={{ borderColor: '#D0DAF0', color: '#1A2340' }}
               value={organizationUnit}
               onChange={e => { setOrganizationUnit(e.target.value) }}
-              placeholder="例）第一営業部" />
+              placeholder="例）第一営業部" maxLength={50} />
           </FormRow>
         </>
       )}

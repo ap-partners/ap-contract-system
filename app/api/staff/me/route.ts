@@ -29,11 +29,11 @@ function computeRemainingDays(contract: any): number | null {
   const fields = contract.input_data?.fields || {}
   const dateStr = fields.employStart || fields.dispatchStart
   if (!dateStr) return null
-  const target = new Date(dateStr)
+  // L-07対応（2026-08-14）：UTC解釈のnew Date()＋ローカル解釈のsetHoursの混在を解消。
+  const target = new Date(dateStr + 'T00:00:00')
   if (Number.isNaN(target.getTime())) return null
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  target.setHours(0, 0, 0, 0)
   return Math.round((target.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
 }
 

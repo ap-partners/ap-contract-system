@@ -35,8 +35,9 @@ const THRESHOLDS = [45, 30, 20, 14, 7] as const
 function remainingDays(employEnd: string | null, dispatchEnd: string | null): number | null {
   const target = employEnd || dispatchEnd
   if (!target) return null
+  // L-07対応（2026-08-14）：UTC解釈のnew Date()＋ローカル解釈のsetHoursの混在を解消。
   const today = new Date(); today.setHours(0, 0, 0, 0)
-  const end = new Date(target); end.setHours(0, 0, 0, 0)
+  const end = new Date(target + 'T00:00:00')
   return Math.floor((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
 

@@ -611,10 +611,14 @@ export type RenewalDigestItem = {
 // スペース制約が無いため「雇用期間終了日」「派遣期間終了日」と正式名称で書く
 // （2026-07-15：業務改善責任者/PdM/UI-UXレビューを踏まえた修正。省略形は初見で誤読しやすいため）。
 function formatEndDateLabel(employEndDate: string | null, dispatchEndDate: string | null): string {
-  if (employEndDate && dispatchEndDate && employEndDate === dispatchEndDate) return `雇用・派遣期間終了日：${employEndDate}`
-  if (employEndDate && dispatchEndDate) return `雇用期間終了日：${employEndDate} / 派遣期間終了日：${dispatchEndDate}`
-  if (employEndDate) return `雇用期間終了日：${employEndDate}`
-  if (dispatchEndDate) return `派遣期間終了日：${dispatchEndDate}`
+  // L-02対応（2026-08-14）：呼び出し元（cron/renewal-notify）から渡されるのはDBの生値
+  // （ハイフン区切り）のため、他の表記と揃うようここでformatDateJpを通す。
+  const employLabel = formatDateJp(employEndDate)
+  const dispatchLabel = formatDateJp(dispatchEndDate)
+  if (employEndDate && dispatchEndDate && employEndDate === dispatchEndDate) return `雇用・派遣期間終了日：${employLabel}`
+  if (employEndDate && dispatchEndDate) return `雇用期間終了日：${employLabel} / 派遣期間終了日：${dispatchLabel}`
+  if (employEndDate) return `雇用期間終了日：${employLabel}`
+  if (dispatchEndDate) return `派遣期間終了日：${dispatchLabel}`
   return '終了日：不明'
 }
 

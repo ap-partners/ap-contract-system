@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
@@ -16,6 +16,14 @@ export default function LoginPage() {
   // 遷移前に一瞬「◯◯としてログインします」という成功メッセージを出し、意図したロールと
   // 違う場合にその場で気づけるようにする。
   const [successMsg, setSuccessMsg] = useState('')
+  // L-21対応（2026-08-14）：画面遷移前のsetTimeoutがアンマウント後に発火しうる（他画面へ手動遷移
+  // した場合等）ため、IDをrefに保持しアンマウント時にclearTimeoutする。
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current)
+    }
+  }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -37,7 +45,13 @@ export default function LoginPage() {
     const destination = role ? destinationByRole[role] : undefined
     if (destination) {
       setSuccessMsg(`${role}としてログインしました。画面を開いています…`)
-      setTimeout(() => router.push(destination), 700)
+      redirectTimerRef.current = setTimeout(() => {
+        router.push(destination)
+        // L-21対応：画面遷移が実際には起きなかった場合（遷移先で弾かれてこの画面に留まる等）に
+        // 「ログイン中...」ボタンが押せないまま固定されるのを防ぐ安全策。遷移が成功していれば
+        // このページ自体がアンマウントされるため、以下は実質何もしない。
+        redirectTimerRef.current = setTimeout(() => { setLoading(false); setSuccessMsg('') }, 4000)
+      }, 700)
     }
     else {
       // 総合レビュー指摘23対応：以前はロール未設定でも/dashboard/salesへ送っていたが、

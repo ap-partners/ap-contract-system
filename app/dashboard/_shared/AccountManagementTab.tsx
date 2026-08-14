@@ -129,6 +129,14 @@ export default function AccountManagementTab() {
   }
 
   const handleUnfreeze = async (a: Account) => {
+    // L-19対応（2026-08-14）：凍結（handleFreeze）には確認ダイアログがあるのに、
+    // 凍結解除（誤操作するとログイン可能な状態に戻ってしまう）には無かったため追加。
+    const ok = await confirmDialog({
+      title: '凍結を解除しますか',
+      message: `${a.name || a.email}さんは再びログインできるようになります。\n心当たりのない解除でないか、ご確認のうえ実行してください。`,
+      confirmLabel: '解除する',
+    })
+    if (!ok) return
     const result = await postAction('unfreeze', { id: a.id })
     if (!result.ok) { showError(result.error || '凍結解除に失敗しました。'); return }
     showSuccess('凍結を解除しました。')

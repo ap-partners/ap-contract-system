@@ -74,10 +74,17 @@ export async function GET(
     }
   }
 
+  // L-05対応（2026-08-14）：契約書PDF（app/api/contracts/[id]/pdf/route.ts）と同じ不具合
+  // （ファイル名が常に固定"pledge.pdf"）が本ファイルにも重複して存在していたため、
+  // 発見のうえ同じ方式で対応。
+  const staffInfo = (pledge.input_data as any)?.staff || null
+  const namePart = [staffInfo?.name, staffInfo?.employee_number].filter(Boolean).join('_')
+  const fileName = `アルバイト誓約書${namePart ? '_' + namePart : ''}_${id.slice(0, 8)}.pdf`
+
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': 'inline; filename="pledge.pdf"',
+      'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`,
     },
   })
 }

@@ -87,7 +87,8 @@ function daysSince(dateStr: string | null): number | null {
 
 function remainingDaysTo(dateStr: string | null): number | null {
   if (!dateStr) return null
-  const end = new Date(dateStr); end.setHours(0, 0, 0, 0)
+  // L-07対応（2026-08-14）：UTC解釈のnew Date()＋ローカル解釈のsetHoursの混在を解消。
+  const end = new Date(dateStr + 'T00:00:00')
   const today = new Date(); today.setHours(0, 0, 0, 0)
   return Math.floor((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }

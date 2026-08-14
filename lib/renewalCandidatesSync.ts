@@ -99,7 +99,9 @@ export async function runRenewalCandidatesSync(supabase: SupabaseClient): Promis
       const relevantDispatchEnd = (!docFlags.resolved || docFlags.needsDispatch) ? c.dispatch_end : null
       const endDate = relevantEmployEnd || relevantDispatchEnd
       if (!endDate) continue
-      const end = new Date(endDate); end.setHours(0, 0, 0, 0)
+      // L-07対応（2026-08-14）：useRenewalCandidates.tsのremainingDays()と同じ理由でUTC/ローカル
+      // 解釈の混在を解消（'T00:00:00'付与でローカル解釈に統一）。
+      const end = new Date(endDate + 'T00:00:00')
       const diffDays = Math.floor((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
       if (diffDays > RENEWAL_ALERT_WINDOW_DAYS) continue
 

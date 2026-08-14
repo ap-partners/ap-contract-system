@@ -127,8 +127,12 @@ export type RenewalCandidate = {
 export function remainingDays(c: Pick<RenewalCandidate, 'employ_end_date' | 'dispatch_end_date'>): number | null {
   const target = c.employ_end_date || c.dispatch_end_date
   if (!target) return null
+  // L-07対応（2026-08-14）：従来は`new Date(target)`（UTC解釈）に`setHours`（ローカル解釈）を
+  // 組み合わせており、UTCより西側のタイムゾーンでは残日数が1日ずれる可能性があった
+  // （実際の利用者はJST・サーバーはUTCのため実害は無かったが、堅牢化のため統一）。
+  // 文字列に明示的に'T00:00:00'を付けてローカル解釈で直接パースする方式に統一。
   const today = new Date(); today.setHours(0, 0, 0, 0)
-  const end = new Date(target); end.setHours(0, 0, 0, 0)
+  const end = new Date(target + 'T00:00:00')
   return Math.floor((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
 

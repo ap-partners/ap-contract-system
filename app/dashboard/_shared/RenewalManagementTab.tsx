@@ -228,9 +228,11 @@ function MoveToOtherTabMenu({
   // flexアイテムとしてblock化させることで、両者の箱のサイズ計算方法を完全に一致させ解消する。
   return (
     <div className="relative inline-flex items-center">
+      {/* L-19対応（2026-08-14）：見た目の大きさは変えず、py-2 px-2 + 打ち消しマージンでタップ領域だけ
+          44px相当に拡大（実効タップ領域が約16pxしかなく誤タップ・操作困難だった問題への対応）。 */}
       <button
         onClick={onToggle}
-        className="text-[11px] font-semibold underline text-[#8B98B1] hover:text-[#6B7280]"
+        className="-m-2 p-2 text-[11px] font-semibold underline text-[#8B98B1] hover:text-[#6B7280]"
       >
         他のタブへ移動
       </button>
@@ -453,9 +455,10 @@ export default function RenewalManagementTab({
         />
       )}
       {c.status !== 'not_renewing' && (
+        // L-19対応（2026-08-14）：「他のタブへ移動」ボタンと同じ理由でタップ領域を拡大。
         <button
           onClick={() => { setNotRenewingReasonId(c.id); setNotRenewingReasonText('') }}
-          className="text-[11px] font-semibold underline text-[#8B98B1] hover:text-[#6B7280]"
+          className="-m-2 p-2 text-[11px] font-semibold underline text-[#8B98B1] hover:text-[#6B7280]"
         >
           更新しない
         </button>
@@ -1136,9 +1139,11 @@ export default function RenewalManagementTab({
                       const tDocFlags = getDocumentPeriodFlags(t.document_type)
                       const showDispatchLabel = tDocFlags.resolved ? tDocFlags.needsDispatch : !!t.dispatch_end_date
                       const sameNewDate = t.new_employ_end && t.new_dispatch_end && t.new_employ_end === t.new_dispatch_end
+                      // L-04対応（2026-08-14）：このプレビューだけハイフン生値のまま表示されていたため、
+                      // タブ内の他の日付表示と揃うようformatDateJpを通す。
                       const newPeriodLabel = showDispatchLabel
-                        ? (sameNewDate ? `〜${t.new_employ_end}` : `雇〜${t.new_employ_end || '―'} / 派〜${t.new_dispatch_end || '―'}`)
-                        : `〜${t.new_employ_end || '―'}`
+                        ? (sameNewDate ? `〜${formatDateJp(t.new_employ_end)}` : `雇〜${formatDateJp(t.new_employ_end)} / 派〜${formatDateJp(t.new_dispatch_end)}`)
+                        : `〜${formatDateJp(t.new_employ_end)}`
                       return (
                         <li key={t.id} className="flex items-center justify-between gap-3 px-4 py-2 text-xs">
                           <span className="font-semibold text-[#1F2937]">{t.staff_name || '―'}<span className="ml-1.5 font-normal text-[#8B98B1]">{t.employee_number}</span></span>

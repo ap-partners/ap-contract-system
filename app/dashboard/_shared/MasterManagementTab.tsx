@@ -9,7 +9,7 @@
 // ③派遣料金額マスタ：営業所をあらかじめ全件表示し、金額を入力する表形式（office_nameで upsert）
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { getAuthHeader } from '@/lib/supabase'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import { clampDateYear } from '@/app/apply/_lib/helpers'
@@ -517,17 +517,33 @@ function WorkingHoursSection({ data, reload }: { data: MasterData; reload: () =>
 // 伊藤さんのご要望：営業所をあらかじめ全件表示し、金額を入力する表形式。
 // 営業所名はdepartment_masterから機械的に導出される候補（officeNames）に固定し、自由記述は不可。
 function DispatchFeeSection({ data, reload }: { data: MasterData; reload: () => Promise<void> }) {
+  const buildDraftFor = (office: string, d: MasterData) => {
+    const existing = d.dispatchFees.find(f => f.office_name === office)
+    return { fiscalYearLabel: existing?.fiscal_year_label || '', amountPerDay: existing ? String(existing.amount_per_day) : '' }
+  }
   const [drafts, setDrafts] = useState<Record<string, { fiscalYearLabel: string; amountPerDay: string }>>(() => {
     const initial: Record<string, { fiscalYearLabel: string; amountPerDay: string }> = {}
-    for (const office of data.officeNames) {
-      const existing = data.dispatchFees.find(f => f.office_name === office)
-      initial[office] = { fiscalYearLabel: existing?.fiscal_year_label || '', amountPerDay: existing ? String(existing.amount_per_day) : '' }
-    }
+    for (const office of data.officeNames) initial[office] = buildDraftFor(office, data)
     return initial
   })
   const [savingOffice, setSavingOffice] = useState<string | null>(null)
   const [errorByOffice, setErrorByOffice] = useState<Record<string, string>>({})
   const [savedOffice, setSavedOffice] = useState<string | null>(null)
+  // L-20対応（2026-08-14）：従来はuseState(() => 初期値)が初回マウント時にしか実行されないため、
+  // reload()でdataが更新されても下書きに反映されなかった（他の管理者による更新等を見落とす）。
+  // 「まだ編集していない行」だけをdataの最新値に同期するuseEffectを追加。編集中の行（touchedRef）は
+  // 上書きしない。保存成功時にtouchedRefから外し、以後はサーバーの最新値を信頼する。
+  const touchedRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    setDrafts(prev => {
+      const next = { ...prev }
+      for (const office of data.officeNames) {
+        if (touchedRef.current.has(office)) continue
+        next[office] = buildDraftFor(office, data)
+      }
+      return next
+    })
+  }, [data])
 
   const handleSave = async (office: string) => {
     setErrorByOffice(prev => ({ ...prev, [office]: '' }))
@@ -536,6 +552,7 @@ function DispatchFeeSection({ data, reload }: { data: MasterData; reload: () => 
     const result = await postAction('upsert_dispatch_fee', { officeName: office, fiscalYearLabel: draft.fiscalYearLabel, amountPerDay: Number(draft.amountPerDay) })
     setSavingOffice(null)
     if (!result.ok) { setErrorByOffice(prev => ({ ...prev, [office]: result.error || '更新に失敗しました。' })); return }
+    touchedRef.current.delete(office)
     setSavedOffice(office)
     setTimeout(() => setSavedOffice(cur => (cur === office ? null : cur)), 2500)
     await reload()
@@ -569,7 +586,7 @@ function DispatchFeeSection({ data, reload }: { data: MasterData; reload: () => 
                     <input
                       type="text"
                       value={draft.fiscalYearLabel}
-                      onChange={e => setDrafts(prev => ({ ...prev, [office]: { ...prev[office], fiscalYearLabel: e.target.value } }))}
+                      onChange={e => { touchedRef.current.add(office); setDrafts(prev => ({ ...prev, [office]: { ...prev[office], fiscalYearLabel: e.target.value } })) }}
                       className={`${inputCls} w-24`}
                       placeholder="例：R7"
                     />
@@ -578,7 +595,7 @@ function DispatchFeeSection({ data, reload }: { data: MasterData; reload: () => 
                     <input
                       type="number"
                       value={draft.amountPerDay}
-                      onChange={e => setDrafts(prev => ({ ...prev, [office]: { ...prev[office], amountPerDay: e.target.value } }))}
+                      onChange={e => { touchedRef.current.add(office); setDrafts(prev => ({ ...prev, [office]: { ...prev[office], amountPerDay: e.target.value } })) }}
                       className={`${inputCls} w-32`}
                       placeholder="例：20000"
                     />
@@ -611,23 +628,33 @@ function DispatchFeeSection({ data, reload }: { data: MasterData; reload: () => 
 // 拠点を選ぶだけで名称・郵便番号・住所・電話番号を自動反映するために使う。
 // 派遣料金額マスタと同じく、営業所をあらかじめ全件表示し、その場で入力・保存する表形式。
 function OfficeSection({ data, reload }: { data: MasterData; reload: () => Promise<void> }) {
+  const buildDraftFor = (office: string, d: MasterData) => {
+    const existing = d.offices.find(o => o.office_name === office)
+    return { postalCode: existing?.postal_code || '', address: existing?.address || '', tel: existing?.tel || '' }
+  }
   const [drafts, setDrafts] = useState<Record<string, { postalCode: string; address: string; tel: string }>>(() => {
     const initial: Record<string, { postalCode: string; address: string; tel: string }> = {}
-    for (const office of data.officeNames) {
-      const existing = data.offices.find(o => o.office_name === office)
-      initial[office] = {
-        postalCode: existing?.postal_code || '',
-        address: existing?.address || '',
-        tel: existing?.tel || '',
-      }
-    }
+    for (const office of data.officeNames) initial[office] = buildDraftFor(office, data)
     return initial
   })
   const [savingOffice, setSavingOffice] = useState<string | null>(null)
   const [errorByOffice, setErrorByOffice] = useState<Record<string, string>>({})
   const [savedOffice, setSavedOffice] = useState<string | null>(null)
+  // L-20対応（2026-08-14）：DispatchFeeSectionと同じ理由・同じ方式で未編集行のみdataに同期。
+  const touchedRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    setDrafts(prev => {
+      const next = { ...prev }
+      for (const office of data.officeNames) {
+        if (touchedRef.current.has(office)) continue
+        next[office] = buildDraftFor(office, data)
+      }
+      return next
+    })
+  }, [data])
 
   const setDraft = (office: string, patch: Partial<{ postalCode: string; address: string; tel: string }>) => {
+    touchedRef.current.add(office)
     setDrafts(prev => ({ ...prev, [office]: { ...prev[office], ...patch } }))
   }
 
@@ -638,6 +665,7 @@ function OfficeSection({ data, reload }: { data: MasterData; reload: () => Promi
     const result = await postAction('upsert_office', { officeName: office, postalCode: draft.postalCode, address: draft.address, tel: draft.tel })
     setSavingOffice(null)
     if (!result.ok) { setErrorByOffice(prev => ({ ...prev, [office]: result.error || '更新に失敗しました。' })); return }
+    touchedRef.current.delete(office)
     setSavedOffice(office)
     setTimeout(() => setSavedOffice(cur => (cur === office ? null : cur)), 2500)
     await reload()
@@ -743,6 +771,20 @@ function MailingListSection({ data, reload }: { data: MasterData; reload: () => 
   const [saving, setSaving] = useState<string | null>(null)
   const [errorByKey, setErrorByKey] = useState<Record<string, string>>({})
   const [saved, setSaved] = useState<string | null>(null)
+  // L-20対応（2026-08-14）：DispatchFeeSection・OfficeSectionと同じ理由・同じ方式で
+  // 未編集行のみdataに同期。
+  const touchedRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    setDrafts(prev => {
+      const next = { ...prev }
+      for (const row of rows) {
+        if (touchedRef.current.has(row.key)) continue
+        next[row.key] = findExisting(row)?.email || ''
+      }
+      return next
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data])
 
   const handleSave = async (row: MailingListRow) => {
     setErrorByKey(prev => ({ ...prev, [row.key]: '' }))
@@ -751,6 +793,7 @@ function MailingListSection({ data, reload }: { data: MasterData; reload: () => 
     const result = await postAction('upsert_mailing_list', { scopeType: row.scopeType, deptNo: row.deptNo, email })
     setSaving(null)
     if (!result.ok) { setErrorByKey(prev => ({ ...prev, [row.key]: result.error || '更新に失敗しました。' })); return }
+    touchedRef.current.delete(row.key)
     setSaved(row.key)
     setTimeout(() => setSaved(cur => (cur === row.key ? null : cur)), 2500)
     await reload()
@@ -789,7 +832,7 @@ function MailingListSection({ data, reload }: { data: MasterData; reload: () => 
                     <input
                       type="email"
                       value={draft}
-                      onChange={e => setDrafts(prev => ({ ...prev, [row.key]: e.target.value }))}
+                      onChange={e => { touchedRef.current.add(row.key); setDrafts(prev => ({ ...prev, [row.key]: e.target.value })) }}
                       className={`${inputCls} w-64`}
                       placeholder="例：hokkaido-eigyo@appart.co.jp"
                     />

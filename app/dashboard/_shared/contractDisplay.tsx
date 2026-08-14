@@ -144,10 +144,10 @@ export const getDeadlineAlert = (contract: ContractForDisplay): { type: 'overdue
   const startDate = f.employStart || f.contractStartDate || f.dispatchStart
   if (!startDate) return { type: null, label: '' }
 
+  // L-07対応（2026-08-14）：UTC解釈のnew Date()＋ローカル解釈のsetHoursの混在を解消。
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  const start = new Date(startDate)
-  start.setHours(0, 0, 0, 0)
+  const start = new Date(startDate + 'T00:00:00')
   const diffDays = Math.floor((start.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 
   if (diffDays < 0) return { type: 'overdue', label: '開始日超過' }

@@ -114,7 +114,7 @@ export default function StepSalary({
             <div className="p-3 border-r border-b flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
               <span className="text-xs font-bold flex items-center" style={{ color: '#5A6A8A' }}>基本給<Tooltip text={TOOLTIPS['基本給']} /></span>
               <div className="flex items-center gap-1.5">
-                <input type="text" value={basicSalary} onChange={e => setBasicSalary(toHalfWidthDigits(e.target.value))}
+                <input type="text" value={basicSalary} onChange={e => setBasicSalary(toHalfWidthDigits(e.target.value).replace(/[^0-9]/g, ''))} maxLength={9}
                   className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
                   style={{ borderColor: basicSalaryError ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} />
                 <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
@@ -126,12 +126,12 @@ export default function StepSalary({
             <div className="p-3 border-b flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
               <span className="text-xs font-bold flex items-center" style={{ color: '#5A6A8A' }}>定額残業手当<Tooltip text={TOOLTIPS['定額残業手当']} /></span>
               <div className="flex items-center gap-1.5 flex-nowrap">
-                <input type="text" value={overtimePay} onChange={e => setOvertimePay(toHalfWidthDigits(e.target.value))}
+                <input type="text" value={overtimePay} onChange={e => setOvertimePay(toHalfWidthDigits(e.target.value).replace(/[^0-9]/g, ''))} maxLength={9}
                   className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
                   style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                 <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
                 <span className="text-xs" style={{ color: '#D0DAF0' }}>/</span>
-                <input type="text" value={overtimeHours} onChange={e => setOvertimeHours(toHalfWidthDigits(e.target.value))}
+                <input type="text" value={overtimeHours} onChange={e => setOvertimeHours(toHalfWidthDigits(e.target.value).replace(/[^0-9]/g, ''))} maxLength={5}
                   className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-16 placeholder:text-gray-400"
                   style={{ borderColor: overtimeHoursError ? '#DC2626' : '#D0DAF0', color: '#1A2340' }} />
                 <span className="text-sm" style={{ color: '#5A6A8A' }}>時間分</span>
@@ -149,7 +149,7 @@ export default function StepSalary({
             <div className="p-3 border-r border-b flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
               <span className="text-xs font-bold flex items-center" style={{ color: '#5A6A8A' }}>職能給<Tooltip text={TOOLTIPS['職能給']} /></span>
               <div className="flex items-center gap-1.5">
-                <input type="text" value={skillPay} onChange={e => setSkillPay(toHalfWidthDigits(e.target.value))}
+                <input type="text" value={skillPay} onChange={e => setSkillPay(toHalfWidthDigits(e.target.value).replace(/[^0-9]/g, ''))} maxLength={9}
                   className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
                   style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                 <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
@@ -160,7 +160,7 @@ export default function StepSalary({
             <div className="p-3 border-b flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
               <span className="text-xs font-bold flex items-center" style={{ color: '#5A6A8A' }}>役職手当<Tooltip text={TOOLTIPS['役職手当']} /></span>
               <div className="flex items-center gap-1.5">
-                <input type="text" value={rolePay} onChange={e => setRolePay(toHalfWidthDigits(e.target.value))}
+                <input type="text" value={rolePay} onChange={e => setRolePay(toHalfWidthDigits(e.target.value).replace(/[^0-9]/g, ''))} maxLength={9}
                   className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
                   style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                 <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
@@ -171,7 +171,7 @@ export default function StepSalary({
             <div className="p-3 border-r flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
               <span className="text-xs font-bold flex items-center" style={{ color: '#5A6A8A' }}>営業手当<Tooltip text={TOOLTIPS['営業手当']} /></span>
               <div className="flex items-center gap-1.5">
-                <input type="text" value={salesPay} onChange={e => setSalesPay(toHalfWidthDigits(e.target.value))}
+                <input type="text" value={salesPay} onChange={e => setSalesPay(toHalfWidthDigits(e.target.value).replace(/[^0-9]/g, ''))} maxLength={9}
                   className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
                   style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                 <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>
@@ -182,7 +182,7 @@ export default function StepSalary({
             <div className="p-3 flex flex-col gap-1.5" style={{ borderColor: '#D0DAF0' }}>
               <span className="text-xs font-bold flex items-center" style={{ color: '#5A6A8A' }}>住宅手当<Tooltip text={TOOLTIPS['住宅手当']} /></span>
               <div className="flex items-center gap-1.5">
-                <input type="text" value={housingPay} onChange={e => setHousingPay(toHalfWidthDigits(e.target.value))}
+                <input type="text" value={housingPay} onChange={e => setHousingPay(toHalfWidthDigits(e.target.value).replace(/[^0-9]/g, ''))} maxLength={9}
                   className="border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none w-28 placeholder:text-gray-400"
                   style={{ borderColor: '#D0DAF0', color: '#1A2340' }} />
                 <span className="text-sm" style={{ color: '#5A6A8A' }}>円</span>

@@ -38,6 +38,7 @@ import { SALARY_RULES, toHalfWidthDigits, parseAmount, normalizeTel, validateTel
 import { Tooltip } from '@/app/apply/_components/FormParts'
 import { runPledgeAutoChecks } from '@/lib/autoChecks'
 import { WAGE_PAYMENT_TEXT } from '@/lib/pdf/documentText'
+import { formatDateJp } from '@/lib/dateFormat'
 
 const DOCUMENT_TYPES = ['AP・CL研修用', 'CP・SPOT用'] as const
 // 2026-07-23：6STEP再編（就業先情報と就業日程を分離）
@@ -603,13 +604,13 @@ export default function PledgeApplyPage() {
     const rows: ScheduleRow[] = []
     if ((periodPattern === 'range' || periodPattern === 'mix') && rangeStart && rangeEnd) {
       rows.push({
-        label: `${rangeStart.replaceAll('-', '/')}〜${rangeEnd.replaceAll('-', '/')}`,
+        label: `${formatDateJp(rangeStart)}〜${formatDateJp(rangeEnd)}`,
         start: periodShift.start, end: periodShift.end, breakMinutes: periodShift.breakMinutes, contractHours: periodShift.contractHours,
       })
     }
     if (periodPattern === 'single_multi' || periodPattern === 'mix') {
       for (const e of singleEntries) {
-        rows.push({ label: e.date.replaceAll('-', '/'), start: e.start, end: e.end, breakMinutes: e.breakMinutes, contractHours: e.contractHours })
+        rows.push({ label: formatDateJp(e.date), start: e.start, end: e.end, breakMinutes: e.breakMinutes, contractHours: e.contractHours })
       }
     }
     return rows
@@ -1079,7 +1080,7 @@ export default function PledgeApplyPage() {
                     <PledgeIcon name="calendarRange" className="w-5 h-5 shrink-0" style={{ color: '#1B3A8C' }} />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-bold" style={{ color: '#1B3A8C' }}>
-                        期間：{rangeStart.replaceAll('-', '/')}〜{rangeEnd.replaceAll('-', '/')}　{periodShift.start}〜{periodShift.end}
+                        期間：{formatDateJp(rangeStart)}〜{formatDateJp(rangeEnd)}　{periodShift.start}〜{periodShift.end}
                       </p>
                       <p className="text-xs mt-0.5" style={{ color: '#1A2340' }}>休憩{periodShift.breakMinutes}分・所定{periodShift.contractHours}時間</p>
                     </div>
@@ -1119,7 +1120,7 @@ export default function PledgeApplyPage() {
                       {singleEntries.map(entry => (
                         <div key={entry.date} className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 border" style={{ borderColor: '#D0DAF0', background: 'white' }}>
                           <div className="flex items-center gap-2 flex-wrap text-xs" style={{ color: '#1A2340' }}>
-                            <span className="font-medium">{entry.date.replaceAll('-', '/')}</span>
+                            <span className="font-medium">{formatDateJp(entry.date)}</span>
                             <span>{entry.start}</span>
                             <PledgeIcon name="arrowRight" className="w-3 h-3" style={{ color: '#B4B8C4' }} />
                             <span>{entry.end}</span>
@@ -1238,7 +1239,7 @@ export default function PledgeApplyPage() {
                       <span />
                       {singleEntries.map(entry => (
                         <Fragment key={entry.date}>
-                          <div className="text-sm py-2.5 border-t" style={{ color: '#1A2340', borderColor: '#EDEFF5' }}>{entry.date.replaceAll('-', '/')}</div>
+                          <div className="text-sm py-2.5 border-t" style={{ color: '#1A2340', borderColor: '#EDEFF5' }}>{formatDateJp(entry.date)}</div>
                           <div className="text-sm py-2.5 border-t flex items-center gap-2" style={{ color: '#1A2340', borderColor: '#EDEFF5' }}>
                             {entry.start}<PledgeIcon name="arrowRight" className="w-3 h-3" style={{ color: '#B4B8C4' }} />{entry.end}
                           </div>

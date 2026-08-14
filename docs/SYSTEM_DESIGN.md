@@ -3332,3 +3332,26 @@ alter table contracts add column if not exists sign_auth_last_issued_at timestam
 **M-24**：`await req.json()`をtryで囲っていない5ルート（`contract-monitoring/notify`・`faq/notify-answer`・`requests/notify-created`・`requests/[id]/resolve`・`renewal-candidates/notify-not-renewing`）を、既存の12箇所以上で使われている`.catch(() => null)`＋400エラーのパターンに統一。
 
 構文チェック（`ts.transpileModule`）＋プロジェクト全体`npx tsc --noEmit -p tsconfig.json`とも変更7ファイルすべて診断0件を確認済み（ESLintの`no-explicit-any`等の警告は、いずれも今回変更していない既存箇所のみで、追加コードには含まれていないことを確認済み）。DB変更は無し。要デプロイ＋実機確認。残り10件（Bグループ5件・Cグループ5件）は次回以降に着手予定。
+
+### 2026-08-14：Aグループ（M-02・M-06・M-07・M-16・M-23・M-24）のデプロイ後実機確認
+
+伊藤さんの「デプロイ完了」報告を受け、Claude in Chrome（管理部admin-testでログイン）＋Supabase MCPで実機確認を実施。
+
+**M-02**：本番URL（`https://ap-contract-system.vercel.app/`）へ直接アクセスし、`location.href`が`/login`へ即座にリダイレクトされることを確認。
+
+**M-24**：管理部の実アクセストークンを使い、対象5ルート（`contract-monitoring/notify`・`faq/notify-answer`・`requests/notify-created`・`requests/[id]/resolve`・`renewal-candidates/notify-not-renewing`）すべてに意図的に壊れたJSON文字列をPOSTし、全ルートとも500ではなく400「リクエスト内容を読み取れませんでした。」で正しく拒否されることを確認。
+
+**M-16**：マスタ管理APIへ直接、①複数アドレス混在（`a@appart.co.jp, attacker@evil.com`）、②外部ドメイン単体（`attacker@evil.com`）の2パターンを送信しいずれも400で拒否されること、③正常な単一`@appart.co.jp`アドレスは200で保存できることを確認。テスト用に保存した行（`mailing_list_master`・dept_no=9）は確認後に削除し、テーブルを元の空の状態に復元済み。
+
+**M-23**：管理部ダッシュボード「運用管理」→「アカウント管理」→「新規追加」で実際にモーダルを開き、①氏名欄に入力した状態でEscを押すと「入力内容を破棄しますか？」の確認ダイアログが表示されること、②「キャンセル」を選ぶと確認ダイアログのみ閉じてモーダルは入力内容を保持したまま開いたままになること、③再度Escで確認ダイアログを出し「破棄する」を選ぶとモーダル・確認ダイアログとも閉じること、④何も入力していない状態でEscを押した場合は確認ダイアログを挟まず即座に閉じること（回帰なし）、⑤氏名+不正な形式のメールアドレスを入力して保存を押すと「メールアドレスの形式が正しくありません」のバリデーションエラーが表示されること、をすべて確認。テスト中に実際のアカウントは一切作成していない（すべて保存前に離脱）ため、DBへの影響なし。なお、Escキー自体はブラウザ操作ツール経由のキー送信がページのkeydownリスナーに届かないケースがあったため、`document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}))`で確実に発火させて検証した。
+
+**M-07**：SSC/管理部共有の契約詳細画面（実データ・鈴木駿様の契約）で「帳票PDFプレビュー」ボタンを2回連続でクリックし、①クリック直後に空タブが同期的に開き、フェッチ完了後に`blob:`URLへ正しく遷移してPDFが表示されること（ポップアップブロックが発生しないこと）、②2回目のクリックでも同様に新しいblob URLへ正常に遷移すること（前回分の`revokeObjectURL`処理がエラーを起こしていないこと）、③元のタブのコンソールにエラーが出ていないこと、を確認。
+
+**M-06**：確認ダイアログの二重呼び出しは、UIのオーバーレイが最初のダイアログ表示中は背後の別ボタンへのクリックを物理的に遮断する設計のため、実際の二重クリックによる再現はブラウザ操作では困難と判断。単一の確認ダイアログの開閉（開く・キャンセル・確定のいずれも）がM-23の検証を通じて正常に動作することを確認済みであり、修正コード自体もReactの関数型`setState`による单純な変更（`setPending(prev => { prev?.resolve(false); return next })`）のため、単一パスの動作に影響がないことをあわせてコードレビューで確認した。
+
+以上でAグループ6件（M-02・M-06・M-07・M-16・M-23・M-24）はすべてデプロイ後の実機確認まで完了。残りはBグループ（表示・パフォーマンス系5件）・Cグループ（設計判断・DB変更を伴う5件）。
+
+### 2026-08-14：M-01のcron経由での動作確認 ― テストセットアップ
+2026-08-14 10:38 JSTのB-17自動cron（`/api/cron/renewal-notify`）実行をVercel MCP（`get_runtime_logs`）で確認したところHTTP 200・エラー0件で正常実行されていたが、この時点で対象スタッフ（岩城蒼太様・104018）の`staff.dept_no`は前回テスト（バッチ1実機確認時）の復元により`renewal_candidates.dept_no`と一致した状態（9・北海道営業所）だったため、「異動によるズレをcron経由で追随できるか」自体は未検証のままだった。
+そこで10:43 JST、Supabase MCPのSQL実行のみで`staff.dept_no`を9→15（九州営業所）へ変更（ダッシュボードは一切開いていない＝クライアント側同期経路を経由させないための措置）。次回2026-08-15 10:00 JSTのcron自動実行後、Vercel MCPのログ確認＋Supabase MCPで`renewal_candidates.dept_no`が15へ追随したかを確認する予定。確認後は`staff.dept_no`を9へ復元する。
+　→ CLAUDE.md 🔴残タスク一覧「2026-08-13デプロイ完了・実機確認完了…バッチ1」内の【要フォローアップ・進行中】欄も同時更新済み。

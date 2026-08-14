@@ -1475,7 +1475,10 @@ export default function AdminDashboard() {
   return (
     <div className="h-screen overflow-auto bg-[#F8FAFD] text-[#1F2937]">
       <header className="relative z-30 border-b border-[#E8EDF5] bg-white/90 backdrop-blur">
-        <div className="mx-auto flex min-w-max max-w-[1600px] items-center justify-between px-6 py-5 lg:px-8">
+        {/* L-18対応（2026-08-14）：従来のmin-w-maxはヘッダー内側を常に最小限まで縮めない
+            指定のため、モバイル幅でページ全体が常時横スクロールする原因になっていた。
+            ヘッダーだけflex-wrapで折り返し可能にし、ページ全体の横スクロールは発生させない。 */}
+        <div className="mx-auto flex flex-wrap max-w-[1600px] items-center justify-between gap-y-3 px-6 py-5 lg:px-8">
           <div className="flex items-center gap-5">
             <div className="flex items-center gap-3">
               <Image src="/logo.png" alt="APパートナーズ" width={64} height={38} className="h-auto w-[64px]" />

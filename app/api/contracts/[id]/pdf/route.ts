@@ -88,10 +88,19 @@ export async function GET(
     }
   }
 
+  // L-05対応（2026-08-14）：従来はファイル名が常に固定の"contract.pdf"だったため、
+  // 複数契約分をダウンロードすると全て同名で上書き・混同されるリスクがあった。
+  // 書類種別・スタッフ氏名・社員番号を含む名前に変更（RFC5987エンコードで日本語ファイル名に対応。
+  // app/api/admin/csv-import/[id]/protected-export/route.tsと同じ方式）。
+  const staffInfo = (contract.input_data as any)?.staff || null
+  const docLabel = (contract.document_type || '契約書').replace(/\n/g, ' ')
+  const namePart = [staffInfo?.name, staffInfo?.employee_number].filter(Boolean).join('_')
+  const fileName = `${docLabel}${namePart ? '_' + namePart : ''}_${id.slice(0, 8)}.pdf`
+
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': 'inline; filename="contract.pdf"',
+      'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`,
     },
   })
 }

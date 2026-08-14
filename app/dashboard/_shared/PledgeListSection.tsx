@@ -16,7 +16,7 @@
 // 契約一覧側も含めて未着手のため、本対応でも据え置き（docs/SYSTEM_DESIGN.md参照）。
 // 詳細画面は/dashboard/ssc/pledges/[id]（SSC・管理部共通）。担当営業は読み取り専用の
 // /dashboard/sales/pledges/[id]を使う。
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, getAuthHeader } from '@/lib/supabase'
 import { useApprovedAccumulator, APPROVED_WINDOW_DAYS, PLEDGE_COLUMNS } from './useApprovedAccumulator'
@@ -96,7 +96,12 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
   const [bulkSkipped, setBulkSkipped] = useState(0)
   const [bulkNotifyFailed, setBulkNotifyFailed] = useState(0)
 
+  // M-08対応（2026-08-14）：切り替えを素早く行うと、後から送った新しいクエリより先に
+  // 古いクエリの結果が返ってきて一覧を上書きしてしまう競合があった（AbortControllerが
+  // 未実装）。直近の呼び出しかどうかをrefの連番で判定し、古い呼び出しの結果は反映しない。
+  const flowRowsRequestIdRef = useRef(0)
   const loadFlowRows = async () => {
+    const requestId = ++flowRowsRequestIdRef.current
     setLoading(true)
     let query = supabase
       .from('pledges')
@@ -105,6 +110,7 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
       .order('created_at', { ascending: false })
     if (deptNoFilter !== undefined) query = query.in('created_by_dept_no', deptNoFilter)
     const { data } = await query
+    if (flowRowsRequestIdRef.current !== requestId) return // 待っている間により新しい呼び出しが発生したため、この結果は破棄する
     setFlowRows((data || []) as PledgeRow[])
     setLoading(false)
   }

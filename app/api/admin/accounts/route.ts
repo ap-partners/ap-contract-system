@@ -24,6 +24,7 @@ import {
 } from '@/lib/accountSetupCode'
 import { hasMailingList } from '@/lib/mailingList'
 import { CURATED_DEPT_ORDER, CURATED_DEPT_LABEL_OVERRIDE } from '@/lib/curatedDepartments'
+import { listAllAuthUsers } from '@/lib/listAllAuthUsers'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -58,17 +59,19 @@ export async function GET(req: NextRequest) {
   const check = await requireAccountAdmin(req)
   if (check.error) return check.error
 
-  const [{ data: roleRows, error: roleErr }, { data: departments }, listResult] = await Promise.all([
+  // M-11対応（2026-08-14）：以前は1ページ目（perPage:1000）しか取得しておらず、アカウント数が
+  // 1000を超えると1001人目以降がアカウント管理タブから静かに欠落する不具合があった。
+  // 全件取得するヘルパーへ変更。
+  const [{ data: roleRows, error: roleErr }, { data: departments }, allAuthUsers] = await Promise.all([
     supabaseAdmin.from('staff_roles').select('*').order('created_at', { ascending: true }),
     supabaseAdmin.from('department_master').select('dept_no, dept_name'),
-    supabaseAdmin.auth.admin.listUsers({ perPage: 1000 }),
+    listAllAuthUsers(supabaseAdmin),
   ])
 
   if (roleErr) return NextResponse.json({ error: friendlyDbError(roleErr, 'アカウント一覧の取得') }, { status: 500 })
-  if (listResult.error) return NextResponse.json({ error: friendlyDbError(listResult.error, 'アカウント一覧の取得') }, { status: 500 })
 
   const deptNameByNo = new Map((departments || []).map(d => [d.dept_no, d.dept_name]))
-  const userById = new Map(listResult.data.users.map(u => [u.id, u]))
+  const userById = new Map(allAuthUsers.map(u => [u.id, u]))
 
   const accounts = (roleRows || []).map(r => {
     const authUser = userById.get(r.id)

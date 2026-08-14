@@ -23,6 +23,7 @@ import * as JapaneseHolidays from 'japanese-holidays'
 import { sendRenewalDigestMail, sendRenewalSyncFailureNoticeMail, type RenewalDigestItem } from '@/lib/mail'
 import { runRenewalCandidatesSync } from '@/lib/renewalCandidatesSync'
 import { excludeRetiredStaffOr } from '@/lib/staffFilters'
+import { listAllAuthUsers } from '@/lib/listAllAuthUsers'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -87,13 +88,27 @@ export async function GET(req: NextRequest) {
     syncFailureMessage = result.error
   }
 
-  const { data: candidatesRaw, error: candidatesError } = await supabaseAdmin
-    .from('renewal_candidates')
-    .select('*')
-    .in('status', ['pending', 'csv_pending'])
-
-  if (candidatesError) {
-    return NextResponse.json({ error: '更新候補の取得に失敗しました: ' + candidatesError.message }, { status: 500 })
+  // M-12対応（2026-08-14）：select('*')にlimit/rangeが無く、PostgRESTの既定上限（1000件）に
+  // 抵触すると1001件目以降が静かに切り捨てられ、しきい値到達の通知対象から漏れる不具合が
+  // あった（対象が増えるほど悪化する）。.range()で全件をページング取得する形に変更する。
+  const candidatesRaw: any[] = []
+  {
+    const PAGE_SIZE = 1000
+    let from = 0
+    for (let i = 0; i < 100; i++) { // 安全弁：本来あり得ない件数（最大10万件相当）に達したら打ち切る
+      const { data, error: candidatesError } = await supabaseAdmin
+        .from('renewal_candidates')
+        .select('*')
+        .in('status', ['pending', 'csv_pending'])
+        .range(from, from + PAGE_SIZE - 1)
+      if (candidatesError) {
+        return NextResponse.json({ error: '更新候補の取得に失敗しました: ' + candidatesError.message }, { status: 500 })
+      }
+      const page = data || []
+      candidatesRaw.push(...page)
+      if (page.length < PAGE_SIZE) break
+      from += PAGE_SIZE
+    }
   }
 
   // B-17対応：画面（fetchCandidates）は表示直前に「現在退職済み・退職予定のスタッフ」を
@@ -147,8 +162,10 @@ export async function GET(req: NextRequest) {
   const deptNameByNo = new Map<number, string>((deptRows || []).map((d: any) => [d.dept_no, d.dept_name]))
 
   const { data: roleRows } = await supabaseAdmin.from('staff_roles').select('id, role, dept_no')
-  const { data: usersList } = await supabaseAdmin.auth.admin.listUsers({ perPage: 200 })
-  const emailById = new Map<string, string>((usersList?.users || []).map(u => [u.id, u.email || '']))
+  // M-11対応（2026-08-14）：以前は1ページ目（perPage:200）しか取得しておらず、アカウント数が
+  // 200を超えると201人目以降が通知先から静かに欠落する不具合があった。全件取得するヘルパーへ変更。
+  const allAuthUsers = await listAllAuthUsers(supabaseAdmin)
+  const emailById = new Map<string, string>(allAuthUsers.map(u => [u.id, u.email || '']))
 
   const sscEmails = Array.from(new Set(
     (roleRows || [])

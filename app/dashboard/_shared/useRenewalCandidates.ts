@@ -413,10 +413,21 @@ export function useRenewalCandidates() {
       && !autoSearchedIdsRef.current.has(c.id)
     )
     if (targets.length === 0) return
-    for (const c of targets) {
-      autoSearchedIdsRef.current.add(c.id)
-      searchCsvRenewal(c)
-    }
+    // 二重検索を防ぐため、実際に検索を始める前に対象を全件マークしておく（従来通り）。
+    for (const c of targets) autoSearchedIdsRef.current.add(c.id)
+    // M-18対応（2026-08-14）：以前は対象候補すべてに対して無制限に並列でCSV検索
+    // （1件あたり3クエリ＝staff取得・csv_raw_data取得・updateCandidate）を発火しており、
+    // 候補が50件あれば同時に150リクエストが飛び、更新期限管理タブを開いた瞬間に画面が
+    // 数十秒固まっていた（外部総合品質監査レポートM-18）。5件ずつの逐次バッチに変え、
+    // 同時に飛ぶリクエスト数を抑える。マークは上で全件済ませてあるため、バッチ処理の
+    // 途中でcandidatesが更新されてこのeffectが再実行されても、二重検索・検索漏れは起きない。
+    const BATCH_SIZE = 5
+    ;(async () => {
+      for (let i = 0; i < targets.length; i += BATCH_SIZE) {
+        const batch = targets.slice(i, i + BATCH_SIZE)
+        await Promise.all(batch.map(c => searchCsvRenewal(c)))
+      }
+    })()
   }, [candidates, searchCsvRenewal])
 
   // ④CSVインポート依頼（既存のrequestsテーブル・STEP2と同じ導線を流用）

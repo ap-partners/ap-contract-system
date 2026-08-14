@@ -415,6 +415,249 @@ function hasCancelled(r: RequestRow) {
   return r.staff_register_status === 'cancelled' || r.csv_import_status === 'cancelled'
 }
 
+// M-20対応（2026-08-14）：ContractCard・SubTabs・BulkPanelは以前AdminDashboard関数の
+// 内側で定義されており、親が再レンダーされるたびに「新しい部品」として扱われ、一覧表示中の
+// カードDOMが毎回作り直されていた（検索欄に1文字打つたびに表示中の全カードが破棄・再生成
+// される等。外部総合品質監査レポートM-20）。モジュールトップレベルへ移し、必要な値は
+// propsで受け取る形に変更する（SubTabs・BulkPanelは元々propsのみで完結していたため
+// 定義場所の変更のみ。ContractCardのみrouter・deletingWithdrawnId・deptNameByNoを
+// 新たにpropsとして受け取るようにした）。
+function ContractCard({
+  contract,
+  subTab,
+  selectedIdsSet,
+  toggle,
+  clearConfirm,
+  isInternal = false,
+  onDelete,
+  router,
+  deletingWithdrawnId,
+  deptNameByNo,
+}: {
+  contract: Contract
+  subTab: ContractSubTab
+  selectedIdsSet: Set<string>
+  toggle: (id: string) => void
+  clearConfirm: () => void
+  isInternal?: boolean
+  onDelete?: (id: string) => void
+  router: ReturnType<typeof useRouter>
+  deletingWithdrawnId: string | null
+  deptNameByNo: Map<number, string>
+}) {
+  const staff = contract.input_data?.staff || {}
+  const f = contract.input_data?.fields || {}
+  const deadline = getDeadlineAlert(contract)
+  const warning = hasWarning(contract)
+  const autoWarning = hasAutoCheckWarning(contract)
+  const isConfirmed = contract.status === '署名済み' || contract.status === '完了'
+  const hasAnyWarning = warning || autoWarning
+  const isSelected = selectedIdsSet.has(contract.id)
+  const canBulkSelect = subTab === '承認待ち' && !hasAnyWarning
+  const showWarningIcon = subTab === '承認待ち' && hasAnyWarning
+  // 自動チェック警告の重要度で色を出し分ける（red＝赤、それ以外（yellow）＝青）。
+  // SSCダッシュボードと同じ考え方（2026-07-14修正）で、管理部側にも合わせる。
+  const autoWarningTone: 'red' | 'blue' = contract.warning_level === 'red' ? 'red' : 'blue'
+
+  return (
+    <article className={`${cardBase} p-5`}>
+      {/* 1行目：氏名と操作ボタンは画面幅に関わらず必ずこの1行に収まる（総合レビュー追加指摘・
+          2026-07-29対応：固定ピクセル幅の横並びグリッドだと画面が狭いと操作ボタンごと見切れて
+          しまっていたため、氏名＋ボタンだけは常に見える構造に変更） */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex shrink-0 items-center pt-1">
+            {canBulkSelect && (
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={() => { toggle(contract.id); clearConfirm() }}
+                onClick={e => e.stopPropagation()}
+                className="h-5 w-5 rounded border-[#E8EDF5] accent-[#2F5FD0]"
+              />
+            )}
+            {showWarningIcon && (
+              <span title="警告あり" className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FFF3E8] text-[#F59E42]">
+                <Icon name="alert" className="h-5 w-5" />
+              </span>
+            )}
+          </div>
+
+          <div className="min-w-0">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              {deadline.type && <Pill tone={deadline.type === 'overdue' ? 'red' : 'orange'}>{deadline.label}</Pill>}
+              {/* 総合レビュー指摘F対応（2026-07-16）：🔴（赤）の絵文字なのに地色がオレンジで
+                  危険度の直感が働かないという指摘。SSC一覧と同じくtoneをredに統一 */}
+              {warning && <Pill tone="red">🔴 個別確認が必要（一括承認対象外）</Pill>}
+              {autoWarning && <Pill tone={autoWarningTone}>{contract.warning_level === 'red' ? '🔴' : '🟡'} 自動チェック要確認（一括承認対象外）</Pill>}
+            </div>
+            <p className="break-words text-[22px] font-semibold leading-7 text-[#1F2937]">{staff.name || '-'}</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-medium text-[#6B7280]">
+              <span className="break-words">{staff.department || '-'}</span>
+              <span className="h-3 w-px bg-[#E8EDF5]" />
+              <span>{staff.employee_number || '-'}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          <button className={primaryButton} onClick={() => router.push(`/dashboard/ssc/contracts/${contract.id}`)}>
+            {subTab === '承認待ち' ? '内容を確認する' : '詳細を見る'}
+            <Icon name="arrow" className="h-4 w-4" />
+          </button>
+          {subTab === '取り下げ' && onDelete && (
+            <button
+              className="inline-flex h-[52px] shrink-0 items-center justify-center whitespace-nowrap rounded-2xl border border-[#FCA5A5] bg-white px-4 text-sm font-semibold text-[#DC2626] transition hover:bg-[#FEF2F2] disabled:opacity-50"
+              disabled={deletingWithdrawnId === contract.id}
+              onClick={() => onDelete(contract.id)}
+            >
+              {deletingWithdrawnId === contract.id ? '削除中…' : '削除'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 2行目以降：補足情報は画面幅に応じて自動で折り返す */}
+      <div className="mt-4 grid grid-cols-2 gap-4 border-t border-[#E8EDF5] pt-4 sm:grid-cols-4">
+        <div className="min-w-0">
+          <p className="mb-2 text-xs font-semibold text-[#6B7280]">就業先</p>
+          <div className="flex items-start gap-2">
+            <Icon name="map" className="mt-0.5 h-4 w-4 shrink-0 text-[#2F5FD0]" />
+            <p className="min-w-0 truncate text-sm font-medium leading-6 text-[#1F2937]" title={f.workLocationName || '-'}>{f.workLocationName || '-'}</p>
+          </div>
+        </div>
+
+        <div className="min-w-0">
+          <p className="mb-2 text-xs font-semibold text-[#6B7280]">ステータス</p>
+          <div className="flex flex-wrap gap-2">
+            <WorkPlaceBadge workPlace={f.workPlace || contract.work_place} />
+            <Pill tone="blue">{getDocumentLabel(contract.document_type, contract.pattern)}</Pill>
+            <ContractStatusBadge status={contract.status} isInternal={isInternal} />
+            {isConfirmed && <ConfirmedBadge signedAt={contract.signed_at} />}
+          </div>
+        </div>
+
+        <div className="min-w-0">
+          <p className="mb-2 text-xs font-semibold text-[#6B7280]">雇用期間</p>
+          <p className="break-words text-xs font-medium leading-5 text-[#1F2937]">{getEmployPeriodLabel(contract)}</p>
+          {(contract.pattern === 'B' || contract.pattern === 'C') && f.dispatchStart && f.dispatchEnd && (
+            <p className="mt-1 break-words text-xs font-medium leading-5 text-[#6B7280]">派遣期間 {formatPeriodJp(f.dispatchStart, f.dispatchEnd)}</p>
+          )}
+        </div>
+
+        <div className="min-w-0">
+          <p className="mb-2 text-xs font-semibold text-[#6B7280]">申請日時</p>
+          <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{formatDateTime(contract.created_at)}</p>
+          <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {getApplicantLabel(contract.created_by_name, contract.created_by_dept_no, deptNameByNo)}</p>
+        </div>
+      </div>
+
+      {contract.status === '差し戻し中' && contract.rejection_reason && (
+        <div className="mt-4 rounded-2xl border border-[#FFE2C7] bg-[#FFF8F1] p-4">
+          <p className="text-xs font-semibold text-[#F59E42]">差し戻し理由</p>
+          <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.rejection_reason}</p>
+        </div>
+      )}
+
+      {contract.status === '取り下げ' && (
+        <div className="mt-4 rounded-2xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
+          <p className="text-xs font-semibold text-[#6B7280]">取り下げ理由{contract.withdrawn_at ? `（${formatDateTime(contract.withdrawn_at)}）` : ''}</p>
+          <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.withdrawn_reason || '（理由の入力なし）'}</p>
+        </div>
+      )}
+    </article>
+  )
+}
+
+function SubTabs({
+  value,
+  setValue,
+  counts,
+  clear,
+}: {
+  value: ContractSubTab
+  setValue: (v: ContractSubTab) => void
+  counts: { pending: number; rejected: number; approved: number; withdrawn: number }
+  clear: () => void
+}) {
+  const items = [
+    { key: '承認待ち' as ContractSubTab, label: '承認待ち', count: counts.pending },
+    { key: '差し戻し中' as ContractSubTab, label: '差し戻し', count: counts.rejected },
+    { key: '承認済み' as ContractSubTab, label: '承認済み・署名状況', count: counts.approved },
+    { key: '取り下げ' as ContractSubTab, label: '取り下げ', count: counts.withdrawn },
+  ]
+
+  return (
+    <SubTabBar items={items} activeKey={value} onChange={v => { setValue(v); clear() }} />
+  )
+}
+
+function BulkPanel({
+  visible,
+  selectedSize,
+  targetsSize,
+  checked,
+  onSelectAll,
+  onOpenConfirm,
+  showConfirm,
+  onApprove,
+  onCancel,
+  approving = false,
+}: {
+  visible: boolean
+  selectedSize: number
+  targetsSize: number
+  checked: boolean
+  onSelectAll: () => void
+  onOpenConfirm: () => void
+  showConfirm: boolean
+  onApprove: () => void
+  onCancel: () => void
+  approving?: boolean
+}) {
+  if (!visible) return null
+
+  return (
+    <section className="mt-5">
+      <div className="flex flex-col gap-4 rounded-[18px] border border-[#E8EDF5] bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,.05)] sm:flex-row sm:items-center sm:justify-between">
+        <label className="flex cursor-pointer items-center gap-3 text-sm font-semibold text-[#1F2937]">
+          <input
+            type="checkbox"
+            checked={checked && targetsSize > 0}
+            onChange={onSelectAll}
+            className="h-5 w-5 rounded border-[#E8EDF5] accent-[#2F5FD0]"
+          />
+          警告のない案件をすべて選択
+        </label>
+        <button onClick={onOpenConfirm} disabled={selectedSize === 0} className={accentButton}>
+          <Icon name="check" className="h-5 w-5" />
+          一括承認する（{selectedSize}件選択中）
+        </button>
+      </div>
+
+      {showConfirm && selectedSize > 0 && (
+        <div className="mt-4 rounded-[18px] border border-[#BFE7CF] bg-[#F0FBF4] p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)]">
+          <p className="text-base font-semibold text-[#1F2937]">選択中の{selectedSize}件を一括承認しますか</p>
+          <p className="mt-2 text-sm font-medium leading-6 text-[#6B7280]">
+            承認すると、各申請の内容変更はできません。内容に誤りがないか今一度ご確認ください。<br />
+            承認後、対象スタッフへ署名・確認依頼が自動送信されます。<br />
+            （雇用契約書は署名、就業条件明示書は内容確認の依頼になります。<br />
+            　対面・印刷パターンの案件は担当営業のダッシュボードに表示されます）
+          </p>
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <button onClick={onApprove} disabled={approving} className={`${primaryButton} flex-1 disabled:cursor-not-allowed disabled:opacity-60`}>
+              選択中の{selectedSize}件を一括承認する
+            </button>
+            <button onClick={onCancel} className={secondaryButton}>
+              キャンセル
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
 export default function AdminDashboard() {
   const router = useRouter()
   const { showError, showSuccess } = useToast()
@@ -852,6 +1095,12 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (!user) return
+    // M-08対応（2026-08-14）：検索条件・フィルタを素早く切り替えた際、後から送った新しい
+    // クエリより先に古いクエリの結果が返ってくると、古い結果で一覧を上書きしてしまう競合が
+    // あった（AbortControllerが未実装）。apply/page.tsxの`cancelled`ガードパターン
+    // （89-99行目・派遣の側面確認処理）と同じ考え方を適用し、このuseEffectが再実行・
+    // アンマウントされた後に届いた古いレスポンスの反映を防ぐ。
+    let cancelled = false
     const loadRequests = async () => {
       setReqLoading(true)
       setReqError('')
@@ -885,6 +1134,7 @@ export default function AdminDashboard() {
         }
 
         const { data, error } = await query
+        if (cancelled) return
         if (error) { setReqError('依頼一覧の取得に失敗しました: ' + error.message); setReqLoading(false); return }
 
         let rows = (data || []) as RequestRow[]
@@ -899,6 +1149,7 @@ export default function AdminDashboard() {
             .from('staff')
             .select('id, department_master(dept_name)')
             .in('id', staffIds)
+          if (cancelled) return
           for (const s of (staffRows || []) as any[]) {
             deptByStaffId[s.id] = s.department_master?.dept_name || null
           }
@@ -914,13 +1165,15 @@ export default function AdminDashboard() {
         if (statusFilter === 'completed') rows = rows.filter(r => !isPending(r) && !hasCancelled(r))
         if (statusFilter === 'cancelled') rows = rows.filter(r => hasCancelled(r))
 
+        if (cancelled) return
         setRequests(rows)
         setVisibleCount(PAGE_SIZE)
       } finally {
-        setReqLoading(false)
+        if (!cancelled) setReqLoading(false)
       }
     }
     loadRequests()
+    return () => { cancelled = true }
   }, [user, debouncedSearchText, deptFilter, requesterFilter, typeFilter, systemFilter, statusFilter, dateFrom, dateTo])
 
   // 総合レビュー指摘19対応：タブバッジ・サマリーカード用の「未対応」件数は、上の一覧取得とは
@@ -1217,236 +1470,6 @@ export default function AdminDashboard() {
     if (error) { showError('削除に失敗しました: ' + error.message); return }
     setter(prev => prev.filter(c => c.id !== contractId))
     showSuccess('削除しました。')
-  }
-
-  const ContractCard = ({
-    contract,
-    subTab,
-    selectedIdsSet,
-    toggle,
-    clearConfirm,
-    isInternal = false,
-    onDelete,
-  }: {
-    contract: Contract
-    subTab: ContractSubTab
-    selectedIdsSet: Set<string>
-    toggle: (id: string) => void
-    clearConfirm: () => void
-    isInternal?: boolean
-    onDelete?: (id: string) => void
-  }) => {
-    const staff = contract.input_data?.staff || {}
-    const f = contract.input_data?.fields || {}
-    const deadline = getDeadlineAlert(contract)
-    const warning = hasWarning(contract)
-    const autoWarning = hasAutoCheckWarning(contract)
-    const isConfirmed = contract.status === '署名済み' || contract.status === '完了'
-    const hasAnyWarning = warning || autoWarning
-    const isSelected = selectedIdsSet.has(contract.id)
-    const canBulkSelect = subTab === '承認待ち' && !hasAnyWarning
-    const showWarningIcon = subTab === '承認待ち' && hasAnyWarning
-    // 自動チェック警告の重要度で色を出し分ける（red＝赤、それ以外（yellow）＝青）。
-    // SSCダッシュボードと同じ考え方（2026-07-14修正）で、管理部側にも合わせる。
-    const autoWarningTone: 'red' | 'blue' = contract.warning_level === 'red' ? 'red' : 'blue'
-
-    return (
-      <article className={`${cardBase} p-5`}>
-        {/* 1行目：氏名と操作ボタンは画面幅に関わらず必ずこの1行に収まる（総合レビュー追加指摘・
-            2026-07-29対応：固定ピクセル幅の横並びグリッドだと画面が狭いと操作ボタンごと見切れて
-            しまっていたため、氏名＋ボタンだけは常に見える構造に変更） */}
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="flex shrink-0 items-center pt-1">
-              {canBulkSelect && (
-                <input
-                  type="checkbox"
-                  checked={isSelected}
-                  onChange={() => { toggle(contract.id); clearConfirm() }}
-                  onClick={e => e.stopPropagation()}
-                  className="h-5 w-5 rounded border-[#E8EDF5] accent-[#2F5FD0]"
-                />
-              )}
-              {showWarningIcon && (
-                <span title="警告あり" className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FFF3E8] text-[#F59E42]">
-                  <Icon name="alert" className="h-5 w-5" />
-                </span>
-              )}
-            </div>
-
-            <div className="min-w-0">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                {deadline.type && <Pill tone={deadline.type === 'overdue' ? 'red' : 'orange'}>{deadline.label}</Pill>}
-                {/* 総合レビュー指摘F対応（2026-07-16）：🔴（赤）の絵文字なのに地色がオレンジで
-                    危険度の直感が働かないという指摘。SSC一覧と同じくtoneをredに統一 */}
-                {warning && <Pill tone="red">🔴 個別確認が必要（一括承認対象外）</Pill>}
-                {autoWarning && <Pill tone={autoWarningTone}>{contract.warning_level === 'red' ? '🔴' : '🟡'} 自動チェック要確認（一括承認対象外）</Pill>}
-              </div>
-              <p className="break-words text-[22px] font-semibold leading-7 text-[#1F2937]">{staff.name || '-'}</p>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-medium text-[#6B7280]">
-                <span className="break-words">{staff.department || '-'}</span>
-                <span className="h-3 w-px bg-[#E8EDF5]" />
-                <span>{staff.employee_number || '-'}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-2">
-            <button className={primaryButton} onClick={() => router.push(`/dashboard/ssc/contracts/${contract.id}`)}>
-              {subTab === '承認待ち' ? '内容を確認する' : '詳細を見る'}
-              <Icon name="arrow" className="h-4 w-4" />
-            </button>
-            {subTab === '取り下げ' && onDelete && (
-              <button
-                className="inline-flex h-[52px] shrink-0 items-center justify-center whitespace-nowrap rounded-2xl border border-[#FCA5A5] bg-white px-4 text-sm font-semibold text-[#DC2626] transition hover:bg-[#FEF2F2] disabled:opacity-50"
-                disabled={deletingWithdrawnId === contract.id}
-                onClick={() => onDelete(contract.id)}
-              >
-                {deletingWithdrawnId === contract.id ? '削除中…' : '削除'}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* 2行目以降：補足情報は画面幅に応じて自動で折り返す */}
-        <div className="mt-4 grid grid-cols-2 gap-4 border-t border-[#E8EDF5] pt-4 sm:grid-cols-4">
-          <div className="min-w-0">
-            <p className="mb-2 text-xs font-semibold text-[#6B7280]">就業先</p>
-            <div className="flex items-start gap-2">
-              <Icon name="map" className="mt-0.5 h-4 w-4 shrink-0 text-[#2F5FD0]" />
-              <p className="min-w-0 truncate text-sm font-medium leading-6 text-[#1F2937]" title={f.workLocationName || '-'}>{f.workLocationName || '-'}</p>
-            </div>
-          </div>
-
-          <div className="min-w-0">
-            <p className="mb-2 text-xs font-semibold text-[#6B7280]">ステータス</p>
-            <div className="flex flex-wrap gap-2">
-              <WorkPlaceBadge workPlace={f.workPlace || contract.work_place} />
-              <Pill tone="blue">{getDocumentLabel(contract.document_type, contract.pattern)}</Pill>
-              <ContractStatusBadge status={contract.status} isInternal={isInternal} />
-              {isConfirmed && <ConfirmedBadge signedAt={contract.signed_at} />}
-            </div>
-          </div>
-
-          <div className="min-w-0">
-            <p className="mb-2 text-xs font-semibold text-[#6B7280]">雇用期間</p>
-            <p className="break-words text-xs font-medium leading-5 text-[#1F2937]">{getEmployPeriodLabel(contract)}</p>
-            {(contract.pattern === 'B' || contract.pattern === 'C') && f.dispatchStart && f.dispatchEnd && (
-              <p className="mt-1 break-words text-xs font-medium leading-5 text-[#6B7280]">派遣期間 {formatPeriodJp(f.dispatchStart, f.dispatchEnd)}</p>
-            )}
-          </div>
-
-          <div className="min-w-0">
-            <p className="mb-2 text-xs font-semibold text-[#6B7280]">申請日時</p>
-            <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{formatDateTime(contract.created_at)}</p>
-            <p className="mt-1 break-words text-xs font-medium text-[#6B7280]">申請者 {getApplicantLabel(contract.created_by_name, contract.created_by_dept_no, deptNameByNo)}</p>
-          </div>
-        </div>
-
-        {contract.status === '差し戻し中' && contract.rejection_reason && (
-          <div className="mt-4 rounded-2xl border border-[#FFE2C7] bg-[#FFF8F1] p-4">
-            <p className="text-xs font-semibold text-[#F59E42]">差し戻し理由</p>
-            <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.rejection_reason}</p>
-          </div>
-        )}
-
-        {contract.status === '取り下げ' && (
-          <div className="mt-4 rounded-2xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
-            <p className="text-xs font-semibold text-[#6B7280]">取り下げ理由{contract.withdrawn_at ? `（${formatDateTime(contract.withdrawn_at)}）` : ''}</p>
-            <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.withdrawn_reason || '（理由の入力なし）'}</p>
-          </div>
-        )}
-      </article>
-    )
-  }
-
-  const SubTabs = ({
-    value,
-    setValue,
-    counts,
-    clear,
-  }: {
-    value: ContractSubTab
-    setValue: (v: ContractSubTab) => void
-    counts: { pending: number; rejected: number; approved: number; withdrawn: number }
-    clear: () => void
-  }) => {
-    const items = [
-      { key: '承認待ち' as ContractSubTab, label: '承認待ち', count: counts.pending },
-      { key: '差し戻し中' as ContractSubTab, label: '差し戻し', count: counts.rejected },
-      { key: '承認済み' as ContractSubTab, label: '承認済み・署名状況', count: counts.approved },
-      { key: '取り下げ' as ContractSubTab, label: '取り下げ', count: counts.withdrawn },
-    ]
-
-    return (
-      <SubTabBar items={items} activeKey={value} onChange={v => { setValue(v); clear() }} />
-    )
-  }
-
-  const BulkPanel = ({
-    visible,
-    selectedSize,
-    targetsSize,
-    checked,
-    onSelectAll,
-    onOpenConfirm,
-    showConfirm,
-    onApprove,
-    onCancel,
-    approving = false,
-  }: {
-    visible: boolean
-    selectedSize: number
-    targetsSize: number
-    checked: boolean
-    onSelectAll: () => void
-    onOpenConfirm: () => void
-    showConfirm: boolean
-    onApprove: () => void
-    onCancel: () => void
-    approving?: boolean
-  }) => {
-    if (!visible) return null
-
-    return (
-      <section className="mt-5">
-        <div className="flex flex-col gap-4 rounded-[18px] border border-[#E8EDF5] bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,.05)] sm:flex-row sm:items-center sm:justify-between">
-          <label className="flex cursor-pointer items-center gap-3 text-sm font-semibold text-[#1F2937]">
-            <input
-              type="checkbox"
-              checked={checked && targetsSize > 0}
-              onChange={onSelectAll}
-              className="h-5 w-5 rounded border-[#E8EDF5] accent-[#2F5FD0]"
-            />
-            警告のない案件をすべて選択
-          </label>
-          <button onClick={onOpenConfirm} disabled={selectedSize === 0} className={accentButton}>
-            <Icon name="check" className="h-5 w-5" />
-            一括承認する（{selectedSize}件選択中）
-          </button>
-        </div>
-
-        {showConfirm && selectedSize > 0 && (
-          <div className="mt-4 rounded-[18px] border border-[#BFE7CF] bg-[#F0FBF4] p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)]">
-            <p className="text-base font-semibold text-[#1F2937]">選択中の{selectedSize}件を一括承認しますか</p>
-            <p className="mt-2 text-sm font-medium leading-6 text-[#6B7280]">
-              承認すると、各申請の内容変更はできません。内容に誤りがないか今一度ご確認ください。<br />
-              承認後、対象スタッフへ署名・確認依頼が自動送信されます。<br />
-              （雇用契約書は署名、就業条件明示書は内容確認の依頼になります。<br />
-              　対面・印刷パターンの案件は担当営業のダッシュボードに表示されます）
-            </p>
-            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-              <button onClick={onApprove} disabled={approving} className={`${primaryButton} flex-1 disabled:cursor-not-allowed disabled:opacity-60`}>
-                選択中の{selectedSize}件を一括承認する
-              </button>
-              <button onClick={onCancel} className={secondaryButton}>
-                キャンセル
-              </button>
-            </div>
-          </div>
-        )}
-      </section>
-    )
   }
 
   return (
@@ -1752,6 +1775,9 @@ export default function AdminDashboard() {
                   toggle={toggleSelect}
                   clearConfirm={() => { setShowBulkApproveConfirm(false); setBulkApproveDone(null) }}
                   onDelete={(id) => handleDeleteWithdrawn(id, setFlowContracts)}
+                  router={router}
+                  deletingWithdrawnId={deletingWithdrawnId}
+                  deptNameByNo={deptNameByNo}
                 />
               ))}
             </div>
@@ -1840,6 +1866,9 @@ export default function AdminDashboard() {
                   clearConfirm={() => { setInternalShowBulkApproveConfirm(false); setInternalBulkApproveDone(null) }}
                   isInternal
                   onDelete={(id) => handleDeleteWithdrawn(id, setInternalFlowContracts)}
+                  router={router}
+                  deletingWithdrawnId={deletingWithdrawnId}
+                  deptNameByNo={deptNameByNo}
                 />
               ))}
             </div>

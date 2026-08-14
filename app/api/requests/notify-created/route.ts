@@ -13,6 +13,7 @@ import { createClient } from '@supabase/supabase-js'
 import { sendNewRequestMail } from '@/lib/mail'
 import { getAuthenticatedStaff } from '@/lib/apiAuth'
 import { resolveMailingListEmail } from '@/lib/mailingList'
+import { listAllAuthUsers } from '@/lib/listAllAuthUsers'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -50,13 +51,15 @@ export async function POST(req: NextRequest) {
 
   // 2026-07-30新設のメーリングリストマスタに登録があればそちらへ、未登録なら
   // staff_rolesから個人宛メールへフォールバック（他の通知と同じ考え方）。
-  const [adminMailingEmail, roleRows, usersList] = await Promise.all([
+  // M-11対応（2026-08-14）：以前は1ページ目（perPage:200）しか取得しておらず、アカウント数が
+  // 200を超えると201人目以降が通知先から静かに欠落する不具合があった。全件取得するヘルパーへ変更。
+  const [adminMailingEmail, roleRows, allAuthUsers] = await Promise.all([
     resolveMailingListEmail('admin'),
     supabaseAdmin.from('staff_roles').select('id, role'),
-    supabaseAdmin.auth.admin.listUsers({ perPage: 200 }),
+    listAllAuthUsers(supabaseAdmin),
   ])
 
-  const emailById = new Map<string, string>((usersList.data?.users || []).map(u => [u.id, u.email || '']))
+  const emailById = new Map<string, string>(allAuthUsers.map(u => [u.id, u.email || '']))
   const individualMgmtEmails = Array.from(new Set(
     (roleRows.data || [])
       .filter((r: any) => r.role === '管理部')

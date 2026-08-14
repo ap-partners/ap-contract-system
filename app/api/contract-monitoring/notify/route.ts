@@ -12,6 +12,7 @@ import { createClient } from '@supabase/supabase-js'
 import { sendContractMonitoringFollowupMail, type ContractMonitoringFollowupItem } from '@/lib/mail'
 import { getAuthenticatedStaff } from '@/lib/apiAuth'
 import { resolveMailingListEmail } from '@/lib/mailingList'
+import { listAllAuthUsers } from '@/lib/listAllAuthUsers'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -50,8 +51,10 @@ export async function POST(req: NextRequest) {
   const deptName = deptRow?.dept_name || '所属部署不明'
 
   const { data: roleRows } = await supabaseAdmin.from('staff_roles').select('id, role, dept_no')
-  const { data: usersList } = await supabaseAdmin.auth.admin.listUsers({ perPage: 200 })
-  const emailById = new Map<string, string>((usersList?.users || []).map(u => [u.id, u.email || '']))
+  // M-11対応（2026-08-14）：以前は1ページ目（perPage:200）しか取得しておらず、アカウント数が
+  // 200を超えると201人目以降が通知先から静かに欠落する不具合があった。全件取得するヘルパーへ変更。
+  const allAuthUsers = await listAllAuthUsers(supabaseAdmin)
+  const emailById = new Map<string, string>(allAuthUsers.map(u => [u.id, u.email || '']))
 
   const individualMgmtEmails = Array.from(new Set(
     (roleRows || [])

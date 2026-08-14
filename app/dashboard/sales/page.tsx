@@ -219,6 +219,172 @@ const SignDeadlineBadge = ({ signRequestedAt }: { signRequestedAt: string | null
   return <Pill tone={overdue ? 'red' : urgent ? 'orange' : 'blue'}>{label}</Pill>
 }
 
+// M-20対応（2026-08-14）：以前はSalesDashboard関数の内側で定義されており、親が
+// 再レンダーされるたびに「新しい部品」として扱われ、一覧表示中のカードDOMが毎回作り直されて
+// いた（検索欄に1文字打つたびに表示中の全カードが破棄・再生成される等。外部総合品質監査
+// レポートM-20）。モジュールトップレベルへ移し、必要な値はpropsで受け取る形に変更する。
+function ContractCard({
+  contract, router, confirmingExplainId, setConfirmingExplainId,
+  deletingWithdrawnId, handleDeleteWithdrawn, isExplainNeeded,
+  explainLoading, handleExplainDone,
+}: {
+  contract: Contract
+  router: ReturnType<typeof useRouter>
+  confirmingExplainId: string | null
+  setConfirmingExplainId: (id: string | null) => void
+  deletingWithdrawnId: string | null
+  handleDeleteWithdrawn: (contractId: string) => void
+  isExplainNeeded: (c: Contract) => boolean
+  explainLoading: boolean
+  handleExplainDone: (contractId: string) => void
+}) {
+  const staff = contract.input_data?.staff || {}
+  const f = contract.input_data?.fields || {}
+  const deadline = getDeadlineAlert(contract)
+  const isWaitingSign = contract.status === '署名待ち'
+  const isConfirmed = contract.status === '署名済み' || contract.status === '完了'
+  const isExplain = isExplainNeeded(contract)
+
+  return (
+    <article className={`${cardBase} p-5`}>
+      {/* 1行目：氏名と操作ボタンは画面幅に関わらず必ずこの1行に収まる（総合レビュー追加指摘・
+          2026-07-29対応：固定ピクセル幅の横並びグリッドだと画面が狭いと操作ボタンごと見切れて
+          しまっていたため、氏名＋ボタンだけは常に見える構造に変更） */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            {deadline.type && !isWaitingSign && (
+              <Pill tone={deadline.type === 'overdue' ? 'red' : 'orange'}>{deadline.label}</Pill>
+            )}
+            {isExplain && <Pill tone="orange">説明対応が必要</Pill>}
+          </div>
+          <p className="break-words text-[22px] font-semibold leading-7 text-[#1F2937]">{staff.name || '-'}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-medium text-[#6B7280]">
+            <span className="break-words">{staff.department || '-'}</span>
+            <span className="h-3 w-px bg-[#E8EDF5]" />
+            <span>{staff.employee_number || '-'}</span>
+            <ContractTypeBadge contractType={f.contractType || contract.contract_type} workPlace={f.workPlace || contract.work_place} />
+          </div>
+        </div>
+
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <button
+            className={isExplain || contract.status === '差し戻し中' ? secondaryButton : primaryButton}
+            onClick={() => router.push(`/dashboard/sales/contracts/${contract.id}`)}
+          >
+            詳細を見る
+            <Icon name="arrow" className="h-4 w-4" />
+          </button>
+          {isExplain && confirmingExplainId !== contract.id && (
+            <button className={primaryButton} onClick={() => setConfirmingExplainId(contract.id)}>
+              <Icon name="check" className="h-4 w-4" />
+              説明完了
+            </button>
+          )}
+          {contract.status === '差し戻し中' && (
+            <button className={accentButton} onClick={() => router.push(`/apply?edit=${contract.id}`)}>
+              再申請する
+            </button>
+          )}
+          {contract.status === '取り下げ' && (
+            <button
+              className="inline-flex h-[52px] shrink-0 items-center justify-center whitespace-nowrap rounded-2xl border border-[#FCA5A5] bg-white px-4 text-sm font-semibold text-[#DC2626] transition hover:bg-[#FEF2F2] disabled:opacity-50"
+              disabled={deletingWithdrawnId === contract.id}
+              onClick={() => handleDeleteWithdrawn(contract.id)}
+            >
+              {deletingWithdrawnId === contract.id ? '削除中…' : '削除'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 2行目以降：補足情報は画面幅に応じて自動で折り返す */}
+      <div className="mt-4 grid grid-cols-2 gap-4 border-t border-[#E8EDF5] pt-4 sm:grid-cols-4">
+        <div className="min-w-0">
+          <p className="mb-2 text-xs font-semibold text-[#6B7280]">就業先</p>
+          <div className="flex items-start gap-2">
+            <Icon name="map" className="mt-0.5 h-4 w-4 shrink-0 text-[#2F5FD0]" />
+            <p className="min-w-0 truncate text-sm font-medium leading-6 text-[#1F2937]" title={f.workLocationName || '-'}>{f.workLocationName || '-'}</p>
+          </div>
+        </div>
+
+        <div className="min-w-0">
+          <p className="mb-2 text-xs font-semibold text-[#6B7280]">ステータス</p>
+          <div className="flex flex-wrap gap-2">
+            <Pill tone="blue">{getDocumentLabel(contract.document_type, contract.pattern)}</Pill>
+            <ContractStatusBadge
+              status={contract.status}
+              isInternal={(f.workPlace || contract.work_place) === '社内'}
+              overrideLabel={isExplain ? '説明対応が必要' : undefined}
+            />
+            {isWaitingSign && <SignDeadlineBadge signRequestedAt={contract.sign_requested_at} />}
+            {isConfirmed && <ConfirmedBadge signedAt={contract.signed_at} />}
+          </div>
+        </div>
+
+        <div className="min-w-0">
+          <p className="mb-2 text-xs font-semibold text-[#6B7280]">雇用期間</p>
+          <p className="break-words text-xs font-medium leading-5 text-[#1F2937]">{getEmployPeriodLabel(contract)}</p>
+          {(contract.pattern === 'B' || contract.pattern === 'C') && f.dispatchStart && f.dispatchEnd && (
+            <p className="mt-1 break-words text-xs font-medium leading-5 text-[#6B7280]">派遣期間 {formatPeriodJp(f.dispatchStart, f.dispatchEnd)}</p>
+          )}
+          {isExplain && f.closingPattern && (
+            <p className="mt-1 break-words text-xs font-medium leading-5 text-[#6B7280]">締結パターン {CLOSING_PATTERN_LABEL[f.closingPattern] || f.closingPattern}</p>
+          )}
+        </div>
+
+        <div className="min-w-0">
+          <p className="mb-2 text-xs font-semibold text-[#6B7280]">申請日時</p>
+          <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{formatDateTime(contract.created_at)}</p>
+        </div>
+      </div>
+
+      {contract.status === '差し戻し中' && contract.rejection_reason && (
+        <div className="mt-4 rounded-2xl border border-[#FFE2C7] bg-[#FFF8F1] p-4">
+          <p className="text-xs font-semibold text-[#F59E42]">差し戻し理由</p>
+          <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.rejection_reason}</p>
+        </div>
+      )}
+
+      {contract.status === '取り下げ' && (
+        <div className="mt-4 rounded-2xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
+          <p className="text-xs font-semibold text-[#6B7280]">取り下げ理由{contract.withdrawn_at ? `（${formatDateTime(contract.withdrawn_at)}）` : ''}</p>
+          <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.withdrawn_reason || '（理由の入力なし）'}</p>
+        </div>
+      )}
+
+      {isExplain && contract.status === 'SSC承認済み' && (
+        <div className="mt-4 rounded-2xl border border-[#D7E5FF] bg-[#F5F9FF] p-4">
+          <p className="text-sm font-medium leading-6 text-[#2F5FD0]">
+            {contract.work_place === '社内'
+              ? '承認済みです。従業員への説明が完了したら「説明完了」を押してください。押すと従業員が署名待ちの状態になります。'
+              : 'SSC承認済みです。従業員への説明が完了したら「説明完了」を押してください。押すと従業員が署名待ちの状態になります。'}
+          </p>
+        </div>
+      )}
+
+      {isExplain && confirmingExplainId === contract.id && (
+        <div className="mt-4 rounded-2xl border border-[#D7E5FF] bg-[#F5F9FF] p-4">
+          <p className="text-sm font-semibold text-[#1F2937]">従業員への説明は完了しましたか？</p>
+          <p className="mt-2 text-sm font-medium leading-6 text-[#6B7280]">押すと、従業員が署名待ちの状態に切り替わります。</p>
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+            <button
+              onClick={() => handleExplainDone(contract.id)}
+              disabled={explainLoading}
+              className={`${primaryButton} flex-1 disabled:cursor-not-allowed disabled:opacity-50`}
+            >
+              {explainLoading ? '処理中...' : '説明完了'}
+            </button>
+            <button onClick={() => setConfirmingExplainId(null)} className={secondaryButton}>
+              キャンセル
+            </button>
+          </div>
+        </div>
+      )}
+    </article>
+  )
+}
+
 export default function SalesDashboard() {
   const router = useRouter()
   const { showError, showSuccess } = useToast()
@@ -544,154 +710,6 @@ export default function SalesDashboard() {
     showSuccess('削除しました。')
   }
 
-  const ContractCard = ({ contract }: { contract: Contract }) => {
-    const staff = contract.input_data?.staff || {}
-    const f = contract.input_data?.fields || {}
-    const deadline = getDeadlineAlert(contract)
-    const isWaitingSign = contract.status === '署名待ち'
-    const isConfirmed = contract.status === '署名済み' || contract.status === '完了'
-    const isExplain = isExplainNeeded(contract)
-
-    return (
-      <article className={`${cardBase} p-5`}>
-        {/* 1行目：氏名と操作ボタンは画面幅に関わらず必ずこの1行に収まる（総合レビュー追加指摘・
-            2026-07-29対応：固定ピクセル幅の横並びグリッドだと画面が狭いと操作ボタンごと見切れて
-            しまっていたため、氏名＋ボタンだけは常に見える構造に変更） */}
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              {deadline.type && !isWaitingSign && (
-                <Pill tone={deadline.type === 'overdue' ? 'red' : 'orange'}>{deadline.label}</Pill>
-              )}
-              {isExplain && <Pill tone="orange">説明対応が必要</Pill>}
-            </div>
-            <p className="break-words text-[22px] font-semibold leading-7 text-[#1F2937]">{staff.name || '-'}</p>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-medium text-[#6B7280]">
-              <span className="break-words">{staff.department || '-'}</span>
-              <span className="h-3 w-px bg-[#E8EDF5]" />
-              <span>{staff.employee_number || '-'}</span>
-              <ContractTypeBadge contractType={f.contractType || contract.contract_type} workPlace={f.workPlace || contract.work_place} />
-            </div>
-          </div>
-
-          <div className="flex shrink-0 flex-col items-end gap-2">
-            <button
-              className={isExplain || contract.status === '差し戻し中' ? secondaryButton : primaryButton}
-              onClick={() => router.push(`/dashboard/sales/contracts/${contract.id}`)}
-            >
-              詳細を見る
-              <Icon name="arrow" className="h-4 w-4" />
-            </button>
-            {isExplain && confirmingExplainId !== contract.id && (
-              <button className={primaryButton} onClick={() => setConfirmingExplainId(contract.id)}>
-                <Icon name="check" className="h-4 w-4" />
-                説明完了
-              </button>
-            )}
-            {contract.status === '差し戻し中' && (
-              <button className={accentButton} onClick={() => router.push(`/apply?edit=${contract.id}`)}>
-                再申請する
-              </button>
-            )}
-            {contract.status === '取り下げ' && (
-              <button
-                className="inline-flex h-[52px] shrink-0 items-center justify-center whitespace-nowrap rounded-2xl border border-[#FCA5A5] bg-white px-4 text-sm font-semibold text-[#DC2626] transition hover:bg-[#FEF2F2] disabled:opacity-50"
-                disabled={deletingWithdrawnId === contract.id}
-                onClick={() => handleDeleteWithdrawn(contract.id)}
-              >
-                {deletingWithdrawnId === contract.id ? '削除中…' : '削除'}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* 2行目以降：補足情報は画面幅に応じて自動で折り返す */}
-        <div className="mt-4 grid grid-cols-2 gap-4 border-t border-[#E8EDF5] pt-4 sm:grid-cols-4">
-          <div className="min-w-0">
-            <p className="mb-2 text-xs font-semibold text-[#6B7280]">就業先</p>
-            <div className="flex items-start gap-2">
-              <Icon name="map" className="mt-0.5 h-4 w-4 shrink-0 text-[#2F5FD0]" />
-              <p className="min-w-0 truncate text-sm font-medium leading-6 text-[#1F2937]" title={f.workLocationName || '-'}>{f.workLocationName || '-'}</p>
-            </div>
-          </div>
-
-          <div className="min-w-0">
-            <p className="mb-2 text-xs font-semibold text-[#6B7280]">ステータス</p>
-            <div className="flex flex-wrap gap-2">
-              <Pill tone="blue">{getDocumentLabel(contract.document_type, contract.pattern)}</Pill>
-              <ContractStatusBadge
-                status={contract.status}
-                isInternal={(f.workPlace || contract.work_place) === '社内'}
-                overrideLabel={isExplain ? '説明対応が必要' : undefined}
-              />
-              {isWaitingSign && <SignDeadlineBadge signRequestedAt={contract.sign_requested_at} />}
-              {isConfirmed && <ConfirmedBadge signedAt={contract.signed_at} />}
-            </div>
-          </div>
-
-          <div className="min-w-0">
-            <p className="mb-2 text-xs font-semibold text-[#6B7280]">雇用期間</p>
-            <p className="break-words text-xs font-medium leading-5 text-[#1F2937]">{getEmployPeriodLabel(contract)}</p>
-            {(contract.pattern === 'B' || contract.pattern === 'C') && f.dispatchStart && f.dispatchEnd && (
-              <p className="mt-1 break-words text-xs font-medium leading-5 text-[#6B7280]">派遣期間 {formatPeriodJp(f.dispatchStart, f.dispatchEnd)}</p>
-            )}
-            {isExplain && f.closingPattern && (
-              <p className="mt-1 break-words text-xs font-medium leading-5 text-[#6B7280]">締結パターン {CLOSING_PATTERN_LABEL[f.closingPattern] || f.closingPattern}</p>
-            )}
-          </div>
-
-          <div className="min-w-0">
-            <p className="mb-2 text-xs font-semibold text-[#6B7280]">申請日時</p>
-            <p className="break-words text-sm font-medium leading-6 text-[#1F2937]">{formatDateTime(contract.created_at)}</p>
-          </div>
-        </div>
-
-        {contract.status === '差し戻し中' && contract.rejection_reason && (
-          <div className="mt-4 rounded-2xl border border-[#FFE2C7] bg-[#FFF8F1] p-4">
-            <p className="text-xs font-semibold text-[#F59E42]">差し戻し理由</p>
-            <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.rejection_reason}</p>
-          </div>
-        )}
-
-        {contract.status === '取り下げ' && (
-          <div className="mt-4 rounded-2xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
-            <p className="text-xs font-semibold text-[#6B7280]">取り下げ理由{contract.withdrawn_at ? `（${formatDateTime(contract.withdrawn_at)}）` : ''}</p>
-            <p className="mt-2 break-words text-sm font-medium leading-6 text-[#1F2937]">{contract.withdrawn_reason || '（理由の入力なし）'}</p>
-          </div>
-        )}
-
-        {isExplain && contract.status === 'SSC承認済み' && (
-          <div className="mt-4 rounded-2xl border border-[#D7E5FF] bg-[#F5F9FF] p-4">
-            <p className="text-sm font-medium leading-6 text-[#2F5FD0]">
-              {contract.work_place === '社内'
-                ? '承認済みです。従業員への説明が完了したら「説明完了」を押してください。押すと従業員が署名待ちの状態になります。'
-                : 'SSC承認済みです。従業員への説明が完了したら「説明完了」を押してください。押すと従業員が署名待ちの状態になります。'}
-            </p>
-          </div>
-        )}
-
-        {isExplain && confirmingExplainId === contract.id && (
-          <div className="mt-4 rounded-2xl border border-[#D7E5FF] bg-[#F5F9FF] p-4">
-            <p className="text-sm font-semibold text-[#1F2937]">従業員への説明は完了しましたか？</p>
-            <p className="mt-2 text-sm font-medium leading-6 text-[#6B7280]">押すと、従業員が署名待ちの状態に切り替わります。</p>
-            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-              <button
-                onClick={() => handleExplainDone(contract.id)}
-                disabled={explainLoading}
-                className={`${primaryButton} flex-1 disabled:cursor-not-allowed disabled:opacity-50`}
-              >
-                {explainLoading ? '処理中...' : '説明完了'}
-              </button>
-              <button onClick={() => setConfirmingExplainId(null)} className={secondaryButton}>
-                キャンセル
-              </button>
-            </div>
-          </div>
-        )}
-      </article>
-    )
-  }
-
   return (
     <div className="h-screen overflow-auto bg-[#F8FAFD] text-[#1F2937]">
       <header className="relative z-30 border-b border-[#E8EDF5] bg-white/90 backdrop-blur">
@@ -959,7 +977,20 @@ export default function SalesDashboard() {
               <p className="py-8 text-sm font-medium text-[#6B7280]">該当する書類はありません。</p>
             ) : (
               <div className="grid gap-3">
-                {currentList.map(c => <ContractCard key={c.id} contract={c} />)}
+                {currentList.map(c => (
+                  <ContractCard
+                    key={c.id}
+                    contract={c}
+                    router={router}
+                    confirmingExplainId={confirmingExplainId}
+                    setConfirmingExplainId={setConfirmingExplainId}
+                    deletingWithdrawnId={deletingWithdrawnId}
+                    handleDeleteWithdrawn={handleDeleteWithdrawn}
+                    isExplainNeeded={isExplainNeeded}
+                    explainLoading={explainLoading}
+                    handleExplainDone={handleExplainDone}
+                  />
+                ))}
               </div>
             )}
 

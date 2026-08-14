@@ -57,15 +57,29 @@ export function useWageRevisionCandidates() {
     setError(null)
     try {
       // ① 対象契約を取得（RLSにより担当営業は自部門分のみ・SSC/管理部は全部門が返る）
-      const { data: contractRows, error: contractError } = await supabase
-        .from('contracts')
-        .select('id, staff_id, pattern, document_type, work_place, status, input_data')
-        .in('pattern', ['A', 'C'])
-        .eq('work_place', '現場')
-        .not('status', 'in', EXCLUDED_STATUSES)
-
-      if (contractError) throw contractError
-      if (!contractRows || contractRows.length === 0) {
+      // M-12対応（2026-08-14）：select()にlimit/rangeが無く、PostgRESTの既定上限（1000件）に
+      // 抵触すると1001件目以降が静かに切り捨てられ、最低賃金改定の再チェック対象から漏れる
+      // 不具合があった（対象が増えるほど悪化する）。.range()で全件をページング取得する形に変更する。
+      const contractRows: any[] = []
+      {
+        const PAGE_SIZE = 1000
+        let from = 0
+        for (let i = 0; i < 100; i++) { // 安全弁：本来あり得ない件数（最大10万件相当）に達したら打ち切る
+          const { data, error: contractError } = await supabase
+            .from('contracts')
+            .select('id, staff_id, pattern, document_type, work_place, status, input_data')
+            .in('pattern', ['A', 'C'])
+            .eq('work_place', '現場')
+            .not('status', 'in', EXCLUDED_STATUSES)
+            .range(from, from + PAGE_SIZE - 1)
+          if (contractError) throw contractError
+          const page = data || []
+          contractRows.push(...page)
+          if (page.length < PAGE_SIZE) break
+          from += PAGE_SIZE
+        }
+      }
+      if (contractRows.length === 0) {
         setRows([])
         return
       }

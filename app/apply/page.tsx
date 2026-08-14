@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react'
 import { supabase, getAuthHeader } from '@/lib/supabase'
 import { runAutoChecks, isMinimumWageMasterMissing, computeWageCheckDetail, type MinimumWageRow } from '@/lib/autoChecks'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -1149,43 +1149,58 @@ function ApplyPageInner() {
   const setCsvBadge = (key: string, state: 'reflected' | 'modified') => {
     setCsvBadges(prev => ({ ...prev, [key]: state }))
   }
-  const CsvBadge = ({ name }: { name: string }) => {
-    // CSVスナップショットの対象キーと、現在値の対応表
-    const currentValueMap: Record<string, string> = {
-      locationName: workLocationName,
-      locationAddress: workLocationAddress,
-      locationTel: workLocationTel,
-      business: businessContent,
-      startTime: startTime,
-      endTime: endTime,
-      breakTime: breakTime,
-      workingHours: `${workingHoursH}-${workingHoursM}`,
-      org: organizationUnit,
-      conflict: conflictDate,
-      conflictOrg: conflictDateOrg,
-      resp: responsibility,
-      cmdDept: cmd_dept,
-      cmdRole: cmd_role,
-      cmdName: cmd_name,
-      cmdTel: cmd_tel,
-      respDept: resp_dept,
-      respRole: resp_role,
-      respName: resp_name,
-      respTel: resp_tel,
-      compDept: comp_dept,
-      compRole: comp_role,
-      compName: comp_name,
-      compTel: comp_tel,
-      welfare: welfare,
-      flexTime: flexTime,
-      overtime: overtime,
-    }
-
+  // M-20対応（2026-08-14）：CsvBadgeは`React.ComponentType<{name: string}>`として
+  // StepWorkInfo・StepDispatchContact・StepFinalCheck・StepPeriodの4つの子画面へ「部品そのもの」
+  // をpropsで渡している。このコンポーネント本体の中で関数として定義されたままだと、親が
+  // 再レンダーされるたびに「新しい部品」として扱われ、子画面側で表示中のCSVバッジ（就業場所名・
+  // 指揮命令者情報など多数）が毎回作り直されていた（外部総合品質監査レポートM-20）。
+  // CsvBadgeは4ファイルから狭いprops（nameのみ）で直接呼ばれているため、モジュール直下への
+  // 完全な移動は呼び出し側4ファイルすべての改修を要し範囲が広くなる。ここでは判定に必要な値
+  // （currentValueMap・csvSnapshot・csvBadges）が実際に変わらない限り同じ部品として扱われる
+  // よう、値のメモ化（useMemo）＋部品自体のメモ化（useCallback）で参照を安定させる。
+  const csvBadgeValueMap = useMemo<Record<string, string>>(() => ({
+    locationName: workLocationName,
+    locationAddress: workLocationAddress,
+    locationTel: workLocationTel,
+    business: businessContent,
+    startTime: startTime,
+    endTime: endTime,
+    breakTime: breakTime,
+    workingHours: `${workingHoursH}-${workingHoursM}`,
+    org: organizationUnit,
+    conflict: conflictDate,
+    conflictOrg: conflictDateOrg,
+    resp: responsibility,
+    cmdDept: cmd_dept,
+    cmdRole: cmd_role,
+    cmdName: cmd_name,
+    cmdTel: cmd_tel,
+    respDept: resp_dept,
+    respRole: resp_role,
+    respName: resp_name,
+    respTel: resp_tel,
+    compDept: comp_dept,
+    compRole: comp_role,
+    compName: comp_name,
+    compTel: comp_tel,
+    welfare: welfare,
+    flexTime: flexTime,
+    overtime: overtime,
+  }), [
+    workLocationName, workLocationAddress, workLocationTel, businessContent,
+    startTime, endTime, breakTime, workingHoursH, workingHoursM,
+    organizationUnit, conflictDate, conflictDateOrg, responsibility,
+    cmd_dept, cmd_role, cmd_name, cmd_tel,
+    resp_dept, resp_role, resp_name, resp_tel,
+    comp_dept, comp_role, comp_name, comp_tel,
+    welfare, flexTime, overtime,
+  ])
+  const CsvBadge = useCallback(({ name }: { name: string }) => {
     const hasSnapshot = name in csvSnapshot
     let state: 'none' | 'reflected' | 'modified'
     if (hasSnapshot) {
       // スナップショットがある項目（CSVから自動反映される項目）は、現在値と比較して動的に判定
-      state = currentValueMap[name] === csvSnapshot[name] ? 'reflected' : 'modified'
+      state = csvBadgeValueMap[name] === csvSnapshot[name] ? 'reflected' : 'modified'
     } else {
       // スナップショット対象外の項目（所定労働時間・安全及び衛生・紛争防止措置等）は従来通り固定状態を使う
       state = csvBadges[name] || 'none'
@@ -1200,7 +1215,7 @@ function ApplyPageInner() {
       <span className="text-xs px-1.5 py-0.5 rounded shrink-0"
         style={{ background: '#FFFBEB', color: '#D97706', border: '1px solid #FDE68A' }}>CSV反映（修正済み）</span>
     )
-  }
+  }, [csvBadgeValueMap, csvSnapshot, csvBadges])
 
 
   useEffect(() => {
@@ -1255,7 +1270,14 @@ function ApplyPageInner() {
     prevDocumentTypeRef.current = documentType
   }, [documentType])
 
+  // M-08対応（2026-08-14）：入力のたびに呼ばれるスタッフ検索で、通信の遅い・速いの巡り合わせ
+  // 次第では「先に送った古い検索」の結果が「後から送った新しい検索」より後に返ってきて
+  // 一覧を上書きしてしまう競合があった（AbortControllerが未実装）。useEffect用の`cancelled`
+  // ガードと異なりhandleSearchは入力イベントのたびに呼ばれる関数のため、代わりに「直近の
+  // 呼び出しかどうか」をrefの連番で判定し、古い呼び出しの結果は画面へ反映しない。
+  const searchRequestIdRef = useRef(0)
   const handleSearch = useCallback(async (query: string) => {
+    const requestId = ++searchRequestIdRef.current
     if (!query.trim()) { setSearchResults([]); setSearched(false); return }
     const normalized = query.replace(/[\s　]+/g, '')
 
@@ -1294,6 +1316,7 @@ function ApplyPageInner() {
       byNameQuery = byNameQuery.in('dept_no', scopeDeptNos)
     }
     const [byNumber, byName] = await Promise.all([byNumberQuery, byNameQuery])
+    if (searchRequestIdRef.current !== requestId) return // 待っている間により新しい検索が発生したため、この結果は破棄する
     const merged = [...(byNumber.data || []), ...(byName.data || [])]
     const data = Array.from(new Map(merged.map((s: any) => [s.employee_number, s])).values()) // employee_number/nameの両方に一致した場合の重複を除去
     // department_master(dept_name) は { department_master: { dept_name: '...' } } の形で返るため、
@@ -1567,7 +1590,10 @@ function ApplyPageInner() {
   }
 
   const handleNext = () => { setCurrentStep(s => s + 1); window.scrollTo(0, 0) }
-  const handleBack = () => { setCurrentStep(s => s - 1); window.scrollTo(0, 0) }
+  // M-20対応（2026-08-14）：handleBackはNavButtons（下記）が唯一参照する値のため、
+  // useCallbackで参照を安定させておく（setCurrentStepはuseStateのsetter関数のため
+  // 参照は元々安定しており、依存配列は空でよい）。
+  const handleBack = useCallback(() => { setCurrentStep(s => s - 1); window.scrollTo(0, 0) }, [])
   const getStepLabel = (step: number) => steps[step - 1] || ''
 
   const getStepType = (step: number) => {
@@ -2115,7 +2141,12 @@ function ApplyPageInner() {
   // 2026-07-22追加（alert/confirm置き換えPhase3・①必須項目チェック）：各Stepコンポーネントの
   // 「次へ進む」チェックalert()をインライン警告バナーに置き換えるため、error propを追加。
   // 各Stepコンポーネント側でローカルstateを持ち、バリデーション失敗時にerrorを渡す。
-  const NavButtons = ({ onNext, error }: { onNext: () => void; error?: string | null }) => (
+  // M-20対応（2026-08-14）：NavButtonsも`React.ComponentType<{onNext, error}>`として
+  // 6つの子画面（StepWorkInfo等）へ「部品そのもの」をpropsで渡している。CsvBadgeと同じ理由
+  // （狭いpropsで複数ファイルから直接呼ばれているため完全な外出しは範囲が広い）により、
+  // 参照するhandleBackをuseCallbackで安定させた上で、NavButtons自体もuseCallbackで
+  // メモ化し、親の再レンダーのたびに「新しい部品」として扱われることを防ぐ。
+  const NavButtons = useCallback(({ onNext, error }: { onNext: () => void; error?: string | null }) => (
     <>
       {error && (
         <div className="px-5">
@@ -2131,7 +2162,7 @@ function ApplyPageInner() {
           style={{ background: '#1B3A8C' }}>次へ進む →</button>
       </div>
     </>
-  )
+  ), [handleBack])
 
   // 2026-07-30追加：認証チェック（supabase.auth.getUser()）が完了するまでは、ヘッダーの
   // 「この申請をやめる」ボタンを含む画面全体を描画しない。従来はチェック完了前でもボタンが

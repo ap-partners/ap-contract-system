@@ -1149,15 +1149,14 @@ function ApplyPageInner() {
   const setCsvBadge = (key: string, state: 'reflected' | 'modified') => {
     setCsvBadges(prev => ({ ...prev, [key]: state }))
   }
-  // M-20対応（2026-08-14）：CsvBadgeは`React.ComponentType<{name: string}>`として
-  // StepWorkInfo・StepDispatchContact・StepFinalCheck・StepPeriodの4つの子画面へ「部品そのもの」
-  // をpropsで渡している。このコンポーネント本体の中で関数として定義されたままだと、親が
-  // 再レンダーされるたびに「新しい部品」として扱われ、子画面側で表示中のCSVバッジ（就業場所名・
-  // 指揮命令者情報など多数）が毎回作り直されていた（外部総合品質監査レポートM-20）。
-  // CsvBadgeは4ファイルから狭いprops（nameのみ）で直接呼ばれているため、モジュール直下への
-  // 完全な移動は呼び出し側4ファイルすべての改修を要し範囲が広くなる。ここでは判定に必要な値
-  // （currentValueMap・csvSnapshot・csvBadges）が実際に変わらない限り同じ部品として扱われる
-  // よう、値のメモ化（useMemo）＋部品自体のメモ化（useCallback）で参照を安定させる。
+  // M-20対応（2026-08-14実装→同日デプロイ後の実機確認でReact error #310によるページクラッシュを
+  // 検知したため、CsvBadge/NavButtonsの「部品自体をuseCallbackでメモ化する」方式のみ即座に取り消し。
+  // 原因：JSXタグとして呼び出す関数コンポーネントをuseCallbackで包むと、依存値が変わるたびに
+  // 関数の参照自体が変わり、Reactはそれを「別のコンポーネント型」とみなしてツリーを都度アン
+  // マウント／再マウントする。これが原因でhooksの呼び出し順が壊れ、/apply全体がクラッシュして
+  // いた（本番で複数回再現・pre-M-20のコミットと比較しCsvBadge/NavButtonsの実装差分のみが原因と
+  // 特定）。値のメモ化（useMemo、下記csvBadgeValueMap）自体は問題なくCSV由来項目の判定にのみ使う
+  // 安全な最適化のためそのまま維持し、部品本体は元通りプレーンな関数定義に戻す。
   const csvBadgeValueMap = useMemo<Record<string, string>>(() => ({
     locationName: workLocationName,
     locationAddress: workLocationAddress,
@@ -1195,7 +1194,7 @@ function ApplyPageInner() {
     comp_dept, comp_role, comp_name, comp_tel,
     welfare, flexTime, overtime,
   ])
-  const CsvBadge = useCallback(({ name }: { name: string }) => {
+  const CsvBadge = ({ name }: { name: string }) => {
     const hasSnapshot = name in csvSnapshot
     let state: 'none' | 'reflected' | 'modified'
     if (hasSnapshot) {
@@ -1215,7 +1214,7 @@ function ApplyPageInner() {
       <span className="text-xs px-1.5 py-0.5 rounded shrink-0"
         style={{ background: '#FFFBEB', color: '#D97706', border: '1px solid #FDE68A' }}>CSV反映（修正済み）</span>
     )
-  }, [csvBadgeValueMap, csvSnapshot, csvBadges])
+  }
 
 
   useEffect(() => {
@@ -2141,12 +2140,11 @@ function ApplyPageInner() {
   // 2026-07-22追加（alert/confirm置き換えPhase3・①必須項目チェック）：各Stepコンポーネントの
   // 「次へ進む」チェックalert()をインライン警告バナーに置き換えるため、error propを追加。
   // 各Stepコンポーネント側でローカルstateを持ち、バリデーション失敗時にerrorを渡す。
-  // M-20対応（2026-08-14）：NavButtonsも`React.ComponentType<{onNext, error}>`として
-  // 6つの子画面（StepWorkInfo等）へ「部品そのもの」をpropsで渡している。CsvBadgeと同じ理由
-  // （狭いpropsで複数ファイルから直接呼ばれているため完全な外出しは範囲が広い）により、
-  // 参照するhandleBackをuseCallbackで安定させた上で、NavButtons自体もuseCallbackで
-  // メモ化し、親の再レンダーのたびに「新しい部品」として扱われることを防ぐ。
-  const NavButtons = useCallback(({ onNext, error }: { onNext: () => void; error?: string | null }) => (
+  // M-20対応（2026-08-14実装→同日デプロイ後の実機確認でReact error #310によるページクラッシュを
+  // 検知したため取り消し。理由はCsvBadgeと同じ＝JSXタグとして呼ぶ関数コンポーネントをuseCallback
+  // で包むと参照が変わるたびに別コンポーネント型とみなされツリーが壊れる。元通りプレーンな関数
+  // 定義に戻す（詳細はCsvBadge側のコメント参照）。
+  const NavButtons = ({ onNext, error }: { onNext: () => void; error?: string | null }) => (
     <>
       {error && (
         <div className="px-5">
@@ -2162,7 +2160,7 @@ function ApplyPageInner() {
           style={{ background: '#1B3A8C' }}>次へ進む →</button>
       </div>
     </>
-  ), [handleBack])
+  )
 
   // 2026-07-30追加：認証チェック（supabase.auth.getUser()）が完了するまでは、ヘッダーの
   // 「この申請をやめる」ボタンを含む画面全体を描画しない。従来はチェック完了前でもボタンが

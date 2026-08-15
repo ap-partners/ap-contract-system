@@ -6,6 +6,7 @@
 
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { escapeLikePattern } from '@/lib/searchEscape'
 
 export const APPROVED_WINDOW_DAYS = 45
 export const APPROVED_PAGE_SIZE = 50
@@ -91,7 +92,7 @@ export function useApprovedAccumulator<T = any>(
       supabase.from(table).select(columns)
     )
       .in('status', statuses)
-      .ilike('search_text', `%${q}%`)
+      .ilike('search_text', `%${escapeLikePattern(q)}%`)
       .order('created_at', { ascending: false })
       .limit(APPROVED_SEARCH_LIMIT)
     if (!error && data) {

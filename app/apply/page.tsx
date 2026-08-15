@@ -28,6 +28,7 @@ import {
 } from './_components/FormParts'
 import { buildMergedFields } from '@/app/dashboard/_shared/renewalFieldMap'
 import { excludeRetiredStaffOr } from '@/lib/staffFilters'
+import { escapeLikePattern } from '@/lib/searchEscape'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 import StepSourceContact from './_components/StepSourceContact'
@@ -1304,8 +1305,8 @@ function ApplyPageInner() {
     // （2026-07-21・タスク④：従来はここで全件取得後にJS側で日付比較していたが、
     //   lib/staffFilters.tsの共通条件をDB側のWHEREとして適用する形に変更した）。
     const [retiredAtOk, retirementScheduledOk] = excludeRetiredStaffOr()
-    let byNumberQuery = supabase.from('staff').select(`${STAFF_SEARCH_SAFE_COLUMNS}, department_master(dept_name)`).ilike('employee_number', `%${query}%`).or(retiredAtOk).or(retirementScheduledOk).limit(20)
-    let byNameQuery = supabase.from('staff').select(`${STAFF_SEARCH_SAFE_COLUMNS}, department_master(dept_name)`).ilike('name', `%${normalized}%`).or(retiredAtOk).or(retirementScheduledOk).limit(20)
+    let byNumberQuery = supabase.from('staff').select(`${STAFF_SEARCH_SAFE_COLUMNS}, department_master(dept_name)`).ilike('employee_number', `%${escapeLikePattern(query)}%`).or(retiredAtOk).or(retirementScheduledOk).limit(20)
+    let byNameQuery = supabase.from('staff').select(`${STAFF_SEARCH_SAFE_COLUMNS}, department_master(dept_name)`).ilike('name', `%${escapeLikePattern(normalized)}%`).or(retiredAtOk).or(retirementScheduledOk).limit(20)
     if (restrictToOwnDept) {
       // 2026-07-29変更：在籍スタッフ0名の統括部門（広域本部等）を選んだアカウントは、自部門1件
       // だけでなく、グループ範囲（getDeptSearchScope）に含まれる複数の実務部門をまとめて検索対象

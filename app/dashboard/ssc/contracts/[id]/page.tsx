@@ -13,10 +13,9 @@ import { useDeptNameMap, getApplicantLabel } from '@/app/dashboard/_shared/useDe
 // 2026-08-05：日付表記統一によりローカル定義（スラッシュ表記）を廃止し共通ヘルパーへ移行
 import { formatDateTimeJp as formatDateTime, formatDateJp, formatPeriodJp } from '@/lib/dateFormat'
 import { WITHDRAW_STALE_STATUS_ERROR } from '@/lib/confirmMessages'
+import { DiffText } from '@/app/_shared/ui/DiffText'
 
 // ===== 型定義 =====
-
-type DiffPart = { type: 'same' | 'removed' | 'added'; text: string }
 
 // 自動チェックの警告レベル（2026-07-02追加：7-5章の骨格実装）
 type WarningLevel = 'none' | 'yellow' | 'red'
@@ -90,76 +89,9 @@ const TRANSPORT_TYPES = [
   { id: 'pass-gas', label: '定期代＋ガソリン代',             preview: '定期代＋ガソリン代\n定期代支給およびガソリン代支給【私有車通勤(最寄り駅まで) 12円 / km 】　①定期代については最寄駅から勤務先までの最安経路での定期代とする。②支払上限は3万円/月とする。③エビデンスの提出確認が取れない交通費は支払い対象外とする。⑤私有車通勤については別途私有車通勤を許可する書面を提出し、規定を遵守すること。' },
 ]
 
-// ===== 差分表示ロジック（apply/page.tsxと同じLCSアルゴリズム） =====
-
-const computeCharDiff = (oldText: string, newText: string): DiffPart[] => {
-  const oldArr = Array.from(oldText)
-  const newArr = Array.from(newText)
-  const m = oldArr.length
-  const n = newArr.length
-  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0))
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (oldArr[i - 1] === newArr[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1] + 1
-      } else {
-        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1])
-      }
-    }
-  }
-  const rawParts: { type: 'same' | 'removed' | 'added'; char: string }[] = []
-  let i = m, j = n
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && oldArr[i - 1] === newArr[j - 1]) {
-      rawParts.push({ type: 'same', char: oldArr[i - 1] }); i--; j--
-    } else if (j > 0 && (i === 0 || dp[i][j - 1] > dp[i - 1][j])) {
-      rawParts.push({ type: 'added', char: newArr[j - 1] }); j--
-    } else {
-      rawParts.push({ type: 'removed', char: oldArr[i - 1] }); i--
-    }
-  }
-  rawParts.reverse()
-  const parts: DiffPart[] = []
-  for (const p of rawParts) {
-    const last = parts[parts.length - 1]
-    if (last && last.type === p.type) { last.text += p.char } else { parts.push({ type: p.type, text: p.char }) }
-  }
-  return parts
-}
-
-// ===== 表示コンポーネント =====
-
-const DiffText = ({ oldText, newText, multiline, suffix }: { oldText: string; newText: string; multiline?: boolean; suffix?: string }) => {
-  if (oldText === newText) {
-    return <span className={multiline ? 'whitespace-pre-line' : ''}>{newText}{suffix && <span className="text-xs ml-1.5" style={{ color: '#1A2340' }}>{suffix}</span>}</span>
-  }
-  const parts = computeCharDiff(oldText, newText)
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-start gap-1.5">
-        <span className="text-xs font-bold shrink-0 px-1 py-0.5 rounded mt-0.5" style={{ color: '#B91C1C', background: '#FEF2F2' }}>変更前</span>
-        <span className={multiline ? 'whitespace-pre-line' : ''}>
-          {parts.filter(p => p.type !== 'added').map((p, idx) =>
-            p.type === 'removed'
-              ? <span key={`old-${idx}`} style={{ color: '#B91C1C', textDecoration: 'line-through', opacity: 0.75 }}>{p.text}</span>
-              : <span key={`old-${idx}`}>{p.text}</span>
-          )}
-        </span>
-      </div>
-      <div className="flex items-start gap-1.5">
-        <span className="text-xs font-bold shrink-0 px-1 py-0.5 rounded mt-0.5" style={{ color: '#15803D', background: '#ECFDF5' }}>変更後</span>
-        <span className={multiline ? 'whitespace-pre-line' : ''}>
-          {parts.filter(p => p.type !== 'removed').map((p, idx) =>
-            p.type === 'added'
-              ? <span key={`new-${idx}`} style={{ color: '#15803D', fontWeight: 600, textDecoration: 'underline' }}>{p.text}</span>
-              : <span key={`new-${idx}`}>{p.text}</span>
-          )}
-          {suffix && <span className="text-xs ml-1.5" style={{ color: '#1A2340' }}>{suffix}</span>}
-        </span>
-      </div>
-    </div>
-  )
-}
+// 差分表示（computeCharDiff・DiffText）は2026-08-14（L-08対応）で
+// app/_shared/ui/DiffText.tsx へ集約済み（従来はapply/page.tsxと完全に重複コピーされていた）。
+// 冒頭のimportで共通コンポーネントを読み込んで使用する。
 
 // 情報行（ラベル＋値）
 const FinalRow = ({ label, value, badge, multiline, preview, oldValue, suffix }: {

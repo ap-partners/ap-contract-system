@@ -24,6 +24,7 @@ import { sendRenewalDigestMail, sendRenewalSyncFailureNoticeMail, type RenewalDi
 import { runRenewalCandidatesSync } from '@/lib/renewalCandidatesSync'
 import { excludeRetiredStaffOr } from '@/lib/staffFilters'
 import { listAllAuthUsers } from '@/lib/listAllAuthUsers'
+import { timingSafeEqualStrings } from '@/lib/timingSafeEqual'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -46,7 +47,7 @@ export async function GET(req: NextRequest) {
   // 手動実行や外部からの不正実行を防ぐため必須チェックとする。
   const cronSecret = process.env.CRON_SECRET
   const authHeader = req.headers.get('authorization') || ''
-  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronSecret || !timingSafeEqualStrings(authHeader, `Bearer ${cronSecret}`)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 

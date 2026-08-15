@@ -395,57 +395,13 @@ export const shiftTimeByHours = (time: string, hours: number): string => {
   return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`
 }
 
-// 文字単位のLCS（最長共通部分列）ベースで差分を計算する
-// 戻り値は { type: 'same' | 'removed' | 'added', text: string } の配列
-// 'same'＝変化なし、'removed'＝旧テキストにあったが新テキストにない（削除）、'added'＝新テキストに追加された部分
-export type DiffPart = { type: 'same' | 'removed' | 'added'; text: string }
-export const computeCharDiff = (oldText: string, newText: string): DiffPart[] => {
-  const oldArr = Array.from(oldText)
-  const newArr = Array.from(newText)
-  const m = oldArr.length
-  const n = newArr.length
-
-  // LCSの長さテーブルを計算（dp[i][j] = oldArr[0..i) と newArr[0..j) のLCSの長さ）
-  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0))
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (oldArr[i - 1] === newArr[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1] + 1
-      } else {
-        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1])
-      }
-    }
-  }
-
-  // テーブルを後ろからたどり、same/removed/addedの並び（逆順）を作る
-  const rawParts: { type: 'same' | 'removed' | 'added'; char: string }[] = []
-  let i = m, j = n
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && oldArr[i - 1] === newArr[j - 1]) {
-      rawParts.push({ type: 'same', char: oldArr[i - 1] })
-      i--; j--
-    } else if (j > 0 && (i === 0 || dp[i][j - 1] > dp[i - 1][j])) {
-      rawParts.push({ type: 'added', char: newArr[j - 1] })
-      j--
-    } else {
-      rawParts.push({ type: 'removed', char: oldArr[i - 1] })
-      i--
-    }
-  }
-  rawParts.reverse()
-
-  // 同じtypeが連続する文字をまとめて、読みやすいブロックにする
-  const parts: DiffPart[] = []
-  for (const p of rawParts) {
-    const last = parts[parts.length - 1]
-    if (last && last.type === p.type) {
-      last.text += p.char
-    } else {
-      parts.push({ type: p.type, text: p.char })
-    }
-  }
-  return parts
-}
+// 文字単位のLCS（最長共通部分列）ベースの差分計算・DiffPart型は、
+// 2026-08-14（外部総合品質監査レポート★2 L-08対応）で app/_shared/ui/DiffText.tsx へ集約した。
+// 従来この関数がここ（helpers.ts）と app/dashboard/sales・ssc の契約詳細画面2箇所に
+// 完全に重複コピーされていたため、1箇所（app/_shared/ui/DiffText.tsx）に統合し、
+// このファイルからは呼び出し元の互換性を保つため re-export のみ行う。
+export type { DiffPart } from '../../_shared/ui/DiffText'
+export { computeCharDiff } from '../../_shared/ui/DiffText'
 
 // winworksの「諸措置」列から「業務に伴う責任の程度」を抽出する
 // 文末の「責任の程度：◯◯」パターンを正規表現で抽出。「役職無し」は「無」に変換する

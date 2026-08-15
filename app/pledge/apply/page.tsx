@@ -32,6 +32,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { excludeRetiredStaffOr } from '@/lib/staffFilters'
+import { escapeLikePattern } from '@/lib/searchEscape'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 import { SALARY_RULES, toHalfWidthDigits, parseAmount, normalizeTel, validateTel, clampDateYear, TOOLTIPS, getDeptSearchScope, STAFF_SEARCH_SAFE_COLUMNS } from '@/app/apply/_lib/helpers'
@@ -405,8 +406,8 @@ export default function PledgeApplyPage() {
     setSearchBlockedReason(null)
 
     const [retiredAtOk, retirementScheduledOk] = excludeRetiredStaffOr()
-    let byNumberQuery = supabase.from('staff').select(`${STAFF_SEARCH_SAFE_COLUMNS}, department_master(dept_name)`).ilike('employee_number', `%${query}%`).or(retiredAtOk).or(retirementScheduledOk).limit(20)
-    let byNameQuery = supabase.from('staff').select(`${STAFF_SEARCH_SAFE_COLUMNS}, department_master(dept_name)`).ilike('name', `%${normalized}%`).or(retiredAtOk).or(retirementScheduledOk).limit(20)
+    let byNumberQuery = supabase.from('staff').select(`${STAFF_SEARCH_SAFE_COLUMNS}, department_master(dept_name)`).ilike('employee_number', `%${escapeLikePattern(query)}%`).or(retiredAtOk).or(retirementScheduledOk).limit(20)
+    let byNameQuery = supabase.from('staff').select(`${STAFF_SEARCH_SAFE_COLUMNS}, department_master(dept_name)`).ilike('name', `%${escapeLikePattern(normalized)}%`).or(retiredAtOk).or(retirementScheduledOk).limit(20)
     if (restrictToOwnDept) {
       // 2026-07-30変更：在籍スタッフ0名の統括部門（広域本部等）を選んだアカウントは、自部門1件
       // だけでなく、グループ範囲（getDeptSearchScope）に含まれる複数の実務部門をまとめて検索対象

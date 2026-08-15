@@ -230,7 +230,18 @@ async function importStaff(filePath, uploadedBy) {
       employee_number: employeeNumber,
       name: row['スタッフ氏名'] || null,
       name_kana: row['スタッフカナ'] || null,
-      dept_no: (row['所属部門'] !== null && row['所属部門'] !== undefined) ? row['所属部門'] : null,
+      // L-17対応（2026-08-14）：Web版（lib/staffMasterImportShared.ts）と同じ考え方で、
+      // 空文字列・数値化できない値を「部門0」等として誤登録しないようガードする
+      // （このスクリプト自体はCLAUDE.mdの既存の注記通り手動フォールバック専用で、実運用の
+      // インポートはWeb画面経由が必須。念のための予防的対応）。
+      dept_no: (() => {
+        const raw = row['所属部門']
+        if (raw === null || raw === undefined) return null
+        const str = String(raw).trim()
+        if (str === '') return null
+        const n = Number(str)
+        return Number.isFinite(n) ? n : null
+      })(),
       contract_type: contractType,
       hired_at: excelDateToISO(row['入社年月日']),
       birthday: excelDateToISO(row['生年月日']),

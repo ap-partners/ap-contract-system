@@ -26,7 +26,22 @@ Font.register({
 // 文字単位（word.split('')）に変更し、ハイフン「-」を一切表示せずに、どの文字の位置でも
 // 自然に折り返せるようにした。既に欄に収まっている短い値（金額・日付等）は元々折り返しが
 // 発生しないため見た目に影響しない。
-Font.registerHyphenationCallback(word => word.split(''))
+// 2026-08-14修正（外部総合品質監査レポート★2 L-12対応）：上記2026-07-10修正の副作用で、
+// 日本語だけでなく英数字の単語（氏名のローマ字表記・英字の会社名等）まで1文字ずつに
+// 分割されるようになっており、本来スペース区切りで自然に折り返せる英単語の途中でも
+// バラバラに改行されうる状態だった。半角英数字のみで構成される短い単語（ASCII_WORD_SPLIT_THRESHOLD
+// 文字以下）は分割せず1つの塊のまま返す（＝単語の境目でのみ改行される、通常の英文と同じ挙動）。
+// ただし2026-07-10の不具合はまさに「スペースを含まない長い文字列が欄からはみ出す」ことが原因
+// だったため、しきい値を超える長い英数字の並び（メールアドレス等）は従来通り文字単位に分割し、
+// はみ出し防止の安全策を維持する。日本語（半角英数字以外を含む単語）の挙動は一切変更しない。
+const ASCII_ONLY_WORD = /^[\x20-\x7E]+$/
+const ASCII_WORD_SPLIT_THRESHOLD = 15
+Font.registerHyphenationCallback(word => {
+  if (ASCII_ONLY_WORD.test(word) && word.length <= ASCII_WORD_SPLIT_THRESHOLD) {
+    return [word]
+  }
+  return word.split('')
+})
 
 // 会社印影（社印）画像。承認後の最終版のみ印字（showSealで制御）。
 export const COMPANY_SEAL_PATH = path.join(process.cwd(), 'assets', 'images', 'company-seal.png')
@@ -456,10 +471,19 @@ export const WageGrid = ({ p, overtimeHoursNote }: { p: WageGridInput; overtimeH
 // 安全側に倒した概算）。sizesで渡した候補（基準→縮小1段階→縮小2段階＝下限）を順に試し、
 // 指定行数(maxLines)に収まる最大サイズを採用する。下限でも収まらない極端に長い文章は、
 // 無理に押し込めず下限サイズのまま自然にはみ出す（可読性を優先する）。
+// 2026-08-14修正（外部総合品質監査レポート★2 L-13対応）：半角文字（英数字・記号等）は
+// IPAex明朝ではおおよそ全角文字の半分の実測幅で描画されるが、従来は全文字を一律1文字分の
+// 幅として数えていたため、半角文字を多く含む文章（英字氏名・メールアドレス等）で行数を
+// 過大に見積もり、AutoFitFreeTextが必要以上に文字サイズを縮小してしまっていた。
+// 半角文字は0.5文字分、それ以外（全角＝日本語等）は従来通り1文字分として幅を積算する。
+const isHalfWidthChar = (ch: string): boolean => /^[\x20-\x7E]$/.test(ch)
+const weightedTextWidth = (line: string): number =>
+  Array.from(line).reduce((w, ch) => w + (isHalfWidthChar(ch) ? 0.5 : 1), 0)
+
 export const estimateWrappedLines = (text: string, fontSize: number, widthPt: number): number => {
   if (!text) return 1
   const charsPerLine = Math.max(1, Math.floor(widthPt / fontSize))
-  return text.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil((line.length || 1) / charsPerLine)), 0)
+  return text.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil((weightedTextWidth(line) || 1) / charsPerLine)), 0)
 }
 
 // 2026-07-09再々修正：伊藤さんのサンプル画像により判明した正しいレイアウト部品。

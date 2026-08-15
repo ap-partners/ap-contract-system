@@ -36,6 +36,7 @@ import AccountManagementTab from '../_shared/AccountManagementTab'
 import FaqManagementTab from '../_shared/FaqManagementTab'
 import ChatbotWidget from '../_shared/ChatbotWidget'
 import { useDebouncedSearch, escapeForPostgrestFilter } from '../_shared/useDebouncedSearch'
+import { escapeLikePattern } from '@/lib/searchEscape'
 import { STAFF_EXPRESS_COLUMNS } from '@/lib/staffExpressColumns'
 import { CSV_SAMPLE_FILES, CSV_REQUIRED_COLUMNS_LABEL } from '@/lib/csvSystemColumns'
 import { clampDateYear } from '@/app/apply/_lib/helpers'
@@ -1108,11 +1109,15 @@ export default function AdminDashboard() {
         let query = supabase.from('requests').select('*').order('requested_at', { ascending: false })
 
         if (debouncedSearchText) {
-          const escaped = escapeForPostgrestFilter(debouncedSearchText)
+          // escapeLikePattern：ilikeのワイルドカード（%・_）を先にエスケープしてから、
+          // escapeForPostgrestFilter：.or()フィルタ構文の特殊文字（\・,・(・)）をエスケープする
+          // （このescapeLikePatternが追加したバックスラッシュ自体もescapeForPostgrestFilterで
+          // 二重にエスケープされることでPostgREST側の1段階デコードを経て正しくPostgresへ届く）
+          const escaped = escapeForPostgrestFilter(escapeLikePattern(debouncedSearchText))
           query = query.or(`staff_name.ilike.%${escaped}%,staff_code.ilike.%${escaped}%`)
         }
         if (systemFilter) query = query.eq('system_type', systemFilter)
-        if (requesterFilter) query = query.ilike('requested_by_name', `%${requesterFilter}%`)
+        if (requesterFilter) query = query.ilike('requested_by_name', `%${escapeLikePattern(requesterFilter)}%`)
         if (dateFrom) query = query.gte('requested_at', `${dateFrom}T00:00:00`)
         if (dateTo) query = query.lte('requested_at', `${dateTo}T23:59:59`)
         // 依頼日を明示的に指定していない場合、未対応(pending)だけを見ている時は

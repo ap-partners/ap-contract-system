@@ -103,23 +103,34 @@ export function normalizeDate(value: string | null | undefined): string | null {
   return null
 }
 
+// ===== L-16対応（2026-08-14）：全角スペース・連続空白の正規化 =====
+// 従来は.trim()のみで、文字列の前後にある空白（全角スペース含む）は除去できていたが、
+// 値の途中に紛れ込んだ全角スペース（　）や、半角・全角が連続した空白はそのまま
+// 残っていた。「同じ値のはずなのに全角/半角スペースの違いだけで別行として扱われ、
+// upsertのユニークキー照合・重複判定がすり抜ける」という実害があるため、ユニークキー・
+// 通常の値の両方でこの正規化を一律適用する（全角スペース→半角スペースに変換したうえで、
+// 連続する空白を1つにまとめ、前後の空白を除去する）。
+function normalizeCellValue(v: any): string {
+  return String(v ?? '').replace(/　/g, ' ').trim().replace(/\s+/g, ' ')
+}
+
 // 複数列を結合してひとつの値にする（winworksの就業場所名のように）
 export function resolveValue(row: Record<string, any>, columnDef: ColumnDef): string | null {
   if (!columnDef) return null
   if (Array.isArray(columnDef)) {
     return columnDef
-      .map(col => (row[col] || '').toString().trim())
+      .map(col => normalizeCellValue(row[col]))
       .filter(Boolean)
       .join(' ') || null
   }
   const v = row[columnDef]
-  return v ? String(v).trim() : null
+  return v ? normalizeCellValue(v) : null
 }
 
 // ユニークキーを生成する（複合キーの場合は結合）。キーが欠けている行はnullを返す（スキップ対象）
 export function buildUniqueKey(row: Record<string, any>, systemKey: ImportSystemKey): string | null {
   const cols = UNIQUE_KEY_COLUMNS[systemKey]
-  const parts = cols.map(c => (row[c] || '').toString().trim())
+  const parts = cols.map(c => normalizeCellValue(row[c]))
   if (parts.some(p => !p)) return null
   return parts.join('___')
 }

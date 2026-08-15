@@ -6,41 +6,13 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { type DiffPart, computeCharDiff, validateTel, normalizeTel, inp } from '../_lib/helpers'
+import { validateTel, normalizeTel, inp } from '../_lib/helpers'
+import { DiffText } from '../../_shared/ui/DiffText'
 
-// 差分（DiffPart配列）を、削除部分は取り消し線、追加部分は色付けで表示するコンポーネント
-// oldTextとnewTextが完全に同じ場合は newText をそのまま表示する（差分なし）
-export const DiffText = ({ oldText, newText, multiline, suffix }: { oldText: string; newText: string; multiline?: boolean; suffix?: string }) => {
-  if (oldText === newText) {
-    return <span className={multiline ? 'whitespace-pre-line' : ''}>{newText}{suffix && <span className="text-xs ml-1.5" style={{ color: '#1A2340' }}>{suffix}</span>}</span>
-  }
-  const parts = computeCharDiff(oldText, newText)
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-start gap-1.5">
-        <span className="text-xs font-bold shrink-0 px-1 py-0.5 rounded mt-0.5" style={{ color: '#B91C1C', background: '#FEF2F2' }}>変更前</span>
-        <span className={multiline ? 'whitespace-pre-line' : ''}>
-          {parts.filter(p => p.type !== 'added').map((p, idx) =>
-            p.type === 'removed'
-              ? <span key={`old-${idx}`} style={{ color: '#B91C1C', textDecoration: 'line-through', opacity: 0.75 }}>{p.text}</span>
-              : <span key={`old-${idx}`}>{p.text}</span>
-          )}
-        </span>
-      </div>
-      <div className="flex items-start gap-1.5">
-        <span className="text-xs font-bold shrink-0 px-1 py-0.5 rounded mt-0.5" style={{ color: '#15803D', background: '#ECFDF5' }}>変更後</span>
-        <span className={multiline ? 'whitespace-pre-line' : ''}>
-          {parts.filter(p => p.type !== 'removed').map((p, idx) =>
-            p.type === 'added'
-              ? <span key={`new-${idx}`} style={{ color: '#15803D', fontWeight: 600, textDecoration: 'underline' }}>{p.text}</span>
-              : <span key={`new-${idx}`}>{p.text}</span>
-          )}
-          {suffix && <span className="text-xs ml-1.5" style={{ color: '#1A2340' }}>{suffix}</span>}
-        </span>
-      </div>
-    </div>
-  )
-}
+// DiffText（差分表示コンポーネント）は2026-08-14（L-08対応）で
+// app/_shared/ui/DiffText.tsx へ集約済み。ここでは呼び出し元の互換性を保つため re-export しておく
+// （このファイル内のFinalRow等からも参照するため、importしたうえで再エクスポートする）。
+export { DiffText }
 
 export const Req = () => (
   <span className="text-xs px-1.5 py-0.5 rounded ml-1 leading-none shrink-0"

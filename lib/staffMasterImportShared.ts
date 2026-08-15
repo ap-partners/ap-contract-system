@@ -28,6 +28,22 @@ export function padEmployeeNumber(value: any): string | null {
   return String(value).trim().padStart(6, '0')
 }
 
+// ===== L-17対応（2026-08-14）：所属部門NOの空欄がNumber('')=>0で「0番部門」として
+// 誤って登録されてしまうバグの修正 =====
+// JavaScriptの仕様上 Number('') は NaN ではなく 0 になる（Number(null)やNumber(undefined)は
+// それぞれ0・NaNになる等、空値の扱いが型ごとにバラバラで直感的でない）。従来の実装は
+// null/undefinedだけをガードしていたため、Excel側で所属部門セルが「空文字列」の行
+// （欠損とは違う意味を持つケースも含め、単純な未入力行）が「所属部門0（＝実在しない
+// ダミー部門）」としてそのままstaffテーブルへ書き込まれてしまう不具合があった。
+// 空文字列（前後空白のみを含む）・NaNになる値はすべてnullとして扱う。
+export function parseDeptNo(value: any): number | null {
+  if (value === null || value === undefined) return null
+  const str = String(value).trim()
+  if (str === '') return null
+  const n = Number(str)
+  return Number.isFinite(n) ? n : null
+}
+
 // 雇用形態コードを4桁の文字列に正規化する（0001, 0004 等）
 export function normalizeContractCode(value: any): string | null {
   if (value === null || value === undefined || value === '') return null
@@ -138,7 +154,7 @@ export function buildStaffRecord(row: Record<string, any>): StaffImportRecord | 
     employee_number: employeeNumber,
     name: row['スタッフ氏名'] || null,
     name_kana: row['スタッフカナ'] || null,
-    dept_no: (row['所属部門'] !== null && row['所属部門'] !== undefined) ? Number(row['所属部門']) : null,
+    dept_no: parseDeptNo(row['所属部門']),
     contract_type: contractType,
     hired_at: excelDateToISO(row['入社年月日']),
     birthday: excelDateToISO(row['生年月日']),

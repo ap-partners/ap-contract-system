@@ -10,6 +10,10 @@
 // メールを送信できてしまう「任意送信の踏み台」になっていた（外部総合品質監査レポート指摘）。
 // inquiryId（faq_inquiries.id）のみを受け取り、宛先・本文はすべてDB上の実データ
 // （FaqManagementTabが直前に更新した回答内容）から読み出す方式に変更した。
+//
+// 冪等性（外部総合品質監査レポートM-13対応・2026-08-17）：`faq_inquiries.answer_notified_at`が
+// 既に設定されていれば何もしない（二重送信防止）。`notify-csv-modified`と同じ「条件付き
+// UPDATEで送信権を先に確保→送信→失敗時はnullへロールバックして再試行可能に戻す」方式。
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendFaqAnswerMail } from '@/lib/mail'
@@ -58,9 +62,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ sent: false, reason: 'no_email' })
   }
 
+  // 条件付き更新（二重送信防止・外部総合品質監査レポートM-13対応・2026-08-17）：
+  // まだ通知していない場合のみ「送信済み」に更新してから送る。
+  const now = new Date().toISOString()
+  const { data: updatedRow } = await supabaseAdmin
+    .from('faq_inquiries')
+    .update({ answer_notified_at: now })
+    .eq('id', inquiryId)
+    .is('answer_notified_at', null)
+    .select('id')
+    .maybeSingle()
+
+  if (!updatedRow) {
+    // 既に通知済み（二重クリック・同時呼び出し等）。二重送信防止のため何もしない。
+    return NextResponse.json({ sent: false, reason: 'already_notified' })
+  }
+
   try {
     await sendFaqAnswerMail(toEmail, inquiry.question_text, inquiry.answer_text)
   } catch (e: any) {
+    // メール送信失敗時：通知フラグを戻し、次回の呼び出しで再試行できるようにする。
+    await supabaseAdmin.from('faq_inquiries').update({ answer_notified_at: null }).eq('id', inquiryId)
     return NextResponse.json({ error: 'メール送信に失敗しました: ' + (e?.message || '') }, { status: 500 })
   }
 

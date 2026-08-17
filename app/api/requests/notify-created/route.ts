@@ -8,6 +8,9 @@
 // （エラーは呼び出し元に返すが、依頼自体は既に保存済みのまま）。
 // 認可：ログイン済みの社内ユーザー（担当営業・SSC・管理部のいずれか）であればよい
 // （/applyは3ロールとも申請可能なため、role制限はしない）。
+// 冪等性（外部総合品質監査レポートM-13対応・2026-08-17）：`requests.created_notified_at`が
+// 既に設定されていれば何もしない（二重送信防止）。`notify-csv-modified`と同じ「条件付き
+// UPDATEで送信権を先に確保→送信→失敗時はnullへロールバックして再試行可能に戻す」方式。
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendNewRequestMail } from '@/lib/mail'
@@ -72,6 +75,21 @@ export async function POST(req: NextRequest) {
 
   if (mgmtEmails.length === 0) {
     return NextResponse.json({ error: '送信先の管理部メールアドレスが見つかりませんでした（メーリングリスト未登録・管理部個人アカウントも0件）。' }, { status: 422 })
+  }
+
+  // 条件付き更新（二重送信防止）：まだ通知していない場合のみ「送信済み」に更新してから送る
+  const now = new Date().toISOString()
+  const { data: updatedRow } = await supabaseAdmin
+    .from('requests')
+    .update({ created_notified_at: now })
+    .eq('id', requestId)
+    .is('created_notified_at', null)
+    .select('id')
+    .maybeSingle()
+
+  if (!updatedRow) {
+    // 既に通知済み（二重クリック・同時呼び出し等）。二重送信防止のため何もしない。
+    return NextResponse.json({ sent: false, reason: 'already_notified' })
   }
 
   try {

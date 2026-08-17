@@ -43,6 +43,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '必要な情報が不足しています。' }, { status: 400 })
   }
 
+  // 冪等性（外部総合品質監査レポートM-13対応・2026-08-17）：この依頼は「日を空けて同じスタッフへ
+  // 再度依頼する」という正当な再送が起こり得るため、notify-created/notify-answer/notify-csv-modified
+  // のような「一度きり」の永続ガードは使えない。代わりに、直近5分以内に同じスタッフへの依頼済み
+  // レコード（contract_monitoring_actions.requested_at）があれば、二重クリック・連打とみなして
+  // ブロックするクールダウン方式にする（5分経過後は正当な再送として通す）。
+  const { data: recentAction } = await supabaseAdmin
+    .from('contract_monitoring_actions')
+    .select('requested_at')
+    .eq('employee_number', employeeNumber)
+    .maybeSingle()
+  if (recentAction?.requested_at) {
+    const elapsedMs = Date.now() - new Date(recentAction.requested_at).getTime()
+    if (elapsedMs < 5 * 60 * 1000) {
+      return NextResponse.json(
+        { error: '直近5分以内に同じスタッフへ依頼済みのため、少し時間をおいてから再度お試しください。' },
+        { status: 429 }
+      )
+    }
+  }
+
   const { data: deptRow } = await supabaseAdmin
     .from('department_master')
     .select('dept_name')

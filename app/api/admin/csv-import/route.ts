@@ -593,16 +593,46 @@ async function runStaffRegisterAutoMatch(uploaderId: string) {
 }
 
 // CSVインポート依頼（requests）の自動マッチ・自動完了・通知
+//
+// 【外部総合品質監査レポートM-22対応・2026-08-17】従来はcsv_import_status='completed'への更新（＝
+// マッチ自体は成立）とメール送信が同じループ内で無条件に連続処理されており、メール送信が失敗しても
+// completedへのロールバックが無かったため、以後この行は二度と'pending'条件にヒットせず、通知が
+// 永久に失われる不具合があった（マッチ自体は実在するデータなので取り消さない方が正しいが、通知の
+// 成否は別途追跡する必要がある）。
+// 対応：①`csv_import_status`の更新は従来通りマッチ成立時点で即座に確定（依頼者本人の/apply側の
+// 反映確認はこの更新に依存しているため、メール送信の成否でブロックしない）。②新設の
+// `requests.csv_matched_notified_at`列で通知の成否だけを別管理し、まだ通知できていない
+// （'completed'だが`csv_matched_notified_at`がnull）行を毎回の呼び出しで再取得・再試行することで、
+// 次回インポート時に自動的にリトライされる仕組みにする。③宛先メール解決（DB問い合わせを伴う）を
+// ループ内で1件ずつ行っていたのを、対象requested_by分だけ事前に一括解決してから送信するよう変更。
+// ④メール送信自体もPromise.allSettledで並列化（同時実行数を絞って送信）し、1件ずつ順番に待つ
+// 従来方式より高速化。
 async function runAutoMatch(dbSystemType: DbSystemType, uploaderId: string) {
   // 2026-07-31：完了通知メールの項目網羅（伊藤さん指摘）のため、staff_dept・system_type・
   // requested_by_name・requested_by_dept を追加取得。
-  const { data: pendingRequests, error } = await supabaseAdmin
-    .from('requests')
-    .select('id, staff_code, staff_name, staff_dept, client_name, system_type, dispatch_start_date, requested_by, requested_by_name, requested_by_dept')
-    .eq('csv_import_status', 'pending')
-    .eq('system_type', dbSystemType)
+  const selectColumns = 'id, staff_code, staff_name, staff_dept, client_name, system_type, dispatch_start_date, requested_by, requested_by_name, requested_by_dept'
 
-  if (error || !pendingRequests || pendingRequests.length === 0) {
+  const [{ data: pendingRequests }, { data: unnotifiedRequests }] = await Promise.all([
+    supabaseAdmin
+      .from('requests')
+      .select(selectColumns)
+      .eq('csv_import_status', 'pending')
+      .eq('system_type', dbSystemType),
+    // 過去のrunAutoMatch呼び出しでマッチ自体は成立（completed）したが、メール送信に失敗して
+    // 通知できていないままの行を、今回のインポートを機に再試行する。
+    supabaseAdmin
+      .from('requests')
+      .select(selectColumns)
+      .eq('csv_import_status', 'completed')
+      .eq('system_type', dbSystemType)
+      .is('csv_matched_notified_at', null)
+      .not('requested_by', 'is', null),
+  ])
+
+  const freshRequests = pendingRequests || []
+  const retryRequests = unnotifiedRequests || []
+
+  if (freshRequests.length === 0 && retryRequests.length === 0) {
     return { matchedCount: 0, notifiedCount: 0, notifyErrors: [] as string[] }
   }
 
@@ -611,14 +641,19 @@ async function runAutoMatch(dbSystemType: DbSystemType, uploaderId: string) {
   const notifyErrors: string[] = []
 
   // winworksの場合、社員番号→crew_codeの変換が必要なため、対象スタッフをまとめて引く
-  const employeeNumbers = Array.from(new Set(pendingRequests.map(r => r.staff_code).filter(Boolean))) as string[]
+  const employeeNumbers = Array.from(new Set(
+    [...freshRequests, ...retryRequests].map(r => r.staff_code).filter(Boolean)
+  )) as string[]
   const { data: staffRows } = await supabaseAdmin
     .from('staff')
     .select('employee_number, crew_code')
     .in('employee_number', employeeNumbers)
   const crewCodeByEmpNo = new Map((staffRows || []).map(s => [s.employee_number, s.crew_code as string | null]))
 
-  for (const req of pendingRequests) {
+  // ===== ①新規マッチ判定（'pending' → マッチすれば'completed'へ） =====
+  // マッチが成立した行だけを、後段の通知処理へ回す（matchedCountはここで確定）。
+  const matchedFreshRequests: typeof freshRequests = []
+  for (const req of freshRequests) {
     if (!req.staff_code || !req.dispatch_start_date) continue
     const crewCode = crewCodeByEmpNo.get(req.staff_code) || null
     const searchCode = resolveCsvSearchStaffCode(dbSystemType, req.staff_code, crewCode)
@@ -643,30 +678,71 @@ async function runAutoMatch(dbSystemType: DbSystemType, uploaderId: string) {
       .eq('csv_import_status', 'pending') // 二重マッチ防止の条件付き更新
     if (updateError) continue
     matchedCount++
+    matchedFreshRequests.push(req)
+  }
 
-    if (req.requested_by) {
-      try {
-        // 2026-07-31変更：依頼者個人のアカウントに直接送るのではなく、依頼者の所属部署の
-        // メーリングリストが登録されていればそちらへ送る（未登録なら従来通り個人宛）。
-        const toEmail = process.env.RENEWAL_NOTIFY_OVERRIDE_EMAIL || await resolveRequesterNotifyEmail(req.requested_by)
-        if (toEmail) {
-          await sendCsvImportMatchedMail(toEmail, {
-            staffName: req.staff_name,
-            staffCode: req.staff_code,
-            staffDept: req.staff_dept,
-            workLocationName: req.client_name,
-            systemType: req.system_type,
-            dispatchStartDate: req.dispatch_start_date,
-            requestedByName: req.requested_by_name,
-            requestedByDept: req.requested_by_dept,
-          })
-          notifiedCount++
-        } else {
-          notifyErrors.push(`依頼ID ${req.id}：依頼者の通知先メールアドレスが見つかりませんでした`)
+  // ===== ②通知対象の確定（新規マッチ分＋前回までの通知失敗リトライ分） =====
+  const notifyTargets = [...matchedFreshRequests, ...retryRequests].filter(r => !!r.requested_by)
+
+  if (notifyTargets.length > 0) {
+    // 宛先メールの一括事前解決（1件ずつのDB問い合わせをやめ、対象requested_by分だけまとめて解決）
+    const overrideEmail = process.env.RENEWAL_NOTIFY_OVERRIDE_EMAIL || null
+    const distinctRequesterIds = Array.from(new Set(notifyTargets.map(r => r.requested_by as string)))
+    const emailByRequesterId = new Map<string, string | null>()
+    if (overrideEmail) {
+      for (const rid of distinctRequesterIds) emailByRequesterId.set(rid, overrideEmail)
+    } else {
+      await Promise.all(distinctRequesterIds.map(async rid => {
+        try {
+          emailByRequesterId.set(rid, await resolveRequesterNotifyEmail(rid))
+        } catch {
+          emailByRequesterId.set(rid, null)
         }
+      }))
+    }
+
+    // 条件付き更新（二重送信防止）：まだ通知していない場合のみ「送信済み」に更新してから送る。
+    // 送信に失敗した場合はnullへロールバックし、次回runAutoMatch呼び出し時に再試行対象へ戻す。
+    const sendOne = async (req: typeof notifyTargets[number]) => {
+      const toEmail = emailByRequesterId.get(req.requested_by as string) || null
+      if (!toEmail) {
+        notifyErrors.push(`依頼ID ${req.id}：依頼者の通知先メールアドレスが見つかりませんでした`)
+        return
+      }
+
+      const now = new Date().toISOString()
+      const { data: updatedRow } = await supabaseAdmin
+        .from('requests')
+        .update({ csv_matched_notified_at: now })
+        .eq('id', req.id)
+        .is('csv_matched_notified_at', null)
+        .select('id')
+        .maybeSingle()
+      if (!updatedRow) return // 既に他の呼び出しが通知済み（同時実行時の二重送信防止）
+
+      try {
+        await sendCsvImportMatchedMail(toEmail, {
+          staffName: req.staff_name,
+          staffCode: req.staff_code,
+          staffDept: req.staff_dept,
+          workLocationName: req.client_name,
+          systemType: req.system_type,
+          dispatchStartDate: req.dispatch_start_date,
+          requestedByName: req.requested_by_name,
+          requestedByDept: req.requested_by_dept,
+        })
+        notifiedCount++
       } catch (e: any) {
+        await supabaseAdmin.from('requests').update({ csv_matched_notified_at: null }).eq('id', req.id)
         notifyErrors.push(`依頼ID ${req.id}：通知メール送信エラー（${e?.message || ''}）`)
       }
+    }
+
+    // 同時実行数を4件に絞ってPromise.allSettledで並列送信（1件ずつ順番に待つ従来方式より高速化）
+    const CONCURRENCY = 4
+    for (let i = 0; i < notifyTargets.length; i += CONCURRENCY) {
+      const batch = notifyTargets.slice(i, i + CONCURRENCY)
+      await Promise.allSettled(batch.map(sendOne))
     }
   }
 

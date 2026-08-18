@@ -35,6 +35,12 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// M-21対応（2026-08-19）：外部総合品質監査レポート「CSVインポートの大量データ対応」。
+// 従来maxDurationの宣言が無くVercelの既定タイムアウトのままだった。無料（Hobby）プランで
+// 安全に延長できる上限が60秒のため60を宣言する（監査レポートが挙げる300秒は有料プラン前提の
+// 数字のため、実際の運用プランに合わせてこちらを採用）。
+export const maxDuration = 60
+
 // 画面から受け取るシステム指定（Staffiaのみ2ファイル、StaffExpressはスタッフ/部門マスタのExcel）
 const UPLOAD_SYSTEMS = ['e-staffing', 'HRstation', 'winworks', 'Staffia', 'StaffExpress'] as const
 type UploadSystem = typeof UPLOAD_SYSTEMS[number]
@@ -72,6 +78,33 @@ function friendlyCsvParseError(err: ParseError): string {
   }
 }
 
+// M-21対応（2026-08-19）：既存確認・保護判定・書き込みのチャンクループが「1つずつ順番に待つ」
+// 実装だと、行数が多いファイルほど所要時間がほぼ比例して伸びる。runAutoMatch()のメール送信
+// （M-22対応・2026-08-17）で実績のある「同時実行数を絞ったバッチ並列処理」と同じ考え方を
+// チャンクループ全般に適用する共通ヘルパー（無制限のPromise.allにはせず、Supabase側への
+// 同時接続が急増しないよう件数を絞る）。
+const CSV_CONCURRENCY = 4
+async function runChunksConcurrently<T>(items: T[], chunkSize: number, worker: (chunk: T[]) => Promise<void>): Promise<void> {
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += chunkSize) chunks.push(items.slice(i, i + chunkSize))
+  for (let i = 0; i < chunks.length; i += CSV_CONCURRENCY) {
+    const batch = chunks.slice(i, i + CSV_CONCURRENCY)
+    await Promise.all(batch.map(worker))
+  }
+}
+
+// M-21対応：1ファイルあたりの行数上限（安全弁）。現状の実データ規模（スタッフ約1,780件・
+// 契約CSV数百件）に対して十分な余裕を持たせつつ、極端に大きいファイルによる処理長期化・
+// タイムアウトを未然に防ぐ。超過時はDBへの書き込みを一切行わずエラーにする。
+const MAX_CSV_ROWS = 20000
+function assertRowLimit(rowCount: number, fileLabel: string) {
+  if (rowCount > MAX_CSV_ROWS) {
+    throw new Error(
+      `${fileLabel}の行数が上限（${MAX_CSV_ROWS.toLocaleString()}行）を超えています（${rowCount.toLocaleString()}行）。お手数ですが、ファイルを分割して複数回に分けてアップロードしてください。`
+    )
+  }
+}
+
 // 1ファイル分のCSVを処理し、csv_raw_dataへ反映する（csv_importsの作成・更新は呼び出し元で行う）
 async function processSingleFile(
   buffer: Buffer,
@@ -80,6 +113,7 @@ async function processSingleFile(
   importId: string
 ): Promise<FileCounts> {
   const { rows, errors: parseErrors } = parseCsvBuffer(buffer)
+  assertRowLimit(rows.length, 'CSVファイル')
   const counts: FileCounts = { total: rows.length, newCount: 0, updatedCount: 0, pendingProtectedCount: 0, skippedNoKeyCount: 0, errorCount: 0, errorDetails: [], protectedDetails: [] }
 
   // B-14対応：引用符・列数不整合で列がずれた行は、間違った契約番号で別契約のデータを
@@ -128,16 +162,17 @@ async function processSingleFile(
   const allKeys = dedupedParsedRows.map(r => r.uniqueKey)
   const existingByKey = new Map<string, string>() // unique_key -> id
   const CHUNK = 300
-  for (let i = 0; i < allKeys.length; i += CHUNK) {
-    const chunk = allKeys.slice(i, i + CHUNK)
+  // M-21対応：チャンクごとに1つずつ順番に待つのではなく、同時実行数4件のバッチで並列処理する
+  // （既存確認・保護判定・書き込みの計3ループに共通適用。行数が多いファイルでの所要時間を短縮）。
+  await runChunksConcurrently(allKeys, CHUNK, async chunk => {
     const { data: existingRows, error } = await supabaseAdmin
       .from('csv_raw_data')
       .select('id, unique_key')
       .eq('system_type', dbSystemType)
       .in('unique_key', chunk)
-    if (error) { counts.errorCount += chunk.length; counts.errorDetails.push(`既存データ確認エラー（${chunk.length}件分）：${friendlyDbReason(error)}`); continue }
+    if (error) { counts.errorCount += chunk.length; counts.errorDetails.push(`既存データ確認エラー（${chunk.length}件分）：${friendlyDbReason(error)}`); return }
     for (const r of existingRows || []) existingByKey.set(r.unique_key, r.id)
-  }
+  })
 
   // 既存データのうち、有効な契約（申請中以降のステータス）から参照されている行＝保護対象を洗い出す
   // 2026-07-29デモ指摘②：保護理由の可視化のため、単なるSetではなく、保護している契約の
@@ -151,8 +186,7 @@ async function processSingleFile(
   // 正しい安全側の挙動として、判定に失敗したexistingIdを別途記録し、該当するCSV行は
   // 「保護対象かどうか判定できなかったため今回は上書きしない」としてスキップする。
   const protectionCheckFailedIds = new Set<string>()
-  for (let i = 0; i < existingIds.length; i += CHUNK) {
-    const chunk = existingIds.slice(i, i + CHUNK)
+  await runChunksConcurrently(existingIds, CHUNK, async chunk => {
     const { data: refRows, error } = await supabaseAdmin
       .from('contracts')
       .select('csv_raw_data_id, status, created_by_name, staff_id')
@@ -161,14 +195,14 @@ async function processSingleFile(
       .neq('status', '取り下げ')
     if (error) {
       for (const rawId of chunk) protectionCheckFailedIds.add(rawId)
-      continue
+      return
     }
     for (const r of refRows || []) {
       if (r.csv_raw_data_id && !protectedByRawId.has(r.csv_raw_data_id)) {
         protectedByRawId.set(r.csv_raw_data_id, { status: r.status, createdByName: r.created_by_name, staffId: r.staff_id })
       }
     }
-  }
+  })
 
   // ===== B-16対応（2026-08-12）：Staffiaの103行（就業場所名・住所等）が保護対象から漏れる問題 =====
   // 契約はStaffiaの104行（スタッフ個人・派遣期間）のIDしかcontracts.csv_raw_data_idに保存しない。
@@ -181,8 +215,7 @@ async function processSingleFile(
   if (importSystemKey === 'Staffia103') {
     const uploaded103Keys = dedupedParsedRows.map(r => r.uniqueKey)
     const contractNoTo104Ids = new Map<string, string[]>()
-    for (let i = 0; i < uploaded103Keys.length; i += CHUNK) {
-      const chunk = uploaded103Keys.slice(i, i + CHUNK)
+    await runChunksConcurrently(uploaded103Keys, CHUNK, async chunk => {
       const { data: rows104 } = await supabaseAdmin
         .from('csv_raw_data')
         .select('id, raw_data')
@@ -194,12 +227,11 @@ async function processSingleFile(
         if (!contractNoTo104Ids.has(contractNo)) contractNoTo104Ids.set(contractNo, [])
         contractNoTo104Ids.get(contractNo)!.push(r.id)
       }
-    }
+    })
     const all104Ids = Array.from(new Set(Array.from(contractNoTo104Ids.values()).flat()))
     if (all104Ids.length > 0) {
       const protected104Info = new Map<string, { status: string | null; createdByName: string | null; staffId: string | null }>()
-      for (let i = 0; i < all104Ids.length; i += CHUNK) {
-        const chunk = all104Ids.slice(i, i + CHUNK)
+      await runChunksConcurrently(all104Ids, CHUNK, async chunk => {
         const { data: refRows104 } = await supabaseAdmin
           .from('contracts')
           .select('csv_raw_data_id, status, created_by_name, staff_id')
@@ -209,7 +241,7 @@ async function processSingleFile(
         for (const r of refRows104 || []) {
           if (r.csv_raw_data_id) protected104Info.set(r.csv_raw_data_id, { status: r.status, createdByName: r.created_by_name, staffId: r.staff_id })
         }
-      }
+      })
       for (const [contractNo, ids104] of contractNoTo104Ids) {
         const protectedInfoFrom104 = ids104.map(id => protected104Info.get(id)).find((v): v is NonNullable<typeof v> => !!v)
         if (!protectedInfoFrom104) continue
@@ -278,8 +310,7 @@ async function processSingleFile(
     upsertBatch.push({ ...record, unique_key: uniqueKey, import_id: importId, is_overwrite_pending: !!existingId })
   }
 
-  for (let i = 0; i < upsertBatch.length; i += CHUNK) {
-    const chunk = upsertBatch.slice(i, i + CHUNK)
+  await runChunksConcurrently(upsertBatch, CHUNK, async chunk => {
     const { error } = await supabaseAdmin
       .from('csv_raw_data')
       .upsert(chunk, { onConflict: 'system_type,unique_key' })
@@ -290,7 +321,7 @@ async function processSingleFile(
       counts.updatedCount -= chunk.filter(c => c.is_overwrite_pending).length
       counts.errorDetails.push(`保存エラー（${chunk.length}件分）：${friendlyDbReason(error)}`)
     }
-  }
+  })
 
   return counts
 }
@@ -320,6 +351,7 @@ type MasterImportCounts = {
 
 async function processDepartmentMasterFile(buffer: Buffer, uploadedBy: string): Promise<MasterImportCounts> {
   const rows = readExcelBuffer(buffer)
+  assertRowLimit(rows.length, '部門マスタファイル') // M-21対応
   const counts: MasterImportCounts = { total: rows.length, newCount: 0, updatedCount: 0, skippedCount: 0, errorCount: 0, errorDetails: [], reassignedCount: 0, needsReviewCount: 0, needsReviewDetails: [] }
 
   const { data: importRecord, error: importError } = await supabaseAdmin
@@ -360,6 +392,7 @@ async function processDepartmentMasterFile(buffer: Buffer, uploadedBy: string): 
 // 値が入っている場合のみ上書きする（既存157件のcrew_codeを消さないための必須対応）。
 async function processStaffMasterFile(buffer: Buffer, uploadedBy: string): Promise<MasterImportCounts> {
   const rows = readExcelBuffer(buffer)
+  assertRowLimit(rows.length, 'スタッフマスタファイル') // M-21対応
   const counts: MasterImportCounts = { total: rows.length, newCount: 0, updatedCount: 0, skippedCount: 0, errorCount: 0, errorDetails: [], reassignedCount: 0, needsReviewCount: 0, needsReviewDetails: [] }
 
   const { data: importRecord, error: importError } = await supabaseAdmin
@@ -382,8 +415,7 @@ async function processStaffMasterFile(buffer: Buffer, uploadedBy: string): Promi
   // 氏名・退職年月日はC-08対応（社員番号の再利用検知）に必要。
   const existingMap = new Map<string, { id: string; crew_code: string | null; name: string; retired_at: string | null }>()
   const allEmployeeNumbers = parsedRecords.map(r => r.employee_number)
-  for (let i = 0; i < allEmployeeNumbers.length; i += CHUNK) {
-    const chunk = allEmployeeNumbers.slice(i, i + CHUNK)
+  await runChunksConcurrently(allEmployeeNumbers, CHUNK, async chunk => {
     const { data: existingRows, error } = await supabaseAdmin
       .from('staff')
       .select('id, employee_number, crew_code, name, retired_at')
@@ -391,10 +423,10 @@ async function processStaffMasterFile(buffer: Buffer, uploadedBy: string): Promi
     if (error) {
       counts.errorCount += chunk.length
       counts.errorDetails.push(`既存データ確認エラー（${chunk.length}件分）：${friendlyDbReason(error)}`)
-      continue
+      return
     }
     for (const r of existingRows || []) existingMap.set(r.employee_number, { id: r.id, crew_code: r.crew_code, name: r.name, retired_at: r.retired_at })
-  }
+  })
 
   // ===== C-08対応：社員番号の再利用（退職者番号を新入社員へ再割当）検知 =====
   // 同じemployee_numberの既存行が見つかっても、氏名が一致しなければ「同一人物の更新」とは
@@ -484,35 +516,30 @@ async function processStaffMasterFile(buffer: Buffer, uploadedBy: string): Promi
     )
   }
 
-  const upsertBatch: (NonNullable<ReturnType<typeof buildStaffRecord>> & { updated_at: string })[] = []
-  const isExistingFlags: boolean[] = []
-  const isReassignedFlags: boolean[] = []
+  const upsertItems: { record: NonNullable<ReturnType<typeof buildStaffRecord>> & { updated_at: string }; isExisting: boolean; isReassigned: boolean }[] = []
   for (const { _isExisting, _isReassigned, ...record } of dedupedByEmpNo.values()) {
-    upsertBatch.push(record)
-    isExistingFlags.push(_isExisting)
-    isReassignedFlags.push(_isReassigned)
+    upsertItems.push({ record, isExisting: _isExisting, isReassigned: _isReassigned })
   }
 
-  for (let i = 0; i < upsertBatch.length; i += CHUNK) {
-    const chunk = upsertBatch.slice(i, i + CHUNK)
-    const flags = isExistingFlags.slice(i, i + CHUNK)
-    const reassignFlags = isReassignedFlags.slice(i, i + CHUNK)
+  // M-21対応：同時実行数4件のバッチ並列処理に変更（record・フラグを1件のオブジェクトにまとめてから
+  // チャンク化することで、並列実行時もindexズレなくカウント集計できるようにする）。
+  await runChunksConcurrently(upsertItems, CHUNK, async chunk => {
     const { error } = await supabaseAdmin
       .from('staff')
-      .upsert(chunk, { onConflict: 'employee_number' })
+      .upsert(chunk.map(c => c.record), { onConflict: 'employee_number' })
     if (error) {
       counts.errorCount += chunk.length
       counts.errorDetails.push(`保存エラー（${chunk.length}件分）：${friendlyDbReason(error)}`)
     } else {
-      for (let j = 0; j < flags.length; j++) {
-        if (flags[j]) counts.updatedCount++
+      for (const item of chunk) {
+        if (item.isExisting) counts.updatedCount++
         else {
           counts.newCount++
-          if (reassignFlags[j]) counts.reassignedCount++
+          if (item.isReassigned) counts.reassignedCount++
         }
       }
     }
-  }
+  })
 
   await supabaseAdmin.from('master_imports').update({
     new_rows: counts.newCount, updated_rows: counts.updatedCount, skipped_rows: counts.skippedCount, error_rows: counts.errorCount,

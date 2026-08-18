@@ -31,6 +31,8 @@ import { excludeRetiredStaffOr } from '@/lib/staffFilters'
 import { escapeLikePattern } from '@/lib/searchEscape'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
+import DraftRestoreBanner from '@/app/_shared/ui/DraftRestoreBanner'
+import { useWizardDraftGuard } from '@/app/_shared/useWizardDraftGuard'
 import StepSourceContact from './_components/StepSourceContact'
 import StepDispatchContact from './_components/StepDispatchContact'
 import StepContractCondition from './_components/StepContractCondition'
@@ -1350,6 +1352,7 @@ function ApplyPageInner() {
 
   const handleCancel = async () => {
     if (!(await confirmDialog('入力中の申請を中断します。入力した内容は保存されません。よろしいですか？'))) return
+    draftGuard.clearDraft()
     const role = user?.user_metadata?.role
     router.push(role === 'SSC' ? '/dashboard/ssc' : role === '管理部' ? '/dashboard/admin' : '/dashboard/sales')
   }
@@ -1383,6 +1386,110 @@ function ApplyPageInner() {
     hasEmployInsurance, hasSocialInsurance,
     monthlyStandardHours: resolvedMonthlyHours,
   })
+
+  // ===== M-04対応（2026-08-18・外部総合品質監査レポート）：申請ウィザードの離脱ガード・下書き自動保存 =====
+  // isDirty：入力中の内容が失われると困る状態かどうか。新規申請フローはスタッフ選択後、
+  // 差し戻し再申請・更新申請・最低賃金改定再申請の3モードはDBプリフィル読み込み完了後（この行に
+  // 到達する時点でeditLoading/renewalLoading/wageAmendLoadingは必ずfalse。上の読み込みガード参照）
+  // に真とする。申請完了後はfalseに戻し、警告を解除する。
+  const isDirty = !isSubmitted && (
+    !!editContractId || !!renewalCandidateId || !!wageAmendContractId || (isNewApplicationFlow && !!selectedStaff)
+  )
+  // 下書き保存・復元の対象は、開くたびにDBから正しい内容を再プリフィルする3モードを除いた、
+  // 真新しい新規申請フローのみ（DBプリフィルとsessionStorage下書きが競合する事故を避けるため）。
+  const enableDraftSave = isNewApplicationFlow
+
+  const buildDraftData = () => ({
+    selectedStaff,
+    fields: buildCurrentFields(),
+    csvMeta: { csvMode, csvSystem, csvDispatchStart, csvSnapshot, csvContractNo, mgrCmpSource, masterSnapshot },
+  })
+
+  const draftGuard = useWizardDraftGuard({
+    storageKey: 'apply_wizard_draft_v1',
+    userId: user?.id || null,
+    isDirty,
+    enableDraftSave,
+    currentStep,
+    staffName: selectedStaff?.name || null,
+    getData: buildDraftData,
+  })
+
+  // 下書きの内容をSTEP1〜8のstateへ反映する（handleRestoreDraftからのみ呼ばれる）。
+  // loadForEdit（差し戻し再申請モード）の復元ロジックと同じキー構成・同じ考え方だが、
+  // isRejected等の差し戻し固有の項目は扱わない（下書きは真新しい新規申請の続きのため）。
+  const applyDraftFields = (f: Record<string, any>, csvMeta: Record<string, any>) => {
+    setContractType(f.contractType || '')
+    setWorkPlace(f.workPlace || '現場')
+    setDocumentType(f.documentType || '')
+    setCsvMode(csvMeta.csvMode || 'manual')
+    setCsvSystem(csvMeta.csvSystem || 'e-staffing')
+    setCsvDispatchStart(csvMeta.csvDispatchStart || '')
+    setCsvSnapshot(csvMeta.csvSnapshot || {})
+    setCsvContractNo(csvMeta.csvContractNo || '')
+    setWorkLocationName(f.workLocationName || '')
+    setWorkLocationAddress(f.workLocationAddress || '')
+    setWorkLocationTel(f.workLocationTel || '')
+    setBusinessContent(f.businessContent || '')
+    setStartTime(f.startTime || '')
+    setEndTime(f.endTime || '')
+    setIsShift(!!f.isShift)
+    setBreakTime(f.breakTime || '')
+    setWorkingHoursH(f.workingHoursH || '')
+    setWorkingHoursM(f.workingHoursM || '')
+    setWorkDays(f.workDays || '')
+    setWorkDaysOther(f.workDaysOther || '')
+    setOrganizationUnit(f.organizationUnit || '')
+    setConflictDate(f.conflictDate || '')
+    setConflictDateOrg(f.conflictDateOrg || '')
+    setResponsibility(f.responsibility || '')
+    setCmdDept(f.cmd_dept || ''); setCmdRole(f.cmd_role || ''); setCmdName(f.cmd_name || ''); setCmdTel(f.cmd_tel || '')
+    setRespDept(f.resp_dept || ''); setRespRole(f.resp_role || ''); setRespName(f.resp_name || ''); setRespTel(f.resp_tel || '')
+    setCompDept(f.comp_dept || ''); setCompRole(f.comp_role || ''); setCompName(f.comp_name || ''); setCompTel(f.comp_tel || '')
+    setWelfare(f.welfare || '')
+    setSafetyMode(f.safetyMode || 'default')
+    setSafetyText(f.safetyText || DEFAULT_SAFETY)
+    setConflictMode(f.conflictMode || 'default')
+    setConflictText(f.conflictText || DEFAULT_CONFLICT)
+    setMgrDept(f.mgr_dept || ''); setMgrRole(f.mgr_role || ''); setMgrName(f.mgr_name || ''); setMgrTel(f.mgr_tel || '')
+    setCmpDept(f.cmp_dept || ''); setCmpRole(f.cmp_role || ''); setCmpName(f.cmp_name || ''); setCmpTel(f.cmp_tel || '')
+    setMgrCmpSource(csvMeta.mgrCmpSource || 'master')
+    setMasterSnapshot(csvMeta.masterSnapshot || {})
+    setDispatchStart(f.dispatchStart || '')
+    setDispatchEnd(f.dispatchEnd || '')
+    setEmployStart(f.employStart || '')
+    setEmployEnd(f.employEnd || '')
+    setContractStartDate(f.contractStartDate || '')
+    setTrialPeriod(f.trialPeriod || '')
+    setTrialStart(f.trialStart || '')
+    setTrialEnd(f.trialEnd || '')
+    setFlexTime(f.flexTime || '')
+    setOvertime(f.overtime || '')
+    setClosingPattern(f.closingPattern || 'auto')
+    setBonusType(f.bonusType || '')
+    setSalaryType(f.salaryType || '時給')
+    setBasicSalary(f.basicSalary || '')
+    setSkillPay(f.skillPay || '0')
+    setRolePay(f.rolePay || '0')
+    setSalesPay(f.salesPay || '0')
+    setHousingPay(f.housingPay || '0')
+    setOvertimePay(f.overtimePay || '0')
+    setOvertimeHours(f.overtimeHours || '0')
+    setTransportType(f.transportType || 'default')
+    setHasEmployInsurance(f.hasEmployInsurance !== false)
+    setHasSocialInsurance(f.hasSocialInsurance !== false)
+  }
+
+  const handleRestoreDraft = () => {
+    const draft = draftGuard.restore()
+    if (!draft) return
+    setSelectedStaff(draft.data.selectedStaff || null)
+    setSearched(true)
+    applyDraftFields(draft.data.fields || {}, draft.data.csvMeta || {})
+    setCurrentStep(draft.step || 1)
+    window.scrollTo(0, 0)
+  }
+  const handleDiscardDraft = () => { draftGuard.discard() }
 
   const handleSubmitContract = async () => {
     if (isSubmitting) return // 二重送信防止
@@ -1583,6 +1690,7 @@ function ApplyPageInner() {
         }
       }
       setIsSubmitted(true)
+      draftGuard.clearDraft()
     } catch (e: any) {
       setSubmitError('申請の保存中に問題が発生しました。お手数ですが、もう一度お試しください。')
       setIsSubmitting(false)
@@ -2204,6 +2312,15 @@ function ApplyPageInner() {
       </header>
 
       <main className="max-w-4xl mx-auto px-5 py-6">
+        {/* M-04対応：新規申請フローでSTEP1（スタッフ未選択）に居る間だけ、下書き復元バナーを出す */}
+        {enableDraftSave && currentStep === 1 && !selectedStaff && draftGuard.restoreAvailable && (
+          <DraftRestoreBanner
+            savedAt={draftGuard.restoreAvailable.savedAt}
+            staffName={draftGuard.restoreAvailable.staffName}
+            onRestore={handleRestoreDraft}
+            onDiscard={handleDiscardDraft}
+          />
+        )}
         <div className="flex items-center overflow-x-auto pb-2 mb-6">
           {steps.map((step, i) => (
             <div key={i} className="flex items-center shrink-0">

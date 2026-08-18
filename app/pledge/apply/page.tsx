@@ -35,6 +35,8 @@ import { excludeRetiredStaffOr } from '@/lib/staffFilters'
 import { escapeLikePattern } from '@/lib/searchEscape'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
+import DraftRestoreBanner from '@/app/_shared/ui/DraftRestoreBanner'
+import { useWizardDraftGuard } from '@/app/_shared/useWizardDraftGuard'
 import { SALARY_RULES, toHalfWidthDigits, parseAmount, normalizeTel, validateTel, clampDateYear, TOOLTIPS, getDeptSearchScope, STAFF_SEARCH_SAFE_COLUMNS } from '@/app/apply/_lib/helpers'
 import { Tooltip } from '@/app/apply/_components/FormParts'
 import { runPledgeAutoChecks } from '@/lib/autoChecks'
@@ -485,12 +487,62 @@ export default function PledgeApplyPage() {
 
   const handleCancel = async () => {
     if (!(await confirmDialog('入力中の申請を中断します。入力した内容は保存されません。よろしいですか？'))) return
+    draftGuard.clearDraft()
     handleCancel2()
   }
   const handleCancel2 = () => {
     const role = user?.user_metadata?.role
     router.push(role === 'SSC' ? '/dashboard/ssc' : role === '管理部' ? '/dashboard/admin' : '/dashboard/sales')
   }
+
+  // ===== M-04対応（2026-08-18・外部総合品質監査レポート）：申請ウィザードの離脱ガード・下書き自動保存 =====
+  // /applyと違い差し戻し・更新・最低賃金改定といった特殊モードが無いため、スタッフ選択後は常に
+  // 下書き保存・復元の対象にできる（app/_shared/useWizardDraftGuard.ts参照）。
+  const isDirty = !isSubmitted && !!selectedStaff
+  const buildDraftData = () => ({
+    selectedStaff, documentType,
+    workPlaceType, clientName, clientPostalCode, clientAddress, clientTel, officeId,
+    periodShift, rangeStart, rangeEnd, singleEntries,
+    workDescription,
+    salaryType, basicSalary, rolePay, skillPay, salesPay, transportType,
+  })
+  const draftGuard = useWizardDraftGuard({
+    storageKey: 'pledge_apply_wizard_draft_v1',
+    userId: user?.id || null,
+    isDirty,
+    enableDraftSave: true,
+    currentStep,
+    staffName: selectedStaff?.name || null,
+    getData: buildDraftData,
+  })
+  const handleRestoreDraft = () => {
+    const draft = draftGuard.restore()
+    if (!draft) return
+    const d = draft.data || {}
+    setSelectedStaff(d.selectedStaff || null)
+    setSearched(true)
+    setDocumentType(d.documentType || '')
+    setWorkPlaceType(d.workPlaceType || '')
+    setClientName(d.clientName || '')
+    setClientPostalCode(d.clientPostalCode || '')
+    setClientAddress(d.clientAddress || '')
+    setClientTel(d.clientTel || '')
+    setOfficeId(d.officeId || '')
+    setPeriodShift(d.periodShift || emptyShiftRow())
+    setRangeStart(d.rangeStart || '')
+    setRangeEnd(d.rangeEnd || '')
+    setSingleEntries(d.singleEntries || [])
+    setWorkDescription(d.workDescription || '')
+    setSalaryType(d.salaryType || '時給')
+    setBasicSalary(d.basicSalary || '')
+    setRolePay(d.rolePay || '')
+    setSkillPay(d.skillPay || '')
+    setSalesPay(d.salesPay || '')
+    setTransportType(d.transportType || PLEDGE_TRANSPORT_TYPES[0].id)
+    setCurrentStep(draft.step || 1)
+    window.scrollTo(0, 0)
+  }
+  const handleDiscardDraft = () => { draftGuard.discard() }
 
   const step1Valid = !!selectedStaff && !!documentType
 
@@ -720,6 +772,7 @@ export default function PledgeApplyPage() {
         return
       }
       setIsSubmitted(true)
+      draftGuard.clearDraft()
     } catch (e: any) {
       console.error('誓約書申請の保存エラー:', e)
       setSubmitError('申請の保存中にエラーが発生しました。お手数ですが、もう一度お試しください。改善しない場合はシステム担当者にご連絡ください。')
@@ -761,6 +814,15 @@ export default function PledgeApplyPage() {
       </header>
 
       <main className="max-w-4xl mx-auto px-5 py-6">
+        {/* M-04対応：STEP1（スタッフ未選択）に居る間だけ、下書き復元バナーを出す */}
+        {currentStep === 1 && !selectedStaff && draftGuard.restoreAvailable && (
+          <DraftRestoreBanner
+            savedAt={draftGuard.restoreAvailable.savedAt}
+            staffName={draftGuard.restoreAvailable.staffName}
+            onRestore={handleRestoreDraft}
+            onDiscard={handleDiscardDraft}
+          />
+        )}
         <div className="flex items-center overflow-x-auto pb-2 mb-6">
           {STEP_LABELS.map((label, i) => (
             <div key={i} className="flex items-center shrink-0">

@@ -47,3 +47,20 @@ body {
 .time-input-no-icon-tab::-webkit-calendar-picker-indicator {
   display: none;
 }
+
+/* M-10対応（2026-08-19）：外部総合品質監査レポート「電子印影のフォントが従業員端末依存」。
+   従業員が署名時に丸印鑑（電子印影）をCanvasで生成する際、従来はOS標準の明朝体
+   （Mac="Hiragino Mincho ProN"／Windows="Yu Mincho"）に依存していたため、Android・Linux等
+   これらのフォントが無い端末では別書体・環境によっては文字化けで表示され、その見た目のまま
+   契約書PDFに永久に埋め込まれてしまう不具合があった。PDF本文で既に使用しているIPAex明朝
+   （lib/pdf/pdfShared.tsxが埋め込む assets/fonts/ipaexm.ttf と同じ書体・配布可能なライセンス
+   のものを選定済み）をWebFontとして同梱し、app/sign/[id]/seal.ts・page.tsxから参照する。
+   ブラウザは@font-face宣言のみでは即座にダウンロードせず、document.fonts.load()で明示的に
+   要求した時（=署名画面を開いた時のみ）に取得するため、他画面への影響は無い。 */
+@font-face {
+  font-family: 'SealFont';
+  src: url('/fonts/ipaexm.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}

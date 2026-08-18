@@ -77,8 +77,31 @@ export default function SignPage() {
 
   useEffect(() => {
     if (stage !== 'action' || signAction !== 'signature') return
-    if (previewCanvasRef.current) drawSeal(previewCanvasRef.current, sealName)
-    if (exportCanvasRef.current) drawSeal(exportCanvasRef.current, sealName)
+    let cancelled = false
+    // M-10対応（2026-08-19）：Canvasへ描画する前に、同梱したIPAex明朝（'SealFont'。
+    // app/globals.cssで@font-face宣言）の読み込みを待つ。これにより、この契約書PDFに永久に
+    // 埋め込まれる丸印鑑の書体が、端末のOSに何が入っているかによらず常に同じになる
+    // （従来はMac/Windows以外の端末で別書体・環境によっては文字化けになっていた）。
+    // document.fontsが使えない古いブラウザ、または万一読み込みが失敗・長時間化した場合に
+    // 署名フロー自体が止まってしまわないよう、4秒でタイムアウトしたら描画を続行する
+    // （タイムアウト時は従来と同じ端末依存フォントで描画されるだけで、新たな不具合は生まない）。
+    const waitForFont = async () => {
+      if (typeof document === 'undefined' || !('fonts' in document)) return
+      try {
+        await Promise.race([
+          document.fonts.load("32px SealFont"),
+          new Promise(resolve => setTimeout(resolve, 4000)),
+        ])
+      } catch {
+        // 読み込み失敗時も無視して続行する（フォールバック）
+      }
+    }
+    waitForFont().then(() => {
+      if (cancelled) return
+      if (previewCanvasRef.current) drawSeal(previewCanvasRef.current, sealName)
+      if (exportCanvasRef.current) drawSeal(exportCanvasRef.current, sealName)
+    })
+    return () => { cancelled = true }
   }, [stage, signAction, sealName])
 
   useEffect(() => {

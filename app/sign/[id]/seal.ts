@@ -3,8 +3,15 @@
 // 日本語名・アルファベット名のどちらも同じ丸型・横書きで統一（トーク履歴の確定仕様）。
 // 短い名前は1行、長い名前は2行に折り返し、収まらない場合は文字サイズを自動縮小する。
 
+// M-10対応（2026-08-19）：従来はOS標準の明朝体（Mac="Hiragino Mincho ProN"／
+// Windows="Yu Mincho"）に依存しており、Android・Linux等ではこれらが無く別書体・環境によっては
+// 文字化けで表示され、その見た目のまま契約書PDFに永久に埋め込まれてしまう不具合があった。
+// PDF本文と同じIPAex明朝をWebFont（'SealFont'。app/globals.cssで@font-face宣言）として同梱し、
+// どの端末でも常に同じ書体で描画されるようにする。呼び出し元（page.tsx）でdocument.fonts.load()
+// によりこのフォントの読み込みを待ってからdrawSeal()を呼ぶことで、フォント未読み込みのまま
+// 描画してしまう事故を防ぐ（詳細はpage.tsx側のコメント参照）。
 const SEAL_COLOR = '#C0392B'
-const FONT_FAMILY = '"Hiragino Mincho ProN","Yu Mincho",serif'
+const FONT_FAMILY = "'SealFont', serif"
 
 function fitFontSize(
   ctx: CanvasRenderingContext2D,

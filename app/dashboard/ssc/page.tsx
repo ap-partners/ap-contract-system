@@ -604,6 +604,20 @@ export default function SSCDashboard() {
                   （雇用契約書は署名、就業条件明示書は内容確認の依頼になります。<br />
                   　対面・印刷パターンの案件は担当営業のダッシュボードに表示されます）
                 </p>
+                {/* 改善提案30件・グループA⑤対応（2026-08-19）：外部総合品質監査レポート12章27番
+                    「一括承認の確認ダイアログに社員番号を必ず併記」。同姓同名の誤承認防止。 */}
+                {selectedIds.size > 0 && (
+                  <div className="mt-3 max-h-40 overflow-y-auto rounded-[14px] border border-[#D7ECE0] bg-white p-3">
+                    <p className="mb-1.5 text-xs font-semibold text-[#4B5563]">対象者（同姓同名にご注意ください）</p>
+                    <ul className="space-y-1">
+                      {bulkTargets.filter(c => selectedIds.has(c.id)).map(c => (
+                        <li key={c.id} className="text-xs font-medium text-[#1F2937]">
+                          {c.input_data?.staff?.name || '氏名不明'}{c.input_data?.staff?.employee_number ? `（社員番号：${c.input_data.staff.employee_number}）` : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 <div className="mt-5 flex flex-col gap-3 sm:flex-row">
                   <button
                     onClick={handleBulkApprove}

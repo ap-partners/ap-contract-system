@@ -12,6 +12,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { drawSeal } from './seal'
+import StaffFaqWidget from '@/app/staff/_shared/StaffFaqWidget'
 
 type Stage = 'verify' | 'action' | 'done'
 type SignAction = 'signature' | 'confirmation'
@@ -178,6 +179,8 @@ export default function SignPage() {
 
   return (
     <div className="min-h-screen flex justify-center px-4 py-10" style={{ background: '#F5F7FC' }}>
+      {/* 改善提案30件・グループA④対応（2026-08-19）：署名・確認画面にも「困ったときは」導線を常設する */}
+      <StaffFaqWidget />
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-lg font-bold" style={{ color: '#1A2340' }}>

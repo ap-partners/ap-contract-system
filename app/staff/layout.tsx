@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import StaffFaqWidget from "./_shared/StaffFaqWidget";
 
 // ===== マイページ（/staff配下）専用のページタイトル =====
 // 2026-07-22追加。ルートのapp/layout.tsx（社内向け「契約書管理システム」）とは別に、
@@ -16,5 +17,12 @@ export default function StaffLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return children;
+  return (
+    <>
+      {children}
+      {/* 改善提案30件・グループA④対応（2026-08-19）：/staff配下（ログイン・マイページ・
+          書類詳細）すべてに「困ったときは」導線を常設する */}
+      <StaffFaqWidget />
+    </>
+  );
 }

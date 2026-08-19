@@ -604,11 +604,16 @@ function BulkPanel({
   onApprove,
   onCancel,
   approving = false,
+  selectedContracts = [],
 }: {
   visible: boolean
   selectedSize: number
   targetsSize: number
   checked: boolean
+  // 改善提案30件・グループA⑤対応（2026-08-19）：外部総合品質監査レポート12章27番
+  // 「一括承認の確認ダイアログに社員番号を必ず併記」。同姓同名の誤承認を防ぐため、
+  // 確認ダイアログに選択中の対象者（氏名・社員番号）を一覧表示する。
+  selectedContracts?: { id: string; name: string; employeeNumber: string }[]
   onSelectAll: () => void
   onOpenConfirm: () => void
   showConfirm: boolean
@@ -645,6 +650,18 @@ function BulkPanel({
             （雇用契約書は署名、就業条件明示書は内容確認の依頼になります。<br />
             　対面・印刷パターンの案件は担当営業のダッシュボードに表示されます）
           </p>
+          {selectedContracts.length > 0 && (
+            <div className="mt-3 max-h-40 overflow-y-auto rounded-[14px] border border-[#D7ECE0] bg-white p-3">
+              <p className="mb-1.5 text-xs font-semibold text-[#4B5563]">対象者（同姓同名にご注意ください）</p>
+              <ul className="space-y-1">
+                {selectedContracts.map(c => (
+                  <li key={c.id} className="text-xs font-medium text-[#1F2937]">
+                    {c.name || '氏名不明'}{c.employeeNumber ? `（社員番号：${c.employeeNumber}）` : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="mt-5 flex flex-col gap-3 sm:flex-row">
             <button onClick={onApprove} disabled={approving} className={`${primaryButton} flex-1 disabled:cursor-not-allowed disabled:opacity-60`}>
               選択中の{selectedSize}件を一括承認する
@@ -1739,6 +1756,11 @@ export default function AdminDashboard() {
               onApprove={handleBulkApprove}
               onCancel={() => setShowBulkApproveConfirm(false)}
               approving={bulkApproving}
+              selectedContracts={bulkTargets.filter(c => selectedIds.has(c.id)).map(c => ({
+                id: c.id,
+                name: c.input_data?.staff?.name || '',
+                employeeNumber: c.input_data?.staff?.employee_number || '',
+              }))}
             />
             {contractsError && <p className="text-sm font-semibold text-[#E74C3C]">{contractsError}</p>}
             {contractsLoading && <p className="py-8 text-sm font-medium text-[#6B7280]">読み込み中</p>}
@@ -1829,6 +1851,11 @@ export default function AdminDashboard() {
               onApprove={handleBulkApproveInternal}
               onCancel={() => setInternalShowBulkApproveConfirm(false)}
               approving={internalBulkApproving}
+              selectedContracts={internalBulkTargets.filter(c => internalSelectedIds.has(c.id)).map(c => ({
+                id: c.id,
+                name: c.input_data?.staff?.name || '',
+                employeeNumber: c.input_data?.staff?.employee_number || '',
+              }))}
             />
             {internalContractsError && <p className="text-sm font-semibold text-[#E74C3C]">{internalContractsError}</p>}
             {internalContractsLoading && <p className="py-8 text-sm font-medium text-[#6B7280]">読み込み中</p>}

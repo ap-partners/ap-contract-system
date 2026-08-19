@@ -4,6 +4,7 @@
 // ただし宛名の氏名（「〇〇様」）のみ、2026-07-16に伊藤さんの判断で例外的に許可（詳細は
 // sendSignRequestMail関数内のコメント・docs/SYSTEM_DESIGN.md 10章2026-07-16参照）。
 import nodemailer from 'nodemailer'
+import { createClient } from '@supabase/supabase-js'
 import { formatDateJp, formatDateTimeJp } from '@/lib/dateFormat'
 
 // 2026-07-23：デフォルトのquoted-printableエンコーディングだと、本文中の "=" が
@@ -22,6 +23,74 @@ const transporter = nodemailer.createTransport({
 })
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://ap-contract-system.vercel.app'
+
+// ===== #10対応（2026-08-19）：メール送信の成否をmail_logsへ記録する共通ラッパー =====
+// 外部総合品質監査レポート12章-10「送ったはずのメールが届いていないの調査ができない」への対応。
+// ログ記録はservice roleクライアント（RLSをバイパス）で行い、authenticatedロールには
+// mail_logsへの書き込み権限を一切与えない（閲覧は管理部ロール限定・Supabase側RLSで制御）。
+// ログ記録自体が失敗しても、メール送信の成否判定・呼び出し元の後続処理には一切影響させない
+// （ベストエフォート。console.errorのみ）。
+const supabaseMailLog = (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
+  ? createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  : null
+
+type MailLogMeta = {
+  mailType: string
+  relatedId?: string | null
+  relatedType?: string | null
+}
+
+function toEmailArray(value: nodemailer.SendMailOptions['to']): string[] {
+  if (!value) return []
+  if (Array.isArray(value)) {
+    return value.map(v => (typeof v === 'string' ? v : v.address || '')).filter(Boolean)
+  }
+  if (typeof value === 'string') {
+    return value.split(',').map(s => s.trim()).filter(Boolean)
+  }
+  return [value.address || ''].filter(Boolean)
+}
+
+async function logMailAttempt(params: MailLogMeta & {
+  toEmails: string[]
+  ccEmails: string[]
+  subject: string
+  success: boolean
+  errorMessage: string | null
+}): Promise<void> {
+  if (!supabaseMailLog) return
+  try {
+    await supabaseMailLog.from('mail_logs').insert({
+      mail_type: params.mailType,
+      related_id: params.relatedId ?? null,
+      related_type: params.relatedType ?? null,
+      to_emails: params.toEmails,
+      cc_emails: params.ccEmails,
+      subject: params.subject,
+      success: params.success,
+      error_message: params.errorMessage,
+    })
+  } catch (logErr: any) {
+    console.error('mail_logs記録エラー（メール送信自体には影響ありません）:', logErr?.message || logErr)
+  }
+}
+
+// 実際の送信はこれまで通りtransporter.sendMail()が行う。このラッパーは①送信を実行し
+// ②成否をmail_logsへ記録するだけで、送信失敗時に例外を再スローする既存の挙動
+// （呼び出し元のcatchブロック・ロールバック処理。例：notify-sign-requestの
+// 「署名待ち→SSC承認済み」ロールバック）は変更しない。
+async function sendMailLogged(mailOptions: nodemailer.SendMailOptions, meta: MailLogMeta): Promise<void> {
+  const toEmails = toEmailArray(mailOptions.to)
+  const ccEmails = toEmailArray(mailOptions.cc)
+  const subject = String(mailOptions.subject || '')
+  try {
+    await transporter.sendMail(mailOptions)
+    await logMailAttempt({ ...meta, toEmails, ccEmails, subject, success: true, errorMessage: null })
+  } catch (e: any) {
+    await logMailAttempt({ ...meta, toEmails, ccEmails, subject, success: false, errorMessage: e?.message || String(e) })
+    throw e
+  }
+}
 
 // 2026-07-31追加：日付（'YYYY-MM-DD'）を「YYYY年MM月DD日」表記に変換する共通ヘルパー。
 // 従来sendCsvModifiedNotifyMail内にのみ同じロジックがローカルで存在していたが、
@@ -214,13 +283,13 @@ export async function sendSignRequestMail(
   </td></tr>
 </table>`.trim()
 
-  await transporter.sendMail({
+  await sendMailLogged({
     from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
     to: toEmail,
     subject,
     text,
     html,
-  })
+  }, { mailType: 'sign_request', relatedId: contractId, relatedType: 'contract' })
 }
 
 // ===== マイページ：初回ログイン／パスワード再設定用の認証コード送信 =====
@@ -325,13 +394,13 @@ export async function sendStaffLoginCodeMail(
   </td></tr>
 </table>`.trim()
 
-  await transporter.sendMail({
+  await sendMailLogged({
     from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
     to: toEmail,
     subject,
     text,
     html,
-  })
+  }, { mailType: 'staff_login_code', relatedId: employeeNumber, relatedType: 'staff' })
 }
 
 // ===== アカウント管理：担当営業／SSC／管理部アカウントの初回設定・パスワード再設定案内 =====
@@ -422,13 +491,13 @@ export async function sendAccountSetupMail(
   </td></tr>
 </table>`.trim()
 
-  await transporter.sendMail({
+  await sendMailLogged({
     from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
     to: toEmail,
     subject,
     text,
     html,
-  })
+  }, { mailType: 'account_setup', relatedId: toEmail, relatedType: 'account' })
 }
 
 // ===== マイページ：書類到着（パスワード設定済みの従業員向け） =====
@@ -482,13 +551,13 @@ export async function sendStaffDocumentReadyMail(
   </td></tr>
 </table>`.trim()
 
-  await transporter.sendMail({
+  await sendMailLogged({
     from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
     to: toEmail,
     subject,
     text,
     html,
-  })
+  }, { mailType: 'staff_document_ready', relatedId: toEmail, relatedType: 'staff' })
 }
 
 // ===== 締結パターン「対面」「印刷」：承認後の説明対応が必要な旨を担当営業へ通知 =====
@@ -583,13 +652,13 @@ export async function sendExplainNeededMail(
   </td></tr>
 </table>`.trim()
 
-  await transporter.sendMail({
+  await sendMailLogged({
     from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
     to: toEmail,
     subject,
     text,
     html,
-  })
+  }, { mailType: 'explain_needed', relatedId: contractId, relatedType: 'contract' })
 }
 
 // ===== 更新期限管理：残日数しきい値通知（フェーズ2） =====
@@ -748,14 +817,14 @@ export async function sendRenewalDigestMail(
   </td></tr>
 </table>`.trim()
 
-  await transporter.sendMail({
+  await sendMailLogged({
     from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
     to: toEmails.join(','),
     cc: ccEmails.length > 0 ? ccEmails.join(',') : undefined,
     subject,
     text: lines.join('\n'),
     html,
-  })
+  }, { mailType: 'renewal_digest', relatedId: deptName, relatedType: 'dept' })
 }
 
 // ===== 更新期限管理：自動同期の失敗単独通知（2026-08-12追加・B-17対応） =====
@@ -800,14 +869,76 @@ export async function sendRenewalSyncFailureNoticeMail(
   </td></tr>
 </table>`.trim()
 
-  await transporter.sendMail({
+  await sendMailLogged({
     from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
     to: toEmails.join(','),
     cc: ccEmails.length > 0 ? ccEmails.join(',') : undefined,
     subject,
     text,
     html,
-  })
+  }, { mailType: 'renewal_sync_failure', relatedId: null, relatedType: null })
+}
+
+// ===== #14対応（2026-08-19）：Vercel Cronが2日連続で失敗した際の管理部通知 =====
+// lib/cronRunLogger.tsから呼ばれる。個々のcronの内容には立ち入らず、
+// 「どのcronが」「いつから」失敗しているかだけを伝える汎用の通知。
+export async function sendCronFailureNoticeMail(
+  toEmails: string[],
+  cronName: string,
+  errorMessage: string | null
+): Promise<void> {
+  if (toEmails.length === 0) return
+  const subject = `【システム】Cron処理が2日連続で失敗しています（${cronName}）`
+  const text = [
+    'お疲れ様です。',
+    'APパートナーズ 契約書管理システムです。',
+    '',
+    `自動処理「${cronName}」が2日連続で失敗しています。`,
+    errorMessage ? `エラー内容：${errorMessage}` : '',
+    '',
+    '運用管理タブの「システム状況」から詳細をご確認ください。',
+    `管理部ダッシュボードはこちら：${APP_URL}/dashboard/admin`,
+    '',
+    '※本メールは自動送信です。このアドレスへの返信には対応しておりません。',
+  ].filter(Boolean).join('\n')
+
+  const html = `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F7FC;padding:24px 0;">
+  <tr><td align="center">
+    <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:8px;max-width:480px;width:100%;">
+      <tr><td style="padding:32px 32px 8px 32px;font-family:sans-serif;font-size:14px;color:#1A2340;">
+        お疲れ様です。<br>APパートナーズ 契約書管理システムです。
+      </td></tr>
+      <tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:15px;color:#C0392B;font-weight:bold;line-height:1.6;">
+        自動処理「${escapeHtml(cronName)}」が2日連続で失敗しています。
+      </td></tr>
+      ${errorMessage ? `<tr><td style="padding:8px 32px 0 32px;font-family:sans-serif;font-size:12px;color:#5A6A8A;">エラー内容：${escapeHtml(errorMessage)}</td></tr>` : ''}
+      <tr><td style="padding:20px 32px 0 32px;font-family:sans-serif;font-size:13px;color:#1A2340;line-height:1.7;">
+        運用管理タブの「システム状況」から詳細をご確認ください。
+      </td></tr>
+      <tr><td align="center" style="padding:20px 32px 28px 32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0">
+          <tr><td align="center" bgcolor="#1B3A8C" style="border-radius:6px;">
+            <a href="${APP_URL}/dashboard/admin" target="_blank" style="display:inline-block;padding:14px 32px;font-family:sans-serif;font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">
+              管理部ダッシュボードを開く
+            </a>
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:0 32px 32px 32px;font-family:sans-serif;font-size:12px;color:#8A94AA;">
+        ※本メールは自動送信です。このアドレスへの返信には対応しておりません。
+      </td></tr>
+    </table>
+  </td></tr>
+</table>`.trim()
+
+  await sendMailLogged({
+    from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
+    to: toEmails.join(','),
+    subject,
+    text,
+    html,
+  }, { mailType: 'cron_failure_notice', relatedId: cronName, relatedType: 'cron' })
 }
 
 // ===== CSVインポート自動化：依頼の自動マッチ完了通知（2026-07-15追加） =====
@@ -919,13 +1050,13 @@ export async function sendCsvImportMatchedMail(
   </td></tr>
 </table>`.trim()
 
-  await transporter.sendMail({
+  await sendMailLogged({
     from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
     to: toEmail,
     subject,
     text,
     html,
-  })
+  }, { mailType: 'csv_import_matched', relatedId: staffCode, relatedType: 'staff' })
 }
 
 // ===== FAQチャットボット：質問への回答メール（2026-07-29追加） =====
@@ -988,13 +1119,13 @@ export async function sendFaqAnswerMail(
   </td></tr>
 </table>`.trim()
 
-  await transporter.sendMail({
+  await sendMailLogged({
     from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
     to: toEmail,
     subject,
     text,
     html,
-  })
+  }, { mailType: 'faq_answer', relatedId: toEmail, relatedType: 'faq_inquiry' })
 }
 
 export async function sendStaffRegisterMatchedMail(
@@ -1086,13 +1217,13 @@ export async function sendStaffRegisterMatchedMail(
   </td></tr>
 </table>`.trim()
 
-  await transporter.sendMail({
+  await sendMailLogged({
     from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
     to: toEmail,
     subject,
     text,
     html,
-  })
+  }, { mailType: 'staff_register_matched', relatedId: staffCode, relatedType: 'staff' })
 }
 
 
@@ -1199,14 +1330,14 @@ export async function sendContractMonitoringFollowupMail(
   </td></tr>
 </table>`.trim()
 
-  await transporter.sendMail({
+  await sendMailLogged({
     from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
     to: toEmails.join(','),
     cc: ccEmails.length > 0 ? ccEmails.join(',') : undefined,
     subject,
     text: lines.join('\n'),
     html,
-  })
+  }, { mailType: 'contract_monitoring_followup', relatedId: employeeNumber, relatedType: 'staff' })
 }
 
 // ===== CSV由来データ修正時の管理部通知メール（2026-07-30追加・上司デモ指摘⑥対応） =====
@@ -1325,13 +1456,13 @@ export async function sendCsvModifiedNotifyMail(
   </td></tr>
 </table>`.trim()
 
-  await transporter.sendMail({
+  await sendMailLogged({
     from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
     to: toEmail,
     subject,
     text: lines.join('\n'),
     html,
-  })
+  }, { mailType: 'csv_modified_notify', relatedId: contractId, relatedType: 'contract' })
 }
 
 // ===== 依頼（スタッフマスタ登録・CSVインポート）新規送信時の管理部通知メール（2026-07-31新設） =====
@@ -1422,13 +1553,13 @@ export async function sendNewRequestMail(
   </td></tr>
 </table>`.trim()
 
-  await transporter.sendMail({
+  await sendMailLogged({
     from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
     to: toEmails.join(','),
     subject,
     text: lines,
     html,
-  })
+  }, { mailType: 'new_request', relatedId: info.staffCode, relatedType: 'staff' })
 }
 
 // ===== 依頼（スタッフマスタ登録・CSVインポート）取消時の依頼元向け通知メール（2026-07-31新設） =====
@@ -1522,13 +1653,13 @@ export async function sendRequestCancelledMail(
   </td></tr>
 </table>`.trim()
 
-  await transporter.sendMail({
+  await sendMailLogged({
     from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
     to: toEmail,
     subject,
     text: lines,
     html,
-  })
+  }, { mailType: 'request_cancelled', relatedId: info.staffCode, relatedType: 'staff' })
 }
 
 // ===== 更新期限管理：「更新しない」確定時の管理部通知メール（2026-07-31新設） =====
@@ -1615,11 +1746,11 @@ export async function sendRenewalNotRenewingNotifyMail(
   </td></tr>
 </table>`.trim()
 
-  await transporter.sendMail({
+  await sendMailLogged({
     from: `"APパートナーズ 契約書管理システム" <${process.env.GMAIL_USER}>`,
     to: toEmails.join(','),
     subject,
     text: lines,
     html,
-  })
+  }, { mailType: 'renewal_not_renewing', relatedId: info.employeeNumber, relatedType: 'staff' })
 }

@@ -25,6 +25,7 @@ import { runRenewalCandidatesSync } from '@/lib/renewalCandidatesSync'
 import { excludeRetiredStaffOr } from '@/lib/staffFilters'
 import { listAllAuthUsers } from '@/lib/listAllAuthUsers'
 import { timingSafeEqualStrings } from '@/lib/timingSafeEqual'
+import { logCronRun } from '@/lib/cronRunLogger'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -51,7 +52,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 
+  // #14対応（2026-08-19）：この時点から「実行された1回」としてcron_runsに記録する。
+  const cronStartedAt = new Date()
+
   if (process.env.RENEWAL_NOTIFY_ENABLED === 'false') {
+    await logCronRun(supabaseAdmin, { cronName: 'renewal-notify', status: 'skipped', errorMessage: 'RENEWAL_NOTIFY_ENABLED=false', startedAt: cronStartedAt })
     return NextResponse.json({ skipped: true, reason: 'RENEWAL_NOTIFY_ENABLED=false' })
   }
 
@@ -67,10 +72,9 @@ export async function GET(req: NextRequest) {
   const isWeekend = jstDayOfWeek === 0 || jstDayOfWeek === 6
   const holidayName = JapaneseHolidays.isHoliday(jstToday)
   if (isWeekend || holidayName) {
-    return NextResponse.json({
-      skipped: true,
-      reason: isWeekend ? '土日のため送信をスキップしました' : `祝日（${holidayName}）のため送信をスキップしました`,
-    })
+    const reason = isWeekend ? '土日のため送信をスキップしました' : `祝日（${holidayName}）のため送信をスキップしました`
+    await logCronRun(supabaseAdmin, { cronName: 'renewal-notify', status: 'skipped', errorMessage: reason, startedAt: cronStartedAt })
+    return NextResponse.json({ skipped: true, reason })
   }
 
   const overrideEmail = process.env.RENEWAL_NOTIFY_OVERRIDE_EMAIL || null
@@ -104,6 +108,7 @@ export async function GET(req: NextRequest) {
         .in('status', ['pending', 'csv_pending'])
         .range(from, from + PAGE_SIZE - 1)
       if (candidatesError) {
+        await logCronRun(supabaseAdmin, { cronName: 'renewal-notify', status: 'error', errorMessage: candidatesError.message, startedAt: cronStartedAt })
         return NextResponse.json({ error: '更新候補の取得に失敗しました: ' + candidatesError.message }, { status: 500 })
       }
       const page = data || []
@@ -196,6 +201,7 @@ export async function GET(req: NextRequest) {
         console.error('更新期限：同期失敗の単独通知メール送信エラー:', e?.message || e)
       }
     }
+    await logCronRun(supabaseAdmin, { cronName: 'renewal-notify', status: 'success', summary: { sent: 0, syncFailed: !!syncFailureMessage }, startedAt: cronStartedAt })
     return NextResponse.json({ sent: 0, message: '本日対象の更新候補はありませんでした。', syncFailed: !!syncFailureMessage })
   }
 
@@ -273,5 +279,11 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  await logCronRun(supabaseAdmin, {
+    cronName: 'renewal-notify',
+    status: 'success',
+    summary: { sent: sentCount, totalDepts: byDept.size, syncFailed: !!syncFailureMessage },
+    startedAt: cronStartedAt,
+  })
   return NextResponse.json({ sent: sentCount, totalDepts: byDept.size, results })
 }

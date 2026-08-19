@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { timingSafeEqualStrings } from '@/lib/timingSafeEqual'
+import { logCronRun } from '@/lib/cronRunLogger'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,6 +23,7 @@ const supabaseAdmin = createClient(
 )
 
 const RETENTION_DAYS = 30
+const CRON_NAME = 'withdrawn-cleanup'
 
 export async function GET(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET
@@ -29,6 +31,9 @@ export async function GET(req: NextRequest) {
   if (!cronSecret || !timingSafeEqualStrings(authHeader, `Bearer ${cronSecret}`)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
+
+  // #14対応（2026-08-19）：この時点から「実行された1回」としてcron_runsに記録する。
+  const cronStartedAt = new Date()
 
   const cutoffIso = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString()
   const nowIso = new Date().toISOString()
@@ -42,6 +47,7 @@ export async function GET(req: NextRequest) {
     .select('id')
 
   if (contractsError) {
+    await logCronRun(supabaseAdmin, { cronName: CRON_NAME, status: 'error', errorMessage: contractsError.message, startedAt: cronStartedAt })
     return NextResponse.json({ error: '契約書の削除に失敗しました: ' + contractsError.message }, { status: 500 })
   }
 
@@ -54,8 +60,16 @@ export async function GET(req: NextRequest) {
     .select('id')
 
   if (pledgesError) {
+    await logCronRun(supabaseAdmin, { cronName: CRON_NAME, status: 'error', errorMessage: pledgesError.message, startedAt: cronStartedAt })
     return NextResponse.json({ error: 'アルバイト誓約書の削除に失敗しました: ' + pledgesError.message }, { status: 500 })
   }
+
+  await logCronRun(supabaseAdmin, {
+    cronName: CRON_NAME,
+    status: 'success',
+    summary: { deletedContracts: (deletedContracts || []).length, deletedPledges: (deletedPledges || []).length },
+    startedAt: cronStartedAt,
+  })
 
   return NextResponse.json({
     deletedContracts: (deletedContracts || []).length,

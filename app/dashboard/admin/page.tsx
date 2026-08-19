@@ -49,6 +49,7 @@ import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 import ProtectedRowsDownloadButton from '@/app/_shared/ui/ProtectedRowsDownloadButton'
 import PledgeListSection from '../_shared/PledgeListSection'
 import { SubTabBar } from '../_shared/SubTabBar'
+import SystemHealthTab from '../_shared/SystemHealthTab'
 
 type RequestRow = {
   id: string
@@ -72,7 +73,7 @@ type RequestRow = {
   displayDept?: string | null
 }
 
-type TabType = 'overview' | 'requests' | 'contracts' | 'internal' | 'csvImport' | 'renewal' | 'master' | 'pledges' | 'accounts' | 'faq'
+type TabType = 'overview' | 'requests' | 'contracts' | 'internal' | 'csvImport' | 'renewal' | 'master' | 'pledges' | 'accounts' | 'faq' | 'health'
 // 2026-07-29：タブ数増加（10個）による横長化の解消として、ナビゲーションを
 // 「サマリー／承認業務／データ登録／運用管理」の4グループの2階層タブに再編。
 // 各タブが実際にどのグループに属するかを1箇所で管理する対応表（伊藤さん承認済みの案A）。
@@ -88,6 +89,7 @@ const TAB_GROUP: Record<TabType, TabGroupKey> = {
   master: 'data',
   accounts: 'ops',
   faq: 'ops',
+  health: 'ops',
 }
 const TAB_GROUP_LABEL: Record<TabGroupKey, { label: string; icon: IconName }> = {
   overview: { label: 'サマリー', icon: 'grid' },
@@ -1423,6 +1425,8 @@ export default function AdminDashboard() {
   const opsTabs: { key: TabType; label: string; icon: IconName; count?: number }[] = [
     ...(isAccountAdmin ? [{ key: 'accounts' as TabType, label: 'アカウント管理', icon: 'user' as IconName }] : []),
     { key: 'faq', label: 'FAQ管理', icon: 'file', count: faqUnansweredCount },
+    // #11対応（2026-08-19）：システム状況（署名待ち超過・依頼放置・CSV取込エラー・メール送信失敗の監視）
+    { key: 'health', label: 'システム状況', icon: 'shield' },
   ]
   const groupTabs: Record<TabGroupKey, { key: TabType; label: string; icon: IconName; count?: number }[]> = {
     overview: [{ key: 'overview', label: 'サマリー', icon: 'grid' }],
@@ -2328,6 +2332,7 @@ export default function AdminDashboard() {
         {activeTab === 'master' && <MasterManagementTab />}
         {activeTab === 'accounts' && isAccountAdmin && <AccountManagementTab />}
         {activeTab === 'faq' && <FaqManagementTab />}
+        {activeTab === 'health' && <SystemHealthTab />}
         {activeTab === 'pledges' && (
           <div className="mt-5 rounded-[18px] border border-[#E8EDF5] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,.05)]">
             <PledgeListSection canApprove />

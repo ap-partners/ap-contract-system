@@ -16,9 +16,17 @@
 //   1回のUPDATE文で行う。アプリのコード変更・Vercelデプロイなしで運用できるという当初設計の
 //   意図を踏まえ、このAPIルート自体はDB関数の呼び出しと結果集計のみを行う薄い層とする。
 // ・renewal-notify・withdrawn-cleanupと同じCRON_SECRET認証を流用（Vercel Cronからのみ実行可）。
+//
+// 2026-08-19（改善提案#10・#14対応）：mail_logs・cron_runsという2つの新しいログテーブルが
+// 増えたことに伴い、日次で動く本cronに「1年以上前のログ行を削除する」処理を相乗りさせた。
+// 新しい専用cronを追加すると本番運用中のcron本数・Vercel設定が増えるため、既に日次で
+// 動いている本cron（元々csvMetaという別種のデータの定期削除を担っている）へ追加する形にした
+// （伊藤さんとの合意・2026-08-19）。ファイル名・コメントの「csvmeta-cleanup」という名前は
+// 変更しない（vercel.json・過去ログとの一貫性を優先）。
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { timingSafeEqualStrings } from '@/lib/timingSafeEqual'
+import { logCronRun } from '@/lib/cronRunLogger'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -26,6 +34,8 @@ const supabaseAdmin = createClient(
 )
 
 const RETENTION_YEARS = 2
+const LOG_RETENTION_YEARS = 1
+const CRON_NAME = 'csvmeta-cleanup'
 
 export async function GET(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET
@@ -33,6 +43,9 @@ export async function GET(req: NextRequest) {
   if (!cronSecret || !timingSafeEqualStrings(authHeader, `Bearer ${cronSecret}`)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
+
+  // #14対応（2026-08-19）：この時点から「実行された1回」としてcron_runsに記録する。
+  const cronStartedAt = new Date()
 
   const cutoff = new Date()
   cutoff.setFullYear(cutoff.getFullYear() - RETENTION_YEARS)
@@ -42,8 +55,38 @@ export async function GET(req: NextRequest) {
   })
 
   if (error) {
+    await logCronRun(supabaseAdmin, { cronName: CRON_NAME, status: 'error', errorMessage: error.message, startedAt: cronStartedAt })
     return NextResponse.json({ error: 'csvMetaの削除に失敗しました: ' + error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ deletedCount: (data || []).length })
+  // mail_logs・cron_runsの1年保持（#10・#14対応）。どちらも削除に失敗しても、
+  // csvMeta本体の削除は既に成功しているため、cron全体としては引き続きerror扱いにはしない
+  // （ログの掃除漏れがcsvMeta削除という主目的の成否を左右しないようにするため）。
+  const logCutoffIso = new Date(Date.now() - LOG_RETENTION_YEARS * 365 * 24 * 60 * 60 * 1000).toISOString()
+  let mailLogsDeleted = 0
+  let cronRunsDeleted = 0
+  let logCleanupError: string | null = null
+  try {
+    const { data: deletedMailLogs, error: mailLogsError } = await supabaseAdmin
+      .from('mail_logs').delete().lt('sent_at', logCutoffIso).select('id')
+    if (mailLogsError) throw mailLogsError
+    mailLogsDeleted = (deletedMailLogs || []).length
+
+    const { data: deletedCronRuns, error: cronRunsError } = await supabaseAdmin
+      .from('cron_runs').delete().lt('finished_at', logCutoffIso).select('id')
+    if (cronRunsError) throw cronRunsError
+    cronRunsDeleted = (deletedCronRuns || []).length
+  } catch (e: any) {
+    logCleanupError = e?.message || String(e)
+    console.error('mail_logs/cron_runsの保持期間削除エラー:', logCleanupError)
+  }
+
+  await logCronRun(supabaseAdmin, {
+    cronName: CRON_NAME,
+    status: 'success',
+    summary: { deletedCsvMetaCount: (data || []).length, mailLogsDeleted, cronRunsDeleted, logCleanupError },
+    startedAt: cronStartedAt,
+  })
+
+  return NextResponse.json({ deletedCount: (data || []).length, mailLogsDeleted, cronRunsDeleted })
 }

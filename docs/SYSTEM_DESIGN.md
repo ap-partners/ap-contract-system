@@ -3417,3 +3417,31 @@ grant execute on function public.soft_delete_withdrawn_contract(uuid) to authent
 Supabase MCPのSQLでRPC関数自体の動作（正しい所有者・正しいstatus・deleted_at未設定の行に対しては`true`を返し実際に`deleted_at`が設定されること、条件を満たさない場合は`false`を返し行が変更されないこと）を模擬確認済み。実機確認用に作成したテスト用ダミー`contracts`行1件はSupabase MCPで完全に削除済み（既存の実デモ用取り下げデータ＝進藤萌様・高橋遵乃介様の2件には一切触れていない）。
 
 構文チェック（`tsc --noEmit`は環境未確認のためコードレビューベース）は変更4ファイルすべて確認済み。**この4ファイルの変更はまだコミット・プッシュ・デプロイされていない**。伊藤さんによるデプロイ後、削除ボタンの実機確認（成功メッセージ表示・「取り下げ」タブから行が消える・DBには`deleted_at`が設定され行自体は残ることのSupabase MCP確認）を改めて実施する。
+
+### 2026-08-19（続き）改善提案30件のうち監視・運用グループ（#9・#10・#14・#11）の実装
+
+フェーズ①（#15・#22・#24）完了後、伊藤さんの承認を得て改善提案12章のうち「監視・運用」グループ（#9 Sentry等のエラー監視・#10 メール送信ログ・#11 健全性ダッシュボード・#14 Cronの実行結果可視化）に着手（ルール16準拠）。
+
+**実コード調査で判明した前提**：着手前にDB（Supabase MCP `list_tables`）・`lib/mail.ts`・3本のcronルートを確認した結果、`mail_logs`・`cron_runs`はいずれも未存在、メール送信失敗は`console.error`止まり、cronの実行結果もレスポンスJSONに残るだけで誰も見ていない状態だった。
+
+**自己評価による当初案の修正点**：伊藤さんに「プロの業務改善責任者兼PdM兼UI/UXデザイナーとして評価して」と依頼され、当初案を以下5点修正した。
+1. #9「Vercel標準機能で代替」は、Vercel Runtime Errorsがサーバー側（API route）のエラーしか拾えずブラウザ側のエラーを検知できない盲点があることを見落としていた。2026-08-14の`/apply`クラッシュ（React error #310）はまさにブラウザ側でのみ発生し、Claude in Chromeでの実機確認中に偶然発見できたものだった。この盲点を伊藤さんに共有した上で、Sentry本体（特にブラウザ側エラー捕捉）は本番リリース直前バケットへ追加する方針に修正。
+2. 新設する`mail_logs`にRLS設計（管理部限定SELECT）が抜けていた。C-01（`staff`テーブルのRLS全開放事故）の教訓を踏まえ、宛先メールアドレス＝個人情報を含むテーブルは最初からRLSを絞る設計に修正。
+3. `mail_logs`・`cron_runs`とも保持期間対策（無制限に貯まり続けることへの対応）が抜けていた。`input_data.csvMeta`で採用した「保持期間を決めて既存の日次cronに削除処理を相乗りさせる」方式を踏襲する形に修正。
+4. #14の「2日連続失敗で通知」は、「失敗」の定義が曖昧だと正常な「対象0件」ケースまで誤検知しうる。`cron_runs.status`を`'success'`/`'error'`/`'skipped'`の3値にし、通知対象を`'error'`のみに限定する設計に修正。
+5. #11の健全性ダッシュボードが、既存の「サマリー」タブ（今日やるべき業務件数のKPIカード4枚）と見た目が酷似し紛らわしくなる懸念があった。サマリー＝「今日やるべき業務」、健全性ダッシュボード＝「止まっている・異常な状態」という役割の違いを、見出し文言と警告トーン（赤系配色）の使い分けで明示する設計に修正。
+
+**実装内容**：
+- `mail_logs`テーブル新設（migration: `add_mail_logs_table`）。列：`mail_type`・`related_id`・`related_type`・`to_emails`（text[]）・`cc_emails`（text[]）・`subject`・`success`（boolean）・`error_message`・`sent_at`。RLSは管理部ロール限定SELECT（`current_role_name() = '管理部'`）のみで、INSERT/UPDATE/DELETEポリシーは設定せずauthenticatedロールからの書き込みを一切許可しない（書き込みはservice roleのみ）。
+- `lib/mail.ts`に共通ラッパー`sendMailLogged(mailOptions, meta)`を新設。実体は従来通り`transporter.sendMail()`を呼び、成功・失敗いずれも`mail_logs`へ記録してから（失敗時は）例外を再スローする（呼び出し元の既存のtry/catch・ロールバック処理は無変更のまま機能する）。ログ記録自体の失敗はconsole.errorのみに留め、メール送信の成否判定には一切影響させない。15個のエクスポート関数すべての`transporter.sendMail({...})`呼び出しをこのラッパー経由に統一し、関数ごとに適切な`mailType`・`relatedId`（契約ID・社員番号・部門名等、関数のスコープ内で既に得られる値をそのまま使用。新たな引数追加は行わず既存の関数シグネチャを変更しない設計とした）を指定。
+- `cron_runs`テーブル新設（migration: `add_cron_runs_table`）。列：`cron_name`・`status`（success/error/skipped）・`summary`（jsonb）・`error_message`・`started_at`・`finished_at`。RLSは`mail_logs`と同じく管理部ロール限定SELECTのみ。
+- `lib/cronRunLogger.ts`新設（`logCronRun()`）。cron_runsへの記録に続けて、直近2件を`cron_name`ごとに取得し「2件ともstatus='error'」の場合のみ`sendCronFailureNoticeMail()`（`lib/mail.ts`に新設）で管理部へ通知する。宛先解決は`RENEWAL_NOTIFY_OVERRIDE_EMAIL`（テスト運用中の宛先差し替え）→未設定なら`staff_roles`の管理部ロール全員、という既存の`cron/renewal-notify`と同じパターンを踏襲。
+- 3本のcronルート（`app/api/cron/renewal-notify/route.ts`・`withdrawn-cleanup/route.ts`・`csvmeta-cleanup/route.ts`）それぞれの全ての`return`地点（認可チェックの401を除く）に`logCronRun()`呼び出しを追加。`renewal-notify`は「RENEWAL_NOTIFY_ENABLED=false」「土日祝」の2箇所を`status='skipped'`、候補取得エラーを`status='error'`、正常完了2パターン（対象0件／通常完了）を`status='success'`として記録。個々のメール送信失敗（一部の部門への送信失敗等）はcronレベルのstatusには反映させず、あくまで`mail_logs`側で追跡する設計に統一。
+- ログの保持期間対応：新しい専用cronは追加せず、既に日次で動く`csvmeta-cleanup`ルートに相乗りする形で、`mail_logs`・`cron_runs`それぞれ1年（`sent_at`/`finished_at`基準）より古い行を削除する処理を追加。削除に失敗してもcsvMeta本体の削除という主目的の成否には影響させないよう独立したtry/catchで囲み、結果を`cron_runs.summary`に含めて記録する。
+- `app/api/admin/system-health/route.ts`新設。`getAuthenticatedStaff()`（`lib/apiAuth.ts`）で管理部ロールのみ許可。①`contracts`のstatus='署名待ち'かつ`sign_requested_at`が7日超過の件数、②`requests`の`staff_register_status`/`csv_import_status`が'pending'かつ`requested_at`が14日超過の件数、③`csv_imports`の`error_rows>0`の直近10件、④`mail_logs`の直近7日・success=falseの件数と直近10件の詳細、⑤3本のcronそれぞれの`cron_runs`最新1件、をまとめて1回のAPI呼び出しで返す。
+- `app/dashboard/_shared/SystemHealthTab.tsx`新設。管理部ダッシュボード「運用管理」タブグループに新規サブタブ「システム状況」（`TabType`に`'health'`追加・`TAB_GROUP`に`health: 'ops'`追加）として追加。KPIカード4枚（0件なら通常配色・1件以上なら赤系警告配色）、cronの直近実行状況（成功/失敗/スキップのバッジ）、直近のCSV取込エラー・メール送信失敗の詳細一覧を表示。
+- `ap-contract-system-error-check`という名前のスケジュールタスクを新設（毎日9時台・JST想定のローカル時刻）。Vercel MCPの`get_runtime_errors`（projectId: `prj_8E5YaFg7hOyq94nA2IhZGlaWWFL9`、teamId: `team_hbbjKzNgIK1Tqq91AuJooZgi`、since: 24h）を呼び出し、エラーが無ければ「異常なし」とだけ簡潔に報告、エラーがあれば非エンジニアの伊藤さん向けに平易な日本語で要約して報告する設計（プロンプト内で明記）。動作確認として、このタスクをセットアップした直後に手動で`get_runtime_errors`を呼び出し、実際に過去（#15のSESSION_SIGNING_SECRET未設定時）のエラーが正しく取得できることを確認済み（正しいprojectId/teamIdの組み合わせであることの裏付け）。
+- 構文チェック：プロジェクト全体`npx tsc --noEmit -p tsconfig.json`を変更のたびに実行し、すべて診断0件を確認済み（Linux bashサンドボックス経由。過去のセッションで「反映遅延により信頼できない」と記録されていた制約は、少なくとも今回のtsc実行では問題を起こさなかった）。
+- DBマイグレーション（`mail_logs`・`cron_runs`の2テーブル新設、RLS込み）はSupabase MCPで適用済み（本番DB）。
+
+**未実施（次回以降）**：デプロイ・実機確認（管理部アカウントでの「システム状況」タブ表示確認、実際のメール送信での`mail_logs`記録確認、cron翌日実行での`cron_runs`記録確認、スケジュールタスクの初回実行結果確認）はこの時点では未実施。CLAUDE.md「🔴 残タスク一覧」に要デプロイ＋実機確認として記録済み。

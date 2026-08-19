@@ -3,10 +3,15 @@
 //
 // 仕様（2026-07-27 伊藤さん決定）：
 // ・対象＝contracts・pledgesのうち status='取り下げ' かつ withdrawn_at が30日以上前のもの
-// ・手動削除ボタン（ダッシュボードの「取り下げ」タブ）と同じ「取り下げ済みのみ削除可」の
+// ・手動削除ボタン（ダッシュボードの「取り下げ」タブ）と同じ「取り下げ済みのみ操作可」の
 //   RLSポリシーの範囲内で動く想定だが、本cronはservice roleで実行するためRLSの対象外。
-//   誤って他ステータスの行を消さないよう、DELETE文自体にstatus='取り下げ'条件を必ず含める。
+//   誤って他ステータスの行を消さないよう、UPDATE文自体にstatus='取り下げ'条件を必ず含める。
 // ・renewal-notifyと同じCRON_SECRET認証を流用（Vercel Cronからのみ実行可）。
+//
+// 2026-08-19（改善提案#24対応）：物理DELETEから論理削除（deleted_at列への更新）に変更。
+// 労基署対応・内部監査の観点で、取り下げ申請の内容を証跡として残すため。物理削除は
+// RLS側でもDELETEポリシーを撤去済み（drop policy済み・DBレベルでも封じている）。
+// deleted_atが設定された行はSELECTポリシー側で除外されるため、画面上の見え方は従来通り。
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { timingSafeEqualStrings } from '@/lib/timingSafeEqual'
@@ -26,12 +31,14 @@ export async function GET(req: NextRequest) {
   }
 
   const cutoffIso = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString()
+  const nowIso = new Date().toISOString()
 
   const { data: deletedContracts, error: contractsError } = await supabaseAdmin
     .from('contracts')
-    .delete()
+    .update({ deleted_at: nowIso })
     .eq('status', '取り下げ')
     .lt('withdrawn_at', cutoffIso)
+    .is('deleted_at', null)
     .select('id')
 
   if (contractsError) {
@@ -40,9 +47,10 @@ export async function GET(req: NextRequest) {
 
   const { data: deletedPledges, error: pledgesError } = await supabaseAdmin
     .from('pledges')
-    .delete()
+    .update({ deleted_at: nowIso })
     .eq('status', '取り下げ')
     .lt('withdrawn_at', cutoffIso)
+    .is('deleted_at', null)
     .select('id')
 
   if (pledgesError) {

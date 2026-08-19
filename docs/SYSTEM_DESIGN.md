@@ -3355,3 +3355,18 @@ alter table contracts add column if not exists sign_auth_last_issued_at timestam
 2026-08-14 10:38 JSTのB-17自動cron（`/api/cron/renewal-notify`）実行をVercel MCP（`get_runtime_logs`）で確認したところHTTP 200・エラー0件で正常実行されていたが、この時点で対象スタッフ（岩城蒼太様・104018）の`staff.dept_no`は前回テスト（バッチ1実機確認時）の復元により`renewal_candidates.dept_no`と一致した状態（9・北海道営業所）だったため、「異動によるズレをcron経由で追随できるか」自体は未検証のままだった。
 そこで10:43 JST、Supabase MCPのSQL実行のみで`staff.dept_no`を9→15（九州営業所）へ変更（ダッシュボードは一切開いていない＝クライアント側同期経路を経由させないための措置）。次回2026-08-15 10:00 JSTのcron自動実行後、Vercel MCPのログ確認＋Supabase MCPで`renewal_candidates.dept_no`が15へ追随したかを確認する予定。確認後は`staff.dept_no`を9へ復元する。
 　→ CLAUDE.md 🔴残タスク一覧「2026-08-13デプロイ完了・実機確認完了…バッチ1」内の【要フォローアップ・進行中】欄も同時更新済み。
+
+### 2026-08-19：外部総合品質監査レポート12章「改善提案30件」の棚卸しとフェーズ①（#15・#22・#24）の実装
+
+グループA5件（改善提案）の実機確認完了を受け、残る改善提案32項目（実際は32項目。#18〔googleapis/nodemailerピン留め〕・#28〔申請ウィザード下書き自動保存〕はL-15・M-04で既に別対応済みと確認）を業務改善責任者／PdM／UI-UXデザイナー目線で①（即着手可・低コスト・意思決定不要）〜⑦（軽微・随時）の7段階に整理して提示。①（#15署名鍵の分離／#22未インデックスFK／#24取り下げ申請の論理削除化）から着手する伊藤さんのOKを得て実装（ルール16準拠）。
+
+**#22（未インデックスFK）**：Supabase Advisor（performance）を実際に取得し、報告書の「21件」に対しほぼ一致する20件の`unindexed_foreign_keys`警告を確認。`information_schema`で各制約の対象カラムを特定した上で、20本の`CREATE INDEX`（`idx_contracts_approved_by`等）を1本のマイグレーションで適用。適用後、Advisorを再取得し`unindexed_foreign_keys`警告が0件になったことを確認済み。既存コード・画面への影響が一切無い変更のため、これのみ実機確認不要で完了扱いとした。
+
+**#15（署名鍵の分離）**：`lib/pdfAccessToken.ts`・`lib/staffResetToken.ts`・`lib/staffSession.ts`の3ファイルがHMAC署名鍵として`SUPABASE_SERVICE_ROLE_KEY`（DB全体への直接アクセス権を持つ最強の鍵）を流用していたことを確認（B-08対応時点では種別タグでの区別のみに留まっていた）。`lib/requiredEnv.ts`に`getRequiredSessionSigningSecret()`を新設し、3ファイルの署名鍵を新しい環境変数`SESSION_SIGNING_SECRET`専用鍵に切り替え。ランダムな64桁16進数文字列を生成し、CLAUDE.mdの残タスク一覧経由で伊藤さんへ提示（Vercelへの環境変数追加が必要）。デプロイと同時に既存の全セッション・トークンが失効する点を明示。
+
+**#24（取り下げ申請の論理削除化）**：実装前にRLSポリシーを調査したところ、`contracts`・`pledges`ともSELECTポリシーは1本ずつのみで、DELETE権限とUPDATE権限の許可条件が完全一致していることを確認（想定より変更範囲が小さく収まった）。`contracts`・`pledges`に`deleted_at timestamptz`列を新設し、両テーブルのSELECTポリシーへ`deleted_at IS NULL`条件を`ALTER POLICY`で追加（画面側のコード変更なしに、論理削除された行が従来通り見えなくなることを実現）。DELETE用RLSポリシーは`DROP POLICY`で撤去し、DBレベルでも物理削除の経路を封じた。アプリ側は手動削除ボタン4箇所（sales/admin/ssc/PledgeListSection）と`withdrawn-cleanup`cronを、物理`.delete()`から`.update({deleted_at: 現在時刻})`＋`.is('deleted_at', null)`（cronのみ、二重処理防止のため追加）に置き換え。復元・閲覧UIは今回のスコープに含めず、必要が生じた場合はSupabase MCP等の直接照会で対応する方針とした（レポートの要求は証跡保持が主目的のため過剰と判断）。
+
+**デプロイ順序の注意点（伊藤さんへ共有済み）**：DB側の変更（インデックス追加・`deleted_at`列とRLSポリシー変更）はSupabase MCPで即座に本番DBへ反映されるのに対し、対応するアプリコードはVercelへのデプロイを経るまで反映されない。このタイムラグにより、①#24のRLS変更（DELETE不可化）がデプロイ前のコード（まだ`.delete()`を呼ぶ）と噛み合わない間、取り下げタブの削除ボタンがエラーになる、②#15はSESSION_SIGNING_SECRET未設定のままデプロイされるとPDFプレビュー・マイページ関連が全滅する、の2点を明示し、デプロイ手順（環境変数を先に追加してからのデプロイ、削除ボタンを一時的に使わない）を案内した。
+
+構文チェック・プロジェクト全体`npx tsc --noEmit -p tsconfig.json`とも変更した全ファイル（`lib/requiredEnv.ts`・`lib/pdfAccessToken.ts`・`lib/staffResetToken.ts`・`lib/staffSession.ts`・`app/dashboard/sales/page.tsx`・`app/dashboard/admin/page.tsx`・`app/dashboard/ssc/page.tsx`・`app/dashboard/_shared/PledgeListSection.tsx`・`app/api/cron/withdrawn-cleanup/route.ts`）で診断0件を確認済み。DB変更（インデックス20件・列2件・RLSポリシー変更4件）はSupabase MCPで適用済み（本番DB）。要デプロイ＋実機確認（#22を除く）。
+　→ CLAUDE.md 🔴残タスク一覧参照。

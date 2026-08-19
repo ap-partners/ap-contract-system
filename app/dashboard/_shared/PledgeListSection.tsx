@@ -232,13 +232,14 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
   const [bulkError, setBulkError] = useState('')
   const alertBulkError = (msg: string) => setBulkError('一括承認に失敗しました：' + msg)
 
-  // 取り下げ済み申請の削除（2026-07-27追加）：status='取り下げ'の行のみDELETE可能なようRLSで制限済み。
+  // 取り下げ済み申請の削除（2026-07-27追加）：status='取り下げ'の行のみ操作可能なようRLSで制限済み。
+  // 改善提案#24対応（2026-08-19）：物理DELETEから論理削除（deleted_at）へ変更。
   const [deletingWithdrawnId, setDeletingWithdrawnId] = useState<string | null>(null)
   const handleDeleteWithdrawn = async (pledgeId: string) => {
     const ok = await confirmDialog(WITHDRAWN_APPLICATION_DELETE_CONFIRM)
     if (!ok) return
     setDeletingWithdrawnId(pledgeId)
-    const { error } = await supabase.from('pledges').delete().eq('id', pledgeId).eq('status', '取り下げ')
+    const { error } = await supabase.from('pledges').update({ deleted_at: new Date().toISOString() }).eq('id', pledgeId).eq('status', '取り下げ')
     setDeletingWithdrawnId(null)
     if (error) { showError('削除に失敗しました: ' + error.message); return }
     setFlowRows(prev => prev.filter(r => r.id !== pledgeId))

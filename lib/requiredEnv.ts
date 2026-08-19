@@ -13,3 +13,18 @@ export function getRequiredServiceRoleKey(): string {
   }
   return key
 }
+
+// ===== セッション・トークン署名専用の鍵（改善提案#15対応・2026-08-19） =====
+// 従来、lib/pdfAccessToken.ts・lib/staffResetToken.ts・lib/staffSession.tsの3箇所は、
+// DB全体へ直接アクセスできる最強の鍵SUPABASE_SERVICE_ROLE_KEYをHMAC署名鍵として流用していた
+// （B-08対応時点では種別タグでの区別のみに留めていた）。外部監査の改善提案により、
+// 「セッション・トークンの署名」という用途専用の鍵SESSION_SIGNING_SECRETに分離する。
+// 万一この鍵をローテーションする必要が生じても、DBアクセス権限を持つservice roleキー
+// 自体には影響を与えずに済む（責務の分離）。フェイルクローズ方針は上記と同じ。
+export function getRequiredSessionSigningSecret(): string {
+  const key = process.env.SESSION_SIGNING_SECRET
+  if (!key) {
+    throw new Error('SESSION_SIGNING_SECRETが設定されていません。')
+  }
+  return key
+}

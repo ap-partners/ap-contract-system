@@ -703,7 +703,8 @@ export default function SalesDashboard() {
     const ok = await confirmDialog(WITHDRAWN_APPLICATION_DELETE_CONFIRM)
     if (!ok) return
     setDeletingWithdrawnId(contractId)
-    const { error } = await supabase.from('contracts').delete().eq('id', contractId).eq('status', '取り下げ')
+    // 改善提案#24対応（2026-08-19）：物理DELETEから論理削除（deleted_at）へ変更。
+    const { error } = await supabase.from('contracts').update({ deleted_at: new Date().toISOString() }).eq('id', contractId).eq('status', '取り下げ')
     setDeletingWithdrawnId(null)
     if (error) { showError('削除に失敗しました: ' + error.message); return }
     setFlowContracts(prev => prev.filter(c => c.id !== contractId))

@@ -379,14 +379,15 @@ export default function SSCDashboard() {
     setBulkApproveDone(approvedIds.length)
   }
 
-  // 取り下げ済み申請の削除（2026-07-27追加）：完全削除のため確認ダイアログを挟む。
-  // status='取り下げ'の行のみDELETE可能なようRLSで制限済み（それ以外は失敗する）。
+  // 取り下げ済み申請の削除（2026-07-27追加）：確認ダイアログを挟む。
+  // status='取り下げ'の行のみ操作可能なようRLSで制限済み（それ以外は失敗する）。
+  // 改善提案#24対応（2026-08-19）：物理DELETEから論理削除（deleted_at）へ変更。
   const [deletingWithdrawnId, setDeletingWithdrawnId] = useState<string | null>(null)
   const handleDeleteWithdrawn = async (contractId: string) => {
     const ok = await confirmDialog(WITHDRAWN_APPLICATION_DELETE_CONFIRM)
     if (!ok) return
     setDeletingWithdrawnId(contractId)
-    const { error } = await supabase.from('contracts').delete().eq('id', contractId).eq('status', '取り下げ')
+    const { error } = await supabase.from('contracts').update({ deleted_at: new Date().toISOString() }).eq('id', contractId).eq('status', '取り下げ')
     setDeletingWithdrawnId(null)
     if (error) { showError('削除に失敗しました: ' + error.message); return }
     setFlowContracts(prev => prev.filter(c => c.id !== contractId))

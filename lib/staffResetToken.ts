@@ -3,7 +3,7 @@
 // 続く/api/staff/set-passwordで「このリクエストは確かにコード確認済みである」ことを
 // 示すために使う（lib/pdfAccessToken.tsと同じHMAC署名方式。新しい依存関係は増やさない）。
 import crypto from 'crypto'
-import { getRequiredServiceRoleKey } from './requiredEnv'
+import { getRequiredSessionSigningSecret } from './requiredEnv'
 
 const EXPIRY_MS = 15 * 60 * 1000 // 15分（コード確認からパスワード設定までの猶予として十分）
 
@@ -11,8 +11,10 @@ const EXPIRY_MS = 15 * 60 * 1000 // 15分（コード確認からパスワード
 // いたため、種別タグを付けて区別する（詳細はpdfAccessToken.tsのコメント参照）。
 const TOKEN_KIND = 'staffreset'
 
+// 改善提案#15対応（2026-08-19）：署名鍵をservice roleキーの流用からSESSION_SIGNING_SECRET
+// 専用鍵に変更（詳細はlib/requiredEnv.tsのコメント参照）。
 function sign(payload: string): string {
-  return crypto.createHmac('sha256', getRequiredServiceRoleKey()).update(payload).digest('hex')
+  return crypto.createHmac('sha256', getRequiredSessionSigningSecret()).update(payload).digest('hex')
 }
 
 export function createStaffResetToken(staffId: string): string {

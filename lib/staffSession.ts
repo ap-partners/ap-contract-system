@@ -1,9 +1,10 @@
 // ===== マイページ：従業員ログインセッション =====
 // 2026-07-17新設。Supabase Authを使わない独自認証のため、lib/pdfAccessToken.tsと同じ
-// 「HMAC署名付きトークンをCookieに入れる」方式を踏襲する（新規の環境変数・依存関係を
-// 追加しない。SUPABASE_SERVICE_ROLE_KEYをサーバー専用の署名鍵として流用）。
+// 「HMAC署名付きトークンをCookieに入れる」方式を踏襲する。
 // PDFトークン（30分・契約1件専用）と異なり、こちらは「ログインセッション」なので
 // 有効期間を設定し、staffIdを積む。
+// 2026-08-19（改善提案#15対応）：署名鍵はSUPABASE_SERVICE_ROLE_KEYの流用からSESSION_SIGNING_SECRET
+// 専用鍵に変更済み（下記importKey参照）。
 //
 // 2026-07-17実機確認で発見・修正：このモジュールはNext.jsのmiddleware（既定でEdge
 // Runtime）からも呼ばれるが、Edge RuntimeはNode標準のcryptoモジュール
@@ -22,15 +23,17 @@
 //   （このモジュール自体はDBを見ないため、世代番号の照合はNode runtimeのAPIルート側
 //   ＝lib/staffAuth.tsのgetStaffIdFromRequestで行う。middlewareは軽量に保つ）。
 
-import { getRequiredServiceRoleKey } from './requiredEnv'
+import { getRequiredSessionSigningSecret } from './requiredEnv'
 
 const SESSION_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000 // 7日間（2026-08-10：30日間から短縮）
 export const STAFF_SESSION_COOKIE = 'staff_session'
 
 export type StaffSessionPayload = { staffId: string; tokenVersion: number }
 
+// 改善提案#15対応（2026-08-19）：署名鍵をservice roleキーの流用からSESSION_SIGNING_SECRET
+// 専用鍵に変更（詳細はlib/requiredEnv.tsのコメント参照）。
 async function importKey(): Promise<CryptoKey> {
-  const keyData = new TextEncoder().encode(getRequiredServiceRoleKey())
+  const keyData = new TextEncoder().encode(getRequiredSessionSigningSecret())
   return crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify'])
 }
 

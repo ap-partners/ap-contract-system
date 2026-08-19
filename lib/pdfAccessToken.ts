@@ -5,7 +5,7 @@
 // 本人確認（社員番号＋6桁認証コード）に成功した直後だけ、この短命トークンを発行する。
 // PDF取得APIはこのトークンか、社内ダッシュボードの認証ヘッダーのどちらかが無いと403にする。
 import crypto from 'crypto'
-import { getRequiredServiceRoleKey } from './requiredEnv'
+import { getRequiredSessionSigningSecret } from './requiredEnv'
 
 // 2026-08-14（外部総合品質監査レポート★2 L-11対応）：30分→10分に短縮。
 // マイページ・署名画面ともPDFプレビューは開いてすぐ確認する用途がほとんどで、10分あれば
@@ -22,10 +22,10 @@ const EXPIRY_MS = 10 * 60 * 1000 // 10分
 // ようにする（トークン自体は30分の短命・都度発行のため後方互換は不要）。
 const TOKEN_KIND = 'pdf'
 
+// 改善提案#15対応（2026-08-19）：署名鍵をservice roleキーの流用からSESSION_SIGNING_SECRET
+// 専用鍵に変更（詳細はlib/requiredEnv.tsのコメント参照）。
 function sign(payload: string): string {
-  // 専用の環境変数を新設せず、サーバー側にしか存在しないservice roleキーを鍵として流用する
-  // （Vercelへの環境変数追加という追加のデプロイ手順を増やさないための判断）。
-  return crypto.createHmac('sha256', getRequiredServiceRoleKey()).update(payload).digest('hex')
+  return crypto.createHmac('sha256', getRequiredSessionSigningSecret()).update(payload).digest('hex')
 }
 
 // 本人確認直後に発行する。契約IDと有効期限をpayloadに入れ、HMACで署名する。

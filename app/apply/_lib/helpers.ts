@@ -199,11 +199,15 @@ export const clampDateYear = (v: string) => {
 // 選んだアカウントは、自部門だけでは検索対象が常に0件になってしまうため、実際にスタッフが
 // 在籍する複数の実務部門をまとめて検索・絞り込み対象にする。自部門自体も含める（当初「含めない」
 // としていたが、自分で提出した申請が自分の一覧に出なくなる問題が判明したため、伊藤さんの判断で
-// 含める方針に変更・2026-07-29）。同じマッピングをDB側のRLS関数`current_dept_scope()`にも
-// 複製している（`contracts`/`pledges`/`renewal_candidates`のRLSが別途`created_by_dept_no`/
-// `dept_no`の完全一致を要求するため。docs/SYSTEM_DESIGN.md 10章2026-07-29参照）。片方だけ
-// 変更すると必ずズレるので、今後この対象を変える場合は両方を同時に直すこと。
-// dept_noはdepartment_masterの値。
+// 含める方針に変更・2026-07-29）。
+//
+// 【2026-08-20変更・#30対応】従来はこのマッピングをここ（クライアント側ハードコード）と
+// DB側のRLS関数`current_dept_scope()`の2箇所に複製しており、部門の新設・統合のたびに
+// エンジニアがコードを直してデプロイする必要があった（外部総合品質監査レポート改善提案#30）。
+// 新設テーブル`dept_group_scope`を正とし、管理部がマスタ管理画面から編集できるようにした。
+// このハードコード定数は、DB取得が失敗・未完了の場合のフォールバック専用として残す
+// （getDeptSearchScope()の第2引数を省略した場合の既定値。安全側に倒すための保険であり、
+// 通常運用では画面側でDBから取得した最新のマップが渡される）。dept_noはdepartment_masterの値。
 export const DEPT_GROUP_SCOPE: Record<number, number[]> = {
   3: [3, 6, 46],                       // HRソリューション営業部 → 自部門・CS課・営業開発課
   7: [7, 9, 10, 12, 13, 14, 15, 48],   // 広域本部 → 自部門・北海道営業所・東北営業所・中部営業所・関西支社・中国営業所・九州営業所・沖縄営業所
@@ -213,9 +217,38 @@ export const DEPT_GROUP_SCOPE: Record<number, number[]> = {
 
 // 指定した部門番号について、スタッフ検索・一覧絞り込みで実際に対象とすべき部門番号の配列を返す。
 // グループ範囲の対象部門でなければ、自部門のみを含む1件の配列を返す。deptNoがnullなら空配列。
-export const getDeptSearchScope = (deptNo: number | null): number[] => {
+// 【2026-08-20変更・#30対応】第2引数`groupScope`にDBから取得した最新のマッピング
+//（fetchDeptGroupScope()の戻り値）を渡せるようにした。省略時は上記ハードコードにフォールバックする。
+export const getDeptSearchScope = (
+  deptNo: number | null,
+  groupScope: Record<number, number[]> = DEPT_GROUP_SCOPE
+): number[] => {
   if (deptNo === null || deptNo === undefined) return []
-  return DEPT_GROUP_SCOPE[deptNo] || [deptNo]
+  return groupScope[deptNo] || [deptNo]
+}
+
+// dept_group_scopeテーブルから最新のマッピングを取得し、getDeptSearchScope()にそのまま
+// 渡せる形（Record<number, number[]>）に変換する。呼び出し元は既存の初期読み込み処理
+//（dept_no取得等）と並行・直後に1回だけ呼び、結果をstateへ保持して使い回す想定
+//（新しい単独のローディング状態は作らない。#30設計方針）。取得失敗時は空オブジェクトを返し、
+// 呼び出し元のgetDeptSearchScope()が自動的にハードコードのDEPT_GROUP_SCOPEへフォールバックする。
+// 引数の型をあえて緩く（any）しているのは、このファイルが「Reactにもsupabase-jsにも依存しない
+// 純粋関数集」という既存方針（ファイル冒頭コメント参照）を保つため。呼び出し元で
+// `import { supabase } from '@/lib/supabase'` のクライアントインスタンスをそのまま渡す想定。
+export const fetchDeptGroupScope = async (
+  supabase: any
+): Promise<Record<number, number[]>> => {
+  try {
+    const { data, error } = await supabase.from('dept_group_scope').select('group_dept_no, member_dept_nos')
+    if (error || !data) return {}
+    const map: Record<number, number[]> = {}
+    for (const row of data as { group_dept_no: number; member_dept_nos: number[] }[]) {
+      map[row.group_dept_no] = row.member_dept_nos
+    }
+    return map
+  } catch {
+    return {}
+  }
 }
 
 export const normalizeTel = (v: string) => v

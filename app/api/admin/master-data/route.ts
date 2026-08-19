@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
   if (!auth) return NextResponse.json({ error: 'ログインが必要です。' }, { status: 401 })
   if (auth.role !== '管理部') return NextResponse.json({ error: 'この操作は管理部のみ実行できます。' }, { status: 403 })
 
-  const [{ data: departments, error: deptErr }, { data: minimumWages, error: mwErr }, { data: workingHours, error: whErr }, { data: dispatchFees, error: dfErr }, { data: staffCountRows, error: staffErr }, { data: offices, error: officeErr }, { data: workDescriptionTemplates, error: wdtErr }, { data: mailingLists, error: mlmErr }] = await Promise.all([
+  const [{ data: departments, error: deptErr }, { data: minimumWages, error: mwErr }, { data: workingHours, error: whErr }, { data: dispatchFees, error: dfErr }, { data: staffCountRows, error: staffErr }, { data: offices, error: officeErr }, { data: workDescriptionTemplates, error: wdtErr }, { data: mailingLists, error: mlmErr }, { data: deptGroupScopes, error: dgsErr }] = await Promise.all([
     supabaseAdmin.from('department_master').select('id, dept_no, dept_name, created_at').order('dept_no', { ascending: true }),
     supabaseAdmin.from('minimum_wage_master').select('id, dept_no, hourly_wage, effective_from, created_at, updated_at').order('dept_no', { ascending: true }).order('effective_from', { ascending: false }),
     supabaseAdmin.from('standard_working_hours_master').select('id, work_place, contract_type, pattern_name, monthly_hours, created_at, updated_at').order('work_place', { ascending: true }).order('contract_type', { ascending: true }),
@@ -69,10 +69,14 @@ export async function GET(req: NextRequest) {
     supabaseAdmin.from('work_description_templates').select('id, template_text, sort_order, updated_at').order('sort_order', { ascending: true }),
     // 2026-07-30追加：メーリングリストマスタ（部門ごと1件・SSC1件・管理部1件）。
     supabaseAdmin.from('mailing_list_master').select('id, scope_type, dept_no, email, updated_at'),
+    // 2026-08-20追加：#30対応（部門グループ設定マスタ）。統括部門→実務部門群のマッピング。
+    // 従来app/apply/_lib/helpers.tsのDEPT_GROUP_SCOPE・DB関数current_dept_scope()の2箇所に
+    // ハードコード複製していたものをこのテーブルへ一本化し、管理部が画面から編集できるようにした。
+    supabaseAdmin.from('dept_group_scope').select('group_dept_no, member_dept_nos, updated_at').order('group_dept_no', { ascending: true }),
   ])
 
-  if (deptErr || mwErr || whErr || dfErr || staffErr || officeErr || wdtErr || mlmErr) {
-    return NextResponse.json({ error: 'マスタデータの取得に失敗しました：' + (deptErr?.message || mwErr?.message || whErr?.message || dfErr?.message || staffErr?.message || officeErr?.message || wdtErr?.message || mlmErr?.message || '') }, { status: 500 })
+  if (deptErr || mwErr || whErr || dfErr || staffErr || officeErr || wdtErr || mlmErr || dgsErr) {
+    return NextResponse.json({ error: 'マスタデータの取得に失敗しました：' + (deptErr?.message || mwErr?.message || whErr?.message || dfErr?.message || staffErr?.message || officeErr?.message || wdtErr?.message || mlmErr?.message || dgsErr?.message || '') }, { status: 500 })
   }
 
   const staffCountByDept: Record<number, number> = {}
@@ -102,7 +106,7 @@ export async function GET(req: NextRequest) {
     .filter(deptNo => deptNameByNo.has(deptNo))
     .map(deptNo => ({ deptNo, deptName: CURATED_DEPT_LABEL_OVERRIDE[deptNo] || (deptNameByNo.get(deptNo) as string) }))
 
-  return NextResponse.json({ departments, minimumWages, workingHours, dispatchFees, officeNames, staffCountByDept, offices, workDescriptionTemplates, mailingLists, mailingListDeptOptions })
+  return NextResponse.json({ departments, minimumWages, workingHours, dispatchFees, officeNames, staffCountByDept, offices, workDescriptionTemplates, mailingLists, mailingListDeptOptions, deptGroupScopes })
 }
 
 // ===== POST：新規追加・修正（actionで分岐） =====
@@ -312,6 +316,48 @@ export async function POST(req: NextRequest) {
           ? await supabaseAdmin.from('mailing_list_master').update({ email, updated_at: new Date().toISOString() }).eq('id', existing.id)
           : await supabaseAdmin.from('mailing_list_master').insert({ scope_type: scopeType, dept_no: null, email })
         if (error) return NextResponse.json({ error: friendlyDbError(error, '更新') }, { status: 500 })
+        return NextResponse.json({ ok: true })
+      }
+
+      case 'upsert_dept_group_scope': {
+        // 2026-08-20新設・#30対応。グループ長となる部門番号(groupDeptNo)に対し、
+        // 検索・一覧絞り込みの対象とすべき実務部門群(memberDeptNos)を登録・更新する。
+        const groupDeptNo = Number(payload?.groupDeptNo)
+        const memberDeptNosInput = Array.isArray(payload?.memberDeptNos) ? payload.memberDeptNos.map((n: any) => Number(n)) : []
+        if (!Number.isFinite(groupDeptNo)) {
+          return NextResponse.json({ error: 'グループ長の部門を選択してください。' }, { status: 400 })
+        }
+        if (memberDeptNosInput.some((n: number) => !Number.isFinite(n))) {
+          return NextResponse.json({ error: '対象部門の指定が不正です。' }, { status: 400 })
+        }
+        // グループ長自身も対象部門群に含める運用（2026-07-29決定を踏襲。自動的に補完する）
+        const memberDeptNos = Array.from(new Set([groupDeptNo, ...memberDeptNosInput])).sort((a, b) => a - b)
+        if (memberDeptNos.length < 2) {
+          return NextResponse.json({ error: 'グループ長以外に少なくとも1つ、対象部門を選択してください。' }, { status: 400 })
+        }
+        // 存在しない部門番号が紛れ込んでいないか確認（department_masterに実在する番号のみ許可）
+        const { data: validDepts } = await supabaseAdmin.from('department_master').select('dept_no')
+        const validDeptNoSet = new Set((validDepts || []).map(d => d.dept_no))
+        if (!validDeptNoSet.has(groupDeptNo) || memberDeptNos.some(n => !validDeptNoSet.has(n))) {
+          return NextResponse.json({ error: '存在しない部門番号が含まれています。' }, { status: 400 })
+        }
+        const { error } = await supabaseAdmin.from('dept_group_scope').upsert(
+          { group_dept_no: groupDeptNo, member_dept_nos: memberDeptNos, updated_at: new Date().toISOString() },
+          { onConflict: 'group_dept_no' }
+        )
+        if (error) return NextResponse.json({ error: friendlyDbError(error, '更新') }, { status: 500 })
+        return NextResponse.json({ ok: true })
+      }
+
+      case 'delete_dept_group_scope': {
+        // グループ設定を削除すると、対象部門は以後「自部門のみ」の検索範囲に戻る
+        // （getDeptSearchScope()・current_dept_scope()とも未登録時は自部門のみへ自動フォールバックする設計）。
+        const groupDeptNo = Number(payload?.groupDeptNo)
+        if (!Number.isFinite(groupDeptNo)) {
+          return NextResponse.json({ error: '対象を特定できませんでした。' }, { status: 400 })
+        }
+        const { error } = await supabaseAdmin.from('dept_group_scope').delete().eq('group_dept_no', groupDeptNo)
+        if (error) return NextResponse.json({ error: friendlyDbError(error, '削除') }, { status: 500 })
         return NextResponse.json({ ok: true })
       }
 

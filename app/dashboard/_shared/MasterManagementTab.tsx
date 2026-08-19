@@ -25,6 +25,8 @@ type Office = { id: string; office_name: string; postal_code: string | null; add
 type WorkDescriptionTemplate = { id: string; template_text: string; sort_order: number; updated_at: string }
 type MailingList = { id: string; scope_type: 'dept' | 'ssc' | 'admin'; dept_no: number | null; email: string; updated_at: string }
 type MailingListDeptOption = { deptNo: number; deptName: string }
+// 2026-08-20追加：#30対応（部門グループ設定マスタ）
+type DeptGroupScope = { group_dept_no: number; member_dept_nos: number[]; updated_at: string }
 
 type MasterData = {
   departments: Department[]
@@ -37,9 +39,10 @@ type MasterData = {
   workDescriptionTemplates: WorkDescriptionTemplate[]
   mailingLists: MailingList[]
   mailingListDeptOptions: MailingListDeptOption[]
+  deptGroupScopes: DeptGroupScope[]
 }
 
-const SUB_TABS = ['部門', '最低賃金', '所定労働時間', '派遣料金額', '自社拠点', '業務内容テンプレート', 'メーリングリスト'] as const
+const SUB_TABS = ['部門', '最低賃金', '所定労働時間', '派遣料金額', '自社拠点', '業務内容テンプレート', 'メーリングリスト', '部門グループ設定'] as const
 type SubTab = typeof SUB_TABS[number]
 
 const card = 'rounded-2xl border border-[#E8EDF5] bg-white'
@@ -110,6 +113,7 @@ export default function MasterManagementTab() {
           {subTab === '自社拠点' && <OfficeSection data={data} reload={load} />}
           {subTab === '業務内容テンプレート' && <WorkDescriptionTemplateSection data={data} reload={load} />}
           {subTab === 'メーリングリスト' && <MailingListSection data={data} reload={load} />}
+          {subTab === '部門グループ設定' && <DeptGroupScopeSection data={data} reload={load} />}
         </>
       ) : null}
     </div>
@@ -975,5 +979,199 @@ function WorkDescriptionTemplateSection({ data, reload }: { data: MasterData; re
         {addError && <div className="mt-2"><ErrorBanner message={addError} /></div>}
       </div>
     </section>
+  )
+}
+
+// ===== 部門グループ設定マスタ（2026-08-20新設・#30対応） =====
+// 外部総合品質監査レポート改善提案#30：従来 app/apply/_lib/helpers.ts の DEPT_GROUP_SCOPE
+//（統括部門→実務部門群のマッピング。在籍スタッフ0名の統括部門＝広域本部・北日本営業部・
+// 西日本営業部・HRソリューション営業部を選んだ担当営業アカウントの、スタッフ検索・一覧絞り込みの
+// 対象部門群を決めるもの）と、DB側のRLS関数 current_dept_scope() の2箇所にハードコードで
+// 複製されており、部門の新設・統合のたびにエンジニアがコード修正＋デプロイする必要があった。
+// 新設テーブル dept_group_scope を正とし、ここから管理部が編集できるようにする（デプロイ不要）。
+function DeptGroupScopeSection({ data, reload }: { data: MasterData; reload: () => Promise<void> }) {
+  const confirmDialog = useConfirm()
+  const deptNameByNo = new Map(data.departments.map(d => [d.dept_no, d.dept_name]))
+  const sortedDepartments = data.departments.slice().sort((a, b) => a.dept_no - b.dept_no)
+  const configuredGroupDeptNos = new Set(data.deptGroupScopes.map(g => g.group_dept_no))
+
+  // null = フォーム非表示。新規追加時はgroupDeptNo=''、編集時は対象のgroup_dept_noをセット
+  const [editingGroupDeptNo, setEditingGroupDeptNo] = useState<number | 'new' | null>(null)
+  const [formGroupDeptNo, setFormGroupDeptNo] = useState('')
+  const [formMemberDeptNos, setFormMemberDeptNos] = useState<Set<number>>(new Set())
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [deletingGroupDeptNo, setDeletingGroupDeptNo] = useState<number | null>(null)
+
+  const startAdd = () => {
+    setEditingGroupDeptNo('new')
+    setFormGroupDeptNo('')
+    setFormMemberDeptNos(new Set())
+    setError('')
+  }
+
+  const startEdit = (g: DeptGroupScope) => {
+    setEditingGroupDeptNo(g.group_dept_no)
+    setFormGroupDeptNo(String(g.group_dept_no))
+    setFormMemberDeptNos(new Set(g.member_dept_nos.filter(n => n !== g.group_dept_no)))
+    setError('')
+  }
+
+  const cancelEdit = () => {
+    setEditingGroupDeptNo(null)
+    setError('')
+  }
+
+  const toggleMember = (deptNo: number) => {
+    setFormMemberDeptNos(prev => {
+      const next = new Set(prev)
+      if (next.has(deptNo)) next.delete(deptNo)
+      else next.add(deptNo)
+      return next
+    })
+  }
+
+  const handleSave = async () => {
+    setError('')
+    const groupDeptNo = Number(formGroupDeptNo)
+    if (!formGroupDeptNo || !Number.isFinite(groupDeptNo)) {
+      setError('グループ長となる部門を選択してください。')
+      return
+    }
+    if (formMemberDeptNos.size === 0) {
+      setError('対象部門を1つ以上選択してください（グループ長自身は自動的に含まれます）。')
+      return
+    }
+    setSubmitting(true)
+    const result = await postAction('upsert_dept_group_scope', {
+      groupDeptNo,
+      memberDeptNos: Array.from(formMemberDeptNos),
+    })
+    setSubmitting(false)
+    if (!result.ok) { setError(result.error || '保存に失敗しました。'); return }
+    setEditingGroupDeptNo(null)
+    await reload()
+  }
+
+  const handleDelete = async (g: DeptGroupScope) => {
+    const groupName = deptNameByNo.get(g.group_dept_no) || `部門${g.group_dept_no}`
+    if (!(await confirmDialog({
+      title: 'グループ設定の削除',
+      message: `「${groupName}」のグループ設定を削除しますか？\n削除すると、この部門のアカウントは以後「自部門のみ」を対象にスタッフ検索・一覧表示するようになります。`,
+      tone: 'danger',
+      confirmLabel: '削除する',
+    }))) return
+    setDeletingGroupDeptNo(g.group_dept_no)
+    await postAction('delete_dept_group_scope', { groupDeptNo: g.group_dept_no })
+    setDeletingGroupDeptNo(null)
+    await reload()
+  }
+
+  return (
+    <div className="space-y-6">
+      <section className={`${card} p-6 md:p-8`}>
+        <p className="text-sm font-semibold text-[#1F2937]">部門グループ設定マスタ</p>
+        <p className="mt-1 text-xs font-medium leading-6 text-[#6B7280]">
+          在籍スタッフがいない統括部門（広域本部・北日本営業部・西日本営業部・HRソリューション営業部など）に所属するアカウントが、
+          スタッフ検索・契約一覧・更新期限管理・アルバイト誓約書一覧で対象とする「実務部門群」を設定します。
+          ここに登録が無い部門は、従来通り自部門のみが対象になります。
+        </p>
+        {editingGroupDeptNo === null && (
+          <button onClick={startAdd} className={`${primaryBtn} mt-4`}>＋ 新規グループを追加</button>
+        )}
+
+        {editingGroupDeptNo !== null && (
+          <div className="mt-4 rounded-xl border border-[#E8EDF5] p-4">
+            <p className="text-xs font-semibold text-[#6B7280]">
+              {editingGroupDeptNo === 'new' ? '新規グループを追加' : `「${deptNameByNo.get(editingGroupDeptNo as number) || ''}」のグループ設定を編集`}
+            </p>
+            <div className="mt-3">
+              <label className="mb-2 block text-xs font-semibold text-[#6B7280]">グループ長となる部門</label>
+              <select
+                value={formGroupDeptNo}
+                onChange={e => setFormGroupDeptNo(e.target.value)}
+                disabled={editingGroupDeptNo !== 'new'}
+                className={`${inputCls} md:max-w-sm`}
+              >
+                <option value="">選択してください</option>
+                {sortedDepartments
+                  .filter(d => editingGroupDeptNo !== 'new' || !configuredGroupDeptNos.has(d.dept_no))
+                  .map(d => (
+                    <option key={d.dept_no} value={d.dept_no}>{d.dept_name}（部門番号：{d.dept_no}）</option>
+                  ))}
+              </select>
+            </div>
+            <div className="mt-4">
+              <label className="mb-2 block text-xs font-semibold text-[#6B7280]">
+                対象部門（グループ長自身は自動的に含まれます）
+              </label>
+              <div className="grid grid-cols-1 gap-x-4 gap-y-2 rounded-xl border border-[#F1F4F9] p-3 sm:grid-cols-2 md:grid-cols-3">
+                {sortedDepartments
+                  .filter(d => String(d.dept_no) !== formGroupDeptNo)
+                  .map(d => (
+                    <label key={d.dept_no} className="flex items-center gap-2 text-sm text-[#1F2937]">
+                      <input
+                        type="checkbox"
+                        checked={formMemberDeptNos.has(d.dept_no)}
+                        onChange={() => toggleMember(d.dept_no)}
+                      />
+                      {d.dept_name}
+                    </label>
+                  ))}
+              </div>
+            </div>
+            {error && <div className="mt-3"><ErrorBanner message={error} /></div>}
+            <div className="mt-4 flex gap-2">
+              <button onClick={handleSave} disabled={submitting} className={primaryBtn}>
+                {submitting ? '保存中…' : '保存する'}
+              </button>
+              <button onClick={cancelEdit} disabled={submitting} className={secondaryBtn}>キャンセル</button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className={`${card} p-6 md:p-8`}>
+        <p className="text-sm font-semibold text-[#1F2937]">登録済みのグループ設定（{data.deptGroupScopes.length}件）</p>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[#E8EDF5] text-left text-xs font-semibold text-[#6B7280]">
+                <th className="px-3 py-2">グループ長</th>
+                <th className="px-3 py-2">対象部門</th>
+                <th className="px-3 py-2">最終更新</th>
+                <th className="px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.deptGroupScopes.map(g => (
+                <tr key={g.group_dept_no} className="border-b border-[#F1F4F9] align-top">
+                  <td className="px-3 py-3 font-medium text-[#1F2937]">{deptNameByNo.get(g.group_dept_no) || `部門${g.group_dept_no}`}</td>
+                  <td className="px-3 py-3 text-[#1F2937]">
+                    {g.member_dept_nos.map(n => deptNameByNo.get(n) || `部門${n}`).join('、')}
+                  </td>
+                  <td className="px-3 py-3 text-xs font-medium text-[#6B7280]">{formatDateJp(g.updated_at)}</td>
+                  <td className="px-3 py-3">
+                    <div className="flex gap-3">
+                      <button onClick={() => startEdit(g)} className="text-xs font-semibold text-[#2F5FD0] hover:underline">編集</button>
+                      <button
+                        onClick={() => handleDelete(g)}
+                        disabled={deletingGroupDeptNo === g.group_dept_no}
+                        className="text-xs font-semibold text-[#E74C3C] hover:underline"
+                      >
+                        {deletingGroupDeptNo === g.group_dept_no ? '削除中…' : '削除'}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {data.deptGroupScopes.length === 0 && (
+            <p className="mt-2 text-sm font-medium text-[#6B7280]">登録済みのグループ設定はありません。</p>
+          )}
+        </div>
+      </section>
+    </div>
   )
 }

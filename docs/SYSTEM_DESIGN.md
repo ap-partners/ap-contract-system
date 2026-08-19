@@ -3445,3 +3445,25 @@ Supabase MCPのSQLでRPC関数自体の動作（正しい所有者・正しいst
 - DBマイグレーション（`mail_logs`・`cron_runs`の2テーブル新設、RLS込み）はSupabase MCPで適用済み（本番DB）。
 
 **未実施（次回以降）**：デプロイ・実機確認（管理部アカウントでの「システム状況」タブ表示確認、実際のメール送信での`mail_logs`記録確認、cron翌日実行での`cron_runs`記録確認、スケジュールタスクの初回実行結果確認）はこの時点では未実施。CLAUDE.md「🔴 残タスク一覧」に要デプロイ＋実機確認として記録済み。
+
+### 2026-08-20 改善提案30件のうち#30（DEPT_GROUP_SCOPEのマスタ化）の実装
+
+**背景**：外部総合品質監査レポート9-3章・12章改善提案30番で指摘されていた問題。担当営業が在籍スタッフ0名の統括部門（広域本部・北日本営業部・西日本営業部・HRソリューション営業部）に所属する場合の「スタッフ検索・一覧絞り込みの対象実務部門群」マッピングが、クライアント側`app/apply/_lib/helpers.ts`の`DEPT_GROUP_SCOPE`（ハードコードのRecord<number, number[]>）と、DB側RLS関数`current_dept_scope()`（同じ内容を独立して複製したSQL CASE文）の2箇所に手作業で複製されており、部門の新設・統合のたびにエンジニアがコード修正＋Vercelデプロイをしないと反映できない構造だった。
+
+監視・運用グループ（#9・#10・#11・#14）完了後、残り18項目の着手順について伊藤さんに「プロの業務改善責任者兼PdM兼UI/UXデザイナーとしておすすめを提案して」と依頼され、#13（Google Driveストレージ容量アラート）と#30の2件への着手を提案し「うん」で承認を得た。#13は、実装前の調査で「Google Drive共有ドライブ（Shared Drive/Team Drive）の使用量は、サービスアカウント自身の`drive.about.get({fields:'storageQuota'})`では取得できず、Google Workspace管理者権限（Admin SDK・ドメイン全体の委任）が別途必要」という技術的制約を発見し、伊藤さんに共有したところ「保存料は100TB以上あるから大丈夫ですよ」との回答があったため、実装不要・見送りと確定した。
+
+#30については、クライアント側の非同期化リスク（DBから取得したマップをどう安全に使うか）について伊藤さんから「プロの業務改善責任者兼PdM兼UI/UXデザイナーとしてどう思う？」と意見を求められ、既存4箇所の呼び出し元コードを再確認した結果「いずれも`dept_no`（自部門番号）の非同期取得を待ってから絞り込みクエリを組み立てる設計に既になっている」ことを根拠に、「同じ初期読み込み処理に新しいDB取得を1件追加するだけであれば、新規の単独ローディング状態や競合リスクは生まない」という評価を提示し、伊藤さんの「うん」で以下の実装方針が確定した：①新規テーブル`dept_group_scope`を正のデータソースとする、②DB関数`current_dept_scope()`をこのテーブル参照に書き換え、③`getDeptSearchScope()`をDB取得マップを受け取れる形にリファクタしつつ既存の初期読み込みに相乗りさせる、④マスタ管理タブに新規サブタブを追加して管理部が画面から編集できるようにする（ルール16準拠）。
+
+**実装内容**：
+1. **DB：新規テーブル`dept_group_scope`**（`group_dept_no integer primary key references department_master(dept_no)`・`member_dept_nos integer[] not null`・`updated_at timestamptz`）をSupabase MCPで作成（本番DB）。RLSは既存の`department_master`と同じ方針を踏襲：SELECT＝`authenticated`ロール全件可、INSERT/UPDATE/DELETE＝`current_role_name() = '管理部'`のみ。既存のハードコード4件（dept_no 3→[3,6,46]・7→[7,9,10,12,13,14,15,48]・8→[8,9,10]・11→[11,12,13,14,15,48]）をそのままシード投入。
+2. **DB関数`current_dept_scope()`の書き換え**：従来のハードコード`CASE current_dept_no() when 3 then array[...] ... else array[current_dept_no()] end`という定義から、`select coalesce((select member_dept_nos from dept_group_scope where group_dept_no = current_dept_no()), array[current_dept_no()])`という定義に変更（`STABLE SECURITY DEFINER`は維持）。書き換え後、SQLで直接「グループ長4部門＋非対象部門2件、計6パターン」を突合し、旧ハードコード版と完全に同じ結果を返すことを確認済み。
+3. **`app/apply/_lib/helpers.ts`**：`getDeptSearchScope(deptNo: number | null, groupScope: Record<number, number[]> = DEPT_GROUP_SCOPE): number[]`という形にシグネチャ変更（第2引数を省略した場合は従来通りハードコードの`DEPT_GROUP_SCOPE`にフォールバックする設計にし、DB取得が未完了・失敗した場合でも安全側に倒れるようにした。`DEPT_GROUP_SCOPE`定数自体はこのフォールバック専用として残置）。新規関数`fetchDeptGroupScope(supabase: any): Promise<Record<number, number[]>>`を追加し、`dept_group_scope`テーブルをSELECTして`{group_dept_no: member_dept_nos}`の形に変換して返す（取得失敗時は`{}`を返し、呼び出し元の`getDeptSearchScope()`が自動的にハードコードへフォールバックする）。このファイルは「Reactにもsupabase-jsにも依存しない純粋関数集」という既存方針（ファイル冒頭コメント）のため、supabaseクライアントの型は`any`で緩く受け取る形にした。
+4. **クライアント側4箇所の呼び出し元を更新**（いずれも新しい単独のローディング状態は追加せず、既存の初期読み込み処理に相乗りする形で対応）：
+   - `app/apply/page.tsx`：`myDeptNo`を取得する`useEffect`内で`fetchDeptGroupScope(supabase).then(setDeptGroupScope)`を並行実行し、STEP1スタッフ検索（`handleSearch`）の`getDeptSearchScope(myDeptNo ?? null, deptGroupScope)`呼び出しに反映。
+   - `app/pledge/apply/page.tsx`：同様に`myDeptNo`取得の`useEffect`に相乗り。STEP1スタッフ検索・自社拠点マスタ絞り込み（`office_master`の`department_master.office_id`経由の絞り込み）の2箇所双方に反映。
+   - `app/dashboard/sales/page.tsx`：ログイン直後の初期化処理（`staff_roles`から`dept_no`を取得する箇所）に`const deptGroupScope = await fetchDeptGroupScope(supabase)`を追加し、`deptScopeRef.current = getDeptSearchScope(staffRoleRow.dept_no, deptGroupScope)`に反映（契約一覧・更新期限管理・アルバイト誓約書一覧等、`deptScopeRef`を参照する既存箇所すべてに自動的に波及）。
+5. **マスタ管理API（`app/api/admin/master-data/route.ts`）を拡張**：GETレスポンスに`deptGroupScopes`（`group_dept_no, member_dept_nos, updated_at`の全件、`group_dept_no`昇順）を追加。POSTに新規アクション2件を追加：`upsert_dept_group_scope`（`groupDeptNo`・`memberDeptNos`を受け取り、グループ長自身を対象部門群へ自動補完＝`Array.from(new Set([groupDeptNo, ...memberDeptNos]))`、`department_master`に実在する部門番号かのガード付きでupsert）、`delete_dept_group_scope`（該当行を削除。削除後は当該部門は「自部門のみ」の検索範囲に自動的に戻る設計）。いずれも既存の`{action, payload}`switch方式・`getAuthenticatedStaff`+管理部ロールチェック・`friendlyDbError()`によるエラーメッセージ変換という、このファイルの既存パターンをそのまま踏襲。
+6. **マスタ管理タブに新規サブタブ「部門グループ設定」を追加**（`app/dashboard/_shared/MasterManagementTab.tsx`）：`SUB_TABS`配列に追加し、新規コンポーネント`DeptGroupScopeSection`を新設。①「＋新規グループを追加」ボタン→フォーム（グループ長となる部門をプルダウンで選択〔新規追加時は未設定の部門のみ候補表示〕→対象部門をチェックボックスで複数選択→保存）、②登録済みグループの一覧表（グループ長部門名・対象部門名一覧・最終更新日時・編集/削除ボタン）、③削除時は`useConfirm()`による確認ダイアログ（削除すると当該部門が「自部門のみ」に戻る旨を明記）、の構成。
+7. 構文チェック・プロジェクト全体`npx tsc --noEmit -p tsconfig.json`とも、変更・新設した全ファイル（`app/apply/_lib/helpers.ts`・`app/apply/page.tsx`・`app/pledge/apply/page.tsx`・`app/dashboard/sales/page.tsx`・`app/api/admin/master-data/route.ts`・`app/dashboard/_shared/MasterManagementTab.tsx`）で診断0件を確認済み。DBマイグレーション（`dept_group_scope`テーブル新設・`current_dept_scope()`関数書き換え）はSupabase MCPで適用済み（本番DB）。
+
+**未実施**：デプロイ後のClaude in Chrome＋Supabase MCPでの実機確認（新規「部門グループ設定」サブタブでの編集がデプロイ不要で実際のスタッフ検索・契約一覧・更新期限管理・アルバイト誓約書一覧の絞り込み挙動に反映されること、既存4グループ〔広域本部・北日本営業部・西日本営業部・HRソリューション営業部〕の挙動にリグレッションが無いことの確認が必要）。

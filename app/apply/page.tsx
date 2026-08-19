@@ -18,7 +18,7 @@ import {
   type DiffPart, computeCharDiff,
   extractResponsibilityFromWinworks, buildWelfareTextFromEstaffing, buildWelfareTextFromHRstation,
   numToYesNo, extractCsvFieldsRaw, extractCsvFields, normalizeDateSlash, newlineToSpace,
-  formatTelHyphen, joinDeptAndPerson, normalizeJapaneseName, getDeptSearchScope,
+  formatTelHyphen, joinDeptAndPerson, normalizeJapaneseName, getDeptSearchScope, fetchDeptGroupScope,
   buildCsvModifiedFieldsDiff, STAFF_SEARCH_SAFE_COLUMNS,
 } from './_lib/helpers'
 import {
@@ -68,6 +68,10 @@ function ApplyPageInner() {
   // （2026-07-14〜 [DECISION]：制限対象は担当営業ロールのみ。SSC・管理部は横断的な代理申請・確認業務を
   //   担うため、従来通り全部門のスタッフを検索できる。docs/SYSTEM_DESIGN.md 10章参照）
   const [myDeptNo, setMyDeptNo] = useState<any>(undefined)
+  // #30対応（2026-08-20）：DEPT_GROUP_SCOPEのマスタ化。myDeptNo取得と同じタイミングで
+  // dept_group_scopeテーブルの最新マッピングを取得しておき、getDeptSearchScope()の第2引数に渡す。
+  // 取得前・失敗時は{}のままとなり、getDeptSearchScope()側が自動的にハードコードへフォールバックする。
+  const [deptGroupScope, setDeptGroupScope] = useState<Record<number, number[]>>({})
   const [currentStep, setCurrentStep] = useState(1)
   const [searched, setSearched] = useState(false)
   const [searchResults, setSearchResults] = useState<any[]>([])
@@ -571,6 +575,8 @@ function ApplyPageInner() {
       setMyDeptNo(data?.dept_no ?? null)
     }
     loadMyDeptNo()
+    // #30対応：新しい単独のローディング状態を作らず、この既存の初期読み込みに相乗りする形で取得
+    fetchDeptGroupScope(supabase).then(setDeptGroupScope)
   }, [user])
 
   // company_masterから派遣元責任者・苦情処理申出先（派遣元）を読み込む処理。
@@ -1313,7 +1319,7 @@ function ApplyPageInner() {
       // 2026-07-29変更：在籍スタッフ0名の統括部門（広域本部等）を選んだアカウントは、自部門1件
       // だけでなく、グループ範囲（getDeptSearchScope）に含まれる複数の実務部門をまとめて検索対象
       // にする。対象外の通常部門は従来通り自部門1件のみ（docs/SYSTEM_DESIGN.md 10章2026-07-29参照）。
-      const scopeDeptNos = getDeptSearchScope(myDeptNo ?? null)
+      const scopeDeptNos = getDeptSearchScope(myDeptNo ?? null, deptGroupScope)
       byNumberQuery = byNumberQuery.in('dept_no', scopeDeptNos)
       byNameQuery = byNameQuery.in('dept_no', scopeDeptNos)
     }
@@ -1342,7 +1348,7 @@ function ApplyPageInner() {
     setReqWithCsv(false)
     setReqCsvSystem('')
     setReqDispatchStart('')
-  }, [user, myDeptNo])
+  }, [user, myDeptNo, deptGroupScope])
 
   const handleLogout = async () => {
     if (!(await confirmDialog('ログアウトしますか？'))) return

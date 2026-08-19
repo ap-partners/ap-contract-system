@@ -33,7 +33,7 @@ import ChatbotWidget from '../_shared/ChatbotWidget'
 import { useRenewalCandidates } from '../_shared/useRenewalCandidates'
 import { useDebouncedSearch } from '../_shared/useDebouncedSearch'
 import { SubTabBar } from '../_shared/SubTabBar'
-import { getDeptSearchScope } from '@/app/apply/_lib/helpers'
+import { getDeptSearchScope, fetchDeptGroupScope } from '@/app/apply/_lib/helpers'
 import { useToast } from '@/app/_shared/ui/ToastProvider'
 import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
@@ -480,8 +480,12 @@ export default function SalesDashboard() {
       const deptName = (staffRoleRow as any)?.department_master?.dept_name || null
       deptNoRef.current = staffRoleRow.dept_no
       deptNameRef.current = deptName
+      // #30対応（2026-08-20）：DEPT_GROUP_SCOPEのマスタ化。既存のこの初期読み込み処理に
+      // 相乗りする形でdept_group_scopeテーブルの最新マッピングを取得（新しい単独のローディング
+      // 状態は作らない）。取得失敗時はgetDeptSearchScope()が自動的にハードコードへフォールバックする。
+      const deptGroupScope = await fetchDeptGroupScope(supabase)
       // グループ範囲（広域本部等）は自部門を含まない複数部門、通常部門は自部門1件のみの配列になる
-      deptScopeRef.current = getDeptSearchScope(staffRoleRow.dept_no)
+      deptScopeRef.current = getDeptSearchScope(staffRoleRow.dept_no, deptGroupScope)
 
       await Promise.all([
         loadContracts(deptScopeRef.current),

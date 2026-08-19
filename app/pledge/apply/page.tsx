@@ -37,7 +37,7 @@ import { useConfirm } from '@/app/_shared/ui/ConfirmDialog'
 import ValidationBanner from '@/app/_shared/ui/ValidationBanner'
 import DraftRestoreBanner from '@/app/_shared/ui/DraftRestoreBanner'
 import { useWizardDraftGuard } from '@/app/_shared/useWizardDraftGuard'
-import { SALARY_RULES, toHalfWidthDigits, parseAmount, normalizeTel, validateTel, clampDateYear, TOOLTIPS, getDeptSearchScope, STAFF_SEARCH_SAFE_COLUMNS } from '@/app/apply/_lib/helpers'
+import { SALARY_RULES, toHalfWidthDigits, parseAmount, normalizeTel, validateTel, clampDateYear, TOOLTIPS, getDeptSearchScope, fetchDeptGroupScope, STAFF_SEARCH_SAFE_COLUMNS } from '@/app/apply/_lib/helpers'
 import { Tooltip } from '@/app/apply/_components/FormParts'
 import { runPledgeAutoChecks } from '@/lib/autoChecks'
 import { WAGE_PAYMENT_TEXT } from '@/lib/pdf/documentText'
@@ -205,6 +205,10 @@ export default function PledgeApplyPage() {
   const confirmDialog = useConfirm()
   const [user, setUser] = useState<any>(null)
   const [myDeptNo, setMyDeptNo] = useState<any>(undefined) // undefined=読み込み中 / null=特定できない
+  // #30対応（2026-08-20）：DEPT_GROUP_SCOPEのマスタ化。myDeptNo取得と同じタイミングで取得（新しい
+  // 単独のローディング状態は作らない）。取得前・失敗時は{}のままとなり、getDeptSearchScope()側が
+  // 自動的にハードコードのDEPT_GROUP_SCOPEへフォールバックする。
+  const [deptGroupScope, setDeptGroupScope] = useState<Record<number, number[]>>({})
   const [currentStep, setCurrentStep] = useState(1)
   // 2026-07-22追加（alert/confirm置き換えPhase3・①必須項目チェック）：各STEPの「次へ進む」チェックで
   // 従来alert()表示していたエラーメッセージを、ボタン近くのインライン警告バナー(ValidationBanner)で表示するためのstate。
@@ -351,6 +355,8 @@ export default function PledgeApplyPage() {
       setMyDeptNo(data?.dept_no ?? null)
     }
     loadMyDeptNo()
+    // #30対応：新しい単独のローディング状態を作らず、この既存の初期読み込みに相乗りする形で取得
+    fetchDeptGroupScope(supabase).then(setDeptGroupScope)
   }, [user])
 
   // 自社拠点マスタの読み込み（STEP2で使用。2026-07-30修正：従来は部門を問わず8拠点すべてを
@@ -370,7 +376,7 @@ export default function PledgeApplyPage() {
       if (role !== '担当営業') { setOffices(allOffices || []); return }
       if (myDeptNo === undefined) return // 担当営業自身の部門番号を取得中のため、確定するまで待つ
       if (myDeptNo === null) { setOffices(allOffices || []); return }
-      const scopeDeptNos = getDeptSearchScope(myDeptNo)
+      const scopeDeptNos = getDeptSearchScope(myDeptNo, deptGroupScope)
       const { data: depts } = await supabase
         .from('department_master')
         .select('office_id')
@@ -380,7 +386,7 @@ export default function PledgeApplyPage() {
       setOffices((allOffices || []).filter(o => officeIds.includes(o.id)))
     }
     loadOffices()
-  }, [user, myDeptNo])
+  }, [user, myDeptNo, deptGroupScope])
 
   // 業務内容テンプレートマスタの読み込み（STEP3で使用。2026-07-22追加）
   useEffect(() => {
@@ -415,7 +421,7 @@ export default function PledgeApplyPage() {
       // だけでなく、グループ範囲（getDeptSearchScope）に含まれる複数の実務部門をまとめて検索対象
       // にする。対象外の通常部門は従来通り自部門1件のみ（app/apply/page.tsxの同種修正＝
       // 2026-07-29と同じ考え方。誓約書側だけこの対応が漏れていたため今回是正した）。
-      const scopeDeptNos = getDeptSearchScope(myDeptNo ?? null)
+      const scopeDeptNos = getDeptSearchScope(myDeptNo ?? null, deptGroupScope)
       byNumberQuery = byNumberQuery.in('dept_no', scopeDeptNos)
       byNameQuery = byNameQuery.in('dept_no', scopeDeptNos)
     }
@@ -425,7 +431,7 @@ export default function PledgeApplyPage() {
     const flattened = data.slice(0, 10).map((s: any) => ({ ...s, department: s.department_master?.dept_name || null }))
     setSearchResults(flattened)
     setSearched(true)
-  }, [user, myDeptNo])
+  }, [user, myDeptNo, deptGroupScope])
 
   // スタッフマスタ登録依頼（2026-07-24追加）：app/apply/page.tsxのvalidateRequestForm/
   // handleSubmitRequestと同じ考え方。誓約書はCSVインポート依頼の概念が無いため、その分岐は含めない。

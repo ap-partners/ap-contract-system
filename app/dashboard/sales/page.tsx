@@ -704,9 +704,13 @@ export default function SalesDashboard() {
     if (!ok) return
     setDeletingWithdrawnId(contractId)
     // 改善提案#24対応（2026-08-19）：物理DELETEから論理削除（deleted_at）へ変更。
-    const { error } = await supabase.from('contracts').update({ deleted_at: new Date().toISOString() }).eq('id', contractId).eq('status', '取り下げ')
+    // PostgreSQLのRLS仕様上、UPDATEで自分自身がSELECTポリシー対象外になる更新（deleted_at設定）は
+    // 通常の.update()では"new row violates row-level security policy"エラーになるため、
+    // 権限チェックを内包したSECURITY DEFINER関数をrpc経由で呼び出す方式にしている。
+    const { data: deleted, error } = await supabase.rpc('soft_delete_withdrawn_contract', { p_contract_id: contractId })
     setDeletingWithdrawnId(null)
     if (error) { showError('削除に失敗しました: ' + error.message); return }
+    if (!deleted) { showError('削除に失敗しました: 対象の申請が見つからないか、既に削除されています。'); return }
     setFlowContracts(prev => prev.filter(c => c.id !== contractId))
     showSuccess('削除しました。')
   }

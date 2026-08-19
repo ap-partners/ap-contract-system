@@ -3370,3 +3370,50 @@ alter table contracts add column if not exists sign_auth_last_issued_at timestam
 
 構文チェック・プロジェクト全体`npx tsc --noEmit -p tsconfig.json`とも変更した全ファイル（`lib/requiredEnv.ts`・`lib/pdfAccessToken.ts`・`lib/staffResetToken.ts`・`lib/staffSession.ts`・`app/dashboard/sales/page.tsx`・`app/dashboard/admin/page.tsx`・`app/dashboard/ssc/page.tsx`・`app/dashboard/_shared/PledgeListSection.tsx`・`app/api/cron/withdrawn-cleanup/route.ts`）で診断0件を確認済み。DB変更（インデックス20件・列2件・RLSポリシー変更4件）はSupabase MCPで適用済み（本番DB）。要デプロイ＋実機確認（#22を除く）。
 　→ CLAUDE.md 🔴残タスク一覧参照。
+
+### 2026-08-19（続き）フェーズ①実機確認中に判明した#24の追加不具合と修正
+
+デプロイ後の実機確認（管理部アカウントで「取り下げ」タブの削除ボタンを実際に押す）で、`.update({deleted_at: 現在時刻})`方式の削除処理が「削除に失敗しました: new row violates row-level security policy for table "contracts"」というエラーで失敗することを発見。
+
+原因はPostgreSQLのRLSの仕様：UPDATE文は、そのUPDATE自体のポリシー（USING／WITH CHECK）を満たしていても、更新後の新しい行が同じテーブルのSELECTポリシーを満たさなくなる場合はエラーになる（RETURNING句の有無に関わらず）。今回は`contracts`・`pledges`のSELECTポリシーに`deleted_at IS NULL`条件を追加していたため、`deleted_at`に値を設定するUPDATEそのものが「更新後の行が自分自身から見えなくなる」形になり、RLSに拒否されていた。Supabase MCPの`execute_sql`で`set local role authenticated`によるロール模擬とセッション変数（`request.jwt.claims`）の設定を使い、①`deleted_at`と無関係な列の更新は成功する、②`deleted_at`を設定する更新のみ失敗する、という比較で原因を切り分け・特定した。なお`app/api/cron/withdrawn-cleanup/route.ts`（30日後自動削除cron）は`service_role`キーで実行しRLSを完全にバイパスするため、この問題の対象外であることもロール模擬で確認済み。
+
+**修正**：権限チェックを関数内部で行う`SECURITY DEFINER`関数を新設し、RLSをバイパスした上で元のDELETEポリシーと同じ条件を関数内で再現する方式に変更（Supabase MCPで適用済み・本番DB、マイグレーション名`add_soft_delete_rpc_functions`）。
+
+```sql
+create or replace function public.soft_delete_withdrawn_contract(p_contract_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_updated boolean;
+begin
+  update contracts
+  set deleted_at = now()
+  where id = p_contract_id
+    and status = '取り下げ'
+    and deleted_at is null
+    and created_by = auth.uid()
+  returning true into v_updated;
+  return coalesce(v_updated, false);
+end;
+$$;
+
+revoke all on function public.soft_delete_withdrawn_contract(uuid) from public;
+grant execute on function public.soft_delete_withdrawn_contract(uuid) to authenticated;
+```
+
+`soft_delete_withdrawn_pledge(p_pledge_id uuid)`も同じ設計で新設（対象テーブルが`pledges`である点のみ異なる）。
+
+アプリ側は4箇所の手動削除ボタンハンドラを`.update()`から`supabase.rpc(...)`呼び出しに変更：
+- `app/dashboard/sales/page.tsx`（`handleDeleteWithdrawn`）
+- `app/dashboard/admin/page.tsx`（`handleDeleteWithdrawn`）
+- `app/dashboard/ssc/page.tsx`（`handleDeleteWithdrawn`）
+- `app/dashboard/_shared/PledgeListSection.tsx`（`handleDeleteWithdrawn`）
+
+いずれも戻り値（`boolean`）が`false`の場合は「削除に失敗しました: 対象の申請が見つからないか、既に削除されています。」を表示し、実際に行が消えた場合のみ画面から取り除く実装。
+
+Supabase MCPのSQLでRPC関数自体の動作（正しい所有者・正しいstatus・deleted_at未設定の行に対しては`true`を返し実際に`deleted_at`が設定されること、条件を満たさない場合は`false`を返し行が変更されないこと）を模擬確認済み。実機確認用に作成したテスト用ダミー`contracts`行1件はSupabase MCPで完全に削除済み（既存の実デモ用取り下げデータ＝進藤萌様・高橋遵乃介様の2件には一切触れていない）。
+
+構文チェック（`tsc --noEmit`は環境未確認のためコードレビューベース）は変更4ファイルすべて確認済み。**この4ファイルの変更はまだコミット・プッシュ・デプロイされていない**。伊藤さんによるデプロイ後、削除ボタンの実機確認（成功メッセージ表示・「取り下げ」タブから行が消える・DBには`deleted_at`が設定され行自体は残ることのSupabase MCP確認）を改めて実施する。

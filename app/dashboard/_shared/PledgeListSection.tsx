@@ -239,9 +239,13 @@ export default function PledgeListSection({ deptNoFilter, detailBasePath = '/das
     const ok = await confirmDialog(WITHDRAWN_APPLICATION_DELETE_CONFIRM)
     if (!ok) return
     setDeletingWithdrawnId(pledgeId)
-    const { error } = await supabase.from('pledges').update({ deleted_at: new Date().toISOString() }).eq('id', pledgeId).eq('status', '取り下げ')
+    // PostgreSQLのRLS仕様上、UPDATEで自分自身がSELECTポリシー対象外になる更新（deleted_at設定）は
+    // 通常の.update()では"new row violates row-level security policy"エラーになるため、
+    // 権限チェックを内包したSECURITY DEFINER関数をrpc経由で呼び出す方式にしている。
+    const { data: deleted, error } = await supabase.rpc('soft_delete_withdrawn_pledge', { p_pledge_id: pledgeId })
     setDeletingWithdrawnId(null)
     if (error) { showError('削除に失敗しました: ' + error.message); return }
+    if (!deleted) { showError('削除に失敗しました: 対象の申請が見つからないか、既に削除されています。'); return }
     setFlowRows(prev => prev.filter(r => r.id !== pledgeId))
     showSuccess('削除しました。')
   }
